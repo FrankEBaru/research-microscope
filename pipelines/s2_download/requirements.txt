@@ -1,0 +1,6 @@
+# Installed into the Modal image by app.py. Local sanity needs numpy and pyarrow.
+numpy>=1.26
+pyarrow>=18
+requests>=2.31
+orjson>=3.10
+isal>=1.6
