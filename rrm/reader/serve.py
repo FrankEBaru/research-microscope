@@ -19,6 +19,7 @@ from pathlib import Path
 
 import modal
 
+import rrm.reader.fetch as _fetch
 from rrm.reader.fetch import ARXIV, arxiv_index_at, arxiv_pdf, arxiv_slot_start, reader_identity
 from rrm.reader.ocr import (
     blocks_from_mineru_dir,
@@ -45,6 +46,7 @@ from rrm.reader.sam import parse_pages, segment_pages
 
 DATA = "/data"
 PAPERS = Path(DATA) / "papers"
+_fetch.S2_CACHE_DIR = PAPERS
 DISPLAY = Path(DATA) / "2026-10-20" / "index" / "display.parquet"
 # modal.com/pricing, fetched 2026-10-28, preemptible list price. GPU tasks also bill CPU and memory.
 CPU_USD_PER_CORE_S = 0.0000131
@@ -67,7 +69,7 @@ gpu_image = (
     .apt_install("git", "libgl1", "libglib2.0-0", "ca-certificates")
     # mineru 2.7.6 pins vllm<0.12 via its [vllm] extra; an unpinned vllm resolves to 0.3x
     # and its own torch. Let vllm choose torch (no separate cu124 torch install).
-    .pip_install("pymupdf", "mineru[core,vllm]>=2.5,<3")
+    .uv_pip_install("pymupdf", "mineru[core,vllm]>=2.5,<3")  # pip backtracks for 10+ min here; uv resolves in seconds
     .add_local_python_source("rrm")
 )
 
@@ -338,13 +340,16 @@ def _write_stub(folder: Path, corpusid: int):
     return paper
 
 
-@app.function(image=cpu_image, volumes={DATA: vol}, timeout=60, secrets=[secret])
-@modal.fastapi_endpoint(method="POST")
-def prepare(item: dict):
+def _prepare_ids(ids) -> dict:
     vol.reload()
     _shared_arxiv_wait()
+    try:
+        _fetch.s2_batch(ids)  # one Graph API request for the whole burst
+    except Exception:
+        pass
+    vol.commit()  # parse_one containers must see s2.json before they resolve
     rows = []
-    for raw in item.get("ids") or []:
+    for raw in ids or []:
         cid = int(raw)
         status = mark_queued(PAPERS / str(cid), cid)
         if status == "queued":
@@ -352,6 +357,18 @@ def prepare(item: dict):
         rows.append({"id": cid, "status": status})
     vol.commit()
     return {"papers": rows}
+
+
+@app.function(image=cpu_image, volumes={DATA: vol}, timeout=60, secrets=[secret])
+@modal.fastapi_endpoint(method="POST")
+def prepare(item: dict):
+    return _prepare_ids(item.get("ids") or [])
+
+
+# A web endpoint cannot be .spawn()ed from another app (InvalidError), so /burst spawns this.
+@app.function(image=cpu_image, volumes={DATA: vol}, timeout=60, secrets=[secret])
+def prefetch(ids: list) -> dict:
+    return _prepare_ids(ids)
 
 
 @app.function(image=cpu_image, volumes={DATA: vol}, timeout=60, secrets=[secret])

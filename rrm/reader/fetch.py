@@ -100,10 +100,10 @@ def canon_arxiv(text) -> str:
     return re.sub(r"v\d+$", "", text).strip()
 
 
-def _get(url: str, limiter: Limiter, timeout=90) -> bytes:
+def _get(url: str, limiter: Limiter, timeout=90, tries: int = 6) -> bytes:
     delay = 1.0
     last = None
-    for _ in range(6):
+    for _ in range(max(1, int(tries))):
         limiter.wait()
         req = urllib.request.Request(url, headers={"User-Agent": UA})
         try:
@@ -132,17 +132,82 @@ def fetch_url(url: str) -> bytes:
     return _get(url, host_limiter)
 
 
-def s2_graph(corpusid: int) -> dict:
-    """Free Graph API. Returns {} when the id is unknown."""
+# Set by the Modal app to the papers root. s2_graph reads papers/{id}/s2.json first;
+# s2_batch writes it for a whole burst in one request, so 10 parallel parses do not
+# each hit the free Graph API (QA 2026-10-29: 429 backoff made the stub take ~65 s).
+S2_CACHE_DIR = None
+
+
+def _s2_cache(corpusid: int):
+    if S2_CACHE_DIR is None:
+        return None
+    return Path(S2_CACHE_DIR) / str(int(corpusid)) / "s2.json"
+
+
+def s2_batch(corpusids) -> dict:
+    """One POST /paper/batch for many ids. Writes each hit to the s2.json cache. Never raises."""
     import json
-    url = f"{S2}CorpusId:{int(corpusid)}?fields={S2_FIELDS}"
-    try:
-        raw = _get(url, S2_LIMIT, timeout=30)
-    except urllib.error.HTTPError as err:
-        if err.code == 404:
-            return {}
-        raise
-    data = json.loads(raw.decode("utf-8", "replace"))
+    ids = [int(c) for c in corpusids or []]
+    todo = [c for c in ids if not ((_s2_cache(c) or Path("/nonexistent")).is_file())]
+    if not todo:
+        return {}
+    body = json.dumps({"ids": [f"CorpusId:{c}" for c in todo]}).encode()
+    out = {}
+    delay = 1.0
+    for _ in range(3):
+        S2_LIMIT.wait()
+        req = urllib.request.Request(
+            f"{S2}batch?fields={S2_FIELDS}", data=body,
+            headers={"User-Agent": UA, "Content-Type": "application/json"}, method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                rows = json.loads(resp.read().decode("utf-8", "replace"))
+            break
+        except Exception:
+            time.sleep(delay)
+            delay *= 2
+    else:
+        return {}
+    for cid, data in zip(todo, rows or []):
+        if not isinstance(data, dict):
+            continue
+        out[cid] = data
+        path = _s2_cache(cid)
+        if path is not None:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(data), encoding="utf-8")
+            except OSError:
+                pass
+    return out
+
+
+def s2_graph(corpusid: int) -> dict:
+    """Free Graph API (or the s2.json cache). Returns {} when the id is unknown."""
+    import json
+    data = None
+    path = _s2_cache(corpusid)
+    if path is not None and path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = None
+    if data is None:
+        url = f"{S2}CorpusId:{int(corpusid)}?fields={S2_FIELDS}"
+        try:
+            raw = _get(url, S2_LIMIT, timeout=30, tries=3)
+        except urllib.error.HTTPError as err:
+            if err.code == 404:
+                return {}
+            raise
+        data = json.loads(raw.decode("utf-8", "replace"))
+        if path is not None:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(data), encoding="utf-8")
+            except OSError:
+                pass
     ext = data.get("externalIds") or {}
     oa = data.get("openAccessPdf") or {}
     tldr = data.get("tldr") or {}

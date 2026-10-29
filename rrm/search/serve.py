@@ -173,7 +173,7 @@ def _prefetch_reader(corpusids):
     if not ids:
         return
     try:
-        modal.Function.from_name("rrm-reader", "prepare").spawn({"ids": ids})
+        modal.Function.from_name("rrm-reader", "prefetch").spawn(ids)
     except Exception:
         return
 

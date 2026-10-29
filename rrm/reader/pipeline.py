@@ -314,9 +314,12 @@ def parse_corpus(
         t = time.time()
         # Refs from the citation graph are local. The Graph API runs only for gaps,
         # and reference strings are filled here so the open request can stay on the stub.
+        # No shard scan here: reading the 61 papers/abstracts shards on the volume took
+        # 100-250 s per paper in QA (2026-10-29). The display row plus one Graph API call
+        # fills authors and abstract.
         # Refs come after the stub: the citation graph is large, and the reference
         # API is a second request. Neither should delay the first readable snapshot.
-        info = reader_identity(int(corpusid), display_path, remote=True, refs=False, shards=True)
+        info = reader_identity(int(corpusid), display_path, remote=True, refs=False, shards=False)
         meta["timings"]["resolve"] = time.time() - t
         meta["title"] = info.get("title") or ""
         meta["tldr"] = info.get("tldr") or ""
@@ -388,7 +391,7 @@ def _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish=None):
                     got = pdfs[0] if pdfs else got
                 if got.is_file():
                     pdf_path.write_bytes(got.read_bytes())
-                return _ocr_route(folder, info, meta, pdf_path, ocr, "e-print is a PDF")
+                return _ocr_route(folder, info, meta, pdf_path, ocr, "e-print is a PDF", publish)
             if kind == "tex":
                 t = time.time()
                 parsed = parse_tree(src, arxiv_id=arxiv)
@@ -402,7 +405,7 @@ def _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish=None):
                         meta["reason"] = f"{parsed['reason']}; pdf failed: {err}"
                         return "abstract", abstract_paper(info), pdf_path
                     meta["timings"]["download"] += time.time() - t
-                    return _ocr_route(folder, info, meta, pdf_path, ocr, parsed["reason"])
+                    return _ocr_route(folder, info, meta, pdf_path, ocr, parsed["reason"], publish)
                 paper = parsed["paper"]
                 paper["arxivId"] = arxiv
                 apply_s2_fields(paper, info)
@@ -419,7 +422,7 @@ def _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish=None):
         try:
             pdf_path.write_bytes(arxiv_pdf(arxiv))
             meta["timings"]["download"] += time.time() - t
-            return _ocr_route(folder, info, meta, pdf_path, ocr, meta.get("reason") or "no tex e-print")
+            return _ocr_route(folder, info, meta, pdf_path, ocr, meta.get("reason") or "no tex e-print", publish)
         except Exception as err:
             meta["timings"]["download"] += time.time() - t
             meta["reason"] = f"no tex and pdf failed: {err}"
@@ -435,11 +438,11 @@ def _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish=None):
             meta["reason"] = f"open-access pdf failed: {err}"
             return "abstract", abstract_paper(info), pdf_path
         meta["timings"]["download"] += time.time() - t
-        return _ocr_route(folder, info, meta, pdf_path, ocr, "no arXiv id")
+        return _ocr_route(folder, info, meta, pdf_path, ocr, "no arXiv id", publish)
     return "abstract", abstract_paper(info), pdf_path
 
 
-def _ocr_route(folder, info, meta, pdf_path, ocr, why: str):
+def _ocr_route(folder, info, meta, pdf_path, ocr, why: str, publish=None):
     if ocr is None:
         meta["reason"] = f"{why}; ocr not run in this process"
         paper = abstract_paper(info)
