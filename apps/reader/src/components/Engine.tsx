@@ -7,6 +7,8 @@ import PaperView, { plainOf } from "./Paper";
 import MapView from "./MapView";
 import Panorama from "./Panorama";
 import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
+import { burst, liveEnabled, paper as fetchPaper, status as fetchStatus } from "@/lib/backend.js";
+import { LiveCircle } from "./MapView";
 
 type Route = { q?: string; c?: string; p?: string; b?: string };
 const parse = (h: string): Route => {
@@ -23,6 +25,16 @@ export default function Engine() {
   const [papers, setPapers] = useState<Record<string, Paper>>({});
   const [err, setErr] = useState<string>("");
   const [companion, setCompanion] = useState(false); // opt-in: apagado por defecto y sin persistencia
+  const live = liveEnabled();
+  const [draft, setDraft] = useState("");
+  const [liveQ, setLiveQ] = useState("");
+  const [liveOn, setLiveOn] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [warm, setWarm] = useState(false);
+  const [liveResult, setLiveResult] = useState<any>(null);
+  const [liveErr, setLiveErr] = useState("");
+  const [rowState, setRowState] = useState<Record<string, any>>({});
+  const [opened, setOpened] = useState<any>(null);
 
   useEffect(() => {
     const on = () => setRoute(parse(location.hash));
@@ -51,6 +63,117 @@ export default function Engine() {
   }, []);
 
   const go = useCallback((r: Route) => { location.hash = fmt(r); window.scrollTo({ top: 0 }); }, []);
+  const liveId = live && route.p && /^\d+$/.test(route.p) ? route.p : "";
+
+  useEffect(() => {
+    if (!liveOn || !liveResult) return;
+    const ids = (liveResult.papers || []).slice(0, 10).map((p: any) => p.corpusid).filter((id: any) => typeof id === "number");
+    if (!ids.length) return;
+    let stop = false;
+    const tick = async () => {
+      try {
+        const body = await fetchStatus(ids);
+        if (stop) return;
+        const map: Record<string, any> = {};
+        for (const row of body.papers || []) map[String(row.id)] = row;
+        setRowState(map);
+        if (ids.every((id: number) => ["done", "abstract_only", "failed"].includes(map[String(id)]?.status))) return;
+      } catch (e: any) {
+        if (!stop) setLiveErr(String(e.message || e));
+      }
+      if (!stop) window.setTimeout(tick, 1500);
+    };
+    tick();
+    return () => { stop = true; };
+  }, [liveOn, liveResult]);
+
+  useEffect(() => {
+    if (!liveId) { setOpened(null); return; }
+    let stop = false;
+    let sig = "";
+    const apply = (body: any) => {
+      const doc = body.paper || {};
+      const meta = body.meta || {};
+      setOpened({
+        paper: {
+          ...doc,
+          authors: doc.authors || [],
+          refs: doc.refs || {},
+          blocks: doc.blocks || [],
+          arxivId: doc.arxivId || "",
+          title: doc.title || "",
+          date: doc.date || "",
+          full: Boolean(doc.full),
+          abstract: doc.abstract || "",
+          tldr: doc.tldr || "",
+          stage: doc.stage || meta.stage,
+          source: doc.source || meta.source,
+          upgraded_from: doc.upgraded_from || meta.upgraded_from,
+          corpusid: typeof doc.corpusid === "number" ? doc.corpusid : Number(liveId),
+        },
+        remote: {
+          status: body.status,
+          stage: doc.stage || meta.stage,
+          reason: meta.reason,
+          source: doc.source || meta.source,
+        },
+      });
+    };
+    const signature = (body: any) => {
+      const meta = body.meta || {};
+      const doc = body.paper || {};
+      return `${doc.stage || meta.stage || ""}|${body.status || ""}|${doc.upgraded_from || meta.upgraded_from || ""}`;
+    };
+    const loop = async () => {
+      try {
+        const st = await fetchStatus([liveId]);
+        if (stop) return;
+        const row = (st.papers || [])[0] || {};
+        const next = `${row.stage || ""}|${row.status || ""}|${row.upgraded_from || ""}`;
+        if (next !== sig) {
+          sig = next;
+          apply(await fetchPaper(liveId));
+        }
+        if (["done", "abstract_only", "failed"].includes(row.status)) return;
+      } catch (e: any) {
+        if (!stop) setLiveErr(String(e.message || e));
+      }
+      if (!stop) window.setTimeout(loop, 2000);
+    };
+    (async () => {
+      try {
+        const body = await fetchPaper(liveId);
+        if (stop) return;
+        sig = signature(body);
+        apply(body);
+        if (["done", "abstract_only", "failed"].includes(body.status)) return;
+      } catch (e: any) {
+        if (!stop) setLiveErr(String(e.message || e));
+      }
+      if (!stop) window.setTimeout(loop, 2000);
+    })();
+    return () => { stop = true; };
+  }, [liveId]);
+
+  const onSearch = async (e: { preventDefault: () => void }) => {
+    e.preventDefault();
+    const q = draft.trim();
+    if (!q || pending) return;
+    setLiveQ(q); setLiveOn(true); setLiveErr(""); setLiveResult(null); setRowState({}); setPending(true); setWarm(false);
+    const timer = window.setTimeout(() => setWarm(true), 2000);
+    try {
+      setLiveResult(await burst(q));
+      go({});
+    } catch (err: any) {
+      setLiveErr(String(err.message || err));
+    } finally {
+      window.clearTimeout(timer); setPending(false); setWarm(false);
+    }
+  };
+  const backToCurated = () => {
+    setLiveOn(false); setLiveQ(""); setLiveResult(null); setRowState({}); setOpened(null); setPending(false); setWarm(false); setLiveErr("");
+    go({});
+  };
   const questions = content?.map.questions || [];
   const q = questions.find((x: any) => x.id === (route.q || questions[0]?.id)) || questions[0];
   const cluster = q?.clusters.find((c: any) => c.id === route.c);
@@ -85,15 +208,37 @@ export default function Engine() {
             </button>
           ))}
         </nav>
+        {live && (
+          <form className="live-search" onSubmit={onSearch}>
+            <input aria-label="Pregunta" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Pregunta" />
+            <button type="submit">Buscar</button>
+          </form>
+        )}
         <button className="companion-toggle" aria-pressed={companion} onClick={() => setCompanion((v) => !v)} title="Compañero de lectura opcional: ofrece ayuda, nunca interrumpe, no guarda nada (tecla C)">Compañero {companion ? "activado" : "apagado"}</button>
         <span className="proto">prototipo · datos locales</span>
       </header>
 
       <main key={`${level}-${route.c}-${route.p}`} className="zoom-in">
-        {level === 1 && <Area q={q} questions={questions} papers={papers} go={go} content={content} />}
-        {level === 2 && cluster && <Cluster q={q} cl={cluster} papers={papers} go={go} />}
-        {level === 3 && paper && <PaperView paper={paper} content={content} focus={route.b} companion={companion} onHideCompanion={() => setCompanion(false)} />}
-        {level === 3 && !paper && <p className="center-msg">Paper no encontrado.</p>}
+        {live && (liveOn || liveId) && liveId && opened && (
+          <div className="lvl">
+            <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>
+            <PaperView paper={opened.paper} content={content} companion={companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} />
+          </div>
+        )}
+        {live && (liveOn || liveId) && liveId && !opened && <p className="center-msg">Cargando…</p>}
+        {live && liveOn && !liveId && (
+          <section className="lvl">
+            <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>
+            <h1 className="question">{liveQ}</h1>
+            {pending && warm && <p className="warm">calentando el motor…</p>}
+            {liveErr && <p className="fail-reason">{liveErr}</p>}
+            {liveResult && <LiveCircle papers={liveResult.papers || []} edges={liveResult.edges || []} states={rowState} onOpen={(id) => go({ p: id })} />}
+          </section>
+        )}
+        {!(live && (liveOn || liveId)) && level === 1 && <Area q={q} questions={questions} papers={papers} go={go} content={content} />}
+        {!(live && (liveOn || liveId)) && level === 2 && cluster && <Cluster q={q} cl={cluster} papers={papers} go={go} />}
+        {!(live && (liveOn || liveId)) && level === 3 && paper && <PaperView paper={paper} content={content} focus={route.b} companion={companion} onHideCompanion={() => setCompanion(false)} />}
+        {!(live && (liveOn || liveId)) && level === 3 && !paper && <p className="center-msg">Paper no encontrado.</p>}
       </main>
 
       <footer className="legend">

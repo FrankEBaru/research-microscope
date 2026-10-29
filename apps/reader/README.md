@@ -4,13 +4,27 @@ Prototipo local del lector de papers con zoom de 3 niveles (área → cluster �
 cambia el contenido por nivel. **Todo local, sin Modal, sin API de Meta, sin backend.** Costo: $0.
 
 ## Correr
+Requisitos: Node ≥ 22 y Python 3 (+ numpy solo para `scripts/numpy_check.py`). Pandoc y `pdftocairo` (poppler) hacen falta solo si se vuelve a correr `npm run data`.
+
+Máquina nueva, con el mismo `content/`: el caché ya construido está en un GitHub Release. El tar (40 MB) no está en el árbol ni en el historial de commits.
+
 ```bash
 npm install
-npm run data      # descarga de arXiv (1 petición cada 3 s) y construye los bundles; NO se commitean
+gh release download artifacts/RRM-11-reader-data-2026-10-29 --pattern reader-data-2026-10-29.tar.gz
+tar -xzf reader-data-2026-10-29.tar.gz && rm reader-data-2026-10-29.tar.gz
 npm run verify    # KaTeX sobre todas las fórmulas + pruebas del instrumento (node --test)
 npm run build && python3 -m http.server 3100 -d out   # o: npm run dev
 ```
-Requisitos: Node ≥ 22, pandoc, `pdftocairo` (poppler) y Python 3 (+ numpy solo para `scripts/numpy_check.py`).
+
+Si `content/` cambió, o ese Release no corresponde a este código:
+
+```bash
+npm run data      # usa `.cache/` si ya está; si no, arXiv a 1 petición cada 3 s. NO se commitea
+```
+
+## Vercel
+
+Export estático (`next.config.mjs`: `output: "export"`, `images.unoptimized: true`). En Vercel Hobby la raíz del proyecto es `apps/reader`, Node 22, build `npm ci && npm run build`. Variables de entorno del proyecto, nunca en git: `NEXT_PUBLIC_BURST_URL`, `NEXT_PUBLIC_READER_URL`, `NEXT_PUBLIC_RRM_DEMO_TOKEN`. Si las dos URLs están vacías, la pantalla sigue siendo la ráfaga curada y no llama al backend. Restaurar `public/papers/` desde el Release RRM-11 antes del build. Este repo no despliega.
 
 ## Qué es real y qué es simulado
 | Pieza | Estado |
@@ -44,7 +58,8 @@ Attention, BERT, Kaplan, Chinchilla y Pearce y Song (e-prints de arXiv): **1,099
 Fallos de robustez encontrados y corregidos al ampliar: pandoc se cuelga con la expansión de macros en BERT (tiempo límite y segunda estrategia), líneas en blanco dentro de `\caption`, `\graphicspath`, bibliografías `.bbl` y autor-año, `\label` y `\hat \mathbb{E}` dentro de matemática, ecuaciones de bloque dentro de párrafos, apéndices con letras.
 
 ## Datos y licencias
-- Los papers y figuras se descargan de arXiv al correr `npm run data` y quedan en `public/papers/` y `.cache/` (ambos en `.gitignore`): el repo es público y `AGENTS.md` prohíbe commitear corpus o PDFs.
+- Los papers y figuras salen de arXiv y quedan en `public/papers/` y `.cache/` (ambos en `.gitignore`). El repo es público: ese corpus no se commitea.
+- El mismo resultado, empaquetado, está en el Release [`artifacts/RRM-11-reader-data-2026-10-29`](https://github.com/FrankEBaru/research-microscope/releases/tag/artifacts/RRM-11-reader-data-2026-10-29) (asset `reader-data-2026-10-29.tar.gz`, sha256 `c1ac80888eec76e3c8f46f1e77431fed7739999496d9210b8453d694cc4c7b07`). Corresponde al commit `a0a332a`. Al descomprimirlo en `apps/reader/` aparecen `.cache/` (fichas, e-prints, fuentes y JSON de pandoc: `npm run data` no vuelve a llamar a arXiv) y `public/papers/` (JSON y figuras: se puede saltar `npm run data` y solo construir).
 - Attention: Google permite reproducir tablas y figuras con atribución para trabajos periodísticos o académicos (aviso visible en la UI). Cada paper enlaza a su original en arXiv.
 
 ## Estructura

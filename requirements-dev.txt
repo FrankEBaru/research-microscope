@@ -1,0 +1,6 @@
+pytest
+numpy
+pyarrow
+faiss-cpu
+# Three tests in tests/test_reader.py build a one-page PDF. The check does not exit 0 without it.
+pymupdf
