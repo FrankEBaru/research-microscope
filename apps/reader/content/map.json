@@ -221,7 +221,15 @@
                 "paper": "2406.19146",
                 "quote": "identifying three factors causing the difference: last layer computational cost, warmup duration, and scale-dependent optimizer tuning"
               }
-            ]
+            ],
+            "exponents": {
+              "a": 0.73,
+              "b": 0.5
+            },
+            "flops": {
+              "paper": "2203.15556",
+              "quote": "under the constraint $\\text{FLOPs}(N, D) \\approx 6 N D$"
+            }
           }
         }
       ],

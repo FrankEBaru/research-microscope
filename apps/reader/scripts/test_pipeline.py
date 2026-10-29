@@ -97,6 +97,11 @@ class Contenido(unittest.TestCase):
             for e in q["layout"]["edges"]:
                 self.assertIn(e["from"], ids); self.assertIn(e["to"], ids)
                 self.assertIn(e["kind"], {"bibliografia", "abstract", "curado"})
+            for cl in q["clusters"]:  # los exponentes del deslizador deben estar en la frase citada (sin deriva)
+                t = cl.get("tension")
+                if t:
+                    self.assertIn(str(t["exponents"]["a"]), t["numbers"]["quote"])
+                    self.assertIn("0.50", t["numbers"]["quote"]); self.assertEqual(t["exponents"]["b"], 0.5)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import { Rich } from "@/lib/math";
 import { Coverage, ProvChip } from "./Bits";
 import PaperView, { plainOf } from "./Paper";
 import MapView from "./MapView";
+import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
 
 type Route = { q?: string; c?: string; p?: string; b?: string };
 const parse = (h: string): Route => {
@@ -178,6 +179,7 @@ function Tension({ t, papers }: any) {
         ))}
       </div>
       <p className="tension-nums"><span className="qlab">En números, citados del abstract de {nm(t.numbers.paper)}</span><Rich text={t.numbers.quote} /></p>
+      {t.exponents && <TensionSlider t={t} papers={papers} />}
       <h3>Lo que dos trabajos posteriores dicen sobre la diferencia</h3>
       <div className="tension-cols">
         {t.resolution.map((x: any) => (
@@ -186,5 +188,30 @@ function Tension({ t, papers }: any) {
       </div>
       <p className="muted">Se muestran las frases, sin etiqueta de «apoya» o «contradice»: esa lectura es del lector.</p>
     </section>
+  );
+}
+
+function TensionSlider({ t, papers }: any) {
+  const [e, setE] = useState(1); // cómputo ×10^e
+  const x = Math.pow(10, e);
+  const rows = [{ label: "Kaplan", a: t.exponents.a, tone: "a" }, { label: "Chinchilla", a: t.exponents.b, tone: "b" }];
+  const maxLog = Math.log10(Math.pow(1000, t.exponents.a));
+  const bar = (f: number) => `${Math.max(3, (100 * Math.log10(f)) / maxLog)}%`;
+  return (
+    <div className="tslider">
+      <div className="chips"><ProvChip kind="calculo" text="ilustración con los exponentes citados" /></div>
+      <label><span>Si el cómputo de entrenamiento se multiplica por <b>×{x >= 100 ? Math.round(x) : x.toFixed(x < 10 ? 1 : 0)}</b>…</span>
+        <input type="range" min={0} max={3} step={0.05} value={e} onChange={(ev) => setE(+ev.target.value)} aria-label="Multiplicador de cómputo" /></label>
+      <div className="tgrid">
+        {rows.map((r) => (
+          <div key={r.label} className="trow">
+            <b>{r.label}</b><span className="exp">exponente {r.a.toFixed(2)}</span>
+            <div className="tbar"><i className={`bar-${r.tone}`} style={{ width: bar(modelGrowth(x, r.a)) }} /><em>tamaño del modelo ×{modelGrowth(x, r.a).toFixed(1)}</em></div>
+            <div className="tbar"><i className="bar-tok" style={{ width: bar(tokenGrowth(x, r.a)) }} /><em>tokens de entrenamiento ×{tokenGrowth(x, r.a).toFixed(1)}</em></div>
+          </div>
+        ))}
+      </div>
+      <p className="small">Usa solo lo citado: los exponentes de N<sub>óptimo</sub> ∝ C<sup>a</sup> del abstract de {papers[t.numbers.paper].authors[0]?.split(" ").pop()} y la relación FLOPs ≈ 6·N·D de Chinchilla (de ahí tokens ∝ C<sup>1−a</sup>). No es una predicción propia; con N sin embeddings (Kaplan) la relación 6ND es aproximada, y justo ahí está parte de la discrepancia que explican los dos trabajos de abajo.</p>
+    </div>
   );
 }
