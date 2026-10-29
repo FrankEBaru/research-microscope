@@ -178,6 +178,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const [active, setActive] = useState<string>("");
   const tracker = useRef(createTracker());
   const [offer, setOffer] = useState<Offer | null>(null);
+  const [breakdown, setBreakdown] = useState<string | null>(null); // bloque `eq` cuyo desglose está abierto
   useEffect(() => { tracker.current.reset(); setOffer(null); }, [paper.arxivId, companion]);
 
   const att = content.attention?.paper === paper.arxivId ? content.attention : null;
@@ -264,6 +265,29 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     const cp = t.closest("[data-copy]") as HTMLElement | null;
     if (cp) { const old = cp.textContent; navigator.clipboard?.writeText(cp.dataset.copy!); cp.textContent = "copiado"; setTimeout(() => (cp.textContent = old), 1200); }
   };
+  const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const symsInTex = (tex: string): Sym[] => (att ? att.symbols : []).filter((y: Sym) => new RegExp(`(^|[^A-Za-z\\\\^_])${esc(y.latex)}`).test(tex));
+  // permanencia: una ecuación completa en pantalla y sin scroll durante DWELL ms -> una oferta (no interrumpe: la acepta o no el lector)
+  useEffect(() => {
+    if (!companion || !att) return;
+    const DWELL = (window as any).__RRM_DWELL_MS || 15000;
+    const vis = new Map<string, number>(); let current: string | null = null; let timer: any;
+    const arm = () => {
+      clearTimeout(timer); if (!current) return; const id = current;
+      timer = setTimeout(() => {
+        const b = model.byId[id.replace("blk-", "")]; if (!b || symsInTex(b.tex).length === 0) return;
+        const hit = tracker.current.offer(`dwell:${id}`); if (!hit) return;
+        setOffer({ key: hit, text: "Llevas un rato en esta ecuación. ¿Te desgloso sus símbolos con lo que dice el paper?", accept: "Sí, desglósala", onAccept: () => { setBreakdown(b.id); setTimeout(() => document.getElementById(`bd-${b.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 80); } });
+      }, DWELL);
+    };
+    const io = new IntersectionObserver((es) => {
+      es.forEach((e) => vis.set(e.target.id, e.intersectionRatio));
+      current = [...vis].filter(([, r]) => r >= 0.9).map(([k]) => k)[0] || null; arm();
+    }, { threshold: [0, 0.5, 0.9, 1] });
+    document.querySelectorAll<HTMLElement>(".eq.blk").forEach((e) => io.observe(e));
+    window.addEventListener("scroll", arm, { passive: true });
+    return () => { clearTimeout(timer); io.disconnect(); window.removeEventListener("scroll", arm); };
+  }, [companion, paper.arxivId, att]);
   const goTo = (id: string) => {
     const el = document.getElementById("blk-" + id);
     if (!el) return;
@@ -341,6 +365,16 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           return (
             <div key={b.id} className="row">
               {el}
+              {breakdown === b.id && b.kind === "eq" && (
+                <aside id={`bd-${b.id}`} className="breakdown" aria-label="Desglose de la ecuación">
+                  <div className="chips"><ProvChip kind="curado" text="desglose curado: símbolos y definiciones del paper, no texto generado" /></div>
+                  <ul>{symsInTex(b.tex).map((y: Sym) => (
+                    <li key={y.id}><span className="sym-pill" style={{ color: y.color }}><Tex tex={y.latex} /></span> <b>{y.name}</b> · <em>«<Rich text={att.symbols.find((q: any) => q.id === y.id).def.quote} />»</em> <button className="link" onClick={() => goTo(att.symbols.find((q: any) => q.id === y.id).def.anchor.blockId)}>ver dónde se define</button></li>
+                  ))}</ul>
+                  {/sqrt\{d_k\}/.test(b.tex) && <p className="small">Esta ecuación divide por √d_k: <button className="link" onClick={() => document.querySelector(".instrument")?.scrollIntoView({ behavior: "smooth", block: "start" })}>ábrelo en el instrumento</button> y compruébalo.</p>}
+                  <button className="link" onClick={() => setBreakdown(null)}>cerrar</button>
+                </aside>
+              )}
               {att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
             </div>
           );
