@@ -2,6 +2,7 @@
 import { Rich } from "@/lib/math";
 import { convergence } from "@/lib/convergence.js";
 import { proposeClaims, museMode } from "@/lib/muse.js";
+import { coverage } from "@/lib/panorama.js";
 import { ProvChip } from "./Bits";
 
 const pct = (x: number) => `${Math.round(100 * x)}%`;
@@ -52,6 +53,22 @@ export default function Panorama({ q, papers, content, go }: any) {
           </tr>))}</tbody>
       </table></div>
       <p className="small">● con frase literal (clic para verla en el paper) · ○ sin frase en lo leído. En el motor real, <b>Muse Spark propondría las selecciones</b> (índices de frases, nunca texto nuevo) y esta misma compuerta las validaría; hoy el paso está simulado y no se llama a ningún modelo.</p>
+    </section>
+  );
+}
+
+/** Panorama en vivo: HOY solo la cobertura (qué papers de la ráfaga cuentan como leídos). Los enunciados llegan con el paso real de Muse Spark. */
+export function LiveCoverage({ ids, states }: { ids: string[]; states: Record<string, any> }) {
+  if (!ids.length) return null;
+  const c = coverage(ids, states);
+  const rows: [string, number][] = [["texto completo", c.full], ["solo abstract", c.abstract], ["no se pudo leer", c.failed], ["en cola o leyendo", c.pending]];
+  return (
+    <section className="pano live-cov" aria-label="Cobertura del Panorama">
+      <div className="chips"><ProvChip kind="calculo" text="cuenta sobre el estado del motor" /></div>
+      <p className="pano-lead">Panorama de esta ráfaga: <b>{c.n} de {c.total} papers leídos</b>. La convergencia se contará solo sobre los leídos; los que fallaron o siguen en cola no entran al denominador ni cuentan como «no lo dice».</p>
+      <ul className="cov-rows">{rows.map(([k, v]) => <li key={k} data-k={k}><b>{v}</b> {k}</li>)}</ul>
+      {c.abstract > 0 && <p className="muted small">«Solo abstract»: sus frases vendrán del abstract y se rotularán así.</p>}
+      <p className="small">Los enunciados y sus frases literales requieren el paso de Muse Spark en el backend (no se llama sin permiso de Franklin); la UI validará cada frase contra su paper antes de mostrarla.</p>
     </section>
   );
 }

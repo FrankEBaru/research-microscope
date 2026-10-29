@@ -254,3 +254,5 @@ tr.row-on td { background: rgba(39,71,107,.14) !important; }
 .pano-h { font: 600 1rem var(--sans); margin: 1.6rem 0 .5rem; } .matrix-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: .4rem .6rem; }
 .matrix { border-collapse: collapse; font: .84rem var(--sans); width: 100%; } .matrix th, .matrix td { padding: .35rem .6rem; text-align: center; border-bottom: 1px solid var(--line); } .matrix thead th { font-weight: 600; max-width: 14ch; vertical-align: bottom; } .matrix tbody th { text-align: left; font-weight: 500; white-space: nowrap; }
 .dot { border: 0; background: none; font-size: 1.05rem; line-height: 1; } .dot.yes { color: var(--accent); cursor: pointer; } .dot.no { color: var(--line-2); }
+.cov-rows { list-style: none; display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; padding: 0; margin: .5rem 0; }
+.live-cov { margin: .8rem 0 1.2rem; }

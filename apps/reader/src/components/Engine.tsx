@@ -5,9 +5,9 @@ import { Rich } from "@/lib/math";
 import { Coverage, ProvChip } from "./Bits";
 import PaperView, { plainOf } from "./Paper";
 import MapView from "./MapView";
-import Panorama from "./Panorama";
+import Panorama, { LiveCoverage } from "./Panorama";
 import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
-import { burst, liveEnabled, paper as fetchPaper, status as fetchStatus } from "@/lib/backend.js";
+import { burst, liveEnabled, paperKey, paper as fetchPaper, status as fetchStatus } from "@/lib/backend.js";
 import { LiveCircle } from "./MapView";
 
 type Route = { q?: string; c?: string; p?: string; b?: string };
@@ -232,6 +232,7 @@ export default function Engine() {
             <h1 className="question">{liveQ}</h1>
             {pending && warm && <p className="warm">calentando el motor…</p>}
             {liveErr && <p className="fail-reason">{liveErr}</p>}
+            {liveResult && <LiveCoverage ids={(liveResult.papers || []).slice(0, 10).map((p: any) => paperKey(p))} states={rowState} />}
             {liveResult && <LiveCircle papers={liveResult.papers || []} edges={liveResult.edges || []} states={rowState} onOpen={(id) => go({ p: id })} />}
           </section>
         )}
