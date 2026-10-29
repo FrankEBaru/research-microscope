@@ -5,8 +5,8 @@
 
 export const museMode = () => "simulado";
 
-const text = (inls) => (inls || []).map((x) => x.t === "text" ? x.v : x.t === "math" ? `$${x.v}$` : x.t === "cite" || x.t === "note" ? "" : Array.isArray(x.c) ? text(x.c) : x.v || "").join("");
-const blockText = (b) => (b.kind === "p" || b.kind === "h" ? text(b.inlines) : b.kind === "eq" ? `$${b.tex}$` : b.kind === "list" ? (b.items || []).map(text).join(" ") : text(b.caption)).replace(/\s+/g, " ").trim();
+export const text = (inls) => (inls || []).map((x) => x.t === "text" ? x.v : x.t === "math" ? `$${x.v}$` : x.t === "cite" || x.t === "note" ? "" : Array.isArray(x.c) ? text(x.c) : x.v || "").join("");
+export const blockText = (b) => (b.kind === "p" || b.kind === "h" ? text(b.inlines) : b.kind === "eq" ? `$${b.tex}$` : b.kind === "list" ? (b.items || []).map(text).join(" ") : text(b.caption)).replace(/\s+/g, " ").trim();
 
 /** @returns {{ok: {paper: string, quote: string, blockId: string}[], rejected: {paper: string, quote: string, reason: string}[]}} */
 export function validateSelections(papers, selections) {
