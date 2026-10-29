@@ -1,4 +1,4 @@
-"""Build FAISS, the CS-CS citation graph, and the display table on rrm-data.
+"""Build FAISS, the CS-CS citation graph, the display table, and index_ext on rrm-data.
 
 Inputs are the parquet trees written by pipelines/s2_download, under
 /s2/<release>/ (the release id, for example 2026-10-20). Embeddings are
@@ -22,7 +22,7 @@ import modal
 
 from rrm.search.display import empty_papers, empty_tldrs, filter_papers, filter_tldrs, merge_display
 from rrm.search.faissutil import add_vectors, ensure_direct_map, merge_indexes, reservoir, train_ivfpq, vectors_from_table
-from rrm.search.graph import Graph, edges_from_pairs, int_column, sorted_ids, stack_edges
+from rrm.search.graph import Graph, edges_from_pairs, int_column, locate, sorted_ids, stack_edges
 from rrm.search.store import part_names, read_capped, save_graph
 
 MOUNT = "/s2"
@@ -382,3 +382,237 @@ def display_table(
     _map(tldr_worker, [(release, dest, name, int(row_limit)) for name in tldrs], "tldr")
     merged = merge_display_table.with_options(cpu=1, memory=int(merge_memory)).remote(release, dest)
     print(f"display {merged}")
+
+
+def _field_name(s2fields, fields):
+    cats = []
+    for item in s2fields or []:
+        if isinstance(item, dict) and item.get("category"):
+            cats.append(item["category"])
+    for item in fields or []:
+        if isinstance(item, str):
+            cats.append(item)
+    if not cats:
+        return None
+    if "Computer Science" in cats:
+        return "Computer Science"
+    return cats[0]
+
+
+@app.function(image=image, volumes={MOUNT: vol}, cpu=1, memory=6144, timeout=1200, retries=2)
+def ext_edge_shard(release: str, dest: str, index_dest: str, name: str, row_limit: int):
+    """CS citing paper -> any cited corpus id. Self-loops and nulls dropped."""
+    import numpy as np
+
+    vol.reload()
+    cs = np.load(_root(release, index_dest) / "graph_ids.npy")
+    table = read_capped(
+        Path(MOUNT) / _safe(release) / "citations" / name,
+        ["citingcorpusid", "citedcorpusid"],
+        row_limit,
+    )
+    citing, citing_ok = int_column(table, "citingcorpusid")
+    cited, cited_ok = int_column(table, "citedcorpusid")
+    valid = citing_ok & cited_ok & (citing != cited)
+    citing, cited = citing[valid], cited[valid]
+    hit, _pos = locate(cs, citing)
+    citing, cited = citing[hit], cited[hit]
+    _save_npz(
+        _work(release, dest) / f"ext-e-{Path(name).stem}.npz",
+        a=citing.astype(np.int64, copy=False),
+        b=cited.astype(np.int64, copy=False),
+        ub=np.unique(cited),
+    )
+    vol.commit()
+    return {"shard": name, "edges": int(len(citing))}
+
+
+@app.function(image=image, volumes={MOUNT: vol}, cpu=8, memory=98304, timeout=7200)
+def ext_merge(release: str, dest: str, index_dest: str):
+    """Dedup by src * N + dst. Needs about 96 GB; the full merge is the expensive step."""
+    import numpy as np
+
+    vol.reload()
+    root = _root(release, dest)
+    cs = np.load(_root(release, index_dest) / "graph_ids.npy")
+    files = sorted(_work(release, dest).glob("ext-e-*.npz"))
+    parts = [cs]
+    for path in files:
+        parts.append(np.load(path)["ub"])
+    nodes = np.unique(np.concatenate(parts))
+    del parts
+    n = int(len(nodes))
+    keys = []
+    raw = 0
+    for path in files:
+        blob = np.load(path)
+        src = np.searchsorted(nodes, blob["a"]).astype(np.int64)
+        dst = np.searchsorted(nodes, blob["b"]).astype(np.int64)
+        uniq = np.unique(src * n + dst)
+        raw += int(len(uniq))
+        keys.append(uniq)
+    key = np.unique(np.concatenate(keys)) if keys else np.zeros(0, dtype=np.int64)
+    del keys
+    src = (key // n).astype(np.int32) if n else np.zeros(0, dtype=np.int32)
+    dst = (key % n).astype(np.int32) if n else np.zeros(0, dtype=np.int32)
+    del key
+    out_indptr = np.zeros(n + 1, dtype=np.int64)
+    if src.size:
+        np.cumsum(np.bincount(src, minlength=n), out=out_indptr[1:])
+    order = np.argsort(dst, kind="stable")
+    in_indptr = np.zeros(n + 1, dtype=np.int64)
+    if dst.size:
+        np.cumsum(np.bincount(dst, minlength=n), out=in_indptr[1:])
+    graph = Graph(nodes, out_indptr, dst, in_indptr, src[order] if src.size else src)
+    save_graph(root, graph)
+    vol.commit()
+    return {"nodes": n, "raw_edges": raw, "edges": int(len(graph.out_indices))}
+
+
+@app.function(image=image, volumes={MOUNT: vol}, cpu=1, memory=8192, timeout=1800, retries=2)
+def ext_meta_shard(release: str, dest: str, name: str, row_limit: int):
+    import numpy as np
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    vol.reload()
+    nodes = np.load(_root(release, dest) / "graph_ids.npy")
+    table = read_capped(
+        Path(MOUNT) / _safe(release) / "papers" / name,
+        ["corpusid", "title", "year", "venue", "citationcount", "s2fieldsofstudy", "fieldsofstudy"],
+        row_limit,
+    )
+    ids, valid = int_column(table, "corpusid")
+    hit, _pos = locate(nodes, ids)
+    keep = np.flatnonzero(valid & hit)
+    table = table.take(keep)
+    fields = [
+        _field_name(a, b)
+        for a, b in zip(table.column("s2fieldsofstudy").to_pylist(), table.column("fieldsofstudy").to_pylist())
+    ]
+    out = pa.table({
+        "corpusid": table.column("corpusid").cast(pa.int64()),
+        "title": table.column("title").cast(pa.large_string()),
+        "year": table.column("year").cast(pa.int64()),
+        "venue": table.column("venue").cast(pa.large_string()),
+        "citationcount": table.column("citationcount").cast(pa.int64()),
+        "field": pa.array(fields, pa.string()),
+    })
+    path = _work(release, dest) / f"ext-m-{Path(name).stem}.parquet"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(out, path, compression="zstd")
+    vol.commit()
+    return {"shard": name, "rows": int(out.num_rows)}
+
+
+@app.function(image=image, volumes={MOUNT: vol}, cpu=4, memory=65536, timeout=3600)
+def ext_meta_merge(release: str, dest: str, index_dest: str):
+    import numpy as np
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    vol.reload()
+    root = _root(release, dest)
+    nodes = np.load(root / "graph_ids.npy")
+    cs = np.load(_root(release, index_dest) / "graph_ids.npy")
+    faiss_ids = np.sort(np.load(_root(release, index_dest) / "faiss_ids.npy"))
+    files = sorted(_work(release, dest).glob("ext-m-*.parquet"))
+    table = pa.concat_tables([pq.read_table(path) for path in files]) if files else None
+    n = int(len(nodes))
+    year = np.zeros(n, dtype=np.int16)
+    cc = np.full(n, -1, dtype=np.int32)
+    field = np.full(n, -1, dtype=np.int16)
+    names = []
+    rows = 0
+    ext_rows = 0
+    if table is not None and table.num_rows:
+        ids = table.column("corpusid").fill_null(-1).to_numpy(zero_copy_only=False)
+        _uniq, first = np.unique(ids, return_index=True)
+        table = table.take(pa.array(np.sort(first)))
+        ids = table.column("corpusid").to_numpy(zero_copy_only=False).astype(np.int64, copy=False)
+        pos = np.searchsorted(nodes, ids)
+        clipped = np.minimum(pos, max(n - 1, 0))
+        in_range = (pos < n) & (nodes[clipped] == ids) if n else np.zeros(ids.size, dtype=bool)
+        pos = pos[in_range]
+        table = table.filter(pa.array(in_range))
+        ids = ids[in_range]
+        year[pos] = table.column("year").fill_null(0).to_numpy(zero_copy_only=False).astype(np.int16, copy=False)
+        cc[pos] = table.column("citationcount").fill_null(0).to_numpy(zero_copy_only=False).astype(np.int32, copy=False)
+        labels = table.column("field").to_pylist()
+        names = sorted({label for label in labels if label})
+        fmap = {label: i for i, label in enumerate(names)}
+        field[pos] = np.array([fmap[label] if label else -1 for label in labels], dtype=np.int16)
+        cs_hit, _cs_pos = locate(cs, ids)
+        ext = table.filter(pa.array(~cs_hit)).select(["corpusid", "title", "year", "venue", "citationcount"])
+        ext = ext.sort_by("corpusid")
+        rows = int(table.num_rows)
+        ext_rows = int(ext.num_rows)
+    else:
+        ext = None
+    is_cs_hit, _pos = locate(cs, nodes)
+    has_emb, _emb = locate(faiss_ids, nodes)
+    _save_npz(
+        root / "node_meta.npz",
+        year=year,
+        cc=cc,
+        field=field,
+        is_cs=is_cs_hit,
+        has_emb=has_emb,
+        field_names=np.asarray(names, dtype=str),
+    )
+    if ext is None:
+        import pyarrow as pa
+
+        ext = pa.table({
+            "corpusid": pa.array([], type=pa.int64()),
+            "title": pa.array([], type=pa.large_string()),
+            "year": pa.array([], type=pa.int64()),
+            "venue": pa.array([], type=pa.large_string()),
+            "citationcount": pa.array([], type=pa.int64()),
+        })
+    pq.write_table(ext, root / "display_ext.parquet", compression="zstd")
+    vol.commit()
+    return {
+        "meta_rows": rows,
+        "ext_display_rows": ext_rows,
+        "nodes": n,
+        "is_cs": int(np.asarray(is_cs_hit).sum()),
+        "has_emb": int(np.asarray(has_emb).sum()),
+        "fields": len(names),
+    }
+
+
+@app.local_entrypoint()
+def graph_ext(
+    release: str = "2026-10-20",
+    dest: str = "index_ext",
+    index_dest: str = "index",
+    limit: int = 0,
+    row_limit: int = 0,
+    stage: str = "all",
+):
+    """CS-citing edges to any cited id, plus node_meta and display_ext.
+
+    Not required for the copy of index_ext already on the volume. Merge asks
+    for 96 GB. index_dest is the directory that holds graph_ids.npy and
+    faiss_ids.npy (the CS index).
+    """
+    if stage in ("all", "edges"):
+        names = _take(list_parts.remote(release, "citations"), limit)
+        if not names:
+            raise SystemExit("no citation shards")
+        _map(
+            ext_edge_shard,
+            [(release, dest, index_dest, name, int(row_limit)) for name in names],
+            "ext-edges",
+        )
+    if stage in ("all", "merge"):
+        print("ext-merge", ext_merge.remote(release, dest, index_dest))
+    if stage in ("all", "meta"):
+        papers = _take(list_parts.remote(release, "papers"), limit)
+        _map(
+            ext_meta_shard,
+            [(release, dest, name, int(row_limit)) for name in papers],
+            "ext-meta",
+        )
+        print("ext-meta", ext_meta_merge.remote(release, dest, index_dest))

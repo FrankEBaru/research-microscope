@@ -1,11 +1,14 @@
-"""One Modal class that keeps the index, graph, and display table in memory.
+"""One Modal class that keeps FAISS, the extended graph, and both display tables.
 
 MODEL_API_KEY is read from the environment. `modal run` copies it from the
 local process with Secret.from_dict. The key is not stored in this repo.
+The HTTP endpoint is GET /burst?q=&n= . GET /subtopics?q= returns the
+Muse labels separately, so the paper list never waits on Muse.
 """
 
 import os
 import sys
+import time
 from pathlib import Path
 
 _HERE = Path(__file__).resolve()
@@ -17,17 +20,20 @@ if len(_HERE.parents) > 2:  # local checkout; inside Modal, rrm is already impor
 import modal
 
 from rrm.search.burst import burst_query
-from rrm.search.display import PaperLookup, hydrate
+from rrm.search.display import IdTable, PaperLookup
 from rrm.search.encode import QueryEncoder
-from rrm.search.faissutil import search_vectors, vector_at
+from rrm.search.faissutil import ensure_direct_map, search_vectors, vector_at
+from rrm.search.graph import locate
 from rrm.search.split import split_query
-from rrm.search.store import load_bundle
+from rrm.search.store import load_display, load_faiss, load_graph
 
 MOUNT = "/s2"
+RELEASE = "2026-10-20"
+_endpoint = getattr(modal, "fastapi_endpoint", None) or modal.web_endpoint
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("torch", extra_index_url="https://download.pytorch.org/whl/cpu")
-    .pip_install("numpy", "pyarrow", "faiss-cpu", "transformers", "adapters")
+    .pip_install("numpy", "pyarrow", "faiss-cpu", "transformers", "adapters", "fastapi[standard]")
     .add_local_python_source("rrm")
 )
 app = modal.App("rrm-burst")
@@ -38,64 +44,122 @@ else:
     model_secret = modal.Secret.from_dict({})
 
 
-def _rows(ids, scores, table):
-    rows = hydrate(ids, table)
-    if scores is None:
-        return rows
-    for row, score in zip(rows, scores):
-        row["score"] = score
-    return rows
+def _safe(name):
+    if not name or len(name) > 80 or any(c not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-" for c in name):
+        raise ValueError("bad name")
+    return name
 
 
-@app.cls(image=image, volumes={MOUNT: vol}, cpu=2, memory=16384, timeout=900, secrets=[model_secret])
+@app.cls(image=image, volumes={MOUNT: vol}, cpu=2, memory=32768, timeout=900, secrets=[model_secret])
+@modal.concurrent(max_inputs=8)  # /subtopics waits seconds on Muse; /burst must not queue behind it
 class BurstSearch:
     @modal.enter()
     def start(self):
-        self.bundle = None
-        self.key = None
+        import numpy as np
+        import pyarrow.parquet as pq
+
+        vol.reload()
+        root = Path(MOUNT) / RELEASE
+        index, faiss_ids = load_faiss(root / "index")
+        index.nprobe = 32
+        ensure_direct_map(index)
+        display = load_display(root / "index")
+        graph = load_graph(root / "index_ext")
+        meta = np.load(root / "index_ext" / "node_meta.npz", allow_pickle=True)
+        cc = np.maximum(np.asarray(meta["cc"]), 0).astype(np.int64, copy=False)
+        is_cs = np.asarray(meta["is_cs"], dtype=bool)
+        if len(cc) != len(graph.ids) or len(is_cs) != len(graph.ids):
+            raise RuntimeError("node_meta length does not match index_ext graph_ids")
+        display_ext = pq.read_table(root / "index_ext" / "display_ext.parquet")
+        self.index = index
+        self.faiss_ids = faiss_ids
+        self.graph = graph
+        self.cc = cc
+        self.is_cs = is_cs
+        self.display = IdTable(display)
+        self.display_ext = IdTable(display_ext)
+        self.lookup = PaperLookup(display)
         self.encoder = QueryEncoder()
+        self.encoder.load()
 
-    def _bundle(self, release, dest):
-        key = (_safe(release), _safe(dest))
-        if self.bundle is None or self.key != key:
-            vol.reload()
-            self.bundle = load_bundle(Path(MOUNT) / key[0] / key[1])
-            self.bundle["lookup"] = PaperLookup(self.bundle["display"])
-            self.key = key
-        return self.bundle
+    def _rows(self, corpusids, scores):
+        corpusids = [int(c) for c in corpusids]
+        main = self.display.rows(corpusids)
+        miss = [cid for cid, row in zip(corpusids, main) if row is None]
+        ext = dict(zip(miss, self.display_ext.rows(miss)))
+        hit, pos = locate(self.graph.ids, corpusids)
+        out = []
+        for i, cid in enumerate(corpusids):
+            row = main[i]
+            from_cs = row is not None
+            if row is None:
+                row = ext.get(cid)
+            if row is None:
+                row = {"corpusid": cid, "title": None, "year": None, "venue": None, "citationcount": None}
+            if bool(hit[i]):
+                local = int(pos[i])
+                row["is_cs"] = bool(self.is_cs[local])
+                if row["citationcount"] is None:
+                    row["citationcount"] = int(self.cc[local])
+            else:
+                row["is_cs"] = from_cs
+            score = None if scores is None else scores[i]
+            row["score"] = None if score is None else float(score)
+            out.append(row)
+        return out
 
-    @modal.method()
-    def burst(self, query: str, release: str = "2026-10-20", dest: str = "index", exclude: int = -1):
-        bundle = self._bundle(release, dest)
-        skip = [] if int(exclude) < 0 else [int(exclude)]
+    def _answer(self, query, n):
+        n = max(0, min(100, int(n)))
 
         def search(vector, k):
-            return search_vectors(bundle["index"], bundle["faiss_ids"], vector, k)
+            return search_vectors(self.index, self.faiss_ids, vector, k)
 
         def vector_of(corpusid):
-            return vector_at(bundle["index"], bundle["faiss_ids"], corpusid)
+            return vector_at(self.index, self.faiss_ids, corpusid)
 
         result = burst_query(
             query,
             encode=self.encoder.encode,
             search=search,
-            split=split_query,
-            graph=bundle["graph"],
-            exclude=skip,
-            resolve=bundle["lookup"].resolve,
+            graph=self.graph,
+            cc=self.cc,
+            n=int(n),
+            resolve=self.lookup.resolve,
             vector_of=vector_of,
+            split=None,  # papers never wait on Muse; labels come from GET /subtopics
         )
-        table = bundle["display"]
         papers = result["papers"]
         _prefetch_reader(papers["corpusids"][:10])
-        return {
+        first = None
+        if result["first_id"] is not None:
+            first = self._rows([result["first_id"]], [None])[0]
+        t0 = time.perf_counter()
+        out = {
             "query": query,
+            "mode": result["mode"],
+            "first": first,
+            "papers": self._rows(papers["corpusids"], papers["scores"]),
+            "similar": self._rows([row["corpusid"] for row in result["similar"]], None),
+            "edges": result["edges"],
             "subtopics": result["subtopics"],
-            "first": _rows(result["first_ids"], None, table),
-            "papers": _rows(papers["corpusids"], papers["scores"], table),
-            "edges": papers["edges"],
             "seconds": result["seconds"],
         }
+        out["seconds"]["hydrate"] = round(time.perf_counter() - t0, 4)
+        return out
+
+    @_endpoint(method="GET")
+    def burst(self, q: str, n: int = 50):
+        return self._answer(q, n)
+
+    @_endpoint(method="GET")
+    def subtopics(self, q: str):
+        """Muse labels for the same query. Call it in parallel with /burst; it never blocks the list."""
+        t0 = time.perf_counter()
+        try:
+            topics = [str(t) for t in split_query(q)]
+        except Exception:
+            topics = []
+        return {"query": q, "subtopics": topics, "seconds": round(time.perf_counter() - t0, 4)}
 
 
 def _prefetch_reader(corpusids):
@@ -114,15 +178,13 @@ def _prefetch_reader(corpusids):
         return
 
 
-def _safe(name):
-    if not name or len(name) > 80 or any(c not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-" for c in name):
-        raise ValueError("bad name")
-    return name
-
-
 @app.local_entrypoint()
-def main(query: str, release: str = "2026-10-20", dest: str = "index", exclude: int = -1):
+def main(query: str, n: int = 50, release: str = "2026-10-20", dest: str = "index"):
     import json
 
-    out = BurstSearch().burst.remote(query, release, dest, int(exclude))
+    _safe(release)
+    _safe(dest)
+    if release != RELEASE or dest != "index":
+        raise SystemExit("burst reads /s2/2026-10-20/index and /s2/2026-10-20/index_ext")
+    out = BurstSearch().burst.remote(q=query, n=int(n))
     print(json.dumps(out, ensure_ascii=False))

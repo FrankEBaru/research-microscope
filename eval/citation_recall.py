@@ -1,11 +1,13 @@
-"""Recall@100 of a paper's own CS references, from title + abstract.
+"""Citation recall of the link-out burst against plain kNN.
 
-The query paper is excluded. Three rankings are compared on the same hits:
-plain kNN, kNN plus one citation hop, and the same hop after an offline
-split of the query text. The split function is injectable so this file
-never calls the Meta API. There is no hand-listed set of expected papers.
+The query is the paper's title and abstract (proximity adapter). The relevant
+set is every reference that has a corpus id in index_ext, including papers
+with no embedding and papers outside CS. The query paper is excluded.
+Recall is reported at 10, 15, 20, 50, and 100, plus precision@10 and nDCG@10.
+This file does not call the Meta API.
 """
 
+import math
 import sys
 import time
 from pathlib import Path
@@ -18,7 +20,11 @@ if len(_HERE.parents) > 1:  # local checkout; inside Modal, rrm is already impor
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
 
-from rrm.search.burst import knn_ids, rank_expanded
+from rrm.search.burst import link_rank, seed_count
+from rrm.search.encode import use_proximity
+from rrm.search.graph import locate
+
+KS = (10, 15, 20, 50, 100)
 
 
 def recall_at_k(retrieved, relevant, k=100):
@@ -27,6 +33,28 @@ def recall_at_k(retrieved, relevant, k=100):
         return 0.0
     got = {int(x) for x in list(retrieved)[: int(k)]}
     return len(got & set(relevant)) / len(relevant)
+
+
+def precision_at_k(retrieved, relevant, k=10):
+    k = int(k)
+    if k <= 0:
+        return 0.0
+    rel = {int(x) for x in relevant}
+    got = [int(x) for x in list(retrieved)[:k]]
+    return sum(1 for cid in got if cid in rel) / k
+
+
+def ndcg_at_k(retrieved, relevant, k=10):
+    k = int(k)
+    rel = {int(x) for x in relevant}
+    if k <= 0 or not rel:
+        return 0.0
+    dcg = 0.0
+    for i, cid in enumerate(list(retrieved)[:k]):
+        if int(cid) in rel:
+            dcg += 1.0 / math.log2(i + 2)
+    ideal = sum(1.0 / math.log2(i + 2) for i in range(min(k, len(rel))))
+    return dcg / ideal if ideal else 0.0
 
 
 def sample_local_ids(indptr, n, min_refs, seed):
@@ -40,68 +68,84 @@ def sample_local_ids(indptr, n, min_refs, seed):
     return np.sort(rng.choice(eligible, size=take, replace=False)).astype(np.int64)
 
 
-def offline_split(query):
-    """Three slices of the query. Stand-in for the model when it cannot be called."""
-    words = query.split()
-    if len(words) < 6:
-        return []
-    cuts = [len(words) // 3, 2 * len(words) // 3]
-    parts = [
-        " ".join(words[: cuts[0]]),
-        " ".join(words[cuts[0] : cuts[1]]),
-        " ".join(words[cuts[1] :]),
-    ]
-    return [part for part in parts if part][:6]
+def _trim(hits, k, exclude):
+    skip = int(exclude)
+    out = []
+    for cid, dist in hits:
+        cid = int(cid)
+        if cid == skip:
+            continue
+        out.append((cid, float(dist)))
+        if len(out) >= int(k):
+            break
+    return out
 
 
-def evaluate_one(query, exclude, relevant, encode, search, graph, split_fn, k=100, fanout=80):
-    """Time each stage and score the three rankings. encode/search are callables."""
+def _align(graph, hits):
+    if not hits:
+        return np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.float64)
+    cids = np.asarray([cid for cid, _dist in hits], dtype=np.int64)
+    dists = np.asarray([dist for _cid, dist in hits], dtype=np.float64)
+    hit, pos = locate(graph.ids, cids)
+    return pos[hit].astype(np.int64, copy=False), dists[hit]
+
+
+def _metrics(retrieved, relevant):
+    return {
+        "recall": {str(k): recall_at_k(retrieved, relevant, k) for k in KS},
+        "precision_at_10": precision_at_k(retrieved, relevant, 10),
+        "ndcg_at_10": ndcg_at_k(retrieved, relevant, 10),
+    }
+
+
+def evaluate_one(query, exclude, relevant, encode, search, graph, cc):
+    """Score link-out and plain kNN for one paper. encode/search are callables."""
     seconds = {}
+    proximity = use_proximity(query)
     t0 = time.perf_counter()
     qvec = np.asarray(encode([query]), dtype=np.float32)[0]
     seconds["encode"] = time.perf_counter() - t0
+    k = seed_count(proximity)
     t0 = time.perf_counter()
-    hits = search(qvec, max(int(k), int(fanout)) + 1)
+    hits = list(search(qvec, max(k, max(KS)) + 1))
     seconds["search"] = time.perf_counter() - t0
+    knn = [cid for cid, _dist in _trim(hits, max(KS), exclude)]
+    seeds = _trim(hits, k, exclude)
     t0 = time.perf_counter()
-    knn = knn_ids(hits, k, [exclude])
-    seconds["rank_knn"] = time.perf_counter() - t0
-    t0 = time.perf_counter()
-    hop = rank_expanded([[cid for cid, _dist in hits]], graph, k=k, exclude=[exclude])
-    seconds["rank_hop"] = time.perf_counter() - t0
-    t0 = time.perf_counter()
-    topics = list(split_fn(query))
-    seconds["split"] = time.perf_counter() - t0
-    t0 = time.perf_counter()
-    vecs = np.asarray(encode(topics), dtype=np.float32) if topics else np.zeros((0, qvec.shape[0]), np.float32)
-    seconds["encode_sub"] = time.perf_counter() - t0
-    groups = [[cid for cid, _dist in hits]]
-    t0 = time.perf_counter()
-    for row in vecs:
-        groups.append([cid for cid, _dist in search(row, int(fanout))])
-    seconds["search_sub"] = time.perf_counter() - t0
-    t0 = time.perf_counter()
-    split_ranked = rank_expanded(groups, graph, k=k, exclude=[exclude])
-    seconds["rank_split"] = time.perf_counter() - t0
+    seed_local, dists = _align(graph, seeds)
+    hit, pos = locate(graph.ids, [int(exclude)])
+    exclude_local = int(pos[0]) if bool(hit[0]) else -1
+    chosen, _scores = link_rank(seed_local, dists, graph, cc, proximity, max(KS), exclude_local=exclude_local)
+    ranked = [int(x) for x in graph.ids[chosen].tolist()] if chosen.size else []
+    seconds["rank"] = time.perf_counter() - t0
+    burst = _metrics(ranked, relevant)
+    knn_m = _metrics(knn, relevant)
     return {
-        "recall": {
-            "knn": recall_at_k(knn, relevant, k),
-            "knn_hop": recall_at_k(hop["corpusids"], relevant, k),
-            "split": recall_at_k(split_ranked["corpusids"], relevant, k),
-        },
+        "recall": {"burst": burst["recall"], "knn": knn_m["recall"]},
+        "precision_at_10": {"burst": burst["precision_at_10"], "knn": knn_m["precision_at_10"]},
+        "ndcg_at_10": {"burst": burst["ndcg_at_10"], "knn": knn_m["ndcg_at_10"]},
         "seconds": seconds,
     }
 
 
 def summarize(rows):
-    """Mean recall and p50/p95 seconds per stage. rows come from evaluate_one."""
-    summary = {"n": len(rows), "recall": {}, "seconds_p50": {}, "seconds_p95": {}}
+    """Mean metrics and p50/p95 seconds. rows come from evaluate_one."""
+    summary = {
+        "n": len(rows),
+        "recall": {"burst": {}, "knn": {}},
+        "precision_at_10": {},
+        "ndcg_at_10": {},
+        "seconds_p50": {},
+        "seconds_p95": {},
+    }
     if not rows:
         return summary
-    for mode in ("knn", "knn_hop", "split"):
-        summary["recall"][mode] = float(np.mean([row["recall"][mode] for row in rows]))
-    stages = rows[0]["seconds"].keys()
-    for stage in stages:
+    for mode in ("burst", "knn"):
+        for k in rows[0]["recall"][mode]:
+            summary["recall"][mode][k] = float(np.mean([row["recall"][mode][k] for row in rows]))
+        summary["precision_at_10"][mode] = float(np.mean([row["precision_at_10"][mode] for row in rows]))
+        summary["ndcg_at_10"][mode] = float(np.mean([row["ndcg_at_10"][mode] for row in rows]))
+    for stage in rows[0]["seconds"]:
         values = np.array([row["seconds"][stage] for row in rows], dtype=np.float64)
         summary["seconds_p50"][stage] = float(np.percentile(values, 50))
         summary["seconds_p95"][stage] = float(np.percentile(values, 95))
@@ -141,11 +185,10 @@ def _collect_abstracts(release, wanted, shard_limit, row_limit):
     return found
 
 
-def run_loaded(bundle, release, n, min_refs, seed, k, shard_limit, row_limit, split_fn, encode, search):
-    """Sample papers that have an abstract and at least min_refs CS references."""
-    graph = bundle["graph"]
+def run_loaded(release, display, graph, cc, is_cs, n, min_refs, seed, shard_limit, row_limit, encode, search):
+    """Sample CS papers that have an abstract and at least min_refs references."""
     degree = np.diff(graph.out_indptr)
-    eligible = np.flatnonzero(degree >= int(min_refs))
+    eligible = np.flatnonzero((degree >= int(min_refs)) & np.asarray(is_cs, dtype=bool))
     if eligible.size == 0 or int(n) <= 0:
         return summarize([])
     rng = np.random.default_rng(int(seed))
@@ -159,15 +202,13 @@ def run_loaded(bundle, release, n, min_refs, seed, k, shard_limit, row_limit, sp
             break
         cid = int(graph.ids[local])
         abstract = abstracts.get(cid)
-        title = _title_of(bundle["display"], cid)
+        title = _title_of(display, cid)
         if not abstract or not title:
             continue
         relevant = [int(graph.ids[j]) for j in graph.out_neighbors(local).tolist()]
         # Newline marks title + abstract, so QueryEncoder uses the proximity adapter.
         query = title + "\n" + abstract
-        rows.append(
-            evaluate_one(query, cid, relevant, encode, search, graph, split_fn, k=k)
-        )
+        rows.append(evaluate_one(query, cid, relevant, encode, search, graph, cc))
     return summarize(rows)
 
 
@@ -181,19 +222,44 @@ if modal is not None:
     from rrm.search.faissutil import search_vectors
     from rrm.search.serve import image as search_image
     from rrm.search.serve import vol
-    from rrm.search.store import load_bundle
+    from rrm.search.store import load_display, load_faiss, load_graph
 
     eval_app = modal.App("rrm-citation-recall")
 
-    @eval_app.cls(image=search_image, volumes={"/s2": vol}, cpu=2, memory=16384, timeout=7200)
+    @eval_app.cls(image=search_image, volumes={"/s2": vol}, cpu=2, memory=32768, timeout=7200)
     class Recall:
         @modal.enter()
         def start(self):
             from rrm.search.encode import QueryEncoder
 
             self.encoder = QueryEncoder()
-            self.bundle = None
-            self.key = None
+            self.ready = None
+
+        def _load(self, release, dest):
+            import numpy as np
+
+            key = (release, dest)
+            if self.ready is not None and self.ready[0] == key:
+                return self.ready[1]
+            vol.reload()
+            root = Path("/s2") / release
+            index, faiss_ids = load_faiss(root / dest)
+            index.nprobe = 32
+            display = load_display(root / dest)
+            graph = load_graph(root / "index_ext")
+            meta = np.load(root / "index_ext" / "node_meta.npz", allow_pickle=True)
+            cc = np.maximum(np.asarray(meta["cc"]), 0).astype(np.int64, copy=False)
+            is_cs = np.asarray(meta["is_cs"], dtype=bool)
+            state = {
+                "index": index,
+                "faiss_ids": faiss_ids,
+                "display": display,
+                "graph": graph,
+                "cc": cc,
+                "is_cs": is_cs,
+            }
+            self.ready = (key, state)
+            return state
 
         @modal.method()
         def run(
@@ -203,30 +269,25 @@ if modal is not None:
             n: int = 100,
             min_refs: int = 20,
             seed: int = 0,
-            k: int = 100,
             shard_limit: int = 0,
             row_limit: int = 0,
         ):
-            key = (release, dest)
-            if self.bundle is None or self.key != key:
-                vol.reload()
-                self.bundle = load_bundle(Path("/s2") / release / dest)
-                self.key = key
-            bundle = self.bundle
+            state = self._load(release, dest)
 
             def search(vector, k_search):
-                return search_vectors(bundle["index"], bundle["faiss_ids"], vector, k_search)
+                return search_vectors(state["index"], state["faiss_ids"], vector, k_search)
 
             return run_loaded(
-                bundle,
                 release,
+                state["display"],
+                state["graph"],
+                state["cc"],
+                state["is_cs"],
                 n,
                 min_refs,
                 seed,
-                k,
                 shard_limit,
                 row_limit,
-                offline_split,
                 self.encoder.encode,
                 search,
             )
@@ -244,7 +305,7 @@ if modal is not None:
         import json
 
         out = Recall().run.remote(
-            release, dest, int(n), int(min_refs), int(seed), 100, int(shard_limit), int(row_limit)
+            release, dest, int(n), int(min_refs), int(seed), int(shard_limit), int(row_limit)
         )
         print(json.dumps(out))
 
