@@ -15,7 +15,7 @@ export function themesOf(question) {
   for (const w of plain(String(question || "")).split(/[^a-z0-9]+/)) {
     if (w.length < 4 || STOP.has(w) || seen.has(w)) continue;
     seen.add(w);
-    const orig = (String(question).match(new RegExp(w.split("").join("[\\u0300-\\u036f]*"), "i")) || [w])[0];
+    const orig = (String(question).normalize("NFD").match(new RegExp(w.split("").join("[\\u0300-\\u036f]*"), "i")) || [w])[0].normalize("NFC");
     const stems = [...new Set([w, GLOSS[w]].filter(Boolean).map((x) => x.slice(0, Math.min(x.length, 6))))];
     out.push({ id: `t${out.length}`, term: orig, stems });
     if (out.length === 4) break;
