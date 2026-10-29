@@ -183,3 +183,16 @@ test("gráficas vivas: la Tabla 2 de Attention se ve como barras con los número
   await (await p.$(".tchart .tbar-row")).hover(); await p.waitForTimeout(200); assert.ok(await p.$("tr.row-on"), "la fila de la tabla se resalta");
   assert.deepEqual(p.errs, []); await p.close();
 });
+
+test("compañero por permanencia: una ecuación quieta ofrece desglosar sus símbolos (curado, sin texto generado)", async () => {
+  const p = await browser.newPage({ viewport: { width: 1280, height: 900 } }); p.errs = [];
+  p.on("pageerror", (e) => p.errs.push(e.message)); await p.addInitScript(() => { window.__RRM_DWELL_MS = 900; });
+  await p.goto(base + "#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".paper"); await p.keyboard.press("c");
+  await p.$eval(".eq.blk", (e) => e.scrollIntoView({ block: "center" }));
+  await p.waitForSelector(".c-bubble", { timeout: 6000 });
+  assert.match(await p.$eval(".c-bubble", (e) => e.textContent), /desgloso sus símbolos/);
+  await p.click(".c-yes"); await p.waitForSelector(".breakdown");
+  assert.match(await p.$eval(".breakdown .chips", (e) => e.textContent), /no texto generado/);
+  assert.ok((await p.$$(".breakdown li")).length >= 3, "símbolos de la ecuación con su definición");
+  assert.deepEqual(p.errs, []); await p.close();
+});
