@@ -144,6 +144,35 @@ def _grab(tex, command):
         i = k
 
 
+def _grab_all(tex, command) -> list:
+    """Every balanced body of `\\command`, skipping optional [...] arguments."""
+    token = "\\" + command
+    out = []
+    i = 0
+    n = len(tex)
+    while i < n:
+        j = tex.find(token, i)
+        if j < 0:
+            break
+        k = j + len(token)
+        if k < n and (tex[k].isalpha() or tex[k] == "@"):
+            i = k
+            continue
+        if k < n and tex[k] == "*":
+            k += 1
+        k = _skip_ws(tex, k)
+        while k < n and tex[k] == "[":
+            _, k = read_bracket(tex, k)
+            k = _skip_ws(tex, k)
+        if k < n and tex[k] == "{":
+            body, k = read_braced(tex, k)
+            out.append(body)
+            i = k
+            continue
+        i = max(k, j + 1)
+    return out
+
+
 def collect_macros(tex: str) -> dict:
     """name -> {n: mandatory count, opt: default or None, body: str}. #1 is the optional arg when opt is set."""
     macros = {}

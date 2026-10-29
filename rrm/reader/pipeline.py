@@ -20,6 +20,7 @@ from rrm.reader.fetch import (
     fetch_url,
     graph_reference_map,
     reader_identity,
+    s2_graph,
     s2_reference_map,
     unpack_eprint,
 )
@@ -156,12 +157,14 @@ def abstract_paper(info: dict) -> dict:
 
 
 def apply_s2_fields(paper: dict, info: dict) -> dict:
-    """Fill gaps from Semantic Scholar. Existing LaTeX authors, abstract, and refs stay."""
+    """Fill gaps from Semantic Scholar. S2 authors replace the LaTeX list when S2 has any."""
     if paper is None:
         return paper
     paper["tldr"] = paper.get("tldr") or info.get("tldr") or ""
-    if not paper.get("authors"):
-        paper["authors"] = list(info.get("authors") or [])
+    if info.get("authors"):
+        paper["authors"] = list(info["authors"])
+    elif not paper.get("authors"):
+        paper["authors"] = []
     if not paper.get("abstract"):
         paper["abstract"] = info.get("abstract") or ""
     if not paper.get("title"):
@@ -319,7 +322,12 @@ def parse_corpus(
         # fills authors and abstract.
         # Refs come after the stub: the citation graph is large, and the reference
         # API is a second request. Neither should delay the first readable snapshot.
-        info = reader_identity(int(corpusid), display_path, remote=True, refs=False, shards=False)
+        # One Semantic Scholar attempt, no backoff. A retry would hold the stub
+        # (QA 2026-10-29: 429 backoff made it ~65 s). Gaps are filled after publish.
+        info = reader_identity(
+            int(corpusid), display_path, remote=True, refs=False, shards=False,
+            s2_tries=1, s2_timeout=5, s2_backoff=False,
+        )
         meta["timings"]["resolve"] = time.time() - t
         meta["title"] = info.get("title") or ""
         meta["tldr"] = info.get("tldr") or ""
@@ -330,6 +338,7 @@ def parse_corpus(
         return _finish(folder, meta, None, commit)
 
     publish(make_stub(info), "stub")
+    info = _s2_fill_later(folder, info, publish)
     pdf_path = folder / "source.pdf"
     try:
         route, paper, pdf_path = _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish)
@@ -371,17 +380,97 @@ def _page_count(pdf_path: Path) -> int | None:
         return None
 
 
+def _s2_snapshot(info: dict) -> tuple:
+    return (
+        tuple(info.get("authors") or []),
+        info.get("abstract") or "",
+        info.get("tldr") or "",
+        info.get("arxiv") or "",
+        info.get("oa_pdf") or "",
+        info.get("title") or "",
+    )
+
+
+def _s2_needed(info: dict) -> bool:
+    if not info.get("authors"):
+        return True
+    if not (info.get("abstract") or "").strip():
+        return True
+    if not info.get("arxiv") and not info.get("oa_pdf"):
+        return True
+    return False
+
+
+def _s2_fill_later(folder, info: dict, publish) -> dict:
+    """Retry Semantic Scholar only after the stub is already readable."""
+    if not _s2_needed(info):
+        return info
+    before = _s2_snapshot(info)
+    try:
+        extra = s2_graph(int(info.get("corpusid") or 0), tries=2, timeout=10, backoff=True)
+    except Exception:
+        return info
+    for key, value in extra.items():
+        if value and not info.get(key):
+            info[key] = value
+    if _s2_snapshot(info) != before and publish is not None:
+        publish(make_stub(info), "stub")
+    return info
+
+
+def _note_reason(meta, text: str):
+    text = (text or "")[:300]
+    prev = meta.get("reason")
+    meta["reason"] = f"{prev}; {text}"[:500] if prev else text[:500]
+
+
+def _try_download(meta, kind, fn):
+    """Record one download. Returns the bytes, or None when this source should be skipped."""
+    t0 = time.time()
+    try:
+        data = fn()
+    except Exception as err:
+        reason = getattr(err, "reason", None) or str(err)
+        meta.setdefault("downloads", []).append({
+            "kind": kind,
+            "seconds": round(time.time() - t0, 3),
+            "ok": False,
+            "bytes": 0,
+            "reason": str(reason)[:200],
+        })
+        meta["timings"]["download"] += time.time() - t0
+        _note_reason(meta, f"{kind} failed: {reason}")
+        return None
+    meta.setdefault("downloads", []).append({
+        "kind": kind,
+        "seconds": round(time.time() - t0, 3),
+        "ok": True,
+        "bytes": len(data) if data else 0,
+        "reason": None,
+    })
+    meta["timings"]["download"] += time.time() - t0
+    return data
+
+
+def _pdf_from_sources(info, meta, pdf_path, kinds):
+    """Try each (kind, fn) in order. Write the first PDF that arrives."""
+    for kind, fn in kinds:
+        if fn is None:
+            continue
+        blob = _try_download(meta, kind, fn)
+        if blob:
+            pdf_path.write_bytes(blob)
+            return True
+    return False
+
+
 def _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish=None):
-    t = time.time()
     arxiv = info.get("arxiv") or ""
     src = folder / "src"
+    oa = info.get("oa_pdf") or ""
+    oa_fn = (lambda: fetch_url(oa)) if oa else None
     if arxiv:
-        try:
-            blob = arxiv_eprint(arxiv)
-        except Exception as err:
-            blob = None
-            meta["reason"] = f"e-print failed: {err}"
-        meta["timings"]["download"] += time.time() - t
+        blob = _try_download(meta, "eprint", lambda: arxiv_eprint(arxiv))
         if blob:
             kind = unpack_eprint(blob, src)
             if kind == "pdf":
@@ -397,15 +486,13 @@ def _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish=None):
                 parsed = parse_tree(src, arxiv_id=arxiv)
                 meta["timings"]["parse"] += time.time() - t
                 if parsed["route"] == "pdf":
-                    meta["reason"] = parsed["reason"]
-                    t = time.time()
-                    try:
-                        pdf_path.write_bytes(arxiv_pdf(arxiv))
-                    except Exception as err:
-                        meta["reason"] = f"{parsed['reason']}; pdf failed: {err}"
-                        return "abstract", abstract_paper(info), pdf_path
-                    meta["timings"]["download"] += time.time() - t
-                    return _ocr_route(folder, info, meta, pdf_path, ocr, parsed["reason"], publish)
+                    _note_reason(meta, parsed["reason"] or "pdfpages wrapper")
+                    if _pdf_from_sources(info, meta, pdf_path, (
+                        ("arxiv_pdf", lambda: arxiv_pdf(arxiv)),
+                        ("oa_pdf", oa_fn),
+                    )):
+                        return _ocr_route(folder, info, meta, pdf_path, ocr, parsed["reason"], publish)
+                    return "abstract", abstract_paper(info), pdf_path
                 paper = parsed["paper"]
                 paper["arxivId"] = arxiv
                 apply_s2_fields(paper, info)
@@ -417,27 +504,18 @@ def _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish=None):
                 materialize_figures(paper["blocks"], src, folder / "figures")
                 meta["timings"]["figures"] += time.time() - t
                 return "latex", paper, pdf_path
-        # e-print missing: the PDF is the source of truth for this id
-        t = time.time()
-        try:
-            pdf_path.write_bytes(arxiv_pdf(arxiv))
-            meta["timings"]["download"] += time.time() - t
+        if _pdf_from_sources(info, meta, pdf_path, (
+            ("arxiv_pdf", lambda: arxiv_pdf(arxiv)),
+            ("oa_pdf", oa_fn),
+        )):
             return _ocr_route(folder, info, meta, pdf_path, ocr, meta.get("reason") or "no tex e-print", publish)
-        except Exception as err:
-            meta["timings"]["download"] += time.time() - t
-            meta["reason"] = f"no tex and pdf failed: {err}"
-            return "abstract", abstract_paper(info), pdf_path
+        _note_reason(meta, "no tex and pdf failed")
+        return "abstract", abstract_paper(info), pdf_path
 
-    oa = info.get("oa_pdf") or ""
-    if oa:
-        t = time.time()
-        try:
-            pdf_path.write_bytes(fetch_url(oa))
-        except Exception as err:
-            meta["timings"]["download"] += time.time() - t
-            meta["reason"] = f"open-access pdf failed: {err}"
+    if oa_fn is not None:
+        if not _pdf_from_sources(info, meta, pdf_path, (("oa_pdf", oa_fn),)):
+            _note_reason(meta, "open-access pdf failed")
             return "abstract", abstract_paper(info), pdf_path
-        meta["timings"]["download"] += time.time() - t
         return _ocr_route(folder, info, meta, pdf_path, ocr, "no arXiv id", publish)
     return "abstract", abstract_paper(info), pdf_path
 
@@ -459,7 +537,14 @@ def _ocr_route(folder, info, meta, pdf_path, ocr, why: str, publish=None):
         return "abstract", abstract_paper(info), pdf_path
     meta["timings"]["ocr"] += float(result.get("seconds") or (time.time() - t))
     meta["ocr_gpu_s"] = float(meta.get("ocr_gpu_s") or 0) + float(result.get("gpu_s") or result.get("seconds") or 0)
+    if result.get("chunks") is not None:
+        meta["ocr_chunks"] = result.get("chunks")
+    if result.get("engine"):
+        meta["ocr_engine"] = result.get("engine")
     blocks = result.get("blocks") or []
+    if result.get("error") and not blocks:
+        meta["reason"] = str(result["error"])[:500]
+        return "abstract", abstract_paper(info), pdf_path
     if not blocks:
         meta["reason"] = f"{why}; ocr returned no blocks"
         return "abstract", abstract_paper(info), pdf_path

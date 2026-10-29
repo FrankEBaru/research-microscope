@@ -4,12 +4,12 @@ When a burst returns, it spawns `prepare` for the top 10 corpus ids (fire-and-fo
 
 ## Order
 
-1. Resolve the id from `rrm-data` `2026-10-20/index/display.parquet` (arXiv, DOI). If there is no arXiv id, the free Semantic Scholar Graph API supplies `externalIds` and `openAccessPdf` (1 req/s, backoff, no key).
+1. Resolve the id from `rrm-data` `2026-10-20/index/display.parquet` (arXiv, DOI). If there is no arXiv id, the free Semantic Scholar Graph API supplies `externalIds` and `openAccessPdf` (1 req/s, backoff). Optional env `S2_API_KEY` is sent as `x-api-key`. The stub makes one attempt and does not retry; a later snapshot fills gaps. A burst still uses one batch request, cached at `papers/{id}/s2.json`.
 2. arXiv e-print, if it contains real TeX: inline `\input`, expand math macros, emit the block schema, KaTeX-check every equation, render figures. A pdfpages wrapper (Adam) is not TeX.
 3. Otherwise the arXiv PDF or the open-access PDF goes to MinerU 2.5 (`vlm-auto-engine`) on a separate L4 function. Equations come back as LaTeX with `source: "ocr"`.
 4. Otherwise `abstract_only` (abstract + tldr). Failures set `failed` and a reason.
 
-arXiv fetches use `export.arxiv.org` and share one clock: a burst of 4 requests in 1 second, then a 1 second sleep (the rate arXiv documents for programmatic harvest). The S3 requester-pays bucket is not used: one paper lives in a ~500 MB month tar, and the requester pays for the whole object.
+arXiv fetches use `export.arxiv.org` and share one clock: a burst of 4 requests in 1 second, then a 1 second sleep (the rate arXiv documents for programmatic harvest). The clock is taken only to start the request; the body is read after it returns, so a slow arXiv transfer does not block the next paper. Open-access hosts are not gated. Each download allows 10 s to connect, 30 s overall, and 50 MB. On timeout the next source is tried (e-print, then the arXiv PDF, then the open-access PDF) and otherwise the paper is `abstract_only` with the reason. The S3 requester-pays bucket is not used: one paper lives in a ~500 MB month tar, and the requester pays for the whole object.
 
 ## Status
 
@@ -25,7 +25,7 @@ arXiv fetches use `export.arxiv.org` and share one clock: a burst of 4 requests 
 modal run rrm/reader/serve.py::bench --ids 13756489,2048380074
 ```
 
-Columns are seconds for resolve, download, parse, katex, figures, ocr (wall), ocr_gpu_s (summed, this is what `ocr_usd` uses), sam, then `first` (time-to-first-content), `sections`, `full`, then a CPU / L4 / SAM dollar estimate from the 2026-10-28 Modal list price, plus per-step CPU dollars. OCR runs MinerU `vlm-auto-engine` (vLLM when that package is installed) on up to 4 GPU containers, merged in page order.
+Columns are seconds for resolve, download, parse, katex, figures, ocr (wall), ocr_gpu_s (summed, this is what `ocr_usd` uses), sam, then `first` (time-to-first-content), `sections`, `full`, then a CPU / L4 / SAM dollar estimate from the 2026-10-28 Modal list price, plus per-step CPU dollars. Two extra columns: `ocr_chunks` (`start-end:seconds:engine:ok|fail:attempts`) and `downloads` (`kind:seconds:ok|fail:bytes`). `ocr_engine` is the engine MinerU logged (`vllm-engine` or `transformers`). OCR splits about 4 pages per chunk (at most 8) and spawns one container per chunk (`max_containers=8`, no input concurrency, no `min_containers`). Each chunk has a 120 s limit and one retry. A failed chunk becomes a raw block; the other chunks still return in page order. Wall time much smaller than `ocr_gpu_s` means the chunks overlapped.
 
 ## QA notes (2026-10-29, Modal)
 

@@ -2,15 +2,20 @@
 
 arXiv e-prints come from export.arxiv.org, the host arXiv documents for
 programmatic harvest (info.arxiv.org/help/bulk_data): bursts of 4 requests
-in one second, then a 1 second sleep. The S3 requester-pays bucket is not
+in one second, then a 1 second sleep. The gate covers only the request start;
+the body is read after `wait()` returns, so a slow transfer does not hold the
+next paper's slot. Open-access hosts are not gated. Each download allows 10 s
+to connect, 30 s overall, and 50 MB. The S3 requester-pays bucket is not
 used; a single paper is packed into a ~500 MB month tar and the requester
 pays for that whole object. The Modal app shares one clock across containers.
 Semantic Scholar Graph API: at most one request per second, exponential
-backoff on 429 and 5xx. No key.
+backoff on 429 and 5xx. Optional env `S2_API_KEY` is sent as `x-api-key`.
+The stub path does not retry; the batch request and `s2.json` cache stay.
 """
 
 import gzip
 import io
+import os
 import tarfile
 import time
 import urllib.error
@@ -85,6 +90,27 @@ class BurstGate:
 ARXIV = BurstGate()
 S2_LIMIT = Limiter(1.1)
 
+# Per download, after the arXiv slot is taken. The slot wait is not part of this budget.
+CONNECT_TIMEOUT_S = 10
+TOTAL_TIMEOUT_S = 30
+MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
+
+
+class DownloadFailed(Exception):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _s2_headers(content_type: str | None = None) -> dict:
+    headers = {"User-Agent": UA}
+    if content_type:
+        headers["Content-Type"] = content_type
+    key = (os.environ.get("S2_API_KEY") or "").strip()
+    if key:
+        headers["x-api-key"] = key
+    return headers
+
 
 def canon_arxiv(text) -> str:
     if not text:
@@ -100,36 +126,148 @@ def canon_arxiv(text) -> str:
     return re.sub(r"v\d+$", "", text).strip()
 
 
-def _get(url: str, limiter: Limiter, timeout=90, tries: int = 6) -> bytes:
+def _get(url: str, limiter: Limiter, timeout=90, tries: int = 6, backoff: bool = True, headers=None) -> bytes:
     delay = 1.0
     last = None
-    for _ in range(max(1, int(tries))):
-        limiter.wait()
-        req = urllib.request.Request(url, headers={"User-Agent": UA})
+    hdrs = {"User-Agent": UA}
+    if headers:
+        hdrs.update(headers)
+    attempts = max(1, int(tries))
+    for i in range(attempts):
+        if limiter is not None:
+            limiter.wait()
+        req = urllib.request.Request(url, headers=hdrs)
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return resp.read()
         except urllib.error.HTTPError as err:
             last = err
-            if err.code == 429 or err.code >= 500:
+            retry = err.code == 429 or err.code >= 500
+            if retry and backoff and i + 1 < attempts:
                 time.sleep(delay)
-                delay = min(delay * 2, 60)
+                delay = min(delay * 2, 8)
+                continue
+            raise
+        except Exception:
+            if backoff and i + 1 < attempts:
+                time.sleep(delay)
+                delay = min(delay * 2, 8)
                 continue
             raise
     raise RuntimeError(f"get failed: {url} ({last})")
 
 
+def _download_reason(err: Exception) -> str:
+    if isinstance(err, DownloadFailed):
+        return err.reason
+    if isinstance(err, urllib.error.HTTPError):
+        return f"http {err.code}"
+    text = str(err).lower()
+    if isinstance(err, TimeoutError) or "timed out" in text or "timeout" in text:
+        return "timeout"
+    return str(err)[:200] or "download failed"
+
+
+def _relax_read_timeout(resp, deadline: float):
+    remaining = max(1.0, deadline - time.monotonic())
+    sock = None
+    try:
+        sock = resp.fp.raw._sock
+    except Exception:
+        sock = None
+    if sock is not None:
+        try:
+            sock.settimeout(remaining)
+        except Exception:
+            pass
+
+
+def _open_url(url: str, connect_timeout: float):
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    return urllib.request.urlopen(req, timeout=connect_timeout)
+
+
+def _read_body(resp, max_bytes: int, deadline: float) -> bytes:
+    headers = getattr(resp, "headers", None)
+    length = headers.get("Content-Length") if headers is not None else None
+    if length and str(length).isdigit() and int(length) > max_bytes:
+        raise DownloadFailed("too_large")
+    _relax_read_timeout(resp, deadline)
+    chunks = []
+    total = 0
+    while True:
+        if time.monotonic() > deadline:
+            raise DownloadFailed("timeout")
+        block = resp.read(64 * 1024)
+        if not block:
+            break
+        total += len(block)
+        if total > max_bytes:
+            raise DownloadFailed("too_large")
+        chunks.append(block)
+    return b"".join(chunks)
+
+
+def download_url(
+    url: str,
+    gate=None,
+    *,
+    connect_timeout: float = CONNECT_TIMEOUT_S,
+    total_timeout: float = TOTAL_TIMEOUT_S,
+    max_bytes: int = MAX_DOWNLOAD_BYTES,
+    opener=None,
+    read_body=None,
+) -> bytes:
+    """Start the request after `gate.wait()` returns. The body read does not hold the gate.
+
+    `total_timeout` starts when the gate releases, so the arXiv slot sleep is not the transfer budget.
+    Open-access downloads pass gate=None.
+    """
+    if gate is not None:
+        gate.wait()
+    deadline = time.monotonic() + float(total_timeout)
+    open_url = opener or _open_url
+    try:
+        resp = open_url(url, connect_timeout)
+    except DownloadFailed:
+        raise
+    except Exception as err:
+        raise DownloadFailed(_download_reason(err)) from err
+    reader = read_body or _read_body
+    try:
+        try:
+            return reader(resp, int(max_bytes), deadline)
+        except DownloadFailed:
+            raise
+        except Exception as err:
+            raise DownloadFailed(_download_reason(err)) from err
+    finally:
+        close = getattr(resp, "close", None)
+        if close:
+            close()
+
+
 def arxiv_eprint(arxiv_id: str) -> bytes:
-    return _get(f"{ARXIV_HOST}/e-print/{canon_arxiv(arxiv_id)}", ARXIV)
+    return download_url(f"{ARXIV_HOST}/e-print/{canon_arxiv(arxiv_id)}", ARXIV)
 
 
 def arxiv_pdf(arxiv_id: str) -> bytes:
-    return _get(f"{ARXIV_HOST}/pdf/{canon_arxiv(arxiv_id)}.pdf", ARXIV)
+    return download_url(f"{ARXIV_HOST}/pdf/{canon_arxiv(arxiv_id)}.pdf", ARXIV)
 
 
 def fetch_url(url: str) -> bytes:
-    host_limiter = ARXIV if "arxiv.org" in url else S2_LIMIT
-    return _get(url, host_limiter)
+    """Open-access hosts have no gate. An arXiv URL keeps the burst clock, released before the body."""
+    gate = ARXIV if "arxiv.org" in (url or "") else None
+    return download_url(url, gate)
+
+
+def format_download_timings(rows) -> str:
+    """`kind:seconds:ok|fail:bytes` for the bench column."""
+    bits = []
+    for row in rows or []:
+        state = "ok" if row.get("ok") else "fail"
+        bits.append(f"{row.get('kind')}:{row.get('seconds')}:{state}:{row.get('bytes')}")
+    return ";".join(bits)
 
 
 # Set by the Modal app to the papers root. s2_graph reads papers/{id}/s2.json first;
@@ -153,21 +291,21 @@ def s2_batch(corpusids) -> dict:
         return {}
     body = json.dumps({"ids": [f"CorpusId:{c}" for c in todo]}).encode()
     out = {}
-    delay = 1.0
-    for _ in range(3):
+    rows = None
+    for attempt in range(2):  # one retry; the stub path does not wait on this
         S2_LIMIT.wait()
         req = urllib.request.Request(
             f"{S2}batch?fields={S2_FIELDS}", data=body,
-            headers={"User-Agent": UA, "Content-Type": "application/json"}, method="POST",
+            headers=_s2_headers("application/json"), method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:
                 rows = json.loads(resp.read().decode("utf-8", "replace"))
             break
         except Exception:
-            time.sleep(delay)
-            delay *= 2
-    else:
+            if attempt == 0:
+                time.sleep(1.0)
+    if rows is None:
         return {}
     for cid, data in zip(todo, rows or []):
         if not isinstance(data, dict):
@@ -183,8 +321,11 @@ def s2_batch(corpusids) -> dict:
     return out
 
 
-def s2_graph(corpusid: int) -> dict:
-    """Free Graph API (or the s2.json cache). Returns {} when the id is unknown."""
+def s2_graph(corpusid: int, *, tries: int = 3, timeout: float = 30, backoff: bool = True) -> dict:
+    """Free Graph API (or the s2.json cache). Returns {} when the id is unknown.
+
+    The stub calls this with tries=1 and backoff=False so a 429 cannot stall the first snapshot.
+    """
     import json
     data = None
     path = _s2_cache(corpusid)
@@ -196,9 +337,13 @@ def s2_graph(corpusid: int) -> dict:
     if data is None:
         url = f"{S2}CorpusId:{int(corpusid)}?fields={S2_FIELDS}"
         try:
-            raw = _get(url, S2_LIMIT, timeout=30, tries=3)
+            raw = _get(url, S2_LIMIT, timeout=timeout, tries=tries, backoff=backoff, headers=_s2_headers())
         except urllib.error.HTTPError as err:
-            if err.code == 404:
+            if err.code == 404 or (not backoff and int(tries) <= 1):
+                return {}
+            raise
+        except Exception:
+            if not backoff and int(tries) <= 1:
                 return {}
             raise
         data = json.loads(raw.decode("utf-8", "replace"))
@@ -446,7 +591,7 @@ def s2_reference_map(corpusid: int, limit: int = 40) -> dict:
         f"{S2}CorpusId:{int(corpusid)}/references"
         f"?fields=title,year,authors,corpusId&limit={int(limit)}"
     )
-    raw = _get(url, S2_LIMIT, timeout=30)
+    raw = _get(url, S2_LIMIT, timeout=30, headers=_s2_headers())
     data = json.loads(raw.decode("utf-8", "replace"))
     refs = {}
     for item in data.get("data") or []:
@@ -479,6 +624,9 @@ def reader_identity(
     remote: bool = True,
     refs: bool = True,
     shards: bool = True,
+    s2_tries: int = 1,
+    s2_timeout: float = 8,
+    s2_backoff: bool = False,
 ) -> dict:
     """Title and tldr from display.parquet. Authors and abstract from the papers and abstracts
     shards on the same release when `shards` is set. One Graph API call only for fields still
@@ -519,7 +667,7 @@ def reader_identity(
     )
     if remote and missing_text:
         try:
-            remote_info = s2_graph(cid)
+            remote_info = s2_graph(cid, tries=s2_tries, timeout=s2_timeout, backoff=s2_backoff)
         except Exception:
             remote_info = {}
         for key, value in remote_info.items():

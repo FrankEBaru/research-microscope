@@ -6,8 +6,12 @@ turn a markdown fallback into blocks, without importing mineru.
 """
 
 import json
+import os
 import re
+import shutil
+import signal
 import subprocess
+import time
 from pathlib import Path
 
 from rrm.reader.latex import finalize, parse_inlines, text_tokens
@@ -19,9 +23,12 @@ from rrm.reader.latex import finalize, parse_inlines, text_tokens
 # transformers engine otherwise (QA 2026-10-29: ~20 s/page without vLLM).
 # The 2.7 CLI rejects the literal name vlm-vllm-engine.
 MINERU_BACKEND = "vlm-auto-engine"
-# 15 pages -> 4 chunks of 4, 4, 4, 3 so a slow page rate still overlaps on Modal .map.
+# Chunks of about 4 pages, at most one chunk per GPU container (up to 8).
+# 15 pages -> 4, 4, 4, 3. A 4-page chunk is the unit that has to fit in CHUNK_TIMEOUT_S.
 PAGES_PER_PART = 4
-MAX_OCR_PARTS = 4
+MAX_OCR_PARTS = 8
+CHUNK_TIMEOUT_S = 120
+CHUNK_RETRIES = 1  # one retry after the first attempt
 
 
 def page_spans(n: int, pages_per_part: int = PAGES_PER_PART, max_parts: int = MAX_OCR_PARTS) -> list[tuple[int, int]]:
@@ -74,7 +81,10 @@ def pdf_page_count(pdf: Path) -> int | None:
 
 
 def merge_ocr_parts(parts: list[dict]) -> list:
-    """Concatenate per-chunk blocks in ascending start-page order and reassign ids."""
+    """Concatenate per-chunk blocks in ascending start-page order and reassign ids.
+
+    A failed chunk contributes its raw/failed placeholder and stays in page order.
+    """
     ordered = sorted(parts, key=lambda part: int(part.get("start") or 0))
     blocks = []
     for part in ordered:
@@ -86,8 +96,122 @@ def merge_ocr_parts(parts: list[dict]) -> list:
     return finalize(blocks)
 
 
-def run_mineru(pdf: Path, out_dir: Path, end_page: int | None = None) -> Path:
-    """Run the mineru CLI. Returns the output directory. Raises RuntimeError with the tail of stderr."""
+def failed_chunk(start: int, end: int, reason: str, seconds: float = 0, attempts: int = 1, engine: str = "") -> dict:
+    """One raw block covering pages [start, end) that OCR did not return."""
+    start, end = int(start), int(end)
+    span = f"{start + 1}-{end}" if end > start + 1 else str(max(start + 1, end))
+    note = f"OCR failed for pages {span}: {reason}"
+    return {
+        "start": start,
+        "end": end,
+        "failed": True,
+        "reason": str(reason)[:300],
+        "seconds": round(float(seconds or 0), 3),
+        "attempts": int(attempts or 1),
+        "engine": engine or "",
+        "page_count": max(0, end - start),
+        "blocks": [{
+            "kind": "p",
+            "raw": True,
+            "failed": True,
+            "pages": [start, end],
+            "inlines": text_tokens(note),
+        }],
+    }
+
+
+def chunk_summary(row: dict) -> dict:
+    out = {
+        "start": row.get("start"),
+        "end": row.get("end"),
+        "seconds": row.get("seconds"),
+        "engine": row.get("engine") or "",
+        "failed": bool(row.get("failed")),
+        "attempts": row.get("attempts") or 1,
+        "reason": row.get("reason"),
+    }
+    if "vllm_installed" in row:
+        out["vllm_installed"] = bool(row.get("vllm_installed"))
+    return out
+
+
+def format_chunk_timings(chunks) -> str:
+    """`start-end:seconds:engine:ok|fail:attempts` for the bench column."""
+    bits = []
+    for row in chunks or []:
+        state = "fail" if row.get("failed") else "ok"
+        engine = row.get("engine") or "?"
+        bits.append(f"{row.get('start')}-{row.get('end')}:{row.get('seconds')}:{engine}:{state}:{row.get('attempts')}")
+    return ";".join(bits)
+
+
+_ENGINE_LINE = re.compile(r"Using ([A-Za-z0-9_-]+) as the inference engine", re.I)
+
+
+def engine_from_log(log: str) -> str:
+    """MinerU logs `Using vllm-engine as the inference engine for VLM.` (or transformers)."""
+    found = _ENGINE_LINE.findall(log or "")
+    if found:
+        return found[-1]
+    low = (log or "").lower()
+    if "vllm" in low and "transformer" not in low:
+        return "vllm"
+    if "transformer" in low:
+        return "transformers"
+    return "unknown"
+
+
+def _kill_group(pid: int):
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
+
+def _reset_dir(out_dir: Path):
+    if out_dir.exists():
+        shutil.rmtree(out_dir, ignore_errors=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+
+def assemble_ocr(parts: list[dict], wall_s: float, page_count: int | None = None) -> dict:
+    """Merge chunk results. Every chunk failed -> empty blocks plus an error; otherwise page order."""
+    chunks = [chunk_summary(row) for row in parts]
+    engines = []
+    for row in chunks:
+        name = str(row.get("engine") or "")
+        if name and name not in engines and name != "unknown":
+            engines.append(name)
+    if not engines:
+        engines = ["unknown"] if parts else []
+    engine = engines[0] if len(engines) == 1 else "mixed:" + ",".join(engines)
+    gpu_s = sum(float(row.get("seconds") or 0) for row in parts)
+    pages = page_count
+    if pages is None:
+        pages = sum(int(row.get("page_count") or 0) for row in parts)
+    base = {
+        "seconds": round(float(wall_s), 3),
+        "gpu_s": round(gpu_s, 3),
+        "page_count": pages,
+        "chunks": chunks,
+        "engine": engine,
+    }
+    if parts and all(row.get("failed") for row in parts):
+        reason = "; ".join(str(row.get("reason") or "failed") for row in parts)
+        base["blocks"] = []
+        base["error"] = f"all ocr chunks failed: {reason}"[:500]
+        return base
+    base["blocks"] = merge_ocr_parts(parts)
+    base["error"] = None
+    return base
+
+
+def run_mineru(pdf: Path, out_dir: Path, end_page: int | None = None, timeout: int = CHUNK_TIMEOUT_S) -> str:
+    """Run the mineru CLI. Returns the combined log. Raises TimeoutError or RuntimeError.
+
+    The process group is killed when the timeout fires so a hung vLLM child cannot
+    hold the GPU until the Modal function timeout.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         "mineru", "-p", str(pdf), "-o", str(out_dir),
@@ -96,11 +220,61 @@ def run_mineru(pdf: Path, out_dir: Path, end_page: int | None = None) -> Path:
     ]
     if end_page is not None:
         cmd += ["-e", str(int(end_page))]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        log, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_group(proc.pid)
+        try:
+            proc.communicate(timeout=5)
+        except Exception:
+            proc.kill()
+        raise TimeoutError(f"mineru exceeded {timeout}s")
+    log = log or ""
     if proc.returncode != 0:
-        tail = (proc.stderr or proc.stdout or "")[-800:]
+        _kill_group(proc.pid)
+        tail = log[-800:]
         raise RuntimeError(tail or "mineru failed")
-    return out_dir
+    return log
+
+
+def run_chunk(pdf: Path, out_dir: Path, *, timeout: int = CHUNK_TIMEOUT_S, retries: int = CHUNK_RETRIES, run=None) -> dict:
+    """One MinerU attempt plus `retries` extra. `run` returns the log text or raises."""
+    run = run or run_mineru
+    started = time.time()
+    last = "mineru failed"
+    log = ""
+    attempts = 0
+    for _ in range(max(1, int(retries)) + 1):
+        attempts += 1
+        _reset_dir(Path(out_dir))
+        try:
+            log = run(pdf, Path(out_dir), timeout=timeout)
+            return {
+                "ok": True,
+                "engine": engine_from_log(log),
+                "attempts": attempts,
+                "seconds": round(time.time() - started, 3),
+                "error": None,
+                "log": log or "",
+            }
+        except Exception as err:
+            last = str(err)[:300] or "mineru failed"
+            log = last
+    return {
+        "ok": False,
+        "engine": engine_from_log(log),
+        "attempts": attempts,
+        "seconds": round(time.time() - started, 3),
+        "error": last,
+        "log": log,
+    }
 
 
 def _find_content_list(out_dir: Path) -> list | None:

@@ -529,3 +529,377 @@ def test_crops_page_with_no_hits_is_done(tmp_path, monkeypatch):
     import json
     index = json.loads((tmp_path / "crops" / "index.json").read_text())
     assert index["done_pages"] == [0, 1]
+
+
+def test_ocr_chunks_keep_a_failed_span_in_order():
+    from rrm.reader.ocr import (
+        assemble_ocr,
+        engine_from_log,
+        failed_chunk,
+        format_chunk_timings,
+        merge_ocr_parts,
+        page_spans,
+        run_chunk,
+    )
+
+    assert page_spans(15) == [(0, 4), (4, 8), (8, 12), (12, 15)]
+    assert len(page_spans(32)) == 8
+    assert all(end - start <= 4 for start, end in page_spans(32))
+    sizes = [end - start for start, end in page_spans(18)]
+    assert sizes == [4, 4, 4, 3, 3]
+    failed = failed_chunk(4, 8, "mineru exceeded 120s", seconds=120, attempts=2, engine="vllm-engine")
+    parts = [
+        {"start": 0, "end": 4, "failed": False, "seconds": 11, "engine": "vllm-engine", "attempts": 1,
+         "blocks": [{"kind": "p", "inlines": [{"t": "text", "v": "a"}]}]},
+        failed,
+        {"start": 8, "end": 12, "failed": False, "seconds": 9, "engine": "vllm-engine", "attempts": 1,
+         "blocks": [{"kind": "p", "inlines": [{"t": "text", "v": "c"}]}]},
+    ]
+    blocks = merge_ocr_parts(parts)
+    assert [plain(b["inlines"]) for b in blocks] == ["a", "OCR failed for pages 5-8: mineru exceeded 120s", "c"]
+    assert blocks[1]["raw"] is True and blocks[1]["failed"] is True
+    assert blocks[1]["pages"] == [4, 8]
+    assembled = assemble_ocr(parts, wall_s=12, page_count=12)
+    assert assembled["error"] is None and len(assembled["blocks"]) == 3
+    assert assembled["engine"] == "vllm-engine"
+    assert assembled["seconds"] == 12 and assembled["gpu_s"] == 140
+    assert "4-8:120" in format_chunk_timings(assembled["chunks"])
+    all_failed = assemble_ocr([failed_chunk(0, 4, "timeout", 120), failed_chunk(4, 8, "timeout", 120)], 120, 8)
+    assert all_failed["blocks"] == [] and all_failed["error"].startswith("all ocr chunks failed")
+    assert engine_from_log("info Using vllm-engine as the inference engine for VLM.") == "vllm-engine"
+    assert engine_from_log("Using transformers as the inference engine for VLM.") == "transformers"
+    calls = {"n": 0}
+
+    def flaky(pdf, out_dir, timeout=120):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise TimeoutError("mineru exceeded 120s")
+        return "Using vllm-engine as the inference engine for VLM."
+
+    import tempfile
+    out = run_chunk(Path("x.pdf"), Path(tempfile.mkdtemp()), timeout=120, retries=1, run=flaky)
+    assert out["ok"] is True and out["attempts"] == 2 and out["engine"] == "vllm-engine"
+
+
+def test_ocr_chunk_marks_failed_after_one_retry(tmp_path: Path):
+    from rrm.reader.ocr import run_chunk
+
+    calls = {"n": 0}
+
+    def always(pdf, out_dir, timeout=120):
+        calls["n"] += 1
+        raise TimeoutError("mineru exceeded 120s")
+
+    out = run_chunk(Path("x.pdf"), tmp_path / "out", timeout=120, retries=1, run=always)
+    assert calls["n"] == 2
+    assert out["ok"] is False and out["attempts"] == 2
+    assert "120" in out["error"]
+
+
+def test_download_timeout_falls_back_and_oa_is_not_gated(tmp_path: Path, monkeypatch):
+    import threading
+    import time
+
+    from rrm.reader import fetch, pipeline
+    from rrm.reader.fetch import DownloadFailed, download_url, format_download_timings
+
+    def opener_timeout(url, timeout):
+        raise TimeoutError("timed out")
+
+    try:
+        download_url("https://oa.example/x.pdf", None, opener=opener_timeout, total_timeout=1, connect_timeout=1)
+        raise AssertionError("expected timeout")
+    except DownloadFailed as err:
+        assert err.reason == "timeout"
+
+    class Slow:
+        headers = {}
+
+        def read(self, n):
+            time.sleep(0.2)
+            return b"x" * 10
+
+        def close(self):
+            pass
+
+    try:
+        download_url(
+            "https://oa.example/x.pdf", None,
+            opener=lambda url, timeout: Slow(), total_timeout=0.05, connect_timeout=1,
+        )
+        raise AssertionError("expected total timeout")
+    except DownloadFailed as err:
+        assert err.reason == "timeout"
+
+    class Big:
+        headers = {"Content-Length": "999999999"}
+
+        def read(self, n):
+            return b""
+
+        def close(self):
+            pass
+
+    try:
+        download_url("https://oa.example/x.pdf", None, opener=lambda url, timeout: Big(), total_timeout=2)
+        raise AssertionError("expected size cap")
+    except DownloadFailed as err:
+        assert err.reason == "too_large"
+
+    calls = {"gate": 0, "s2": 0}
+
+    def gated():
+        calls["gate"] += 1
+        raise AssertionError("open-access download waited on the arXiv gate")
+
+    def s2_wait():
+        calls["s2"] += 1
+        raise AssertionError("open-access download waited on the Semantic Scholar limiter")
+
+    monkeypatch.setattr(fetch.ARXIV, "wait", gated)
+    monkeypatch.setattr(fetch.S2_LIMIT, "wait", s2_wait)
+    monkeypatch.setattr(fetch, "_open_url", lambda url, timeout: _EmptyBody())
+    assert fetch.fetch_url("https://plos.org/article.pdf") == b""
+    assert calls == {"gate": 0, "s2": 0}
+    monkeypatch.setattr(fetch.ARXIV, "wait", lambda: calls.__setitem__("gate", calls["gate"] + 1))
+    assert fetch.fetch_url("https://export.arxiv.org/pdf/1.pdf") == b""
+    assert calls["gate"] == 1
+
+    lock = threading.Lock()
+    started = threading.Event()
+    release = threading.Event()
+
+    class Gate:
+        def wait(self):
+            with lock:
+                time.sleep(0.01)
+
+    def read_body(resp, max_bytes, deadline):
+        started.set()
+        assert release.wait(2)
+        return b"pdf"
+
+    def second():
+        assert started.wait(2)
+        with lock:
+            release.set()
+
+    holder = {}
+
+    def first():
+        holder["data"] = download_url(
+            "https://export.arxiv.org/pdf/1", Gate(),
+            opener=lambda url, timeout: object(), read_body=read_body, total_timeout=5,
+        )
+
+    t1 = threading.Thread(target=first)
+    t2 = threading.Thread(target=second)
+    t1.start()
+    t2.start()
+    t1.join(3)
+    t2.join(3)
+    assert not t1.is_alive() and not t2.is_alive()
+    assert holder["data"] == b"pdf"
+
+    sources = []
+
+    def boom(name):
+        def _inner(*args, **kwargs):
+            sources.append(name)
+            raise DownloadFailed("timeout")
+        return _inner
+
+    monkeypatch.setattr(pipeline, "reader_identity", lambda *a, **k: {
+        "corpusid": 3, "title": "T", "authors": ["Ada"], "abstract": "Abs", "tldr": "",
+        "arxiv": "1234.5678", "oa_pdf": "https://oa.example/p.pdf",
+        "refs": {"s2:1": "Semantic Scholar corpus 1"},
+    })
+    monkeypatch.setattr(pipeline, "arxiv_eprint", boom("eprint"))
+    monkeypatch.setattr(pipeline, "arxiv_pdf", boom("arxiv_pdf"))
+    monkeypatch.setattr(pipeline, "fetch_url", boom("oa_pdf"))
+    out = pipeline.parse_corpus(3, tmp_path, None)
+    assert sources == ["eprint", "arxiv_pdf", "oa_pdf"]
+    assert out["status"] == "abstract_only"
+    assert "timeout" in (out["meta"].get("reason") or "")
+    downloads = out["meta"].get("downloads") or []
+    assert [row["kind"] for row in downloads] == ["eprint", "arxiv_pdf", "oa_pdf"]
+    assert all(row["ok"] is False and row["reason"] == "timeout" for row in downloads)
+    assert format_download_timings(downloads).count("fail") == 3
+
+
+class _EmptyBody:
+    headers = {}
+
+    def read(self, n):
+        return b""
+
+    def close(self):
+        pass
+
+
+def test_stub_does_not_retry_s2_and_key_is_a_header(tmp_path: Path, monkeypatch):
+    import io
+    import json
+    import urllib.error
+    import urllib.request
+
+    from rrm.reader import fetch
+
+    monkeypatch.setenv("S2_API_KEY", "test-key-not-real")
+    monkeypatch.setattr(fetch, "S2_CACHE_DIR", None)
+    seen = []
+    sleeps = []
+    monkeypatch.setattr(fetch.time, "sleep", lambda s: sleeps.append(s))
+
+    def urlopen(req, timeout=None):
+        seen.append(req.get_header("X-api-key"))
+        raise urllib.error.HTTPError(req.full_url, 429, "slow", {}, io.BytesIO(b""))
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    assert fetch.s2_graph(42, tries=1, timeout=5, backoff=False) == {}
+    assert seen == ["test-key-not-real"]
+    assert sleeps == []
+
+    monkeypatch.delenv("S2_API_KEY", raising=False)
+    seen.clear()
+    assert fetch.s2_graph(42, tries=1, timeout=5, backoff=False) == {}
+    assert seen == [None]
+
+    monkeypatch.setenv("S2_API_KEY", "test-key-not-real")
+    monkeypatch.setattr(fetch, "S2_CACHE_DIR", tmp_path)
+    seen.clear()
+
+    def batch_open(req, timeout=None):
+        seen.append(req.get_header("X-api-key"))
+        payload = json.dumps([{"title": "T", "authors": [{"name": "Ada Lovelace"}]}]).encode()
+
+        class Resp:
+            def read(self):
+                return payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        return Resp()
+
+    monkeypatch.setattr(urllib.request, "urlopen", batch_open)
+    fetch.s2_batch([7])
+    assert seen == ["test-key-not-real"]
+    assert (tmp_path / "7" / "s2.json").is_file()
+    seen.clear()
+    assert fetch.s2_batch([7]) == {}
+    assert seen == []
+    cached = fetch.s2_graph(7, tries=1, backoff=False)
+    assert cached["authors"] == ["Ada Lovelace"]
+    assert seen == []
+
+
+def test_s2_authors_fill_after_the_stub(tmp_path: Path, monkeypatch):
+    from rrm.reader import pipeline
+    from rrm.reader.fetch import DownloadFailed
+
+    order = []
+
+    def identity(*args, **kwargs):
+        order.append("identity")
+        assert kwargs.get("s2_tries") == 1
+        assert kwargs.get("s2_backoff") is False
+        return {
+            "corpusid": 11, "title": "T", "authors": [], "abstract": "", "tldr": "",
+            "arxiv": "1234.5", "refs": {"s2:1": "Semantic Scholar corpus 1"},
+        }
+
+    def later(corpusid, **kwargs):
+        order.append("s2")
+        assert kwargs.get("backoff") is True
+        return {
+            "corpusid": 11, "title": "T", "authors": ["Ada Lovelace"], "abstract": "Filled later.",
+            "tldr": "tl", "arxiv": "1234.5", "doi": "", "oa_pdf": "", "year": 2020,
+            "is_open_access": True, "refs": {"s2:1": "Semantic Scholar corpus 1"},
+        }
+
+    real_publish = pipeline._publish
+
+    def publish(folder, meta, paper, commit, stage):
+        if stage == "stub" and paper is not None:
+            order.append("stub")
+        return real_publish(folder, meta, paper, commit, stage)
+
+    def eprint_timeout(arxiv):
+        raise DownloadFailed("timeout")
+
+    monkeypatch.setattr(pipeline, "reader_identity", identity)
+    monkeypatch.setattr(pipeline, "s2_graph", later)
+    monkeypatch.setattr(pipeline, "_publish", publish)
+    monkeypatch.setattr(pipeline, "arxiv_eprint", eprint_timeout)
+    monkeypatch.setattr(pipeline, "arxiv_pdf", lambda arxiv: b"%PDF-1.4")
+    out = pipeline.parse_corpus(11, tmp_path, None, ocr=None)
+    assert order[0] == "identity"
+    assert order.index("stub") < order.index("s2")
+    assert out["paper"]["authors"] == ["Ada Lovelace"]
+    assert out["paper"]["abstract"] == "Filled later."
+
+
+def test_author_templates_and_s2_wins():
+    from rrm.reader.latex import parse_tex
+    from rrm.reader.pipeline import apply_s2_fields
+
+    neurips = r"""
+\documentclass{article}
+\title{A title}
+\author{
+  Alice Smith \\
+  Department of Computer Science \\
+  Stanford University \\
+  \texttt{alice@stanford.edu} \\
+  \And
+  Bob Jones\thanks{Equal contribution.} \\
+  Google Research
+}
+\begin{document}
+\begin{abstract}Hello.\end{abstract}
+Body.
+\end{document}
+"""
+    icml = r"""
+\documentclass{article}
+\author{
+\icmlauthor{Carol White}{stanford}
+\icmlauthor{Dan Brown}{deepmind}
+}
+\begin{document}
+Hello.
+\end{document}
+"""
+    ieee = r"""
+\documentclass{IEEEtran}
+\author{
+\IEEEauthorblockN{Eve Chen}
+\IEEEauthorblockA{Department of EE, MIT\\eve@mit.edu}
+\and
+\IEEEauthorblockN{Frank Ortiz}
+\IEEEauthorblockA{DeepMind}
+}
+\begin{document}
+Hello.
+\end{document}
+"""
+    arxiv = r"""
+\documentclass{article}
+\author{Grace Hopper \and Katherine Johnson}
+\begin{document}
+Hello.
+\end{document}
+"""
+    assert parse_tex(neurips)["authors"] == ["Alice Smith", "Bob Jones"]
+    assert parse_tex(icml)["authors"] == ["Carol White", "Dan Brown"]
+    assert parse_tex(ieee)["authors"] == ["Eve Chen", "Frank Ortiz"]
+    assert parse_tex(arxiv)["authors"] == ["Grace Hopper", "Katherine Johnson"]
+    paper = {"authors": ["Tex Person"], "title": "T", "abstract": "", "tldr": "", "refs": {}}
+    apply_s2_fields(paper, {"authors": ["S2 Person"], "tldr": "", "abstract": "", "title": "", "refs": {}})
+    assert paper["authors"] == ["S2 Person"]
+    apply_s2_fields(paper, {"authors": [], "tldr": "", "abstract": "", "title": "", "refs": {}})
+    assert paper["authors"] == ["S2 Person"]

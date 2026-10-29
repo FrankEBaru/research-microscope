@@ -34,7 +34,7 @@ from rrm.reader.katex import check_tex, katex_available
 from rrm.reader.source import (
     _ABBREV, _LAYOUT, _body, _grab, _labels, _skip_ws, _sty_macros,
     collect_macros, expand_math, find_main_tex, inline_tree, is_pdfpages_wrapper,
-    read_braced, read_bracket, read_env, read_name, strip_comments,
+    read_braced, read_bracket, read_env, read_name, strip_comments, _grab_all,
 )
 
 _MATH = {
@@ -714,8 +714,19 @@ def _drop_cmd_args(text: str, names: tuple) -> str:
     return out
 
 
-_AFFIL = ("university", "dept", "department", "google", "stanford", "institute", "openai", "research",
-          "mit", "laboratory", "lab", "college", "school", "inc", "equal contribution", "work done", "work performed")
+_AFFIL_WORDS = {
+    "university", "universite", "dept", "department", "google", "stanford", "institute", "openai",
+    "research", "mit", "laboratory", "lab", "labs", "college", "school", "inc", "deepmind",
+    "microsoft", "meta", "facebook", "amazon", "nvidia", "eth", "cmu", "berkeley", "cambridge",
+    "oxford", "faculty", "academy", "corp", "corporation", "ltd", "gmbh", "center", "centre",
+}
+_AFFIL_PHRASES = ("equal contribution", "work done", "work performed", "computer science")
+_PARTICLES = {"van", "von", "de", "da", "di", "del", "der", "den", "la", "le", "st"}
+_DROP_AUTHOR_CMDS = (
+    "thanks", "footnote", "footnotetext", "footnotemark", "texttt", "url", "href", "email",
+    "textsuperscript", "affil", "affiliation", "institute", "address", "inst",
+    "IEEEauthorblockA", "hspace", "vspace", "color", "textcolor",
+)
 
 
 _ACCENTS = (("{\\L}", "Ł"), ("\\L ", "Ł"), ("\\L{}", "Ł"), ("{\\l}", "ł"),
@@ -723,34 +734,123 @@ _ACCENTS = (("{\\L}", "Ł"), ("\\L ", "Ł"), ("\\L{}", "Ł"), ("{\\l}", "ł"),
             ("\\'e", "é"), ("\\'a", "á"), ("\\'i", "í"), ("\\'o", "ó"), ("\\~n", "ñ"))
 
 
-def _authors(raw: str) -> list:
-    text = _drop_cmd_args(raw, ("thanks", "footnote", "footnotetext", "texttt", "url", "href", "email",
-                                "textsuperscript", "affil", "affiliation", "institute", "color", "textcolor",
-                                "hspace", "vspace", "footnotemark"))
+def _is_affiliation(line: str) -> bool:
+    low = line.lower()
+    words = set(re.findall(r"[a-z]+", low))
+    if words & _AFFIL_WORDS:
+        return True
+    return any(phrase in low for phrase in _AFFIL_PHRASES)
+
+
+def _looks_like_person(name: str) -> bool:
+    name = re.sub(r"\s+", " ", name).strip(" ,;.*")
+    if not name or len(name) < 3 or len(name) > 80 or _is_affiliation(name):
+        return False
+    if "@" in name or any(ch.isdigit() for ch in name):
+        return False
+    words = name.split()
+    if not words or len(words) > 6:
+        return False
+    if not words[0][:1].isupper():
+        return False
+    for word in words:
+        bare = word.strip(".").lower()
+        if bare in _PARTICLES:
+            continue
+        if not word[:1].isupper():
+            return False
+    return True
+
+
+def _clean_name_line(line: str) -> str:
+    line = re.sub(r"\\(?:emph|textit|textbf|textsc|textrm|textmd|mbox)\{([^{}]*)\}", r"\1", line)
+    line = re.sub(r"\\[A-Za-z@]+\*?(?:\[[^\]]*\])?", " ", line)
+    line = line.replace("{", " ").replace("}", " ").replace("~", " ")
+    line = re.sub(r"\([^)]*\)", " ", line)
+    line = re.sub(r"\S+@\S+", " ", line)
+    line = re.sub(r"[\d*†‡§¶]+", "", line)
+    return re.sub(r"\s+", " ", line).strip(" ,;.*")
+
+
+def _prepare_author_text(raw: str) -> str:
+    text = _drop_cmd_args(raw, _DROP_AUTHOR_CMDS)
     text = re.sub(r"~~+|\\quad|\\qquad", "\n", text)
     text = re.sub(r"\$[^$]*\$", " ", text)
-    for a, b in _ACCENTS:
-        text = text.replace(a, b)
-    text = re.sub(r"\\and\b", "\n", text, flags=re.I)
-    text = re.sub(r"\\\\", "\n", text)
-    text = re.sub(r"\\[A-Za-z@]+\*?(?:\[[^\]]*\])?", " ", text)
-    text = re.sub(r"\S+@\S+", " ", text)
-    text = text.replace("{", " ").replace("}", " ").replace("~", " ")
+    for src, dst in _ACCENTS:
+        text = text.replace(src, dst)
+    return text
+
+
+def _split_name_line(line: str) -> list:
+    line = line.strip(" ,;.*")
+    if not line:
+        return []
+    and_parts = re.split(r"\s+\band\b\s+", line)
+    if len(and_parts) > 1:
+        names = []
+        for part in and_parts:
+            names.extend(_split_name_line(part))
+        return names
+    comma_parts = [part.strip() for part in line.split(",") if part.strip()]
+    if len(comma_parts) >= 2 and all(_looks_like_person(part) and len(part.split()) >= 2 for part in comma_parts):
+        return comma_parts
+    return [line] if _looks_like_person(line) else []
+
+
+def _names_from_author_body(raw: str) -> list:
+    """One \\author / \\icmlauthor / \\IEEEauthorblockN body. The first real line is the name."""
+    text = _prepare_author_text(raw)
+    people = re.split(r"\\and\b", text, flags=re.I)
     names = []
-    for line in text.splitlines():
-        for part in re.split(r",|;|\band\b", line):
-            name = re.sub(r"\s+", " ", part).strip(" ;.*")
-            low = name.lower()
-            words = name.split()
-            if not name or len(name) < 3 or len(words) > 5 or any(ch.isdigit() for ch in name):
+    for person in people:
+        chosen = ""
+        for line in re.split(r"\\\\|\n", person):
+            cleaned = _clean_name_line(line)
+            if not cleaned or _is_affiliation(cleaned):
                 continue
-            if any(w in low.split() or low.startswith(w) for w in _AFFIL):
-                continue
-            if not words[0][:1].isupper():
-                continue
-            if name not in names:
-                names.append(name)
-    return names[:40]
+            chosen = cleaned
+            break
+        names.extend(_split_name_line(chosen))
+    return names
+
+
+def _dedupe_names(names: list) -> list:
+    out = []
+    for name in names:
+        name = re.sub(r"\s+", " ", name).strip()
+        if name and name not in out:
+            out.append(name)
+    return out[:40]
+
+
+def _authors_in(tex: str) -> list:
+    names = []
+    for body in _grab_all(tex, "author"):
+        if "\\IEEEauthorblockN" in body or "\\icmlauthor" in body:
+            for cmd in ("IEEEauthorblockN", "icmlauthor"):
+                for inner in _grab_all(body, cmd):
+                    names.extend(_names_from_author_body(inner))
+        else:
+            names.extend(_names_from_author_body(body))
+    if not names:
+        for cmd in ("IEEEauthorblockN", "icmlauthor"):
+            for inner in _grab_all(tex, cmd):
+                names.extend(_names_from_author_body(inner))
+    return _dedupe_names(names)
+
+
+def extract_authors(tex: str) -> list:
+    """Authors from \\author, \\icmlauthor, and \\IEEEauthorblockN.
+
+    Handles \\and / \\And, \\thanks, and the name-then-affiliation lines used by
+    NeurIPS, ICML, ICLR, arXiv, and IEEE. Semantic Scholar names win later when present.
+    """
+    cut = tex.find("\\begin{document}")
+    scope = tex if cut < 0 else tex[:cut]
+    names = _authors_in(scope)
+    if not names and cut >= 0:
+        names = _authors_in(tex)
+    return names
 
 
 def materialize_figures(blocks: list, root: Path, dest: Path) -> int:
@@ -853,7 +953,7 @@ def parse_tex(tex: str, macros: dict | None = None, arxiv_id: str = "") -> dict:
         "arxivId": arxiv_id,
         "corpusid": None,
         "title": title,
-        "authors": _authors(_grab(tex, "author")),
+        "authors": extract_authors(tex),
         "date": plain(parse_inlines(_grab(tex, "date"), macros)),
         "abstract": abstract,
         "license": license_note,
