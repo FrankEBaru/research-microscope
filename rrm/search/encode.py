@@ -77,4 +77,4 @@ class QueryEncoder:
         )
         with self._torch.no_grad():
             hidden = self._model(**inputs).last_hidden_state[:, 0, :]
-        return hidden.numpy().astype(np.float32, copy=False)
+        return hidden.numpy().astype("float32", copy=False)
