@@ -43,13 +43,18 @@ export function analyze(t) {
     for (let r = 0; r < h; r++) { const c = junk(text[r][i]) ? "" : text[r][i]; if (c && c !== parts[parts.length - 1]) parts.push(c); }
     return parts.join(" · ");
   });
+  // para dibujar la tabla con colspan: filas originales (sin expandir) con la columna donde empieza cada celda
+  const orig = [...(t.head || []).map((r, i) => ({ cells: r, spans: t.hspan?.[i] })), ...(t.body || []).map((r, i) => ({ cells: r, spans: t.bspan?.[i] }))];
+  const place = (o, isHead) => { let col = 0; return o.cells.map((c, i) => { const span = (o.spans && o.spans[i]) || 1; const cell = { c: isHead && junk(cellText(c)) ? [] : c, span, col }; col += span; return cell; }); };
+  const headRows = orig.slice(0, h).map((o) => place(o, true));
+  const bodyRows = orig.slice(h).map((o) => place(o, false));
   const rows = text.slice(h).map((r) => ({ label: (r[0] || "").replace(/\[cite\]/g, "").trim(), raw: r, num: r.map((c, i) => (i === 0 ? null : parseNumber(c))) }));
   const numericCols = [];
   for (let i = 1; i < ncols; i++) {
     const filled = rows.filter((r) => r.raw[i]);
     if (filled.length >= 3 && filled.filter((r) => r.num[i] !== null).length / filled.length >= 0.6) numericCols.push(i);
   }
-  return { headers, rows, numericCols };
+  return { headers, rows, numericCols, headRows, bodyRows };
 }
 
 /** Barras de una columna: valores no nulos, con orden y escala elegidos. Las barras de log usan log10 relativo al mínimo positivo. */

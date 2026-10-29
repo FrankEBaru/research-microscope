@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { parseNumber, analyze, bars } from "../src/lib/tablechart.js";
+import { parseNumber, analyze, bars, cellText } from "../src/lib/tablechart.js";
 
 const T = (v) => ({ t: "text", v }); const M = (v) => ({ t: "math", v, display: false });
 test("parseNumber: decimales, miles, porcentaje, científica y basura", () => {
@@ -21,6 +21,10 @@ test("analyze: cabecera multicolumna se expande por colspan y se ignora «2-3»"
   assert.deepEqual(m.rows.map((r) => r.label), ["A", "B", "C", "D"]);
   assert.deepEqual(m.numericCols, [1, 2, 4, 5]);
   assert.equal(m.rows[1].num[4], 2.3e19);
+  assert.equal(m.headRows.length, 2, "dos filas de cabecera");
+  assert.deepEqual(m.headRows[0].map((c) => [c.col, c.span]), [[0, 1], [1, 2], [3, 1], [4, 2]], "BLEU abarca 2 columnas y Cost otras 2");
+  assert.equal(cellText(m.headRows[1][0].c), "", "el residuo «2-3» no se dibuja");
+  assert.equal(m.bodyRows.length, 4);
 });
 test("bars: orden, valores nulos fuera, y la escala log no cambia el orden", () => {
   const m = { rows: [{ label: "a", raw: ["a", "10"], num: [null, 10] }, { label: "b", raw: ["b", "1000"], num: [null, 1000] }, { label: "c", raw: ["c", ""], num: [null, null] }, { label: "d", raw: ["d", "100"], num: [null, 100] }] };
