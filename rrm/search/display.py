@@ -106,9 +106,15 @@ def merge_display(papers, tldrs):
     papers = unique_sorted(papers)
     if tldrs is None or tldrs.num_rows == 0:
         return papers.append_column("tldr", pa.nulls(papers.num_rows, pa.string()))
+    from rrm.search.graph import locate
+
+    # A sorted lookup instead of Table.join: the Acero join aborts on ~16M rows of tldr text.
     tldrs = unique_sorted(tldrs)
-    side = pa.table({"corpusid": tldrs.column("corpusid"), "tldr": tldrs.column("text")})
-    return papers.join(side, keys="corpusid", join_type="left outer").sort_by("corpusid")
+    tids = tldrs.column("corpusid").fill_null(-1).to_numpy(zero_copy_only=False)
+    pids = papers.column("corpusid").fill_null(-1).to_numpy(zero_copy_only=False)
+    hit, pos = locate(tids, pids)
+    take = pa.array(pos, type=pa.int64(), mask=~hit)
+    return papers.append_column("tldr", tldrs.column("text").take(take))
 
 
 def empty_papers():
