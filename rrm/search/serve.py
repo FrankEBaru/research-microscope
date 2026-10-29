@@ -15,9 +15,9 @@ if str(ROOT) not in sys.path:
 import modal
 
 from rrm.search.burst import burst_query
-from rrm.search.display import hydrate
+from rrm.search.display import PaperLookup, hydrate
 from rrm.search.encode import QueryEncoder
-from rrm.search.faissutil import search_vectors
+from rrm.search.faissutil import search_vectors, vector_at
 from rrm.search.split import split_query
 from rrm.search.store import load_bundle
 
@@ -58,6 +58,7 @@ class BurstSearch:
         if self.bundle is None or self.key != key:
             vol.reload()
             self.bundle = load_bundle(Path(MOUNT) / key[0] / key[1])
+            self.bundle["lookup"] = PaperLookup(self.bundle["display"])
             self.key = key
         return self.bundle
 
@@ -69,6 +70,9 @@ class BurstSearch:
         def search(vector, k):
             return search_vectors(bundle["index"], bundle["faiss_ids"], vector, k)
 
+        def vector_of(corpusid):
+            return vector_at(bundle["index"], bundle["faiss_ids"], corpusid)
+
         result = burst_query(
             query,
             encode=self.encoder.encode,
@@ -76,6 +80,8 @@ class BurstSearch:
             split=split_query,
             graph=bundle["graph"],
             exclude=skip,
+            resolve=bundle["lookup"].resolve,
+            vector_of=vector_of,
         )
         table = bundle["display"]
         papers = result["papers"]
@@ -99,7 +105,5 @@ def _safe(name):
 def main(query: str, release: str = "2026-10-20", dest: str = "index", exclude: int = -1):
     import json
 
-    if not os.environ.get("MODEL_API_KEY"):
-        raise SystemExit("MODEL_API_KEY is not set")
     out = BurstSearch().burst.remote(query, release, dest, int(exclude))
     print(json.dumps(out, ensure_ascii=False))

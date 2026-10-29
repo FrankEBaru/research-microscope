@@ -33,7 +33,7 @@ modal run --detach pipelines/index_build/app.py::display_table --release 2026-10
 
 ## One query
 
-Needs `faiss.index`, `faiss_ids.npy`, the CSR arrays, and `display.parquet` under the dest directory. The container asks for 16 GB.
+Needs `faiss.index`, `faiss_ids.npy`, the CSR arrays, and `display.parquet` under the dest directory. The container asks for 16 GB. A DOI, arXiv id, corpus id, or exact title (lowercase, punctuation collapsed) uses that paper's stored vector and its citation neighbors, and does not call the model. Rebuild the display table so those rows include `doi`, `arxiv`, and `title_norm`. `MODEL_API_KEY` is read only when the query is not one of those papers. A paste longer than 40 words, and a title joined to an abstract with a newline, use the SPECTER2 proximity adapter. Shorter text uses `adhoc_query`.
 
 ```bash
 modal run rrm/search/serve.py::main --query "How do graph neural networks use citation structure?" --release 2026-10-20 --dest index_test

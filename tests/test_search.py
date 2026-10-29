@@ -8,8 +8,9 @@ import pytest
 
 from eval.citation_recall import evaluate_one, offline_split, recall_at_k, sample_local_ids
 from rrm.search.burst import burst_query, rank_expanded
-from rrm.search.display import filter_papers, hydrate, merge_display
-from rrm.search.faissutil import add_vectors, merge_indexes, search_vectors, train_ivfpq, vectors_from_table
+from rrm.search.display import PaperLookup, filter_papers, hydrate, merge_display
+from rrm.search.encode import use_proximity
+from rrm.search.faissutil import add_vectors, merge_indexes, search_vectors, train_ivfpq, vector_at, vectors_from_table
 from rrm.search.graph import Graph, csr_from_edges, edges_from_pairs, int_column, stack_edges
 from rrm.search.split import parse_subtopics, skip_split, split_query
 
@@ -107,6 +108,8 @@ def test_faiss_search_and_merge():
     hits = search_vectors(index, merged_ids, got_vecs[0], 5)
     assert hits[0][0] == 1000
     assert [cid for cid, _dist in hits].count(1000) == 1
+    assert vector_at(index, merged_ids, 1000) is not None
+    assert vector_at(index, merged_ids, -1) is None
 
 
 def test_display_join_and_hydrate():
@@ -186,3 +189,56 @@ def test_full_text_search_overlaps_split():
     assert out["subtopics"][0] == "citation graphs"
     assert 1 in out["first_ids"]
     assert 2 in out["papers"]["corpusids"]
+
+
+def test_paper_seed_and_adapter_rule():
+    assert use_proximity("graph neural networks") is False
+    assert use_proximity("word " * 41) is True
+    assert use_proximity("Attention Is All You Need\nWe propose a new simple network.") is True
+    ext = pa.struct([("DOI", pa.string()), ("ArXiv", pa.string())])
+    papers = pa.table({
+        "corpusid": pa.array([5, 6], type=pa.int64()),
+        "title": ["Graph Nets", "Attention Is All You Need"],
+        "year": pa.array([2018, 2017], type=pa.int64()),
+        "venue": ["A", "B"],
+        "citationcount": pa.array([1, 2], type=pa.int64()),
+        "externalids": pa.array([
+            {"DOI": "https://doi.org/10.1145/3292500.3330919", "ArXiv": None},
+            {"DOI": None, "ArXiv": "1706.03762v1"},
+        ], type=ext),
+    })
+    table = filter_papers(papers, np.array([5, 6], dtype=np.int64))
+    look = PaperLookup(table)
+    assert look.resolve("doi:10.1145/3292500.3330919") == 5
+    assert look.resolve("arXiv:1706.03762v1") == 6
+    assert look.resolve("corpusid:5") == 5
+    assert look.resolve("Attention, is ALL you need!") == 6
+    assert look.resolve("graph neural networks") is None
+    calls = {"encode": 0, "split": 0}
+
+    def encode(texts):
+        calls["encode"] += 1
+        return np.zeros((len(texts), 4), dtype=np.float32)
+
+    def search(vector, k):
+        assert float(vector[0]) == 3.0
+        return [(7, 0.2), (5, 0.0)]
+
+    def split(query):
+        calls["split"] += 1
+        return ["a", "b", "c"]
+
+    graph = Graph.from_edges(np.array([5, 7], dtype=np.int64), np.array([0]), np.array([1]))
+    out = burst_query(
+        "10.1145/3292500.3330919",
+        encode,
+        search,
+        split,
+        graph,
+        resolve=lambda query: 5,
+        vector_of=lambda corpusid: np.array([3.0, 0.0, 0.0, 0.0], dtype=np.float32),
+    )
+    assert calls == {"encode": 0, "split": 0}
+    assert out["subtopics"] == []
+    assert out["papers"]["corpusids"][0] == 5
+    assert 7 in out["papers"]["corpusids"]

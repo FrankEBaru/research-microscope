@@ -66,6 +66,24 @@ def add_vectors(index, vectors):
     return int(vecs.shape[0])
 
 
+def ensure_direct_map(index):
+    """reconstruct() needs a direct map. One int per row, built once."""
+    import faiss
+
+    if index.direct_map.type == faiss.DirectMap.NoMap:
+        index.make_direct_map()
+
+
+def vector_at(index, faiss_ids, corpusid):
+    """Stored vector for one corpus id. Row id matches add order. None if absent."""
+    ids = np.asarray(faiss_ids, dtype=np.int64).reshape(-1)
+    at = np.flatnonzero(ids == int(corpusid))
+    if at.size == 0:
+        return None
+    ensure_direct_map(index)
+    return np.ascontiguousarray(index.reconstruct(int(at[0])), dtype=np.float32)
+
+
 def search_vectors(index, faiss_ids, vector, k):
     """Nearest corpus ids. faiss_ids[row] is the corpus id added at that row."""
     q = np.ascontiguousarray(vector, dtype=np.float32).reshape(1, -1)

@@ -161,6 +161,7 @@ def run_loaded(bundle, release, n, min_refs, seed, k, shard_limit, row_limit, sp
         if not abstract or not title:
             continue
         relevant = [int(graph.ids[j]) for j in graph.out_neighbors(local).tolist()]
+        # Newline marks title + abstract, so QueryEncoder uses the proximity adapter.
         query = title + "\n" + abstract
         rows.append(
             evaluate_one(query, cid, relevant, encode, search, graph, split_fn, k=k)

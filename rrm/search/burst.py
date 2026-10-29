@@ -164,13 +164,71 @@ def rank_expanded(groups, graph, k=100, exclude=(), iters=20):
     }
 
 
-def burst_query(query, encode, search, split, graph, k=100, fanout=80, exclude=()):
+def citation_ids(graph, corpusid):
+    """Corpus ids one citation step from corpusid, either direction."""
+    hit, pos = locate(graph.ids, [int(corpusid)])
+    if not hit[0]:
+        return []
+    local = int(pos[0])
+    parts = [
+        graph.out_indices[int(graph.out_indptr[local]) : int(graph.out_indptr[local + 1])],
+        graph.in_indices[int(graph.in_indptr[local]) : int(graph.in_indptr[local + 1])],
+    ]
+    parts = [part for part in parts if len(part)]
+    if not parts:
+        return []
+    return [int(x) for x in graph.ids[np.unique(np.concatenate(parts))].tolist()]
+
+
+def _pin(ranked, seed, k):
+    seed = int(seed)
+    ids = [cid for cid in ranked["corpusids"] if cid != seed]
+    scores = [score for cid, score in zip(ranked["corpusids"], ranked["scores"]) if cid != seed]
+    ids.insert(0, seed)
+    top = float(scores[0]) + 1.0 if scores else 1.0
+    scores.insert(0, top)
+    ids, scores = ids[: int(k)], scores[: int(k)]
+    keep = set(ids)
+    edges = [edge for edge in ranked["edges"] if edge["citing"] in keep and edge["cited"] in keep]
+    return {"corpusids": ids, "scores": scores, "edges": edges}
+
+
+def _from_paper(seed, search, graph, vector_of, k, fanout, exclude):
+    """FAISS with the paper's own vector, then its citation neighbors, then one hop."""
+    seconds = {"encode": 0.0, "split": 0.0, "search": 0.0, "rank": 0.0}
+    hits = []
+    t0 = time.perf_counter()
+    if vector_of is not None:
+        vec = vector_of(int(seed))
+        if vec is not None:
+            hits = search(vec, int(fanout))
+    seconds["search"] = time.perf_counter() - t0
+    group = [int(seed)] + [cid for cid, _dist in hits] + citation_ids(graph, seed)
+    t0 = time.perf_counter()
+    ranked = _pin(rank_expanded([group], graph, k=k, exclude=exclude), seed, k)
+    seconds["rank"] = time.perf_counter() - t0
+    first = [int(seed)] + [cid for cid in knn_ids(hits, k, exclude) if cid != int(seed)]
+    return {
+        "subtopics": [],
+        "first_ids": first[: int(k)],
+        "papers": ranked,
+        "seconds": {name: round(value, 4) for name, value in seconds.items()},
+    }
+
+
+def burst_query(query, encode, search, split, graph, k=100, fanout=80, exclude=(), resolve=None, vector_of=None):
     """Full-text search overlaps the split. Then one search per subtopic.
 
     encode(texts) -> (n, d) float32. search(vector, k) -> [(corpusid, dist), ...].
     split(query) -> list[str]. graph is a Graph.
+    resolve(query) -> corpusid or None for an exact paper (DOI, arXiv, corpus id, title).
+    vector_of(corpusid) -> that paper's stored vector, or None.
     """
     exclude = set(int(x) for x in exclude)
+    if resolve is not None:
+        seed = resolve(query)
+        if seed is not None and int(seed) not in exclude:
+            return _from_paper(int(seed), search, graph, vector_of, k, fanout, exclude)
     seconds = {}
 
     def _split():

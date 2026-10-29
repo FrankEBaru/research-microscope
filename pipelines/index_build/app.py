@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
 import modal
 
 from rrm.search.display import empty_papers, empty_tldrs, filter_papers, filter_tldrs, merge_display
-from rrm.search.faissutil import add_vectors, merge_indexes, reservoir, train_ivfpq, vectors_from_table
+from rrm.search.faissutil import add_vectors, ensure_direct_map, merge_indexes, reservoir, train_ivfpq, vectors_from_table
 from rrm.search.graph import Graph, edges_from_pairs, int_column, sorted_ids, stack_edges
 from rrm.search.store import part_names, read_capped, save_graph
 
@@ -168,6 +168,7 @@ def merge_faiss(release: str, dest: str, nprobe: int):
         lists.append(np.load(path.with_suffix(".npy")))
     index, ids = merge_indexes(indexes, lists)
     index.nprobe = int(nprobe)
+    ensure_direct_map(index)
     root = _root(release, dest)
     _save_index(index, root / "faiss.index")
     _save_npy(root / "faiss_ids.npy", ids)
@@ -230,7 +231,7 @@ def papers_shard(release: str, dest: str, name: str, row_limit: int):
     cs = np.load(_root(release, dest) / "graph_ids.npy")
     table = read_capped(
         Path(MOUNT) / _safe(release) / "papers" / name,
-        ["corpusid", "title", "year", "venue", "citationcount"],
+        ["corpusid", "title", "year", "venue", "citationcount", "externalids"],
         row_limit,
     )
     out = filter_papers(table, cs)
