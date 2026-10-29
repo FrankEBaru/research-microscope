@@ -84,6 +84,28 @@ test("hover: símbolo con definición del paper, cita y celda de tabla", async (
   await p.close();
 });
 
+test("figura que acompaña: la referencia «Figura n» muestra la figura original", async () => {
+  const p = await page("#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".paper");
+  const el = await p.$('.xref[data-pop^="f|"]'); assert.ok(el, "hay referencias a figuras");
+  await el.evaluate((e) => { e.scrollIntoView({ block: "center" }); e.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); }); await p.waitForTimeout(450);
+  assert.ok(await p.$(".popover .pop-figs img"), "imagen en la vista previa");
+  assert.match(await p.$eval(".popover", (e) => e.textContent), /Figura \d/);
+  await p.close();
+});
+
+test("BibTeX: la ficha del paper trae el id de arXiv", async () => {
+  const p = await page("#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".paper");
+  const b = await p.$eval("button.bib", (e) => e.dataset.bibtex);
+  assert.match(b, /@misc\{vaswani2017attention/); assert.match(b, /eprint = \{1706\.03762\}/); await p.close();
+});
+
+test("tensión: el deslizador muestra los factores de Kaplan y Chinchilla", async () => {
+  const p = await page("#/q/escalado/c/desacuerdo"); await p.waitForSelector(".tslider");
+  const rows = await p.$$eval(".trow em", (n) => n.map((e) => e.textContent));
+  assert.equal(rows.length, 4); assert.ok(rows.some((t) => /tamaño del modelo ×5\.4/.test(t)), "×10: 10^0.73 ≈ 5.4");
+  assert.ok(rows.some((t) => /×3\.2/.test(t))); await p.close();
+});
+
 test("instrumento √d_k: apuesta, comprobación y advertencia de σ²", async () => {
   const p = await page("#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".instrument");
   await p.click('.bet-buttons button:has-text("Se duplica")');
