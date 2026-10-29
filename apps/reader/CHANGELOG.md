@@ -32,3 +32,8 @@ Cada fila es un commit atómico; se revierte uno solo con `git revert <hash>`.
 | `7b4528a` | compañero por permanencia + panel de desglose curado |
 | `62f6828` | convergencia (Wilson) y compuerta de selecciones del adaptador de Muse (simulado) |
 | `b240a74` | pestaña Panorama: frases literales, convergencia contada, matriz |
+| `f15c378` | merge de `integration/e2e` (RRM-16: conexión UI↔backend); conflictos de `Engine`/`Paper` resueltos; `verify` corre `contract.test` |
+| `f4374e9` | `panorama.js`: cobertura de la ráfaga y `buildPanorama` (validado, sin red) |
+| `5fa8ea3` | cobertura del Panorama en modo en vivo (`LiveCoverage`) |
+
+Rama de trabajo: `claude/magical-bohr-dzrmt1` (sale de `claude/ui-edge`; la estable `claude/adoring-hypatia-hd4bvs` no se toca).
