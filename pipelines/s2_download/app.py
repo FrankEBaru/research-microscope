@@ -20,7 +20,15 @@ MOUNT = "/s2"
 BLOCK = 64 << 20
 MB = 1 << 20
 _CID = re.compile(rb'"(?:corpusid|corpusId)"\s*:\s*(\d+)')
-_VEC = re.compile(rb'"vector"\s*:\s*\[([^\]]*)\]')
+# The vector is usually a JSON string ("[0.1, -0.2]"), sometimes a bare array.
+_VEC = re.compile(rb'"vector"\s*:\s*"?\[([^\]]*)\]')
+_QUOTE_IDS = re.compile(
+    rb'"(ACL|acl|DBLP|dblp|ArXiv|arxiv|MAG|mag|CorpusId|PubMed|pubmed|'
+    rb'DOI|doi|PubMedCentral|pubmedcentral|authorId|authorid|volume|pages)"'
+    rb'\s*:\s*(-?\d+)(?![\d.])'
+)
+_EXT_NAMES = ["ACL", "DBLP", "ArXiv", "MAG", "CorpusId", "PubMed", "DOI", "PubMedCentral"]
+_JOURNAL_NAMES = ["name", "pages", "volume"]
 
 image = (
     modal.Image.debian_slim(python_version="3.12")
@@ -71,37 +79,55 @@ def _urls(release, dataset):
     return [item["url"] if isinstance(item, dict) else str(item) for item in files]
 
 
-def _schema(dataset):
-    """One schema per dataset. Unknown JSON keys are ignored at parse time."""
-    global _schemas
-    if _schemas is None:
-        import pyarrow as pa
+def _build_schemas():
+    """Parse schemas accept both casings. Output schemas are one canonical shape.
 
-        i, s = pa.int64(), pa.string()
-        fos = pa.list_(pa.struct([("category", s), ("source", s)]))
-        # CorpusId is omitted: it is sometimes a number and sometimes a string.
-        ext = pa.struct([("ArXiv", s), ("arxiv", s), ("DOI", s), ("doi", s)])
-        _schemas = {
-            "papers": pa.schema([
-                ("corpusid", i),
-                ("corpusId", i),
-                ("title", s),
-                ("year", i),
-                ("venue", s),
-                ("citationcount", i),
-                ("referencecount", i),
-                ("influentialcitationcount", i),
-                ("s2fieldsofstudy", fos),
-                ("s2FieldsOfStudy", fos),
-                ("fieldsofstudy", pa.list_(s)),
-                ("fieldsOfStudy", pa.list_(s)),
-                ("externalids", ext),
-                ("externalIds", ext),
-            ]),
-            "abstracts": pa.schema([("corpusid", i), ("abstract", s)]),
-            "tldrs": pa.schema([("corpusid", i), ("model", s), ("text", s)]),
-            # intents is list<string>. A list-of-lists block is rewritten so the
-            # column stays list<string> instead of changing type mid-shard.
+    Numeric ids (CorpusId, authorId, journal volume) are quoted to strings
+    before parse, so a block that mixes int and string still has one type.
+    Keys that are not in the parse schema are inferred and then stored as JSON
+    text instead of being dropped.
+    """
+    import pyarrow as pa
+
+    i, s = pa.int64(), pa.string()
+    fos = pa.list_(pa.struct([("category", s), ("source", s)]))
+    ext_parse = pa.struct([(name, s) for name in _EXT_NAMES] + [(name.lower(), s) for name in _EXT_NAMES])
+    ext_out = pa.struct([(name, s) for name in _EXT_NAMES])
+    author_parse = pa.struct([("authorId", s), ("authorid", s), ("name", s)])
+    author_out = pa.struct([("authorId", s), ("name", s)])
+    journal = pa.struct([(name, s) for name in _JOURNAL_NAMES])
+    papers_common = [
+        ("url", s),
+        ("title", s),
+        ("venue", s),
+        ("publicationvenueid", s),
+        ("year", i),
+        ("referencecount", i),
+        ("citationcount", i),
+        ("influentialcitationcount", i),
+        ("isopenaccess", pa.bool_()),
+        ("publicationtypes", pa.list_(s)),
+        ("publicationdate", s),
+        ("journal", journal),
+    ]
+    return {
+        "parse": {
+            "papers": pa.schema(
+                [
+                    ("corpusid", i),
+                    ("corpusId", i),
+                    ("externalids", ext_parse),
+                    ("externalIds", ext_parse),
+                    ("authors", pa.list_(author_parse)),
+                    ("s2fieldsofstudy", fos),
+                    ("s2FieldsOfStudy", fos),
+                    ("fieldsofstudy", pa.list_(s)),
+                    ("fieldsOfStudy", pa.list_(s)),
+                ]
+                + papers_common
+            ),
+            "abstracts": pa.schema([("corpusid", i), ("corpusId", i), ("abstract", s)]),
+            "tldrs": pa.schema([("corpusid", i), ("corpusId", i), ("model", s), ("text", s)]),
             "citations": pa.schema([
                 ("citationid", i),
                 ("citingcorpusid", i),
@@ -110,8 +136,41 @@ def _schema(dataset):
                 ("contexts", pa.list_(s)),
                 ("intents", pa.list_(s)),
             ]),
-        }
-    return _schemas.get(dataset)
+        },
+        "out": {
+            "papers": pa.schema(
+                [
+                    ("corpusid", i),
+                    ("externalids", ext_out),
+                    ("authors", pa.list_(author_out)),
+                    ("s2fieldsofstudy", fos),
+                    ("fieldsofstudy", pa.list_(s)),
+                ]
+                + papers_common
+                + [("extra", pa.large_string())]
+            ),
+            "abstracts": pa.schema([
+                ("corpusid", i),
+                ("abstract", s),
+                ("openaccessinfo", pa.large_string()),
+                ("extra", pa.large_string()),
+            ]),
+            "tldrs": pa.schema([
+                ("corpusid", i),
+                ("model", s),
+                ("text", s),
+                ("extra", pa.large_string()),
+            ]),
+        },
+    }
+
+
+def _schemas_for(dataset, kind):
+    global _schemas
+    if _schemas is None:
+        _schemas = _build_schemas()
+    bucket = _schemas[kind]
+    return bucket.get(dataset)
 
 
 def _blocks(resp, max_mb, seen):
@@ -165,17 +224,32 @@ def _string_list(value):
     return out
 
 
+def _lookup(mapping, name):
+    if not isinstance(mapping, dict):
+        return None
+    if name in mapping:
+        return mapping[name]
+    return mapping.get(name.lower())
+
+
+def _as_text(value):
+    if value is None:
+        return None
+    return value if isinstance(value, str) else str(value)
+
+
 def _paper_row(row):
-    ext = row.get("externalids")
-    if not isinstance(ext, dict):
-        ext = row.get("externalIds") if isinstance(row.get("externalIds"), dict) else {}
+    """Slow path used only when a papers block still fails after quoting ids."""
+    ext_in = row.get("externalids")
+    if not isinstance(ext_in, dict):
+        ext_in = row.get("externalIds")
     fos = row.get("s2fieldsofstudy")
     if fos is None:
         fos = row.get("s2FieldsOfStudy")
     if isinstance(fos, list):
         fos = [
             {
-                "category": item.get("category") if isinstance(item, dict) else item,
+                "category": item.get("category") if isinstance(item, dict) else _as_text(item),
                 "source": item.get("source") if isinstance(item, dict) else None,
             }
             for item in fos
@@ -183,22 +257,53 @@ def _paper_row(row):
     fields = row.get("fieldsofstudy")
     if fields is None:
         fields = row.get("fieldsOfStudy")
+    raw_authors = row.get("authors")
+    if isinstance(raw_authors, list):
+        authors = []
+        for item in raw_authors:
+            if not isinstance(item, dict):
+                authors.append(None)
+                continue
+            authors.append({
+                "authorId": _as_text(item.get("authorId", item.get("authorid"))),
+                "name": item.get("name"),
+            })
+    else:
+        authors = None
+    journal = row.get("journal")
+    if isinstance(journal, dict):
+        journal = {name: _as_text(_lookup(journal, name)) for name in _JOURNAL_NAMES}
+    else:
+        journal = None
+    known = {
+        "corpusid", "corpusId", "externalids", "externalIds", "url", "title", "authors",
+        "venue", "publicationvenueid", "year", "referencecount", "citationcount",
+        "influentialcitationcount", "isopenaccess", "s2fieldsofstudy", "s2FieldsOfStudy",
+        "fieldsofstudy", "fieldsOfStudy", "publicationtypes", "publicationdate", "journal",
+    }
+    extra = {key: value for key, value in row.items() if key not in known}
     return {
         "corpusid": row.get("corpusid", row.get("corpusId")),
+        "externalids": (
+            {name: _as_text(_lookup(ext_in, name)) for name in _EXT_NAMES}
+            if isinstance(ext_in, dict) else None
+        ),
+        "url": row.get("url"),
         "title": row.get("title"),
-        "year": row.get("year"),
+        "authors": authors,
         "venue": row.get("venue"),
-        "citationcount": row.get("citationcount"),
+        "publicationvenueid": row.get("publicationvenueid"),
+        "year": row.get("year"),
         "referencecount": row.get("referencecount"),
+        "citationcount": row.get("citationcount"),
         "influentialcitationcount": row.get("influentialcitationcount"),
+        "isopenaccess": row.get("isopenaccess"),
         "s2fieldsofstudy": fos,
         "fieldsofstudy": _string_list(fields),
-        "externalids": {
-            "ArXiv": ext.get("ArXiv") or ext.get("arxiv"),
-            "arxiv": ext.get("arxiv") or ext.get("ArXiv"),
-            "DOI": ext.get("DOI") or ext.get("doi"),
-            "doi": ext.get("doi") or ext.get("DOI"),
-        },
+        "publicationtypes": _string_list(row.get("publicationtypes")),
+        "publicationdate": _as_text(row.get("publicationdate")),
+        "journal": journal,
+        "extra": json.dumps(extra, default=str, separators=(",", ":")) if extra else None,
     }
 
 
@@ -213,26 +318,270 @@ def _citation_row(row):
     }
 
 
-def _json_table(blob, dataset):
-    """Parse one block. Fallback rows use the same schema as the fast path."""
-    import pyarrow as pa
+def _read_json(blob, schema, unexpected):
     import pyarrow.json as pj
 
-    schema = _schema(dataset)
-    options = pj.ReadOptions(use_threads=True)
-    if schema is None:
-        return pj.read_json(io.BytesIO(blob), read_options=options)
-    parse = pj.ParseOptions(explicit_schema=schema, unexpected_field_behavior="ignore")
-    try:
-        return pj.read_json(io.BytesIO(blob), read_options=options, parse_options=parse)
-    except pa.ArrowInvalid:
-        project = _citation_row if dataset == "citations" else _paper_row
-        rows = []
-        for line in blob.splitlines():
-            if not line.strip():
-                continue
+    return pj.read_json(
+        io.BytesIO(blob),
+        read_options=pj.ReadOptions(use_threads=True),
+        parse_options=pj.ParseOptions(explicit_schema=schema, unexpected_field_behavior=unexpected),
+    )
+
+
+def _quote_ids(blob):
+    """Turn unquoted numeric ids into JSON strings so int and str share one column."""
+    return _QUOTE_IDS.sub(lambda match: b'"' + match.group(1) + b'": "' + match.group(2) + b'"', blob)
+
+
+def _combine(col):
+    if col is None:
+        return None
+    return col.combine_chunks() if hasattr(col, "combine_chunks") else col
+
+
+def _coalesce_named(table, names):
+    import pyarrow.compute as pc
+
+    cols = [_combine(table.column(name)) for name in names if name in table.column_names]
+    if not cols:
+        return None
+    col = cols[0]
+    for extra in cols[1:]:
+        col = pc.coalesce(col, extra)
+    return col
+
+
+def _text_array(col, n):
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    if col is None or pa.types.is_null(col.type):
+        return pa.nulls(n, pa.string())
+    if not (pa.types.is_string(col.type) or pa.types.is_large_string(col.type)):
+        col = pc.cast(col, pa.string(), safe=False)
+    return col.cast(pa.string())
+
+
+def _struct_children(struct_col, names):
+    """String fields, coalescing Name and name. struct_col is one struct array."""
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    width = len(struct_col)
+    if struct_col is None or not pa.types.is_struct(struct_col.type):
+        return [pa.nulls(width, pa.string()) for _ in names]
+    present = set(struct_col.type.names)
+    children = []
+    for name in names:
+        parts = []
+        for candidate in (name, name.lower()):
+            if candidate in present:
+                parts.append(_text_array(struct_col.field(candidate), width))
+        if not parts:
+            children.append(pa.nulls(width, pa.string()))
+            continue
+        col = parts[0]
+        for extra in parts[1:]:
+            col = pc.coalesce(col, extra)
+        # A null struct's .field() is "" rather than null. Put the null back.
+        col = pc.if_else(struct_col.is_null(), pa.scalar(None, type=pa.string()), col)
+        children.append(col)
+    return children
+
+
+def _struct_array(struct_col, names, n):
+    import pyarrow as pa
+
+    if struct_col is None:
+        children = [pa.nulls(n, pa.string()) for _ in names]
+        return pa.StructArray.from_arrays(children, names)
+    return pa.StructArray.from_arrays(
+        _struct_children(struct_col, names),
+        names,
+        mask=struct_col.is_null(),
+    )
+
+
+def _authors_array(col, n):
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    typ = pa.list_(pa.struct([("authorId", pa.string()), ("name", pa.string())]))
+    if col is None or not pa.types.is_list(col.type):
+        return pa.nulls(n, typ)
+    flat = pc.list_flatten(col)
+    if len(flat) == 0:
+        structs = pa.StructArray.from_arrays(
+            [pa.array([], type=pa.string()), pa.array([], type=pa.string())],
+            ["authorId", "name"],
+        )
+    elif not pa.types.is_struct(flat.type):
+        return pa.nulls(n, typ)
+    else:
+        structs = pa.StructArray.from_arrays(
+            _struct_children(flat, ["authorId", "name"]),
+            ["authorId", "name"],
+            mask=flat.is_null(),
+        )
+    return pa.ListArray.from_arrays(col.offsets, structs, mask=col.is_null())
+
+
+def _json_text(col, n):
+    import pyarrow as pa
+
+    if col is None or pa.types.is_null(_combine(col).type):
+        return pa.nulls(n, pa.large_string())
+    col = _combine(col)
+    if pa.types.is_string(col.type) or pa.types.is_large_string(col.type):
+        return col.cast(pa.large_string())
+    values = []
+    for item in col.to_pylist():
+        if item is None:
+            values.append(None)
+        elif isinstance(item, str):
+            values.append(item)
+        else:
+            values.append(json.dumps(item, default=str, separators=(",", ":")))
+    return pa.array(values, type=pa.large_string())
+
+
+def _pack_extra(table, used, n):
+    import pyarrow as pa
+
+    names = [name for name in table.column_names if name not in used]
+    if not names:
+        return pa.nulls(n, pa.large_string())
+    columns = [table.column(name).to_pylist() for name in names]
+    packed = []
+    for index in range(n):
+        obj = {}
+        for name, values in zip(names, columns):
+            if values[index] is not None:
+                obj[name] = values[index]
+        packed.append(json.dumps(obj, default=str, separators=(",", ":")) if obj else None)
+    return pa.array(packed, type=pa.large_string())
+
+
+def _rows_table(blob, project, schema):
+    import pyarrow as pa
+
+    rows = []
+    for line in blob.splitlines():
+        if line.strip():
             rows.append(project(json.loads(line)))
-        return pa.Table.from_pylist(rows, schema=schema)
+    return pa.Table.from_pylist(rows, schema=schema)
+
+
+def _papers_table(blob):
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    out = _schemas_for("papers", "out")
+    parse = _schemas_for("papers", "parse")
+    try:
+        table = _read_json(_quote_ids(blob), parse, "infer")
+    except pa.ArrowInvalid:
+        return _rows_table(blob, _paper_row, out)
+    n = table.num_rows
+    ext = _coalesce_named(table, ("externalids", "externalIds"))
+    fos = _coalesce_named(table, ("s2fieldsofstudy", "s2FieldsOfStudy"))
+    fields = _coalesce_named(table, ("fieldsofstudy", "fieldsOfStudy"))
+    authors = _combine(table.column("authors")) if "authors" in table.column_names else None
+    journal = _combine(table.column("journal")) if "journal" in table.column_names else None
+    used = set(parse.names)
+    columns = {
+        "corpusid": _corpus_ids(table),
+        "externalids": _struct_array(ext, _EXT_NAMES, n),
+        "url": _text_array(_combine(table.column("url")) if "url" in table.column_names else None, n),
+        "title": _text_array(_combine(table.column("title")) if "title" in table.column_names else None, n),
+        "authors": _authors_array(authors, n),
+        "venue": _text_array(_combine(table.column("venue")) if "venue" in table.column_names else None, n),
+        "publicationvenueid": _text_array(_combine(table.column("publicationvenueid")) if "publicationvenueid" in table.column_names else None, n),
+        "year": _coalesce_named(table, ("year",)) if "year" in table.column_names else pa.nulls(n, pa.int64()),
+        "referencecount": table.column("referencecount") if "referencecount" in table.column_names else pa.nulls(n, pa.int64()),
+        "citationcount": table.column("citationcount") if "citationcount" in table.column_names else pa.nulls(n, pa.int64()),
+        "influentialcitationcount": table.column("influentialcitationcount") if "influentialcitationcount" in table.column_names else pa.nulls(n, pa.int64()),
+        "isopenaccess": table.column("isopenaccess") if "isopenaccess" in table.column_names else pa.nulls(n, pa.bool_()),
+        "s2fieldsofstudy": fos if fos is not None else pa.nulls(n, out.field("s2fieldsofstudy").type),
+        "fieldsofstudy": fields if fields is not None else pa.nulls(n, pa.list_(pa.string())),
+        "publicationtypes": table.column("publicationtypes") if "publicationtypes" in table.column_names else pa.nulls(n, pa.list_(pa.string())),
+        "publicationdate": _text_array(_combine(table.column("publicationdate")) if "publicationdate" in table.column_names else None, n),
+        "journal": _struct_array(journal, _JOURNAL_NAMES, n),
+        "extra": _pack_extra(table, used, n),
+    }
+    # year/counts may be chunked; cast only scalars, never lists.
+    for name, typ in (("year", pa.int64()), ("referencecount", pa.int64()), ("citationcount", pa.int64()), ("influentialcitationcount", pa.int64())):
+        if columns[name].type != typ:
+            columns[name] = pc.cast(columns[name], typ, safe=False)
+    return pa.table(columns, schema=out)
+
+
+def _simple_table(blob, dataset, text_fields, json_fields):
+    """abstracts and tldrs: keep named fields, JSON-stringify the rest."""
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    out = _schemas_for(dataset, "out")
+    parse = _schemas_for(dataset, "parse")
+    try:
+        table = _read_json(blob, parse, "infer")
+    except pa.ArrowInvalid:
+        return _rows_table(blob, _loose_row(dataset), out)
+    n = table.num_rows
+    used = set(parse.names)
+    columns = {"corpusid": _corpus_ids(table)}
+    for name in text_fields:
+        columns[name] = _text_array(_combine(table.column(name)) if name in table.column_names else None, n)
+    for name, aliases in json_fields:
+        used.update(aliases)
+        parts = [_json_text(table.column(alias), n) for alias in aliases if alias in table.column_names]
+        if not parts:
+            columns[name] = pa.nulls(n, pa.large_string())
+        else:
+            col = parts[0]
+            for extra in parts[1:]:
+                col = pc.coalesce(col, extra)
+            columns[name] = col
+    columns["extra"] = _pack_extra(table, used, n)
+    return pa.table(columns, schema=out)
+
+
+def _loose_row(dataset):
+    def project(row):
+        if dataset == "abstracts":
+            info = row.get("openaccessinfo", row.get("openAccessInfo"))
+            extra = {key: value for key, value in row.items() if key not in {"corpusid", "corpusId", "abstract", "openaccessinfo", "openAccessInfo"}}
+            return {
+                "corpusid": row.get("corpusid", row.get("corpusId")),
+                "abstract": row.get("abstract"),
+                "openaccessinfo": None if info is None else info if isinstance(info, str) else json.dumps(info, default=str),
+                "extra": json.dumps(extra, default=str) if extra else None,
+            }
+        extra = {key: value for key, value in row.items() if key not in {"corpusid", "corpusId", "model", "text"}}
+        return {
+            "corpusid": row.get("corpusid", row.get("corpusId")),
+            "model": row.get("model"),
+            "text": row.get("text"),
+            "extra": json.dumps(extra, default=str) if extra else None,
+        }
+    return project
+
+
+def _json_table(blob, dataset):
+    """Parse one block into the dataset's stable output schema."""
+    import pyarrow as pa
+
+    if dataset == "papers":
+        return _papers_table(blob)
+    if dataset == "abstracts":
+        return _simple_table(blob, dataset, ["abstract"], [("openaccessinfo", ("openaccessinfo", "openAccessInfo"))])
+    if dataset == "tldrs":
+        return _simple_table(blob, dataset, ["model", "text"], [])
+    schema = _schemas_for("citations", "parse")
+    try:
+        return _read_json(blob, schema, "ignore")
+    except pa.ArrowInvalid:
+        return _rows_table(blob, _citation_row, schema)
 
 
 def _align(table, schema):
@@ -267,11 +616,12 @@ def _align(table, schema):
     return pa.table(dict(zip(names, cols)), schema=schema)
 
 
-def _emb_table(blob, cs):
+def _emb_table(blob, cs, missed):
     """Keep embedding rows. cs is a set of corpus ids, or None to keep every row.
 
     Lines are filtered with a byte regex before any JSON parse. The vector text
-    inside the brackets is read with numpy, not converted through Python lists.
+    inside the brackets is read with numpy. missed counts lines that had a
+    corpus id but no vector text.
     """
     import numpy as np
     import pyarrow as pa
@@ -283,12 +633,13 @@ def _emb_table(blob, cs):
         if not found:
             continue
         cid = int(found.group(1))
-        if cs is not None and cid not in cs:
-            continue
         brackets = _VEC.search(line)
         if not brackets or not brackets.group(1).strip():
+            missed[0] += 1
             continue
-        vecs.append(np.fromstring(brackets.group(1), sep=",", dtype=np.float16))
+        if cs is not None and cid not in cs:
+            continue
+        vecs.append(np.fromstring(brackets.group(1).decode(), sep=",", dtype=np.float16))
         ids.append(cid)
     if not ids:
         return None
@@ -429,6 +780,7 @@ def process_shard(dataset: str, idx: int, release: str, url: str, max_mb: int = 
     seen = [0]
     try:
         cs = None
+        missed = [0]
         if dataset == "embeddings-specter_v2":
             cs_path = Path(MOUNT) / release / "cs_corpusids.parquet"
             if cs_path.exists():
@@ -437,7 +789,7 @@ def process_shard(dataset: str, idx: int, release: str, url: str, max_mb: int = 
         def tables():
             for blob in _blocks(resp, max_mb, seen):
                 if dataset == "embeddings-specter_v2":
-                    yield _emb_table(blob, cs)
+                    yield _emb_table(blob, cs, missed)
                 else:
                     yield _json_table(blob, dataset)
 
@@ -445,7 +797,10 @@ def process_shard(dataset: str, idx: int, release: str, url: str, max_mb: int = 
     finally:
         resp.close()
     vol.commit()
-    return _done(dataset, idx, seen[0], dest.stat().st_size, rows, started)
+    result = _done(dataset, idx, seen[0], dest.stat().st_size, rows, started)
+    if dataset == "embeddings-specter_v2":
+        result["vec_miss"] = missed[0]
+    return result
 
 
 @app.function(
@@ -521,10 +876,15 @@ def main(
             text = str(row).split("?", 1)[0][:160]
             print(f"ERROR {type(row).__name__} {text}")
             continue
-        print(
+        line = (
             f"{row['dataset']} {row['idx']} in_mb={row['in_mb']} "
             f"out_mb={row['out_mb']} rows={row['rows']} s={row['seconds']}"
         )
+        if "vec_miss" in row:
+            line += f" vec_miss={row['vec_miss']}"
+            if row["vec_miss"]:
+                print(f"WARNING {row['dataset']} {row['idx']} cid_without_vector={row['vec_miss']}")
+        print(line)
         total_in += row["in_mb"]
         total_out += row["out_mb"]
         total_rows += row["rows"]
