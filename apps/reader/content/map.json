@@ -1,0 +1,79 @@
+{
+  "note": "Ráfaga de ejemplo curada a mano. NO es la salida del motor de ráfaga (RRM-3). Los títulos de pregunta y de cluster son hipótesis del curador; todo lo demás son frases literales de los abstracts.",
+  "questions": [
+    {
+      "id": "atencion",
+      "text": "¿Cómo funciona la atención en un transformer?",
+      "clusters": [
+        {
+          "id": "origen",
+          "title": "¿De dónde sale la idea de atender?",
+          "papers": [
+            { "id": "1409.0473",
+              "contribution": { "paper": "1409.0473", "quote": "allowing a model to automatically (soft-)search for parts of a source sentence that are relevant to predicting a target word" } },
+            { "id": "1508.04025",
+              "contribution": { "paper": "1508.04025", "quote": "a global approach which always attends to all source words and a local one that only looks at a subset of source words at a time" } }
+          ]
+        },
+        {
+          "id": "modelo",
+          "title": "¿Cómo se construye un modelo solo con atención?",
+          "papers": [
+            { "id": "1706.03762",
+              "contribution": { "paper": "1706.03762", "quote": "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely." },
+              "figure": "fig:model-arch",
+              "pending": { "paper": "1706.03762", "quote": "investigate local, restricted attention mechanisms to efficiently handle large inputs and outputs such as images, audio and video" } }
+          ]
+        },
+        {
+          "id": "despues",
+          "title": "¿Qué se hizo después con ese modelo?",
+          "papers": [
+            { "id": "1810.04805",
+              "contribution": { "paper": "1810.04805", "quote": "pre-train deep bidirectional representations from unlabeled text by jointly conditioning on both left and right context in all layers" } },
+            { "id": "2005.14165",
+              "contribution": { "paper": "2005.14165", "quote": "scaling up language models greatly improves task-agnostic, few-shot performance" } },
+            { "id": "2010.11929",
+              "contribution": { "paper": "2010.11929", "quote": "a pure transformer applied directly to sequences of image patches can perform very well on image classification tasks" } }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "escalado",
+      "text": "¿Cuánto cómputo y cuántos datos necesita un modelo de lenguaje?",
+      "clusters": [
+        {
+          "id": "reparto",
+          "title": "¿Cómo se reparte el cómputo entre tamaño y datos?",
+          "papers": [
+            { "id": "2001.08361",
+              "contribution": { "paper": "2001.08361", "quote": "optimally compute-efficient training involves training very large models on a relatively modest amount of data" } },
+            { "id": "2203.15556",
+              "contribution": { "paper": "2203.15556", "quote": "the model size and the number of training tokens should be scaled equally" } }
+          ]
+        },
+        {
+          "id": "desacuerdo",
+          "title": "¿Por qué no coinciden?",
+          "papers": [
+            { "id": "2406.12907",
+              "contribution": { "paper": "2406.12907", "quote": "much of this discrepancy can be attributed to Kaplan counting non-embedding rather than total parameters" } },
+            { "id": "2406.19146",
+              "contribution": { "paper": "2406.19146", "quote": "identifying three factors causing the difference: last layer computational cost, warmup duration, and scale-dependent optimizer tuning" } }
+          ],
+          "tension": {
+            "curada": true,
+            "a": { "label": "Kaplan et al.", "paper": "2001.08361", "quote": "optimally compute-efficient training involves training very large models on a relatively modest amount of data" },
+            "b": { "label": "Hoffmann et al. (Chinchilla)", "paper": "2203.15556", "quote": "the model size and the number of training tokens should be scaled equally" },
+            "numbers": { "paper": "2406.12907", "quote": "Kaplan: $N_\\text{optimal} \\propto C^{0.73}$, Chinchilla: $N_\\text{optimal} \\propto C^{0.50}$" },
+            "resolution": [
+              { "paper": "2406.12907", "quote": "much of this discrepancy can be attributed to Kaplan counting non-embedding rather than total parameters" },
+              { "paper": "2406.19146", "quote": "identifying three factors causing the difference: last layer computational cost, warmup duration, and scale-dependent optimizer tuning" }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

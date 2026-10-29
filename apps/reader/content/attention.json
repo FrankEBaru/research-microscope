@@ -1,0 +1,26 @@
+{
+  "paper": "1706.03762",
+  "symbols": [
+    { "id": "dk", "latex": "d_k", "name": "dimensión de queries y keys", "color": "#b45309",
+      "def": { "paper": "1706.03762", "quote": "The input consists of queries and keys of dimension $d_k$, and values of dimension $d_v$." } },
+    { "id": "dv", "latex": "d_v", "name": "dimensión de los values", "color": "#0f766e",
+      "def": { "paper": "1706.03762", "quote": "The input consists of queries and keys of dimension $d_k$, and values of dimension $d_v$." } },
+    { "id": "dmodel", "latex": "d_{\\text{model}}", "name": "dimensión de salida de las capas", "color": "#6d28d9",
+      "def": { "paper": "1706.03762", "quote": "produce outputs of dimension $d_{\\text{model}}=512$" } },
+    { "id": "Q", "latex": "Q", "name": "matriz de queries", "color": "#be123c",
+      "def": { "paper": "1706.03762", "quote": "packed together into a matrix $Q$" } },
+    { "id": "K", "latex": "K", "name": "matriz de keys", "color": "#0369a1",
+      "def": { "paper": "1706.03762", "quote": "The keys and values are also packed together into matrices $K$ and $V$." } },
+    { "id": "V", "latex": "V", "name": "matriz de values", "color": "#15803d",
+      "def": { "paper": "1706.03762", "quote": "The keys and values are also packed together into matrices $K$ and $V$." } }
+  ],
+  "instrument": {
+    "id": "sqrt-dk",
+    "title": "Por qué se divide por √d_k",
+    "supposes": { "paper": "1706.03762", "quote": "independent random variables with mean $0$ and variance $1$" },
+    "claim": { "paper": "1706.03762", "quote": "has mean $0$ and variance $d_k$" },
+    "action": { "paper": "1706.03762", "quote": "To counteract this effect, we scale the dot products by" },
+    "dkParam": { "paper": "1706.03762", "quote": "we use $d_k=d_v=d_{\\text{model}}/h=64$" },
+    "distributionNote": "El paper no fija la distribución de los componentes; este instrumento usa normal estándar."
+  }
+}
