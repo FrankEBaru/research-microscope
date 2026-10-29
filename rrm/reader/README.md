@@ -26,3 +26,9 @@ modal run rrm/reader/serve.py::bench --ids 13756489,2048380074
 ```
 
 Columns are seconds for resolve, download, parse, katex, figures, ocr, sam, then a CPU / L4 / SAM dollar estimate from the 2026-10-28 Modal list price.
+
+## QA notes (2026-10-29, Modal)
+
+- `mineru[core]>=2.5,<3` resolves to mineru 2.7.6 with the **transformers** VLM engine (no vLLM): ~16-22 s/page on an A10 (PLOS 18 pp 292 s, Adam 15 pp 325 s). Model download is only ~10 s, load 5-15 s. Installing vLLM is the next speed step.
+- L4 had no capacity for 10+ min; the function now falls back to A10G (higher price than the L4 figure in the bench columns).
+- SAM: the API returns 404 `model_not_found` on many valid calls, so the client retries. `figure` found nothing on paper pages; `diagram` found every panel. `paper` runs SAM synchronously over up to 30 pages x 3 phrases (~90 calls); this should move to the background before the demo.

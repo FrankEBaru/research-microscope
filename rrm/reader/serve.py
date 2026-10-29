@@ -61,13 +61,16 @@ def _shared_arxiv_wait():
         _gate = modal.Dict.from_name("rrm-arxiv-gate", create_if_missing=True)
 
     def wait():
-        for _ in range(40):
-            now = time.time()
-            nxt = float(_gate.get("next") or 0)
-            if now >= nxt:
-                _gate["next"] = now + 3.2
-                return
-            time.sleep(min(3.2, nxt - now))
+        # Reserve a 3.2 s slot atomically. A get-then-set clock let 10 parallel
+        # parses fetch 10 e-prints in about 10 s (QA 2026-10-29).
+        slot = int(time.time() // 3.2) + 1
+        for _ in range(200):
+            if _gate.put(f"slot:{slot}", 1, skip_if_exists=True):
+                break
+            slot += 1
+        delay = slot * 3.2 - time.time()
+        if delay > 0:
+            time.sleep(delay)
 
     ARXIV.wait = wait
 
