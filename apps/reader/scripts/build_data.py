@@ -3,6 +3,8 @@
 
 - Los datos descargados NO se commitean (repo público; ver AGENTS.md): salen en
   `public/papers/` y `.cache/`, ambos en .gitignore. Se regeneran con `npm run data`.
+- En una máquina nueva, restaurar el Release `artifacts/RRM-11-reader-data-2026-10-29`
+  (ver README) antes de volver a bajar arXiv. Si `.cache/` ya existe, no hay red.
 - arXiv: 1 petición cada 3 s (ToS). Se cachea todo en `.cache/`.
 - Cada ancla del contenido curado (`content/*.json`) se resuelve por CITA TEXTUAL:
   si la cita no aparece exactamente una vez en el paper, el build falla.

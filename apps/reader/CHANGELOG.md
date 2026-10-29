@@ -15,7 +15,7 @@ Cada hito está identificado por el hash de su commit y cada cambio posterior va
 
 Commits posteriores a `42abbf7` no tienen hito hasta el siguiente.
 
-**Tags:** el entorno de desarrollo no puede subir tags (el servidor responde 403: solo permite la rama designada). Para crearlos desde tu máquina:
+**Tags:** el entorno de desarrollo no puede subir tags con `git push` (el servidor responde 403: solo permite la rama designada). Un Release sí: `gh release create` crea el tag `artifacts/…` por la API y el binario no entra al historial. El caché del reader es el Release `artifacts/RRM-11-reader-data-2026-10-29`; cómo restaurarlo está en el README. Para un tag de código, desde tu máquina:
 ```bash
 git tag -a reader-v0.2 955a37b -m "v0.2" && git push origin reader-v0.2
 ```

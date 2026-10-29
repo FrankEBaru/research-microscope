@@ -4,7 +4,8 @@ Código de Research Reading Microscope. El código puede ser feo; se pule con el
 
 ## Qué va aquí
 - Código, pipelines, configs sin secretos, README.
-- Resultados de corridas: como GitHub Releases (`gh release create artifacts/RRM-n-<slug>-YYYY-MM-DD ...`), nunca commiteados al árbol.
+- Resultados de corridas: como GitHub Releases (`gh release create artifacts/RRM-n-<slug>-YYYY-MM-DD ...`), nunca commiteados al árbol. El tag lo crea la API; el asset no entra al historial.
+- Caché del reader (arXiv + bundles, 40 MB): Release `artifacts/RRM-11-reader-data-2026-10-29`. Restaurar en `apps/reader/` antes de volver a bajar arXiv. Ver `apps/reader/README.md`.
 - Datos pesados (índices, embeddings, dumps): en el Volume de Modal, no en git.
 
 ## Qué NO va aquí (repo público)
