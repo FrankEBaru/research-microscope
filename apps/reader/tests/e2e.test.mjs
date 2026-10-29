@@ -139,3 +139,31 @@ test("móvil: el mapa no desborda", async () => {
   const p = await page("#/", 390, 800); await p.waitForSelector(".platina");
   assert.ok((await p.evaluate(() => document.documentElement.scrollWidth)) <= 390); await p.close();
 });
+
+test("compañero: apagado por defecto, ofrece tras repeticiones, respeta el «no» y no guarda ni envía nada", async () => {
+  const p = await page("#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".paper");
+  const reqs = []; p.on("request", (r) => reqs.push([r.method(), r.url()]));
+  assert.equal(await p.$(".companion"), null, "no aparece sin activarlo");
+  assert.match(await p.$eval(".companion-toggle", (e) => e.textContent), /apagado/);
+  await p.keyboard.press("c"); await p.waitForSelector(".companion");
+  assert.match(await p.$eval(".companion-toggle", (e) => e.textContent), /activado/);
+  const hover = (n) => p.$eval("#blk-b27 [data-sym=dk]", (e, k) => { e.scrollIntoView({ block: "center" }); for (let i = 0; i < k; i++) e.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); }, n);
+  await hover(2); await p.waitForTimeout(300); assert.equal(await p.$(".c-bubble"), null, "2 pasadas no bastan");
+  await hover(1); await p.waitForSelector(".c-bubble");
+  assert.match(await p.$eval(".c-bubble", (e) => e.textContent), /No guardo ni envío/);
+  await p.click(".c-no"); await p.waitForTimeout(200); assert.equal(await p.$(".c-bubble"), null);
+  await hover(5); await p.waitForTimeout(300); assert.equal(await p.$(".c-bubble"), null, "no repite lo descartado");
+  assert.equal(await p.evaluate(() => localStorage.length + sessionStorage.length + document.cookie.length), 0, "sin almacenamiento");
+  assert.ok(reqs.every(([m, u]) => m === "GET" && u.startsWith(base)), "sin red externa ni escrituras");
+  await p.close();
+});
+
+test("compañero: aceptar lleva a la definición; alternar personaje; se oculta con un clic", async () => {
+  const p = await page("#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".paper"); await p.keyboard.press("c");
+  await p.$eval("#blk-b27 [data-sym=dk]", (e) => { for (let i = 0; i < 3; i++) e.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); });
+  await p.waitForSelector(".c-bubble"); await p.click(".c-yes"); await p.waitForTimeout(400);
+  assert.equal(await p.$(".c-bubble"), null); assert.ok(await p.$(".flash"), "el bloque de la definición se resalta");
+  assert.ok(await p.$(".char-tardigrado")); await p.click(".c-swap"); assert.ok(await p.$(".char-diatomea")); await p.click(".c-swap"); assert.ok(await p.$(".char-volvox"));
+  await p.click(".c-avatar"); await p.waitForTimeout(200); assert.equal(await p.$(".companion"), null);
+  await p.close();
+});
