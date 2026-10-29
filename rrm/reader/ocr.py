@@ -387,6 +387,35 @@ def place_ocr_figures(blocks, roots, dest: Path) -> int:
     return copied
 
 
+def heal_cached_ocr_figures(folder, paper) -> bool:
+    """Copy MinerU images for a paper cached before `figures/` was filled.
+
+    Pre-RRM-18 OCR left `img_path` values (with slashes) in `paper.json` and the
+    files under `ocr/`. `/file` only serves basenames in `figures/`. Returns
+    whether `paper.json` was rewritten.
+    """
+    if not isinstance(paper, dict):
+        return False
+    folder = Path(folder)
+    if paper.get("source") != "ocr" and not (folder / "ocr").is_dir():
+        return False
+    blocks = paper.get("blocks") or []
+    if not any(
+        isinstance(b, dict) and b.get("kind") == "fig"
+        and any("/" in str(n) or "\\" in str(n) for n in (b.get("images") or []))
+        for b in blocks
+    ):
+        return False
+    before = [list(b.get("images") or []) for b in blocks if isinstance(b, dict)]
+    place_ocr_figures(blocks, folder / "ocr", folder / "figures")
+    after = [list(b.get("images") or []) for b in blocks if isinstance(b, dict)]
+    if before == after:
+        return False
+    from rrm.reader.pipeline import save_paper
+    save_paper(folder, paper)
+    return True
+
+
 def blocks_from_content_list(items: list) -> list:
     blocks = []
     for item in items:
