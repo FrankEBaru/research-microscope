@@ -8,6 +8,13 @@ in one command.
 The Semantic Scholar key is the Modal secret `s2-api-key` (env `S2_API_KEY`
 inside Modal). It is not read from the local environment.
 
+`modal run` loads this file in the container as `/root/app.py`. The `pipelines`
+package is copied into the image at `/root/pipelines`, which is on `PYTHONPATH`,
+so the imports do not depend on the repo layout. A container that dies during
+import is limited to a 120 second startup. `keycheck`, `calibrate`, `full`,
+`verify`, the API class, and the CS merge do not retry. A shard still retries
+twice after it has started.
+
 ```bash
 modal run --detach pipelines/s2_download/app.py::keycheck
 modal run --detach pipelines/s2_download/app.py::calibrate

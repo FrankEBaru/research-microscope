@@ -16,17 +16,8 @@ from __future__ import annotations
 import json
 import os
 import re
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
-
-# `modal run pipelines/s2_download/app.py` puts this directory on sys.path.
-# The package root is two levels up; the container image also has it via
-# add_local_python_source.
-_ROOT = Path(__file__).resolve().parents[2]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
 
 import modal
 
@@ -92,6 +83,10 @@ _TRANSIENT = {
     "OSError",
 }
 
+# `modal run pipelines/s2_download/app.py` loads this file as /root/app.py.
+# The package must already sit at /root/pipelines (on PYTHONPATH) before that
+# import. copy=True bakes it into the image instead of a runtime mount.
+# Do not derive a repo root from __file__: /root/app.py has no parents[2].
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install(
@@ -101,8 +96,12 @@ image = (
         "orjson>=3.10",
         "isal>=1.6",
     )
-    .add_local_python_source("pipelines")
+    .add_local_python_source("pipelines", copy=True)
 )
+
+# Without this, Modal uses the function timeout for startup as well, so an
+# import crash keeps restarting until that timeout (hours on the full run).
+STARTUP_TIMEOUT_SECONDS = 120
 
 app = modal.App(APP_NAME)
 volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
@@ -180,6 +179,7 @@ def _over_budget() -> bool:
     cpu=0.5,
     memory=512,
     timeout=60 * 60,
+    startup_timeout=STARTUP_TIMEOUT_SECONDS,
     retries=0,
     scaledown_window=30,
 )
@@ -379,6 +379,7 @@ def _download_once(url: str, job: dict, cs, should_stop) -> dict:
     cpu=DEFAULT_CPU,
     memory=DEFAULT_MEMORY_MIB,
     timeout=90 * 60,
+    startup_timeout=STARTUP_TIMEOUT_SECONDS,
     retries=2,
     max_containers=DEFAULT_CONCURRENCY,
     scaledown_window=5,
@@ -474,7 +475,8 @@ def process_shard(job: dict) -> dict:
     cpu=2,
     memory=DEFAULT_MEMORY_MIB,
     timeout=60 * 60,
-    retries=1,
+    startup_timeout=STARTUP_TIMEOUT_SECONDS,
+    retries=0,
 )
 def run_merge(release: str) -> dict:
     release = _safe_release(release)
@@ -674,6 +676,8 @@ def _budget_payload(stage: str, started: float, cpu: float, memory: int) -> dict
     cpu=1,
     memory=1024,
     timeout=60 * 60,
+    startup_timeout=STARTUP_TIMEOUT_SECONDS,
+    retries=0,
 )
 def run_keycheck() -> dict:
     started = time.perf_counter()
@@ -739,6 +743,8 @@ def _shard_view(item: dict) -> dict:
     cpu=1,
     memory=2048,
     timeout=4 * 60 * 60,
+    startup_timeout=STARTUP_TIMEOUT_SECONDS,
+    retries=0,
 )
 def run_calibrate(cpu: float, memory: int, concurrency: int) -> dict:
     cpu, memory, concurrency = _clamp_resources(cpu, memory, concurrency)
@@ -917,6 +923,8 @@ def run_calibrate(cpu: float, memory: int, concurrency: int) -> dict:
     cpu=1,
     memory=2048,
     timeout=4 * 60 * 60,
+    startup_timeout=STARTUP_TIMEOUT_SECONDS,
+    retries=0,
 )
 def run_full(
     datasets: str,
@@ -1119,6 +1127,8 @@ def _choose_release() -> str | None:
     cpu=1,
     memory=DEFAULT_MEMORY_MIB,
     timeout=2 * 60 * 60,
+    startup_timeout=STARTUP_TIMEOUT_SECONDS,
+    retries=0,
 )
 def run_verify() -> dict:
     started = time.perf_counter()
