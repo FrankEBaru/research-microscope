@@ -4,6 +4,7 @@ import { Block, Inline, Paper } from "@/lib/types";
 import { Tex, Rich, Sym } from "@/lib/math";
 import { ProvChip } from "./Bits";
 import Instrument from "./Instrument";
+import { bibtex } from "@/lib/bibtex.js";
 
 /* ---------- utilidades ---------- */
 const countNotes = (inls: Inline[]): number =>
@@ -193,7 +194,7 @@ export default function PaperView({ paper, content, focus }: { paper: Paper; con
     const xr = t.closest("[data-xref]") as HTMLElement | null;
     if (xr) { e.preventDefault(); const el = document.getElementById(model.target[xr.dataset.xref!] || xr.dataset.xref!); el?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
     const cp = t.closest("[data-copy]") as HTMLElement | null;
-    if (cp) { navigator.clipboard?.writeText(cp.dataset.copy!); cp.textContent = "copiado"; setTimeout(() => (cp.textContent = "LaTeX"), 1200); }
+    if (cp) { const old = cp.textContent; navigator.clipboard?.writeText(cp.dataset.copy!); cp.textContent = "copiado"; setTimeout(() => (cp.textContent = old), 1200); }
   };
   const goTo = (id: string) => {
     const el = document.getElementById("blk-" + id);
@@ -227,7 +228,7 @@ export default function PaperView({ paper, content, focus }: { paper: Paper; con
           <div className="chips"><ProvChip kind="paper" text={`arXiv:${paper.arxivId}`} />{!paper.full && <ProvChip kind="curado" text="solo abstract en esta ráfaga" />}</div>
           <h1>{paper.title}</h1>
           <p className="authors">{authors}</p>
-          <p className="meta">{paper.date?.slice(0, 4)} · <a href={`https://arxiv.org/abs/${paper.arxivId}`} target="_blank" rel="noreferrer">ver original en arXiv</a>{paper.full && <> · <a href={`https://arxiv.org/pdf/${paper.arxivId}`} target="_blank" rel="noreferrer">PDF</a></>}</p>
+          <p className="meta">{paper.date?.slice(0, 4)} · <a href={`https://arxiv.org/abs/${paper.arxivId}`} target="_blank" rel="noreferrer">ver original en arXiv</a>{paper.full && <> · <a href={`https://arxiv.org/pdf/${paper.arxivId}`} target="_blank" rel="noreferrer">PDF</a></>} · <button className="link bib" data-bibtex={bibtex(paper)} data-copy={bibtex(paper)} title="Copiar la ficha BibTeX de arXiv">BibTeX</button></p>
           {paper.license && <p className="license">{paper.license}</p>}
           {paper.authorNotes?.length > 0 && (
             <details className="author-notes"><summary>Notas de autoría del paper</summary>{paper.authorNotes.map((n: string, i: number) => <p key={i}>{n}</p>)}</details>
