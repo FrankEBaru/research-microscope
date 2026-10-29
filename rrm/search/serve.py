@@ -2,12 +2,13 @@
 
 MODEL_API_KEY is read from the environment. `modal run` copies it from the
 local process with Secret.from_dict. The key is not stored in this repo.
-The HTTP endpoint is GET /burst?q=&n= . Ranking does not wait on Muse; labels
-are whatever the split call returns within a few seconds.
+The HTTP endpoint is GET /burst?q=&n= . GET /subtopics?q= returns the
+Muse labels separately, so the paper list never waits on Muse.
 """
 
 import os
 import sys
+import time
 from pathlib import Path
 
 _HERE = Path(__file__).resolve()
@@ -32,7 +33,7 @@ _endpoint = getattr(modal, "fastapi_endpoint", None) or modal.web_endpoint
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("torch", extra_index_url="https://download.pytorch.org/whl/cpu")
-    .pip_install("numpy", "pyarrow", "faiss-cpu", "transformers", "adapters")
+    .pip_install("numpy", "pyarrow", "faiss-cpu", "transformers", "adapters", "fastapi[standard]")
     .add_local_python_source("rrm")
 )
 app = modal.App("rrm-burst")
@@ -49,26 +50,8 @@ def _safe(name):
     return name
 
 
-def _paper(cid, display, display_ext, graph_ids, is_cs, cc, score):
-    row = display.row(cid)
-    from_cs = row is not None
-    if row is None:
-        row = display_ext.row(cid)
-    if row is None:
-        row = {"corpusid": int(cid), "title": None, "year": None, "venue": None, "citationcount": None}
-    hit, pos = locate(graph_ids, [int(cid)])
-    if bool(hit[0]):
-        local = int(pos[0])
-        row["is_cs"] = bool(is_cs[local])
-        if row["citationcount"] is None:
-            row["citationcount"] = int(cc[local])
-    else:
-        row["is_cs"] = from_cs
-    row["score"] = None if score is None else float(score)
-    return row
-
-
 @app.cls(image=image, volumes={MOUNT: vol}, cpu=2, memory=32768, timeout=900, secrets=[model_secret])
+@modal.concurrent(max_inputs=8)  # /subtopics waits seconds on Muse; /burst must not queue behind it
 class BurstSearch:
     @modal.enter()
     def start(self):
@@ -100,10 +83,29 @@ class BurstSearch:
         self.encoder.load()
 
     def _rows(self, corpusids, scores):
+        corpusids = [int(c) for c in corpusids]
+        main = self.display.rows(corpusids)
+        miss = [cid for cid, row in zip(corpusids, main) if row is None]
+        ext = dict(zip(miss, self.display_ext.rows(miss)))
+        hit, pos = locate(self.graph.ids, corpusids)
         out = []
         for i, cid in enumerate(corpusids):
+            row = main[i]
+            from_cs = row is not None
+            if row is None:
+                row = ext.get(cid)
+            if row is None:
+                row = {"corpusid": cid, "title": None, "year": None, "venue": None, "citationcount": None}
+            if bool(hit[i]):
+                local = int(pos[i])
+                row["is_cs"] = bool(self.is_cs[local])
+                if row["citationcount"] is None:
+                    row["citationcount"] = int(self.cc[local])
+            else:
+                row["is_cs"] = from_cs
             score = None if scores is None else scores[i]
-            out.append(_paper(cid, self.display, self.display_ext, self.graph.ids, self.is_cs, self.cc, score))
+            row["score"] = None if score is None else float(score)
+            out.append(row)
         return out
 
     def _answer(self, query, n):
@@ -124,13 +126,14 @@ class BurstSearch:
             n=int(n),
             resolve=self.lookup.resolve,
             vector_of=vector_of,
-            split=split_query,
+            split=None,  # papers never wait on Muse; labels come from GET /subtopics
         )
         papers = result["papers"]
         first = None
         if result["first_id"] is not None:
             first = self._rows([result["first_id"]], [None])[0]
-        return {
+        t0 = time.perf_counter()
+        out = {
             "query": query,
             "mode": result["mode"],
             "first": first,
@@ -140,10 +143,22 @@ class BurstSearch:
             "subtopics": result["subtopics"],
             "seconds": result["seconds"],
         }
+        out["seconds"]["hydrate"] = round(time.perf_counter() - t0, 4)
+        return out
 
     @_endpoint(method="GET")
     def burst(self, q: str, n: int = 50):
         return self._answer(q, n)
+
+    @_endpoint(method="GET")
+    def subtopics(self, q: str):
+        """Muse labels for the same query. Call it in parallel with /burst; it never blocks the list."""
+        t0 = time.perf_counter()
+        try:
+            topics = [str(t) for t in split_query(q)]
+        except Exception:
+            topics = []
+        return {"query": q, "subtopics": topics, "seconds": round(time.perf_counter() - t0, 4)}
 
 
 @app.local_entrypoint()

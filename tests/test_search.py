@@ -273,6 +273,7 @@ def test_paper_seed_and_adapter_rule():
     assert look.resolve("corpusid:5") == 5
     assert look.resolve("Attention, is ALL you need!") == 6
     assert look.resolve("graph neural networks") is None
+    assert look.resolve("Graph Nets") is None  # short and barely cited: search instead
     calls = {"encode": 0, "split": 0}
 
     def encode(texts):

@@ -52,7 +52,8 @@ def gather_out(indptr, indices, nodes):
         return empty, empty
     owner = np.repeat(np.arange(nodes.size, dtype=np.int64), length)
     offset = np.arange(total, dtype=np.int64) - np.repeat(np.cumsum(length) - length, length)
-    cited = np.asarray(indices, dtype=np.int64)[start[owner] + offset]
+    # Index first, cast after: asarray(dtype=int64) on int32 CSR copies every edge.
+    cited = np.asarray(indices)[start[owner] + offset].astype(np.int64, copy=False)
     return cited, owner
 
 
@@ -96,8 +97,8 @@ def order_candidates(uniq, scores, ids, cc, n):
     scores = np.asarray(scores, dtype=np.float64).reshape(-1)
     if uniq.size == 0 or (n is not None and int(n) <= 0):
         return uniq[:0], scores[:0]
-    citations = np.asarray(cc, dtype=np.int64)[uniq]
-    corpus = np.asarray(ids, dtype=np.int64)[uniq]
+    citations = np.asarray(cc)[uniq].astype(np.int64, copy=False)
+    corpus = np.asarray(ids)[uniq].astype(np.int64, copy=False)
     order = np.lexsort((corpus, -citations, -scores))
     if n is not None:
         order = order[: int(n)]
@@ -116,7 +117,7 @@ def top_by_citations(nodes, cc, cap):
     cap = int(cap)
     if nodes.size == 0 or cap <= 0:
         return nodes[:0]
-    citations = np.asarray(cc, dtype=np.int64)[nodes]
+    citations = np.asarray(cc)[nodes].astype(np.int64, copy=False)
     order = np.argsort(-citations, kind="stable")
     return nodes[order[:cap]]
 
@@ -187,15 +188,14 @@ def edges_among(graph, locals):
     chosen = [int(x) for x in np.asarray(locals, dtype=np.int64).reshape(-1).tolist()]
     if not chosen:
         return []
-    chosen_set = set(chosen)
-    edges = []
-    for src in sorted(chosen_set, key=lambda local: int(graph.ids[local])):
-        dsts = _neighbors(graph, src, True)
-        for dst in dsts.tolist():
-            dst = int(dst)
-            if dst in chosen_set:
-                edges.append({"citing": int(graph.ids[src]), "cited": int(graph.ids[dst])})
-    return edges
+    ids = np.asarray(graph.ids)
+    nodes = np.unique(np.asarray(chosen, dtype=np.int64))
+    nodes = nodes[np.argsort(ids[nodes], kind="stable")]
+    cited, owner = gather_out(graph.out_indptr, graph.out_indices, nodes)
+    keep = np.isin(cited, nodes)
+    src = ids[nodes[owner[keep]]].tolist()
+    dst = ids[cited[keep]].tolist()
+    return [{"citing": int(a), "cited": int(b)} for a, b in zip(src, dst)]
 
 
 def _align(graph, hits):
@@ -346,8 +346,10 @@ def burst_query(
     seed_local, dists = _align(graph, similar)
     chosen, score_arr = link_rank(seed_local, dists, graph, cc, proximity, n)
     papers = _ids(graph, chosen)
-    edges = edges_among(graph, _edge_locals(graph, chosen, similar))
     seconds["rank"] = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    edges = edges_among(graph, _edge_locals(graph, chosen, similar))
+    seconds["edges"] = time.perf_counter() - t0
     subtopics, seconds["split"] = _join_split(pending, started, pool, split_timeout)
     return _result(
         "long" if proximity else "short",
