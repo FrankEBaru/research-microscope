@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 from typing import Mapping
 
 USER_AGENT = "research-microscope-s2-download"
@@ -40,14 +41,21 @@ def redact_url(url: str) -> str:
     return url
 
 
-class CountingReader:
-    """File-like wrapper. Records the largest read so callers can prove streaming."""
+class CountingReader(io.RawIOBase):
+    """Streaming body wrapper that gzip and isal can read.
+
+    isal's gzip reader calls ``readinto``. A bare object with only ``read``
+    raises ``AttributeError`` before any row is parsed. Counts stay on this
+    object so callers can prove the body was not loaded in one read.
+    """
 
     def __init__(self, raw):
+        super().__init__()
         self._raw = raw
         self.bytes_read = 0
         self.max_read = 0
         self.read_all = False
+        self.readinto_calls = 0
 
     def readable(self) -> bool:
         return True
@@ -55,21 +63,48 @@ class CountingReader:
     def seekable(self) -> bool:
         return False
 
+    def writable(self) -> bool:
+        return False
+
     def read(self, size: int = -1) -> bytes:
+        if self.closed:
+            raise ValueError("read of closed file")
         if size is None or size < 0:
             self.read_all = True
             data = self._raw.read()
+        elif size == 0:
+            return b""
         else:
             self.max_read = max(self.max_read, int(size))
-            data = self._raw.read(size)
-        if data:
-            self.bytes_read += len(data)
+            data = self._raw.read(int(size))
+        if not data:
+            return b""
+        self.bytes_read += len(data)
         return data
 
+    def readinto(self, buffer) -> int:
+        if self.closed:
+            raise ValueError("read of closed file")
+        size = len(buffer)
+        self.readinto_calls += 1
+        if size == 0:
+            return 0
+        self.max_read = max(self.max_read, size)
+        data = self._raw.read(size)
+        if not data:
+            return 0
+        count = len(data)
+        buffer[:count] = data
+        self.bytes_read += count
+        return count
+
     def close(self) -> None:
+        if self.closed:
+            return
         close = getattr(self._raw, "close", None)
         if close:
             close()
+        super().close()
 
 
 def gzip_stream(fileobj):

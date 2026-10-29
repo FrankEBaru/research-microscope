@@ -171,30 +171,25 @@ def project_full_run(
     then share one pool of `concurrency` containers. Non-embedding datasets
     use the papers seconds/byte rate. The result is an estimate.
     """
-    if papers_seconds_per_byte <= 0 or embeddings_seconds_per_byte <= 0:
-        return {
-            "estimated": True,
-            "proceed": False,
-            "stop_reason": "measured throughput was zero",
-            "container_seconds": None,
-            "cost_usd": None,
-            "wall_seconds": None,
-            "wall_hours": None,
-            "by_dataset": {},
-        }
-
     rate = usd_per_second(cpu, memory_mib)
     by_dataset: dict[str, dict] = {}
+    missing_rates: list[str] = []
 
     def add(name: str, shards: int, total_bytes: int, seconds_per_byte: float) -> float:
-        seconds = total_bytes * seconds_per_byte
+        """Record probed bytes even when this dataset has no measured rate."""
+        total = int(total_bytes)
+        measured = seconds_per_byte > 0
+        seconds = total * seconds_per_byte if measured else None
         by_dataset[name] = {
             "shards": int(shards),
-            "input_bytes": int(total_bytes),
+            "input_bytes": total,
+            "input_gb": total / 1e9,
             "container_seconds": seconds,
-            "cost_usd": seconds * rate,
+            "cost_usd": None if seconds is None else seconds * rate,
         }
-        return seconds
+        if not measured:
+            missing_rates.append(name)
+        return seconds or 0.0
 
     papers_s = add("papers", papers_shards, papers_bytes, papers_seconds_per_byte)
     emb_s = add(
@@ -212,6 +207,29 @@ def project_full_run(
 
     container_seconds = papers_s + emb_s + other_s + overhead_seconds
     cost = container_seconds * rate
+    if missing_rates:
+        # Byte totals stay in by_dataset. A missing rate must not look like a
+        # free dataset, and it must not hide the probed sizes.
+        return {
+            "estimated": True,
+            "proceed": False,
+            "stop_reason": "measured throughput was zero for " + ", ".join(missing_rates),
+            "container_seconds": None,
+            "cost_usd": None,
+            "wall_seconds": None,
+            "wall_hours": None,
+            "overhead_seconds": overhead_seconds,
+            "concurrency": max(int(concurrency), 1),
+            "usd_per_container_second": rate,
+            "by_dataset": by_dataset,
+            "assumptions": (
+                "Shard bytes are the probed totals for each dataset. A dataset "
+                "with no measured seconds/byte is listed with those bytes and "
+                "is not given a cost. Papers, abstracts, citations, and tldrs "
+                "otherwise use the measured papers seconds/byte. Embeddings use "
+                "the measured embeddings seconds/byte."
+            ),
+        }
 
     workers = max(int(concurrency), 1)
 

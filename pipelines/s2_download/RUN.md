@@ -54,9 +54,11 @@ URLs are not.
 the gate, exit 2 when the measurement succeeded but the projection says stop,
 exit 1 when a shard or the release listing failed)
 
-One papers shard, then one `embeddings-specter_v2` shard. The embeddings file
-is deleted afterward; it was filtered with only that papers shard's Computer
-Science ids, so its output size is not a keep-rate.
+One papers shard, then one `embeddings-specter_v2` shard. Both lines are always
+printed. A failed shard ends with `error <text>` instead of an empty embeddings
+record. The embeddings file is deleted afterward; it was filtered with only
+that papers shard's Computer Science ids, so its output size is not a keep-rate.
+The projection lists probed input GB for every dataset.
 
 ```text
 stage calibrate
@@ -64,6 +66,11 @@ release_id <release id>
 papers: wall <s>s, <MB/s> MB/s, peak RAM <MiB> MiB, output <GB> GB, <container-s> container-s -> $<usd>
 embeddings-specter_v2: wall <s>s, <MB/s> MB/s, peak RAM <MiB> MiB, output <GB> GB, <container-s> container-s -> $<usd>
 projection (estimated): <container-s> container-s, $<usd>, wall <hours> h, proceed=<true|false>
+input papers: <GB> GB, <shards> shards
+input embeddings-specter_v2: <GB> GB, <shards> shards
+input abstracts: <GB> GB, <shards> shards
+input citations: <GB> GB, <shards> shards
+input tldrs: <GB> GB, <shards> shards
 cumulative $<ledger>
 volume record /_runs/latest-calibrate.json
 ```

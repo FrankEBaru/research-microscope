@@ -581,14 +581,26 @@ def _run_waves(jobs: list[dict], cpu: float, memory: int, concurrency: int) -> t
             f"wave {wave_index}: {len(wave)} shards, cumulative ${spent:.4f}",
             flush=True,
         )
-        for item in worker.map(wave, order_outputs=False, return_exceptions=True):
+        # In input order so a raised exception can be tied back to its shard.
+        incoming = iter(worker.map(wave, order_outputs=True, return_exceptions=True))
+        for job in wave:
+            try:
+                item = next(incoming)
+            except StopIteration:
+                outcomes.append(_blank_shard(job, error="shard returned no record"))
+                continue
             if isinstance(item, BaseException):
-                outcomes.append({"ok": False, "error": _public_error(item), "dataset": None, "index": None})
-            else:
-                outcomes.append(item)
-                if item.get("aborted") or item.get("reason") == "budget":
-                    cost_dict["abort"] = True
-                    aborted = True
+                outcomes.append(_blank_shard(job, error=_public_error(item)))
+                continue
+            if not item.get("dataset"):
+                item["dataset"] = job["dataset"]
+                item["index"] = int(job["index"])
+            if not item.get("ok") and not item.get("error"):
+                item["error"] = item.get("reason") or "shard failed"
+            outcomes.append(item)
+            if item.get("aborted") or item.get("reason") == "budget":
+                cost_dict["abort"] = True
+                aborted = True
         if _over_budget():
             aborted = True
             break
@@ -819,16 +831,44 @@ def run_calibrate(cpu: float, memory: int, concurrency: int) -> dict:
         paper_job = [job for job in jobs if job["dataset"] == "papers"]
         embedding_job = [job for job in jobs if job["dataset"] == "embeddings-specter_v2"]
         paper_results, aborted = _run_waves(paper_job, cpu, memory, concurrency)
+        if not paper_results:
+            paper_results = [_blank_shard(paper_job[0], error="papers shard returned no record")]
         merged = None
-        if not aborted and paper_results and paper_results[0].get("ok"):
-            # The papers worker committed the shard. Reload before reading it.
-            volume.reload()
-            merged = merge_cs(MOUNT, release_id, partial=True)
-            volume.commit()
+        merge_error = None
+        if not aborted:
+            # Papers must be visible before the CS index is built. A failed
+            # papers shard still gets an index (possibly empty) so the
+            # embeddings shard runs and returns its own record.
+            try:
+                volume.reload()
+                merged = merge_cs(MOUNT, release_id, partial=True)
+                volume.commit()
+            except Exception as exc:
+                merge_error = _public_error(exc)
         embedding_results: list[dict] = []
-        if merged and not aborted and not _over_budget():
+        if aborted or _over_budget():
+            embedding_results = [
+                _blank_shard(
+                    embedding_job[0],
+                    aborted=True,
+                    error=f"not started: cumulative cost reached ${ABORT_USD:.0f}",
+                )
+            ]
+            aborted = True
+        elif not merged:
+            embedding_results = [
+                _blank_shard(
+                    embedding_job[0],
+                    error=merge_error or "not started: CS index was not built",
+                )
+            ]
+        else:
             embedding_results, emb_aborted = _run_waves(embedding_job, cpu, memory, concurrency)
             aborted = aborted or emb_aborted
+            if not embedding_results:
+                embedding_results = [
+                    _blank_shard(embedding_job[0], error="embeddings shard returned no record")
+                ]
         results = paper_results + embedding_results
         by_name = {}
         for item in results:
@@ -902,8 +942,8 @@ def run_calibrate(cpu: float, memory: int, concurrency: int) -> dict:
                 "papers": papers.get("mb_per_s"),
                 "embeddings-specter_v2": embeddings.get("mb_per_s"),
             },
-            "papers": _shard_view(papers) if papers else None,
-            "embeddings-specter_v2": _shard_view(embeddings) if embeddings else None,
+            "papers": _shard_record(papers, "papers"),
+            "embeddings-specter_v2": _shard_record(embeddings, "embeddings-specter_v2"),
             "embeddings_filter": "cs ids from the calibration papers shard only; output GB is not a keep-rate; parquet shard was not kept",
             "cs_index_partial": True,
             "projection": projection,
@@ -1186,9 +1226,19 @@ def _format_keycheck(payload: dict) -> str:
     return "\n".join(lines)
 
 
+def _shard_record(item: dict | None, dataset: str) -> dict:
+    """Calibration always stores both datasets, including a failed shard."""
+    if not item:
+        item = _blank_shard({"dataset": dataset, "index": 0}, error="shard returned no record")
+    view = _shard_view(item)
+    if not view.get("ok") and not view.get("error"):
+        view["error"] = "shard failed"
+    return view
+
+
 def _format_shard_line(label: str, item: dict | None) -> str:
     item = item or {}
-    return (
+    line = (
         f"{label}: wall {_fmt_num(item.get('wall_seconds'), 1)}s, "
         f"{_fmt_num(item.get('mb_per_s'), 2)} MB/s, "
         f"peak RAM {_fmt_num(item.get('peak_ram_mib'), 0)} MiB, "
@@ -1196,6 +1246,9 @@ def _format_shard_line(label: str, item: dict | None) -> str:
         f"{_fmt_num(item.get('container_seconds'), 1)} container-s -> "
         f"${_fmt_num(item.get('cost_usd'), 4)}"
     )
+    if item.get("error"):
+        line += f" error {item['error']}"
+    return line
 
 
 def _format_calibrate(payload: dict) -> str:
@@ -1213,6 +1266,10 @@ def _format_calibrate(payload: dict) -> str:
             f"proceed={payload.get('proceed')}"
         ),
     ]
+    for name, row in (projection.get("by_dataset") or {}).items():
+        lines.append(
+            f"input {name}: {_fmt_num(row.get('input_gb'), 2)} GB, {row.get('shards')} shards"
+        )
     if payload.get("stop_reason"):
         lines.append(f"STOP: {payload['stop_reason']}")
     lines.append(f"cumulative ${_fmt_num(payload.get('cumulative_cost_usd'), 4)}")

@@ -25,14 +25,16 @@ from pipelines.s2_download.cost_guard import (
     shard_over_ceiling,
     usd_per_second,
 )
-from pipelines.s2_download.fetch import length_from_headers, redact_url
+from pipelines.s2_download.fetch import CountingReader, length_from_headers, open_url_stream, redact_url
 from pipelines.s2_download.s2_client import S2Client, S2ClientError
 from pipelines.s2_download.transform import (
     CSIndex,
     build_cs_index,
+    iter_records,
     load_cs,
     merge_cs,
     process_gzip_path,
+    process_records,
     shard_complete,
     verify_tree,
 )
@@ -197,6 +199,41 @@ def check_cost_and_projection() -> None:
         overhead_seconds=0,
     )
     check(blocked["proceed"] is False, "huge projection stops")
+    check(projection["by_dataset"]["papers"]["input_bytes"] == 30 * 1_000_000_000, "papers bytes kept")
+    # A missing embeddings rate must not drop the probed sizes.
+    partial = project_full_run(
+        papers_seconds_per_byte=100 / 1e9,
+        papers_shards=60,
+        papers_bytes=53_100_000_000,
+        embeddings_seconds_per_byte=0.0,
+        embeddings_shards=570,
+        embeddings_bytes=596_100_000_000,
+        other_bytes={
+            "abstracts": 29_800_000_000,
+            "citations": 400_300_000_000,
+            "tldrs": 6_600_000_000,
+        },
+        other_shards={"abstracts": 30, "citations": 401, "tldrs": 30},
+        cpu=2,
+        memory_mib=4096,
+        concurrency=100,
+        overhead_seconds=0,
+    )
+    check(partial["proceed"] is False, "missing embeddings rate stops")
+    check(partial["by_dataset"]["papers"]["input_bytes"] == 53_100_000_000, "probed papers bytes")
+    check(partial["by_dataset"]["abstracts"]["input_bytes"] == 29_800_000_000, "probed abstracts bytes")
+    check(partial["by_dataset"]["citations"]["input_bytes"] == 400_300_000_000, "probed citations bytes")
+    check(partial["by_dataset"]["tldrs"]["input_bytes"] == 6_600_000_000, "probed tldrs bytes")
+    check(
+        partial["by_dataset"]["embeddings-specter_v2"]["input_bytes"] == 596_100_000_000,
+        "probed embeddings bytes",
+    )
+    check(
+        abs(partial["by_dataset"]["papers"]["container_seconds"] - 53_100_000_000 * (100 / 1e9)) < 1e-6,
+        "papers seconds from bytes",
+    )
+    check(partial["by_dataset"]["embeddings-specter_v2"]["container_seconds"] is None, "unmeasured embeddings cost")
+    check(partial["cost_usd"] is None, "incomplete projection has no total")
 
 
 def check_s2_client() -> None:
@@ -353,11 +390,11 @@ def check_pipeline() -> dict:
                 "s2fieldsofstudy": [{"category": "Medicine", "source": "external"}],
                 "year": 2000,
             }
-            for i in range(30)
+            for i in range(80)
         ]
         padded_path = os.path.join(raw, "padded.gz")
         _gz_writer(padded_path, padded)
-        check(os.path.getsize(padded_path) > 128 * 1024, "synthetic gzip is larger than one gzip read")
+        check(os.path.getsize(padded_path) > 512 * 1024, "synthetic gzip is larger than one isal read")
         streamed = process_gzip_path(
             "papers",
             padded_path,
@@ -369,7 +406,7 @@ def check_pipeline() -> dict:
         check(streamed["max_buffered"] <= 4, f"batch held {streamed['max_buffered']} rows")
         check(streamed["stream_read_all"] is False, "reader asked for the whole file")
         check(streamed["stream_bytes"] > streamed["stream_max_read"], "more than one read")
-        check(streamed["rows"] == 30, "padded rows")
+        check(streamed["rows"] == 80, "padded rows")
         check(streamed["bad_lines"] == 1, "padded bad line")
 
         first = process_gzip_path("papers", papers0, root=root, release=RELEASE, index=0, batch_size=2)
@@ -489,7 +526,7 @@ def check_pipeline() -> dict:
         check(empty_table.num_rows == 0, "empty embedding parquet")
         check(empty_table.schema.field("vector").type == pa.list_(pa.float16(), 768), "empty dim")
 
-        check(report["datasets"]["papers"]["rows"] == 5 + 30, "verify paper rows")
+        check(report["datasets"]["papers"]["rows"] == 5 + 80, "verify paper rows")
         check(report["datasets"]["abstracts"]["rows"] == 5, "verify abstracts")
         check(report["datasets"]["tldrs"]["rows"] == 2, "verify tldrs")
         check(report["datasets"]["citations"]["rows"] == 5, "verify citations")
@@ -513,11 +550,126 @@ def check_pipeline() -> dict:
         }
 
 
+def _stream_url(url: str, dataset: str, root: str, index: int, cs=None) -> tuple[dict, CountingReader]:
+    """Production path: HTTP body → CountingReader → gzip/isal → pyarrow."""
+    gzip_reader, response, counter, length = open_url_stream(url)
+    try:
+        result = process_records(
+            dataset,
+            iter_records(gzip_reader),
+            root=root,
+            release=RELEASE,
+            index=index,
+            cs=cs,
+            batch_size=4,
+        )
+    finally:
+        gzip_reader.close()
+        response.close()
+    check(length is not None and length > 0, f"{dataset} content length")
+    check(counter.read_all is False, f"{dataset} reader asked for the whole body")
+    check(counter.readinto_calls > 0, f"{dataset} gzip never called readinto")
+    check(counter.bytes_read >= length, f"{dataset} body was short")
+    return result, counter
+
+
+def check_http_stream() -> None:
+    """localhost gz files through the same reader the Modal workers use."""
+    import threading
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    raw_bytes = bytearray(8)
+    probe = CountingReader(_Chunked(b"abcdefgh"))
+    count = probe.readinto(raw_bytes)
+    check(count == 8 and bytes(raw_bytes) == b"abcdefgh", "readinto fills the buffer")
+    check(probe.readinto(bytearray(4)) == 0, "readinto eof")
+
+    with tempfile.TemporaryDirectory() as root:
+        www = os.path.join(root, "www")
+        os.makedirs(www)
+        shard0, _shard1 = _papers()
+        padded = [
+            {
+                "corpusid": 2000 + i,
+                "title": os.urandom(4000).hex(),
+                "s2fieldsofstudy": [{"category": "Medicine", "source": "external"}],
+                "year": 2000,
+            }
+            for i in range(200)
+        ]
+        papers_path = os.path.join(www, "papers.gz")
+        _gz_writer(papers_path, shard0 + padded)
+        check(os.path.getsize(papers_path) > 512 * 1024, "http papers gzip exceeds the isal buffer")
+        embeddings = [
+            {"corpusid": 10, "model": "specter_v2", "vector": _vector(10)},
+            {"corpusid": 12, "model": "specter_v2", "vector": _vector(12)},
+            {"corpusid": 11, "model": "specter_v2", "vector": "not-a-vector"},
+            {"corpusid": 11, "model": "specter_v2", "vector": _vector(11)},
+        ]
+        _gz_writer(os.path.join(www, "embeddings.gz"), embeddings)
+
+        class Handler(SimpleHTTPRequestHandler):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, directory=www, **kwargs)
+
+            def log_message(self, _format, *_args):
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            base = f"http://127.0.0.1:{port}"
+            papers, papers_counter = _stream_url(f"{base}/papers.gz", "papers", root, 0)
+            check(papers["rows"] == 3 + 200, "http papers rows")
+            check(papers["bad_lines"] == 1, "http papers bad line")
+            check(papers["cs_rows"] == 2, "http CS papers")
+            check(papers_counter.max_read <= 1024 * 1024, "http papers read size")
+            check(papers_counter.bytes_read > papers_counter.max_read, "http papers more than one read")
+            merged = merge_cs(root, RELEASE, partial=True)
+            check(merged["partial"] is True and merged["cs_papers"] == 2, "http partial CS index")
+            index = load_cs(os.path.join(root, RELEASE, "_cs"))
+            embeddings_result, _emb_counter = _stream_url(
+                f"{base}/embeddings.gz",
+                "embeddings-specter_v2",
+                root,
+                0,
+                cs=index,
+            )
+            check(embeddings_result["rows"] == 2, "http CS embeddings")
+            check(embeddings_result["bad_lines"] == 2, "http bad embedding and junk")
+            table = pq.read_table(
+                os.path.join(root, RELEASE, "embeddings-specter_v2", "shard-00000.parquet")
+            )
+            check(table.column("corpusid").to_pylist() == [10, 11], "http embedding ids")
+            check(table.schema.field("vector").type == pa.list_(pa.float16(), 4), "http fp16")
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
+class _Chunked:
+    """Minimal raw stream. Only read(), like urllib3's HTTPResponse."""
+
+    def __init__(self, data: bytes):
+        self._data = data
+        self._offset = 0
+
+    def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            size = len(self._data) - self._offset
+        chunk = self._data[self._offset : self._offset + size]
+        self._offset += len(chunk)
+        return chunk
+
+
 def main() -> None:
     check_bitmap()
     check_cost_and_projection()
     check_s2_client()
     check_headers()
+    check_http_stream()
     summary = check_pipeline()
     print(json.dumps({"sanity": "pass", "synthetic": summary}, indent=2, sort_keys=True))
 
