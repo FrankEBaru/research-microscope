@@ -200,3 +200,6 @@ td[data-pop] { cursor: help; }
 .tslider { background: var(--bg); border-radius: 12px; padding: .9rem 1rem; margin: 1rem 0; } .tslider label { display: grid; gap: .3rem; font-size: .92rem; } .tslider input { width: 100%; accent-color: var(--accent); }
 .tgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .8rem; margin: .8rem 0 .4rem; } .trow { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: .6rem .8rem; } .trow .exp { color: var(--muted); font-size: .78rem; margin-left: .5rem; }
 .tbar { position: relative; height: 26px; margin-top: .4rem; background: var(--bg); border-radius: 6px; overflow: hidden; } .tbar i { position: absolute; inset: 0 auto 0 0; border-radius: 6px; transition: width .35s cubic-bezier(.2,.7,.2,1); } .tbar .bar-a { background: #c9885b; } .tbar .bar-b { background: var(--accent); } .tbar .bar-tok { background: #9aa89d; } .tbar em { position: relative; font: normal 600 .78rem/26px var(--sans); padding-left: .6rem; color: var(--ink); mix-blend-mode: multiply; }
+
+.pop-figs { display: flex; gap: .5rem; background: #fff; border-radius: 8px; padding: .5rem; margin-bottom: .5rem; } .pop-figs img { max-width: 100%; max-height: 210px; object-fit: contain; flex: 1 1 0; min-width: 0; }
+.pop-line .katex { color: inherit; }

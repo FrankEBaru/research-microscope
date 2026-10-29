@@ -14,7 +14,7 @@ export function plainOf(inls: Inline[]): string {
   return (inls || []).map((x) => x.t === "text" ? x.v : x.t === "math" ? `$${x.v}$` : x.t === "cite" ? "" : x.t === "note" ? "" : Array.isArray(x.c) ? plainOf(x.c) : x.v || "").join("").replace(/\s+/g, " ").trim();
 }
 
-interface Ctx { syms: Sym[]; refIndex: Record<string, number>; refLabels?: Record<string, string>; xref?: Record<string, string>; counter: { n: number } }
+interface Ctx { figs?: Set<string>; syms: Sym[]; refIndex: Record<string, number>; refLabels?: Record<string, string>; xref?: Record<string, string>; counter: { n: number } }
 
 function Inlines({ inls, ctx }: { inls: Inline[]; ctx: Ctx }) {
   return <>{(inls || []).map((x, i) => <One key={i} x={x} ctx={ctx} />)}</>;
@@ -32,7 +32,7 @@ function One({ x, ctx }: { x: Inline; ctx: Ctx }) {
       if (x.href.startsWith("#")) {
         const lab = x.href.slice(1), shown = ctx.xref?.[lab];
         const raw = plainOf(x.c);  // pandoc deja «[etiqueta]» cuando no resuelve la referencia
-        return <a href={x.href} className="xref" data-xref={lab}>{shown && (raw === `[${lab}]` || raw === lab) ? shown : <Inlines inls={x.c} ctx={ctx} />}</a>;
+        return <a href={x.href} className="xref" data-xref={lab} {...(ctx.figs?.has(lab) ? { "data-pop": `f|${lab}`, tabIndex: 0 } : {})}>{shown && (raw === `[${lab}]` || raw === lab) ? shown : <Inlines inls={x.c} ctx={ctx} />}</a>;
       }
       return <a href={x.href} target="_blank" rel="noreferrer"><Inlines inls={x.c} ctx={ctx} /></a>;
     }
@@ -81,6 +81,15 @@ function Popover({ pop, paper, model, content }: { pop: NonNullable<PopState>; p
         {symsIn.length > 0 && <p className="pop-line">Símbolos: {symsIn.map((y: Sym) => <span key={y.id} className="sym-pill" style={{ color: y.color }}><Tex tex={y.latex} /></span>)}</p>}
         {cites.length > 0 && <p className="pop-line">Cita: {cites.slice(0, 2).map((k: string) => paper.refs[k]?.split(".")[0] + "…").join(" · ")}</p>}
         <div className="pop-sim"><ProvChip kind="simulado" /><span>Aquí el motor mostrará de qué otros papers sale esta oración y quién la apoya o la matiza. Todavía no está conectado.</span></div>
+      </>
+    );
+  } else if (kind === "f") {
+    const f = model.byLabel[r[0]];
+    body = (
+      <>
+        <div className="pop-figs">{f.images.slice(0, 2).map((src: string) => <img key={src} src={src} alt={plainOf(f.caption)} />)}</div>
+        <p className="pop-line"><b>Figura {model.figN[f.id]}.</b> <Inlines inls={f.caption} ctx={ctx} /></p>
+        <div className="pop-meta"><ProvChip kind="paper" text="figura original, sin redibujar" /><span>clic: ir a la figura</span></div>
       </>
     );
   } else if (kind === "t") {
@@ -136,6 +145,7 @@ export default function PaperView({ paper, content, focus }: { paper: Paper; con
     const syms: Sym[] = att ? att.symbols : [];
     const refIndex: Record<string, number> = {};
     Object.keys(paper.refs || {}).forEach((k, i) => (refIndex[k] = i + 1));
+    const byLabel: Record<string, any> = {}, figs = new Set<string>();
     const byId: Record<string, any> = {}, secOf: Record<string, string> = {}, nums: Record<string, string> = {};
     const notes: { blocks: Block[] }[] = [];
     const noteBase: Record<string, number> = {};
@@ -158,7 +168,7 @@ export default function PaperView({ paper, content, focus }: { paper: Paper; con
         if (b.level <= 2) toc.push({ id: b.id, label: `${cur} ${plainOf(b.inlines)}`, level: b.level });
       }
       secOf[b.id] = cur;
-      if (b.kind === "fig") { figN[b.id] = ++fig; if (b.label) xref[b.label] = `Figura ${fig}`; }
+      if (b.kind === "fig") { figN[b.id] = ++fig; if (b.label) { xref[b.label] = `Figura ${fig}`; byLabel[b.label] = b; figs.add(b.label); } }
       if (b.kind === "eq") { const tg = /\\tag\{([^}]*)\}/.exec(b.tex); (b.labels || []).forEach((l: string) => { xref[l] = tg ? `(${tg[1]})` : "ecuación"; target[l] = `blk-${b.id}`; }); }
       if (b.kind === "table") {
         tabN[b.id] = ++tab; if (b.label) xref[b.label] = `Tabla ${tab}`;
@@ -174,7 +184,7 @@ export default function PaperView({ paper, content, focus }: { paper: Paper; con
       }
       walk(b.inlines);
     }
-    return { syms, refIndex, byId, secOf, nums, notes, noteBase, toc, figN, tabN, xref, target };
+    return { syms, refIndex, byId, secOf, nums, notes, noteBase, toc, figN, tabN, xref, target, byLabel, figs };
   }, [paper, att]);
 
   // handlers
@@ -236,7 +246,7 @@ export default function PaperView({ paper, content, focus }: { paper: Paper; con
         </header>
 
         {paper.blocks.map((b) => {
-          const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, refLabels: paper.refLabels, xref: model.xref, counter: { n: model.noteBase[b.id] } };
+          const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, refLabels: paper.refLabels, xref: model.xref, figs: model.figs, counter: { n: model.noteBase[b.id] } };
           let el: any = null;
           if (b.kind === "h") {
             const Tag: any = b.level === 1 ? "h2" : b.level === 2 ? "h3" : "h4";
