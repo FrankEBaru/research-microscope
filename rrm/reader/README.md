@@ -4,12 +4,12 @@ When a burst returns, it spawns `prepare` for the top 10 corpus ids (fire-and-fo
 
 ## Order
 
-1. Resolve the id from `rrm-data` `2026-10-20/index/display.parquet` (arXiv, DOI). If there is no arXiv id, the free Semantic Scholar Graph API supplies `externalIds` and `openAccessPdf` (1 req/s, backoff, no key).
-2. arXiv e-print, if it contains real TeX: inline `\input`, expand math macros, emit the block schema, KaTeX-check every equation, render figures. A pdfpages wrapper (Adam) is not TeX.
-3. Otherwise the arXiv PDF or the open-access PDF goes to MinerU 2.5 (`vlm-auto-engine`) on a separate L4 function. Equations come back as LaTeX with `source: "ocr"`.
+1. Resolve the id from `rrm-data` `2026-10-20/index/display.parquet` (arXiv, DOI). The free Semantic Scholar Graph API supplies gaps (`externalIds`, `openAccessPdf`, authors). One request per second, backoff, optional `S2_API_KEY` (`x-api-key`). The stub is written before any S2 retry; a retry fills the stub afterwards. Without a key the batch request and `papers/{id}/s2.json` cache are unchanged.
+2. arXiv e-print and the PDF route start together. Real TeX is parsed (inline `\input`, math macros, KaTeX, figures). A pdfpages wrapper (Adam) is not TeX. The PDF route races the arXiv PDF against the S2 `openAccessPdf` URL (first valid PDF, the other cancelled) and runs MinerU. Whichever parse finishes first is published (`source` is `latex` or `ocr`). A later LaTeX parse replaces OCR (`upgraded_from` names the previous source). OCR never replaces LaTeX.
+3. MinerU 2.5 (`vlm-auto-engine`) runs on its own GPU container per ~4 pages, up to 8 containers, 120s per attempt and one retry. A failed chunk is a raw block; the other pages return in order. The container log line is `mineru chunk=start-end engine=vllm|transformers seconds=…`.
 4. Otherwise `abstract_only` (abstract + tldr). Failures set `failed` and a reason.
 
-arXiv fetches use `export.arxiv.org` and share one clock: a burst of 4 requests in 1 second, then a 1 second sleep (the rate arXiv documents for programmatic harvest). The S3 requester-pays bucket is not used: one paper lives in a ~500 MB month tar, and the requester pays for the whole object.
+arXiv fetches use `export.arxiv.org` and share one clock: a burst of 4 requests in 1 second, then a 1 second sleep (the rate arXiv documents for programmatic harvest). The clock is taken only to open the request, not while the body transfers, and it does not apply to non-arXiv PDF hosts. Each download gives up after 10s connect / 30s total or 50MB and the parse falls back to the next source. The S3 requester-pays bucket is not used: one paper lives in a ~500 MB month tar, and the requester pays for the whole object.
 
 ## Status
 
@@ -25,7 +25,7 @@ arXiv fetches use `export.arxiv.org` and share one clock: a burst of 4 requests 
 modal run rrm/reader/serve.py::bench --ids 13756489,2048380074
 ```
 
-Columns are seconds for resolve, download, parse, katex, figures, ocr (wall), ocr_gpu_s (summed, this is what `ocr_usd` uses), sam, then `first` (time-to-first-content), `sections`, `full`, then a CPU / L4 / SAM dollar estimate from the 2026-10-28 Modal list price, plus per-step CPU dollars. OCR runs MinerU `vlm-auto-engine` (vLLM when that package is installed) on up to 4 GPU containers, merged in page order.
+Columns are seconds for resolve, download, parse, katex, figures, ocr (wall), ocr_gpu_s (summed, this is what `ocr_usd` uses), sam, then `first` (time-to-first-content), `sections`, `full`, then a CPU / L4 / SAM dollar estimate from the 2026-10-28 Modal list price, plus per-step CPU dollars. `ocr_chunks` is `start-end:seconds:engine:ok` per chunk (engine is `vllm` or `transformers`). `downloads` is `source:seconds:ok` per fetch (e-print, arxiv_pdf, oa_pdf). OCR is one container per chunk of about 4 pages, at most 8, merged in page order.
 
 ## QA notes (2026-10-29, Modal)
 

@@ -420,6 +420,10 @@ y = \vect{x}
         "tldr": "tl", "arxiv": "1234.5678", "refs": {"s2:1": "Semantic Scholar corpus 1"}, "year": 2020,
     })
     monkeypatch.setattr(pipeline, "arxiv_eprint", lambda arxiv: blob)
+    monkeypatch.setattr(
+        pipeline, "arxiv_pdf",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("no pdf in unit test")),
+    )
     stages = []
     real = pipeline._publish
 
@@ -529,3 +533,348 @@ def test_crops_page_with_no_hits_is_done(tmp_path, monkeypatch):
     import json
     index = json.loads((tmp_path / "crops" / "index.json").read_text())
     assert index["done_pages"] == [0, 1]
+
+
+def test_failed_chunk_merges_in_order_and_retries_once():
+    from rrm.reader.latex import plain, text_tokens
+    from rrm.reader.ocr import engine_from_log, merge_ocr_parts, page_spans, run_chunk
+
+    assert page_spans(32) == [(i * 4, i * 4 + 4) for i in range(8)]
+    assert engine_from_log("using vllm-engine") == "vllm"
+    assert engine_from_log("fallback: transformers engine") == "transformers"
+    assert engine_from_log("") == "unknown"
+    parts = [
+        {"start": 0, "end": 4, "ok": True, "blocks": [{"kind": "p", "inlines": text_tokens("A")}]},
+        {"start": 4, "end": 8, "failed": True, "ok": False, "error": "timeout", "blocks": []},
+        {"start": 8, "end": 12, "ok": True, "blocks": [{"kind": "p", "inlines": text_tokens("C")}]},
+    ]
+    blocks = merge_ocr_parts(parts)
+    assert [plain(b["inlines"]) for b in blocks] == [
+        "A",
+        "[ocr failed pages 4-8: timeout]",
+        "C",
+    ]
+    assert blocks[1]["raw"] is True and blocks[1]["failed"] is True
+    assert [b["id"] for b in blocks] == ["b0", "b1", "b2"]
+    calls = {"n": 0}
+
+    def runner(pdf, out, timeout):
+        calls["n"] += 1
+        raise RuntimeError("hung")
+
+    failed = run_chunk("x", "y", 0, 4, tries=2, runner=runner, load_blocks=lambda path: [])
+    assert calls["n"] == 2
+    assert failed["failed"] is True and failed["ok"] is False
+    assert failed["start"] == 0 and failed["end"] == 4
+
+    def flaky(pdf, out, timeout):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise RuntimeError("once")
+        return "vllm"
+
+    calls["n"] = 2
+    ok = run_chunk(
+        "x", "y", 4, 8, tries=2, runner=flaky,
+        load_blocks=lambda path: [{"kind": "p", "inlines": text_tokens("ok")}],
+    )
+    assert ok["ok"] is True and ok["engine"] == "vllm" and ok["attempts"] == 2
+    assert plain(ok["blocks"][0]["inlines"]) == "ok"
+
+
+def test_download_timeout_falls_back_and_gate_releases():
+    import threading
+    import time
+
+    from rrm.reader.fetch import DownloadError, download_url, fetch_pdf, race_pdf_bytes
+
+    class Slow:
+        def read(self, n=65536):
+            raise TimeoutError("timed out")
+
+        def close(self):
+            pass
+
+    try:
+        download_url(
+            "http://example.test/slow.pdf", opener=lambda req, timeout: Slow(),
+            total_timeout=5, connect_timeout=1,
+        )
+        raise AssertionError("expected timeout")
+    except DownloadError as err:
+        assert "30s" in str(err) or "timeout" in str(err)
+
+    class Big:
+        def __init__(self):
+            self._sent = False
+
+        def read(self, n=65536):
+            if self._sent:
+                return b""
+            self._sent = True
+            return b"x" * 200
+
+        def close(self):
+            pass
+
+    try:
+        download_url(
+            "http://example.test/big.pdf", opener=lambda req, timeout: Big(),
+            total_timeout=5, connect_timeout=1, max_bytes=100,
+        )
+        raise AssertionError("expected size cap")
+    except DownloadError as err:
+        assert "50MB" in str(err)
+
+    def slow():
+        raise DownloadError("download exceeded 30s")
+
+    def fast():
+        return b"%PDF-1.4\nhello"
+
+    won = race_pdf_bytes([("arxiv_pdf", slow), ("oa_pdf", fast)])
+    assert won["source"] == "oa_pdf" and won["data"].startswith(b"%PDF")
+    assert any(row["source"] == "arxiv_pdf" and row["ok"] is False for row in won["timings"])
+
+    started = time.time()
+
+    def nap():
+        time.sleep(2)
+        return b"%PDF-1.4\nslow"
+
+    won = race_pdf_bytes([("slow", nap), ("fast", fast)])
+    assert won["source"] == "fast"
+    assert time.time() - started < 1.0
+
+    held = threading.Lock()
+
+    class Gate:
+        def wait(self):
+            assert held.acquire(timeout=1)
+            try:
+                time.sleep(0.01)
+            finally:
+                held.release()
+
+    class Body:
+        def __init__(self):
+            self._sent = False
+
+        def read(self, n=65536):
+            assert held.acquire(timeout=1), "gate held during transfer"
+            held.release()
+            if self._sent:
+                return b""
+            self._sent = True
+            return b"%PDF-1.4\n" + b"a" * 8
+
+        def close(self):
+            pass
+
+    data = download_url(
+        "http://example.test/a.pdf", Gate(), opener=lambda req, timeout: Body(),
+        total_timeout=5, connect_timeout=1,
+    )
+    assert data.startswith(b"%PDF")
+
+    # Non-arXiv hosts do not take the harvest slot.
+    import rrm.reader.fetch as fetch
+
+    def boom():
+        raise AssertionError("oa pdf waited on the arxiv gate")
+
+    original_wait = fetch.ARXIV.wait
+    original_open = fetch.urllib.request.urlopen
+    fetch.ARXIV.wait = boom
+    try:
+        class Resp:
+            def __init__(self):
+                self._sent = False
+
+            def read(self, n=65536):
+                if self._sent:
+                    return b""
+                self._sent = True
+                return b"%PDF-1.4\n" + b"z" * 8
+
+            def close(self):
+                pass
+
+        fetch.urllib.request.urlopen = lambda req, timeout=0: Resp()
+        blob = fetch_pdf("https://example.test/paper.pdf")
+        assert blob.startswith(b"%PDF")
+    finally:
+        fetch.ARXIV.wait = original_wait
+        fetch.urllib.request.urlopen = original_open
+
+
+def test_author_templates_prefer_s2_names():
+    from rrm.reader.latex import parse_tex
+    from rrm.reader.pipeline import apply_s2_fields
+
+    neurips = r"""
+\documentclass{article}
+\begin{document}
+\author{
+  Alice Smith\thanks{Equal contribution.} \\
+  Department of Computer Science \\
+  Stanford University \\
+  \And
+  Bob Jones \\
+  Massachusetts Institute of Technology \\
+  \texttt{bob@mit.edu}
+}
+\end{document}
+"""
+    assert parse_tex(neurips)["authors"] == ["Alice Smith", "Bob Jones"]
+    ieee = r"""
+\documentclass{article}
+\begin{document}
+\author{
+\IEEEauthorblockN{Carol Danvers}
+\IEEEauthorblockA{Dept. of Physics\\State University}
+\and
+\IEEEauthorblockN{Diego Vega}
+\IEEEauthorblockA{Laboratory of AI}
+}
+\end{document}
+"""
+    assert parse_tex(ieee)["authors"] == ["Carol Danvers", "Diego Vega"]
+    classic = r"""
+\documentclass{article}
+\begin{document}
+\author{Eve Polastri \and Francis Ngannou\thanks{Work done at DeepMind.}}
+\end{document}
+"""
+    assert parse_tex(classic)["authors"] == ["Eve Polastri", "Francis Ngannou"]
+    icml = r"""
+\documentclass{article}
+\begin{document}
+\author{Lin Wang$^{1}$ \and Maya Chen$^{2}$ \\
+$^{1}$Google Research \and $^{2}$OpenAI}
+\author{Grace Hopper}
+\author{John von Neumann, Katherine Johnson}
+\end{document}
+"""
+    assert parse_tex(icml)["authors"] == [
+        "Lin Wang", "Maya Chen", "Grace Hopper", "John von Neumann", "Katherine Johnson",
+    ]
+    paper = parse_tex(classic)
+    apply_s2_fields(paper, {"authors": ["Semantic Author"], "tldr": "", "abstract": "", "refs": {}})
+    assert paper["authors"] == ["Semantic Author"]
+
+
+def test_latex_upgrades_ocr_and_never_downgrades(tmp_path, monkeypatch):
+    import time
+
+    from rrm.reader import pipeline
+
+    tex = b"\\documentclass{article}\\begin{document}Hello from tex.\\end{document}\n"
+    pdf = b"%PDF-1.4\n" + b"0" * 16
+
+    def run(eprint, ocr_fn):
+        monkeypatch.setattr(pipeline, "arxiv_eprint", eprint)
+        monkeypatch.setattr(pipeline, "arxiv_pdf", lambda *args, **kwargs: pdf)
+        published = []
+
+        def publish(paper, stage):
+            published.append((stage, paper.get("source"), paper.get("upgraded_from")))
+
+        info = {
+            "corpusid": 1, "arxiv": "1234.5678", "title": "T", "authors": ["Ada"],
+            "abstract": "A", "tldr": "",
+        }
+        folder = tmp_path / str(len(published) + id(eprint))
+        folder.mkdir()
+        meta = {"timings": pipeline._blank_timings(), "reason": None, "corpusid": 1, "ocr_gpu_s": 0.0}
+        route, paper, _path = pipeline._fetch_and_parse(
+            folder, info, meta, folder / "source.pdf", ocr_fn, publish,
+        )
+        return route, paper, published
+
+    def slow_eprint(_arxiv):
+        time.sleep(0.35)
+        return tex
+
+    def quick_ocr(_path, _work):
+        time.sleep(0.05)
+        return {
+            "blocks": [{"kind": "p", "inlines": [{"t": "text", "v": "ocr"}]}],
+            "seconds": 0.05, "gpu_s": 0.05, "page_count": 1,
+            "chunks": [{"start": 0, "end": 1, "seconds": 0.05, "engine": "vllm", "ok": True}],
+        }
+
+    route, paper, published = run(slow_eprint, quick_ocr)
+    assert route == "latex" and paper["source"] == "latex"
+    assert paper["upgraded_from"] == "ocr"
+    assert published[0][1] == "ocr"
+    assert any(src == "latex" and up == "ocr" for _stage, src, up in published)
+    assert "ocr" in (paper.get("upgraded_from"),)
+
+    kept = pipeline.prefer_parsed({"source": "latex", "blocks": [1]}, {"source": "ocr", "blocks": [2]}, published=True)
+    assert kept["source"] == "latex" and "upgraded_from" not in kept
+    plain = pipeline.prefer_parsed({"source": "abstract"}, {"source": "ocr", "blocks": [2]}, published=False)
+    assert plain["source"] == "ocr" and "upgraded_from" not in plain
+
+    def fast_eprint(_arxiv):
+        return tex
+
+    def slow_ocr(_path, _work):
+        time.sleep(0.3)
+        return {
+            "blocks": [{"kind": "p", "inlines": [{"t": "text", "v": "ocr"}]}],
+            "seconds": 0.3, "gpu_s": 0.3, "page_count": 1,
+        }
+
+    route, paper, published = run(fast_eprint, slow_ocr)
+    assert route == "latex" and paper["source"] == "latex"
+    assert not paper.get("upgraded_from")
+    assert all(src != "ocr" for _stage, src, _up in published)
+
+
+def test_s2_key_header_and_stub_skips_retry(monkeypatch, tmp_path):
+    import io
+    import urllib.error
+    import urllib.request
+
+    from rrm.reader import fetch
+
+    calls = []
+
+    def fake_urlopen(req, timeout=30):
+        calls.append(req)
+        raise urllib.error.HTTPError(req.full_url, 429, "slow", hdrs=None, fp=io.BytesIO(b""))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    slept = []
+    monkeypatch.setattr(fetch.time, "sleep", lambda s: slept.append(s))
+    fetch.S2_LIMIT.next = 0
+    monkeypatch.setenv("S2_API_KEY", "secret-key")
+    info = fetch.reader_identity(123, None, remote=True, refs=False, shards=False)
+    assert info["corpusid"] == 123
+    assert slept == []
+    assert len(calls) == 1
+    assert calls[0].get_header("X-api-key") == "secret-key"
+
+    monkeypatch.delenv("S2_API_KEY", raising=False)
+    calls.clear()
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b"[null]"
+
+    def ok_open(req, timeout=30):
+        calls.append(req)
+        return Resp()
+
+    monkeypatch.setattr(urllib.request, "urlopen", ok_open)
+    fetch.S2_CACHE_DIR = tmp_path
+    fetch.S2_LIMIT.next = 0
+    fetch.s2_batch([7])
+    assert calls and calls[0].get_header("X-api-key") is None

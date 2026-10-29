@@ -11,17 +11,23 @@ Cache layout on the volume, under papers/{corpusid}/:
 """
 
 import json
+import threading
 import time
 from pathlib import Path
 
 from rrm.reader.fetch import (
+    DownloadError,
     arxiv_eprint,
     arxiv_pdf,
-    fetch_url,
+    fetch_pdf,
     graph_reference_map,
+    merge_s2,
+    race_pdf_bytes,
     reader_identity,
+    s2_graph,
     s2_reference_map,
     unpack_eprint,
+    valid_pdf,
 )
 from rrm.reader.latex import attach_katex, materialize_figures, parse_inlines, parse_tree, stats, text_tokens
 
@@ -155,13 +161,38 @@ def abstract_paper(info: dict) -> dict:
     }
 
 
+_SOURCE_RANK = {"abstract": 1, "ocr": 2, "latex": 3}
+
+
+def prefer_parsed(current: dict | None, incoming: dict | None, *, published: bool = False) -> dict | None:
+    """Keep the stronger parse. Published OCR/abstract yields to later LaTeX.
+
+    `upgraded_from` is set only when a parse that was already published is replaced.
+    OCR never replaces LaTeX.
+    """
+    if incoming is None:
+        return current
+    if current is None:
+        return incoming
+    new = incoming.get("source") or ""
+    cur = current.get("source") or ""
+    if _SOURCE_RANK.get(new, 0) <= _SOURCE_RANK.get(cur, 0):
+        return current
+    upgraded = dict(incoming)
+    if published and cur:
+        upgraded["upgraded_from"] = cur
+    return upgraded
+
+
 def apply_s2_fields(paper: dict, info: dict) -> dict:
-    """Fill gaps from Semantic Scholar. Existing LaTeX authors, abstract, and refs stay."""
+    """Fill gaps from Semantic Scholar. S2 authors replace the LaTeX list when S2 has any."""
     if paper is None:
         return paper
     paper["tldr"] = paper.get("tldr") or info.get("tldr") or ""
-    if not paper.get("authors"):
-        paper["authors"] = list(info.get("authors") or [])
+    if info.get("authors"):
+        paper["authors"] = list(info["authors"])
+    elif not paper.get("authors"):
+        paper["authors"] = []
     if not paper.get("abstract"):
         paper["abstract"] = info.get("abstract") or ""
     if not paper.get("title"):
@@ -330,6 +361,15 @@ def parse_corpus(
         return _finish(folder, meta, None, commit)
 
     publish(make_stub(info), "stub")
+    # One Graph retry may run after the stub is already on disk. A cache hit does not block.
+    before = (tuple(info.get("authors") or []), info.get("abstract") or "", info.get("tldr") or "", info.get("oa_pdf") or "")
+    info = _enrich_s2(info)
+    after = (tuple(info.get("authors") or []), info.get("abstract") or "", info.get("tldr") or "", info.get("oa_pdf") or "")
+    if after != before:
+        meta["title"] = info.get("title") or meta.get("title") or ""
+        meta["tldr"] = info.get("tldr") or ""
+        meta["arxiv"] = info.get("arxiv") or meta.get("arxiv") or ""
+        publish(make_stub(info), "stub")
     pdf_path = folder / "source.pdf"
     try:
         route, paper, pdf_path = _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish)
@@ -355,6 +395,8 @@ def parse_corpus(
 
     meta["status"] = "done"
     meta["source"] = paper.get("source")
+    if paper.get("upgraded_from"):
+        meta["upgraded_from"] = paper["upgraded_from"]
     if pdf_path and Path(pdf_path).is_file() and meta.get("page_count") is None:
         meta["page_count"] = _page_count(Path(pdf_path))
     return _finish(folder, meta, paper, commit)
@@ -371,97 +413,247 @@ def _page_count(pdf_path: Path) -> int | None:
         return None
 
 
+def _s2_gap(info: dict) -> bool:
+    if not info.get("authors"):
+        return True
+    if not (info.get("abstract") or "").strip():
+        return True
+    if not info.get("arxiv") and not info.get("oa_pdf"):
+        return True
+    return False
+
+
+def _enrich_s2(info: dict) -> dict:
+    """Read the s2.json cache, or one retry when the stub is still missing fields. Never raises."""
+    cid = info.get("corpusid")
+    if cid is None:
+        return info
+    remote = {}
+    try:
+        from rrm.reader.fetch import _s2_cache
+        path = _s2_cache(int(cid))
+        if path is not None and path.is_file():
+            remote = s2_graph(int(cid), tries=1)
+        elif _s2_gap(info):
+            remote = s2_graph(int(cid), tries=2)
+    except Exception:
+        remote = {}
+    return merge_s2(info, remote)
+
+
+def _note_reason(meta, reason: str):
+    if meta.get("source") == "latex":
+        return
+    meta["reason"] = reason
+
+
 def _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish=None):
-    t = time.time()
+    """Start the e-print and the PDF route together. Publish whichever parse finishes first.
+
+    A later LaTeX parse replaces a published OCR paper (`source`, `upgraded_from`).
+    OCR never replaces LaTeX. PDF bytes race arXiv vs the S2 open-access URL.
+    """
     arxiv = info.get("arxiv") or ""
+    oa = info.get("oa_pdf") or ""
     src = folder / "src"
-    if arxiv:
+    downloads = []
+    meta["downloads"] = downloads
+    lock = threading.Lock()
+    state = {"best": None, "route": None, "pdf_path": pdf_path, "published": False, "eprint_pdf": None}
+    eprint_dl = threading.Event()
+    pdf_dl = threading.Event()
+
+    def note_download(row):
+        with lock:
+            downloads.append(row)
+
+    def offer(route, paper, reason):
+        with lock:
+            if paper is None:
+                return
+            src_name = paper.get("source") or ""
+            if route == "abstract" or src_name == "abstract":
+                if state["best"] is None:
+                    state["best"] = paper
+                    state["route"] = "abstract"
+                    if reason:
+                        meta["reason"] = reason
+                return
+            chosen = prefer_parsed(state["best"], paper, published=state["published"])
+            if chosen is state["best"]:
+                return
+            if chosen.get("upgraded_from"):
+                meta["upgraded_from"] = chosen["upgraded_from"]
+            meta["source"] = chosen.get("source")
+            if chosen.get("source") == "latex":
+                meta["reason"] = None
+            elif reason:
+                meta["reason"] = reason
+            state["best"] = chosen
+            state["route"] = "latex" if chosen.get("source") == "latex" else route
+            state["published"] = True
+            if publish:
+                stage = "sections" if chosen.get("source") == "latex" else "ocr"
+                publish(chosen, stage)
+
+    def eprint_worker():
         try:
-            blob = arxiv_eprint(arxiv)
-        except Exception as err:
-            blob = None
-            meta["reason"] = f"e-print failed: {err}"
-        meta["timings"]["download"] += time.time() - t
-        if blob:
+            if not arxiv:
+                return
+            t0 = time.time()
+            try:
+                blob = arxiv_eprint(arxiv)
+            except Exception as err:
+                note_download({
+                    "source": "arxiv_eprint", "seconds": round(time.time() - t0, 3),
+                    "ok": False, "reason": str(err)[:200],
+                })
+                return
+            note_download({
+                "source": "arxiv_eprint", "seconds": round(time.time() - t0, 3),
+                "ok": True, "bytes": len(blob),
+            })
             kind = unpack_eprint(blob, src)
             if kind == "pdf":
                 got = src / "source.pdf"
                 if not got.is_file():
-                    pdfs = sorted(src.rglob("*.pdf"))
-                    got = pdfs[0] if pdfs else got
-                if got.is_file():
-                    pdf_path.write_bytes(got.read_bytes())
-                return _ocr_route(folder, info, meta, pdf_path, ocr, "e-print is a PDF", publish)
-            if kind == "tex":
-                t = time.time()
-                parsed = parse_tree(src, arxiv_id=arxiv)
-                meta["timings"]["parse"] += time.time() - t
-                if parsed["route"] == "pdf":
-                    meta["reason"] = parsed["reason"]
-                    t = time.time()
-                    try:
-                        pdf_path.write_bytes(arxiv_pdf(arxiv))
-                    except Exception as err:
-                        meta["reason"] = f"{parsed['reason']}; pdf failed: {err}"
-                        return "abstract", abstract_paper(info), pdf_path
-                    meta["timings"]["download"] += time.time() - t
-                    return _ocr_route(folder, info, meta, pdf_path, ocr, parsed["reason"], publish)
-                paper = parsed["paper"]
-                paper["arxivId"] = arxiv
-                apply_s2_fields(paper, info)
-                t = time.time()
-                meta["timings"]["katex"] += _apply_katex(paper)
-                if publish:
-                    publish(paper, "sections")
-                t = time.time()
-                materialize_figures(paper["blocks"], src, folder / "figures")
-                meta["timings"]["figures"] += time.time() - t
-                return "latex", paper, pdf_path
-        # e-print missing: the PDF is the source of truth for this id
-        t = time.time()
-        try:
-            pdf_path.write_bytes(arxiv_pdf(arxiv))
-            meta["timings"]["download"] += time.time() - t
-            return _ocr_route(folder, info, meta, pdf_path, ocr, meta.get("reason") or "no tex e-print", publish)
+                    pdfs = sorted(p for p in src.rglob("*.pdf") if p.is_file())
+                    got = pdfs[0] if pdfs else None
+                if got is not None and got.is_file():
+                    with lock:
+                        state["eprint_pdf"] = got.read_bytes()
+                return
+            if kind != "tex":
+                return
+            eprint_dl.set()
+            t_parse = time.time()
+            parsed = parse_tree(src, arxiv_id=arxiv)
+            with lock:
+                meta["timings"]["parse"] += time.time() - t_parse
+            if parsed.get("route") != "latex":
+                with lock:
+                    if meta.get("source") != "latex":
+                        meta["reason"] = parsed.get("reason") or meta.get("reason")
+                return
+            paper = parsed["paper"]
+            paper["arxivId"] = arxiv
+            apply_s2_fields(paper, info)
+            t_k = time.time()
+            katex_s = _apply_katex(paper)
+            with lock:
+                meta["timings"]["katex"] += katex_s
+            offer("latex", paper, None)
+            t_f = time.time()
+            materialize_figures(paper["blocks"], src, folder / "figures")
+            with lock:
+                meta["timings"]["figures"] += time.time() - t_f
+                if state["best"] is not None and state["best"].get("source") == "latex" and publish:
+                    publish(state["best"], "figures")
         except Exception as err:
-            meta["timings"]["download"] += time.time() - t
-            meta["reason"] = f"no tex and pdf failed: {err}"
-            return "abstract", abstract_paper(info), pdf_path
+            with lock:
+                if meta.get("source") != "latex":
+                    meta["reason"] = meta.get("reason") or f"e-print failed: {err}"
+        finally:
+            eprint_dl.set()
 
-    oa = info.get("oa_pdf") or ""
-    if oa:
-        t = time.time()
+    def pdf_worker():
         try:
-            pdf_path.write_bytes(fetch_url(oa))
+            stop = threading.Event()
+            jobs = []
+            if arxiv:
+                jobs.append(("arxiv_pdf", lambda: arxiv_pdf(arxiv, cancel=stop.is_set)))
+            if oa and not (arxiv and "arxiv.org" in oa):
+                jobs.append(("oa_pdf", lambda: fetch_pdf(oa, cancel=stop.is_set)))
+            won = None
+            if jobs:
+                try:
+                    won = race_pdf_bytes(jobs, note=note_download, stop=stop)
+                except DownloadError as err:
+                    with lock:
+                        _note_reason(meta, f"pdf failed: {err}")
+            if won and valid_pdf(won.get("data") or b""):
+                with lock:
+                    meta["pdf_source"] = won.get("source")
+                    pdf_path.write_bytes(won["data"])
+            pdf_dl.set()
+            if not pdf_path.is_file() or pdf_path.stat().st_size < 8:
+                return
+            why = f"pdf {meta.get('pdf_source') or 'fetched'}"
+            route, paper, _path = _ocr_route(
+                folder, info, meta, pdf_path, ocr, why, publish, announce=False,
+            )
+            offer(route, paper, meta.get("reason") if route == "abstract" else why)
         except Exception as err:
-            meta["timings"]["download"] += time.time() - t
-            meta["reason"] = f"open-access pdf failed: {err}"
-            return "abstract", abstract_paper(info), pdf_path
-        meta["timings"]["download"] += time.time() - t
-        return _ocr_route(folder, info, meta, pdf_path, ocr, "no arXiv id", publish)
-    return "abstract", abstract_paper(info), pdf_path
+            with lock:
+                _note_reason(meta, f"pdf route failed: {err}")
+        finally:
+            pdf_dl.set()
+
+    t_dl = time.time()
+    workers = []
+    if arxiv:
+        workers.append(threading.Thread(target=eprint_worker, name="rrm-eprint", daemon=True))
+    else:
+        eprint_dl.set()
+    if arxiv or oa:
+        workers.append(threading.Thread(target=pdf_worker, name="rrm-pdf", daemon=True))
+    else:
+        pdf_dl.set()
+    for worker in workers:
+        worker.start()
+    eprint_dl.wait()
+    pdf_dl.wait()
+    with lock:
+        meta["timings"]["download"] += time.time() - t_dl
+    for worker in workers:
+        worker.join()
+
+    with lock:
+        fallback = state.get("eprint_pdf")
+        need_fallback = fallback and (state["best"] is None or state["route"] == "abstract")
+    if need_fallback:
+        pdf_path.write_bytes(fallback)
+        note_download({"source": "arxiv_eprint_pdf", "seconds": 0.0, "ok": True, "bytes": len(fallback)})
+        route, paper, _path = _ocr_route(
+            folder, info, meta, pdf_path, ocr, "e-print is a PDF", publish, announce=False,
+        )
+        offer(route, paper, meta.get("reason") if route == "abstract" else "e-print is a PDF")
+
+    with lock:
+        best = state["best"]
+        route = state["route"]
+        out_path = state["pdf_path"]
+    if best is None or route is None:
+        meta["reason"] = meta.get("reason") or "no arXiv e-print and no open-access PDF"
+        return "abstract", abstract_paper(info), pdf_path
+    return route, best, out_path
 
 
-def _ocr_route(folder, info, meta, pdf_path, ocr, why: str, publish=None):
+def _ocr_route(folder, info, meta, pdf_path, ocr, why: str, publish=None, announce=True):
     if ocr is None:
-        meta["reason"] = f"{why}; ocr not run in this process"
+        _note_reason(meta, f"{why}; ocr not run in this process")
         paper = abstract_paper(info)
         paper["full"] = False
         return "abstract", paper, pdf_path
-    if publish:
+    if announce and publish:
         publish(abstract_paper(info), "ocr")
     t = time.time()
     try:
         result = ocr(pdf_path, folder / "ocr")
     except Exception as err:
         meta["timings"]["ocr"] += time.time() - t
-        meta["reason"] = f"ocr failed: {err}"[:500]
+        chunks = getattr(err, "chunks", None)
+        if chunks:
+            meta["ocr_chunks"] = chunks
+        _note_reason(meta, f"ocr failed: {err}"[:500])
         return "abstract", abstract_paper(info), pdf_path
     meta["timings"]["ocr"] += float(result.get("seconds") or (time.time() - t))
     meta["ocr_gpu_s"] = float(meta.get("ocr_gpu_s") or 0) + float(result.get("gpu_s") or result.get("seconds") or 0)
+    if result.get("chunks"):
+        meta["ocr_chunks"] = result["chunks"]
     blocks = result.get("blocks") or []
     if not blocks:
-        meta["reason"] = f"{why}; ocr returned no blocks"
+        _note_reason(meta, f"{why}; ocr returned no blocks")
         return "abstract", abstract_paper(info), pdf_path
     t = time.time()
     eqs = [b for b in blocks if b.get("kind") == "eq"]
@@ -476,5 +668,5 @@ def _ocr_route(folder, info, meta, pdf_path, ocr, why: str, publish=None):
     meta["timings"]["katex"] += time.time() - t
     paper = paper_from_ocr(info, blocks)
     meta["page_count"] = result.get("page_count") or _page_count(pdf_path)
-    meta["reason"] = why
+    _note_reason(meta, why)
     return "ocr", paper, pdf_path
