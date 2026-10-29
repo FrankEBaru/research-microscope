@@ -8,6 +8,7 @@ turn a markdown fallback into blocks, without importing mineru.
 import json
 import re
 import subprocess
+import time
 from pathlib import Path
 
 from rrm.reader.latex import finalize, parse_inlines, text_tokens
@@ -19,9 +20,12 @@ from rrm.reader.latex import finalize, parse_inlines, text_tokens
 # transformers engine otherwise (QA 2026-10-29: ~20 s/page without vLLM).
 # The 2.7 CLI rejects the literal name vlm-vllm-engine.
 MINERU_BACKEND = "vlm-auto-engine"
-# 15 pages -> 4 chunks of 4, 4, 4, 3 so a slow page rate still overlaps on Modal .map.
+# ~4 pages per container. 15 pages -> 4 chunks; longer PDFs use at most 8.
 PAGES_PER_PART = 4
-MAX_OCR_PARTS = 4
+MAX_OCR_PARTS = 8
+# One attempt is killed at 120s so a hung chunk cannot sit for 13 min (QA 2026-10-29).
+CHUNK_TIMEOUT_S = 180  # QA 2026-10-29: cold vLLM chunks take 97-100 s; one hit 120 s twice and lost 4 pages
+CHUNK_TRIES = 2
 
 
 def page_spans(n: int, pages_per_part: int = PAGES_PER_PART, max_parts: int = MAX_OCR_PARTS) -> list[tuple[int, int]]:
@@ -73,11 +77,27 @@ def pdf_page_count(pdf: Path) -> int | None:
         return None
 
 
+def _failed_chunk_block(part: dict) -> dict:
+    start = int(part.get("start") or 0)
+    end = part.get("end")
+    span = f"{start}-{int(end)}" if end is not None else str(start)
+    reason = str(part.get("error") or "ocr failed")[:180]
+    return {
+        "kind": "p",
+        "raw": True,
+        "failed": True,
+        "inlines": text_tokens(f"[ocr failed pages {span}: {reason}]"),
+    }
+
+
 def merge_ocr_parts(parts: list[dict]) -> list:
-    """Concatenate per-chunk blocks in ascending start-page order and reassign ids."""
+    """Concatenate per-chunk blocks in page order. A failed chunk becomes one raw block."""
     ordered = sorted(parts, key=lambda part: int(part.get("start") or 0))
     blocks = []
     for part in ordered:
+        if part.get("failed") or part.get("ok") is False:
+            blocks.append(_failed_chunk_block(part))
+            continue
         for block in part.get("blocks") or []:
             item = {k: v for k, v in block.items() if k not in ("id", "sents")}
             blocks.append(item)
@@ -86,8 +106,44 @@ def merge_ocr_parts(parts: list[dict]) -> list:
     return finalize(blocks)
 
 
-def run_mineru(pdf: Path, out_dir: Path, end_page: int | None = None) -> Path:
-    """Run the mineru CLI. Returns the output directory. Raises RuntimeError with the tail of stderr."""
+class MineruError(RuntimeError):
+    def __init__(self, message: str, engine: str = "unknown"):
+        super().__init__(message)
+        self.engine = engine
+
+
+def engine_from_log(log: str) -> str:
+    """Which VLM engine MinerU actually selected: vllm, transformers, or unknown."""
+    low = (log or "").lower()
+    named = re.search(r"(?:using|engine)[=:\s]+(vllm[\w.-]*|transformers)", low)
+    if named:
+        return "vllm" if named.group(1).startswith("vllm") else "transformers"
+    if re.search(r"vllm[-_ ]engine|vlm-vllm", low):
+        return "vllm"
+    if re.search(r"transformers engine|vlm-transformers", low):
+        return "transformers"
+    has_vllm = "vllm" in low
+    has_tf = "transformers" in low
+    if has_vllm and not has_tf:
+        return "vllm"
+    if has_tf and not has_vllm:
+        return "transformers"
+    return "unknown"
+
+
+def _proc_text(err: subprocess.TimeoutExpired) -> str:
+    def dec(value):
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", "replace")
+        return str(value)
+
+    return dec(err.stderr) + "\n" + dec(err.stdout)
+
+
+def run_mineru(pdf: Path, out_dir: Path, end_page: int | None = None, timeout: int = CHUNK_TIMEOUT_S):
+    """Run the mineru CLI. Returns (output dir, engine). Raises MineruError with the tail of the log."""
     out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         "mineru", "-p", str(pdf), "-o", str(out_dir),
@@ -96,11 +152,87 @@ def run_mineru(pdf: Path, out_dir: Path, end_page: int | None = None) -> Path:
     ]
     if end_page is not None:
         cmd += ["-e", str(int(end_page))]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as err:
+        engine = engine_from_log(_proc_text(err))
+        raise MineruError(f"mineru timed out after {timeout}s", engine) from err
+    log = (proc.stderr or "") + "\n" + (proc.stdout or "")
+    engine = engine_from_log(log)
     if proc.returncode != 0:
-        tail = (proc.stderr or proc.stdout or "")[-800:]
-        raise RuntimeError(tail or "mineru failed")
-    return out_dir
+        tail = (log or "mineru failed")[-800:]
+        raise MineruError(tail or "mineru failed", engine)
+    return out_dir, engine
+
+
+def _mineru_runner(pdf, out_dir, timeout: int) -> str:
+    _path, engine = run_mineru(Path(pdf), Path(out_dir), timeout=timeout)
+    return engine
+
+
+def _log_chunk(row: dict):
+    span = f"{row.get('start')}-{row.get('end')}"
+    print(
+        f"mineru chunk={span} engine={row.get('engine')} seconds={row.get('seconds')} "
+        f"ok={bool(row.get('ok'))} attempts={row.get('attempts')}",
+        flush=True,
+    )
+
+
+def run_chunk(
+    pdf,
+    out_dir,
+    start: int,
+    end: int | None = None,
+    *,
+    timeout: int = CHUNK_TIMEOUT_S,
+    tries: int = CHUNK_TRIES,
+    runner=None,
+    load_blocks=None,
+) -> dict:
+    """One chunk, `tries` attempts (the first plus one retry). A failed chunk stays in the merge."""
+    runner = runner or _mineru_runner
+    load_blocks = load_blocks or blocks_from_mineru_dir
+    last = "ocr failed"
+    engine = "unknown"
+    elapsed = 0.0
+    attempts = 0
+    for _attempt in range(max(1, int(tries))):
+        attempts += 1
+        t = time.time()
+        try:
+            engine = runner(pdf, out_dir, timeout) or engine
+            blocks = load_blocks(Path(out_dir))
+            elapsed += time.time() - t
+            row = {
+                "start": int(start),
+                "end": None if end is None else int(end),
+                "blocks": blocks,
+                "seconds": round(elapsed, 3),
+                "engine": engine or "unknown",
+                "ok": True,
+                "failed": False,
+                "attempts": attempts,
+            }
+            _log_chunk(row)
+            return row
+        except Exception as err:
+            elapsed += time.time() - t
+            last = str(err)[:300] or "ocr failed"
+            engine = getattr(err, "engine", None) or engine
+    row = {
+        "start": int(start),
+        "end": None if end is None else int(end),
+        "blocks": [],
+        "seconds": round(elapsed, 3),
+        "engine": engine or "unknown",
+        "ok": False,
+        "failed": True,
+        "attempts": attempts,
+        "error": last,
+    }
+    _log_chunk(row)
+    return row
 
 
 def _find_content_list(out_dir: Path) -> list | None:

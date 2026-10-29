@@ -22,11 +22,10 @@ import modal
 import rrm.reader.fetch as _fetch
 from rrm.reader.fetch import ARXIV, arxiv_index_at, arxiv_pdf, arxiv_slot_start, reader_identity
 from rrm.reader.ocr import (
-    blocks_from_mineru_dir,
     merge_ocr_parts,
     page_spans,
     pdf_page_count,
-    run_mineru,
+    run_chunk,
     slice_pdf,
 )
 from rrm.reader.pipeline import (
@@ -76,7 +75,7 @@ gpu_image = (
 app = modal.App("rrm-reader")
 vol = modal.Volume.from_name("rrm-data", create_if_missing=True)
 if modal.is_local():
-    secret = modal.Secret.from_dict({"MODEL_API_KEY": os.environ.get("MODEL_API_KEY", "")})
+    secret = modal.Secret.from_dict({"MODEL_API_KEY": os.environ.get("MODEL_API_KEY", ""), "S2_API_KEY": os.environ.get("S2_API_KEY", "")})
 else:
     secret = modal.Secret.from_dict({})
 
@@ -185,6 +184,8 @@ def _shared_arxiv_wait():
         _gate = modal.Dict.from_name("rrm-arxiv-gate", create_if_missing=True)
 
     def rate_wait():
+        # Slot only. The caller reads the body after wait() returns, so a slow transfer
+        # does not hold the next paper's harvest slot.
         now = time.time()
         slot = arxiv_index_at(now)
         for _ in range(400):
@@ -234,35 +235,72 @@ def _shared_arxiv_wait():
     ARXIV.wait = wait
 
 
+def _chunk_rows(results: list) -> list:
+    return [
+        {
+            "start": row.get("start"),
+            "end": row.get("end"),
+            "seconds": row.get("seconds"),
+            "engine": row.get("engine") or "unknown",
+            "ok": bool(row.get("ok")) and not row.get("failed"),
+        }
+        for row in results
+    ]
+
+
 def _ocr(pdf, work):
-    """Split the PDF across GPU containers and merge blocks in page order.
+    """One container per chunk (spawn, not map). Merge blocks in page order.
 
     `seconds` is wall time (what the reader waits). `gpu_s` is the sum, which is what Modal bills.
+    A failed chunk is a raw block; the other pages still come back. QA 2026-10-29: `.map` ran
+    all four chunks inside one A10G, and the last one hung past 13 min.
     """
     pdf = Path(pdf)
     work = Path(work)
     n = pdf_page_count(pdf) or 0
     spans = page_spans(n)
     vol.commit()
-    if len(spans) <= 1:
-        out = ocr_one.remote(str(pdf), str(work), 0)
-        out["gpu_s"] = float(out.get("seconds") or 0)
-        return out
-    pdfs, outs, starts = [], [], []
+    if not spans:
+        return {"blocks": [], "seconds": 0.0, "gpu_s": 0.0, "page_count": 0, "chunks": []}
+    jobs = []
     for start, end in spans:
         part = work / f"part_{start}"
         slice_pdf(pdf, part / "in.pdf", start, end)
-        pdfs.append(str(part / "in.pdf"))
-        outs.append(str(part / "out"))
-        starts.append(start)
+        jobs.append((str(part / "in.pdf"), str(part / "out"), start, end))
     vol.commit()
     t = time.time()
-    results = list(ocr_one.map(pdfs, outs, starts, order_outputs=True))
+    calls = [ocr_one.spawn(path, out, start, end) for path, out, start, end in jobs]
+    results = []
+    for call, (_path, _out, start, end) in zip(calls, jobs):
+        try:
+            row = call.get()
+        except Exception as err:
+            row = {
+                "start": start, "end": end, "failed": True, "ok": False, "blocks": [],
+                "seconds": 0.0, "engine": "unknown", "error": str(err)[:300],
+            }
+        row.setdefault("start", start)
+        row.setdefault("end", end)
+        results.append(row)
     wall = time.time() - t
+    chunks = _chunk_rows(results)
+    usable = [row for row in results if row.get("ok") and not row.get("failed") and row.get("blocks")]
+    if not usable:
+        err = RuntimeError("all ocr chunks failed: " + "; ".join(
+            str(row.get("error") or "failed")[:120] for row in results
+        ))
+        err.chunks = chunks
+        raise err
     blocks = merge_ocr_parts(results)
     gpu_s = sum(float(row.get("seconds") or 0) for row in results)
     pages = sum(int(row.get("page_count") or 0) for row in results) or n
-    return {"blocks": blocks, "seconds": round(wall, 3), "gpu_s": round(gpu_s, 3), "page_count": pages}
+    return {
+        "blocks": blocks,
+        "seconds": round(wall, 3),
+        "gpu_s": round(gpu_s, 3),
+        "page_count": pages,
+        "chunks": chunks,
+    }
 
 
 def _run(corpusid: int) -> dict:
@@ -277,15 +315,19 @@ def _run(corpusid: int) -> dict:
 
 
 # L4 first; A10G (24 GB) when L4 has no capacity (seen 2026-10-29: 10+ min queue).
-@app.function(image=gpu_image, gpu=["L4", "A10G"], volumes={DATA: vol}, timeout=1800, memory=16384, cpu=2)
-def ocr_one(pdf: str, out: str, start: int = 0) -> dict:
+# max_inputs=1 and max_containers=8: each chunk is its own container. No min_containers.
+# Function timeout bounds a hung container; run_chunk itself stops an attempt at 120s and retries once.
+@app.function(
+    image=gpu_image, gpu=["L4", "A10G"], volumes={DATA: vol},
+    timeout=400, memory=16384, cpu=2, max_containers=8,
+)
+@modal.concurrent(max_inputs=1)
+def ocr_one(pdf: str, out: str, start: int = 0, end: int = 0) -> dict:
     vol.reload()
-    t = time.time()
-    run_mineru(Path(pdf), Path(out))
-    blocks = blocks_from_mineru_dir(Path(out))
-    pages = pdf_page_count(Path(pdf))
+    result = run_chunk(Path(pdf), Path(out), int(start), int(end) or None)
+    result["page_count"] = pdf_page_count(Path(pdf))
     vol.commit()
-    return {"blocks": blocks, "seconds": round(time.time() - t, 3), "page_count": pages, "start": int(start)}
+    return result
 
 
 @app.function(image=cpu_image, volumes={DATA: vol}, cpu=2, memory=4096, timeout=900, secrets=[secret])
@@ -510,11 +552,28 @@ def status(ids: str = ""):
                 "stages": meta.get("stages"),
                 "reason": meta.get("reason"),
                 "source": meta.get("source"),
+                "upgraded_from": meta.get("upgraded_from"),
                 "first_content_s": meta.get("first_content_s"),
                 "sections_s": meta.get("sections_s"),
                 "full_s": meta.get("full_s"),
             })
     return {"papers": rows}
+
+
+def _fmt_ocr_chunks(meta: dict) -> str:
+    bits = []
+    for row in meta.get("ocr_chunks") or []:
+        flag = "ok" if row.get("ok") else "fail"
+        bits.append(f"{row.get('start')}-{row.get('end')}:{row.get('seconds')}:{row.get('engine')}:{flag}")
+    return ",".join(bits)
+
+
+def _fmt_downloads(meta: dict) -> str:
+    bits = []
+    for row in meta.get("downloads") or []:
+        flag = "ok" if row.get("ok") else "fail"
+        bits.append(f"{row.get('source')}:{row.get('seconds')}:{flag}")
+    return ",".join(bits)
 
 
 def _cost_row(meta: dict) -> dict:
@@ -548,6 +607,7 @@ def bench(ids: str = ""):
 
     first is time-to-first-content (stub). sections is time-to-sections. full is time-to-full.
     ocr is wall time; ocr_gpu_s is the summed GPU time used for ocr_usd.
+    ocr_chunks is start-end:seconds:engine:ok per chunk. downloads is source:seconds:ok.
     """
     header = (
         "id", "status", "source", "eqs", "katex_ok", "inline", "inline_ok",
@@ -555,6 +615,7 @@ def bench(ids: str = ""):
         "first", "sections", "full",
         "cpu_usd", "ocr_usd", "sam_usd",
         "resolve_usd", "download_usd", "parse_usd", "katex_usd", "figures_usd",
+        "ocr_chunks", "downloads",
     )
     print("\t".join(header))
     for raw in ids.split(","):
@@ -593,4 +654,6 @@ def bench(ids: str = ""):
             steps.get("parse"),
             steps.get("katex"),
             steps.get("figures"),
+            _fmt_ocr_chunks(meta),
+            _fmt_downloads(meta),
         )))
