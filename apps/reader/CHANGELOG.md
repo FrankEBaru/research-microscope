@@ -11,8 +11,9 @@ Cada hito está identificado por el hash de su commit y cada cambio posterior va
 | RRM-8 A (5 papers) | `9129d07` | + pipeline probado con 5 papers (robustez, referencias cruzadas, autor-año) |
 | RRM-9 | `ba729fa` | + pruebas unitarias, e2e y CI |
 | v0.2 | `955a37b` | + deslizador Kaplan/Chinchilla, BibTeX, figura acompañante y sus pruebas |
+| RRM-11 | `42abbf7` | + compañero opcional (3 personajes), lógica `f365013`, componente `8fdc7a4` y pruebas e2e |
 
-Commits posteriores a `955a37b` no tienen hito hasta el siguiente.
+Commits posteriores a `42abbf7` no tienen hito hasta el siguiente.
 
 **Tags:** el entorno de desarrollo no puede subir tags (el servidor responde 403: solo permite la rama designada). Para crearlos desde tu máquina:
 ```bash
