@@ -189,15 +189,17 @@ def cell_text(cell):
 def table_block(t):
     attr, caption, colspecs, thead, tbodies, tfoot = t["c"]
     head = [[cell_text(c) for c in row[1]] for row in thead[1]]
-    body = []
+    hspan = [[c[3] for c in row[1]] for row in thead[1]]  # colspan de cada celda: sin él las cabeceras multicolumna se desalinean
+    body, bspan = [], []
     for tb in tbodies:
         for row in tb[3]:
             body.append([cell_text(c) for c in row[1]])
+            bspan.append([c[3] for c in row[1]])
     cap = []
     for b in caption[1]:
         if b["t"] in ("Plain", "Para"):
             cap += inl(b["c"])
-    return {"kind": "table", "label": attr[0], "head": head, "body": body, "caption": cap}
+    return {"kind": "table", "label": attr[0], "head": head, "body": body, "hspan": hspan, "bspan": bspan, "caption": cap}
 
 
 def flush(seg, out):
