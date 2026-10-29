@@ -714,8 +714,12 @@ def _drop_cmd_args(text: str, names: tuple) -> str:
     return out
 
 
-_AFFIL = ("university", "dept", "department", "google", "stanford", "institute", "openai", "research",
-          "mit", "laboratory", "lab", "college", "school", "inc", "equal contribution", "work done", "work performed")
+_AFFIL = (
+    "university", "universit", "dept", "department", "google", "deepmind", "institute", "openai",
+    "mit", "laboratory", "lab", "college", "school", "inc", "equal contribution", "work done",
+    "work performed", "correspondence", "research", "microsoft", "nvidia", "meta", "stanford",
+    "uc", "berkeley", "facebook", "corp", "ltd", "gmbh",
+)
 
 
 _ACCENTS = (("{\\L}", "Ł"), ("\\L ", "Ł"), ("\\L{}", "Ł"), ("{\\l}", "ł"),
@@ -723,31 +727,106 @@ _ACCENTS = (("{\\L}", "Ł"), ("\\L ", "Ł"), ("\\L{}", "Ł"), ("{\\l}", "ł"),
             ("\\'e", "é"), ("\\'a", "á"), ("\\'i", "í"), ("\\'o", "ó"), ("\\~n", "ñ"))
 
 
+def _command_bodies(tex: str, command: str) -> list[str]:
+    """Bodies of every \\command, including a star and optional arguments. Longer names are skipped."""
+    token = "\\" + command
+    i, out = 0, []
+    while True:
+        j = tex.find(token, i)
+        if j < 0:
+            break
+        k = j + len(token)
+        if k < len(tex) and (tex[k].isalpha() or tex[k] == "@"):
+            i = k
+            continue
+        if k < len(tex) and tex[k] == "*":
+            k += 1
+        k = _skip_ws(tex, k)
+        while k < len(tex) and tex[k] == "[":
+            _, k = read_bracket(tex, k)
+            k = _skip_ws(tex, k)
+        if k < len(tex) and tex[k] == "{":
+            body, k = read_braced(tex, k)
+            out.append(body)
+        i = k
+    return out
+
+
+def _is_affil(low: str) -> bool:
+    words = set(low.split())
+    for word in _AFFIL:
+        if " " in word:
+            if word in low:
+                return True
+        elif word in words:
+            return True
+    return False
+
+
+def _split_name_line(line: str) -> list[str]:
+    bits = re.split(r"\s+\band\b\s+", line)
+    out = []
+    for bit in bits:
+        pieces = [part.strip() for part in bit.split(",") if part.strip()]
+        if len(pieces) >= 2 and all(len(part.split()) >= 2 for part in pieces):
+            out.extend(pieces)
+        else:
+            out.append(bit.strip())
+    return out
+
+
+def _person_name(name: str) -> str | None:
+    name = re.sub(r"\s+", " ", name).strip(" ;.*")
+    if not name or len(name) < 3 or any(ch.isdigit() for ch in name) or "@" in name:
+        return None
+    words = name.split()
+    if not words or len(words) > 6 or not words[0][:1].isupper():
+        return None
+    if _is_affil(name.lower()):
+        return None
+    return name
+
+
 def _authors(raw: str) -> list:
-    text = _drop_cmd_args(raw, ("thanks", "footnote", "footnotetext", "texttt", "url", "href", "email",
-                                "textsuperscript", "affil", "affiliation", "institute", "color", "textcolor",
-                                "hspace", "vspace", "footnotemark"))
+    """Names from one author block: \\and / \\And, \\\\ affiliations, \\thanks, IEEE blocks."""
+    text = _drop_cmd_args(raw, (
+        "thanks", "footnote", "footnotetext", "texttt", "url", "href", "email",
+        "textsuperscript", "affil", "affiliation", "affiliations", "institute", "color", "textcolor",
+        "hspace", "vspace", "footnotemark", "IEEEauthorblockA",
+    ))
+    text = re.sub(r"\\(?:textbf|textit|emph|textsc|mbox)\s*\{([^{}]*)\}", r"\1", text)
     text = re.sub(r"~~+|\\quad|\\qquad", "\n", text)
     text = re.sub(r"\$[^$]*\$", " ", text)
-    for a, b in _ACCENTS:
-        text = text.replace(a, b)
-    text = re.sub(r"\\and\b", "\n", text, flags=re.I)
-    text = re.sub(r"\\\\", "\n", text)
-    text = re.sub(r"\\[A-Za-z@]+\*?(?:\[[^\]]*\])?", " ", text)
+    for src, dst in _ACCENTS:
+        text = text.replace(src, dst)
+    text = re.sub(r"\\(?:And|AND|and)\b", "\n", text)
+    text = re.sub(r"\\&|(?<=\s)&(?=\s)", "\n", text)  # "Chenlin Meng \& Stefano Ermon"
+    text = text.replace("\\\\", "\n")
+    text = re.sub(r"\\[A-Za-z@]+\*?(?:\[[^\]]*\])?(?:\{[^{}]*\})?", " ", text)
     text = re.sub(r"\S+@\S+", " ", text)
     text = text.replace("{", " ").replace("}", " ").replace("~", " ")
     names = []
     for line in text.splitlines():
-        for part in re.split(r",|;|\band\b", line):
-            name = re.sub(r"\s+", " ", part).strip(" ;.*")
-            low = name.lower()
-            words = name.split()
-            if not name or len(name) < 3 or len(words) > 5 or any(ch.isdigit() for ch in name):
-                continue
-            if any(w in low.split() or low.startswith(w) for w in _AFFIL):
-                continue
-            if not words[0][:1].isupper():
-                continue
+        for part in _split_name_line(line):
+            name = _person_name(part)
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
+def extract_authors(tex: str) -> list:
+    """Authors from the common article, NeurIPS/ICML/ICLR, arXiv, authblk, and IEEE shapes."""
+    ieee = _command_bodies(tex, "IEEEauthorblockN")
+    if ieee:
+        names = []
+        for body in ieee:
+            for name in _authors(body):
+                if name not in names:
+                    names.append(name)
+        return names[:40]
+    names = []
+    for body in _command_bodies(tex, "author"):
+        for name in _authors(body):
             if name not in names:
                 names.append(name)
     return names[:40]
@@ -848,12 +927,13 @@ def parse_tex(tex: str, macros: dict | None = None, arxiv_id: str = "") -> dict:
         license_note = plain(blocks[0]["inlines"])
         blocks = blocks[1:]
     blocks = finalize(blocks)
-    title = plain(parse_inlines(_grab(tex, "title"), macros))
+    title = plain(parse_inlines(_grab(tex, "title").replace("\\\\", " "), macros))  # "Scenes as \\ Neural"
+    title = " ".join(title.replace("\\\\", " ").split())
     return {
         "arxivId": arxiv_id,
         "corpusid": None,
         "title": title,
-        "authors": _authors(_grab(tex, "author")),
+        "authors": extract_authors(tex),
         "date": plain(parse_inlines(_grab(tex, "date"), macros)),
         "abstract": abstract,
         "license": license_note,
