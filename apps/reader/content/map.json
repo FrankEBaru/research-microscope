@@ -9,35 +9,149 @@
           "id": "origen",
           "title": "¿De dónde sale la idea de atender?",
           "papers": [
-            { "id": "1409.0473",
-              "contribution": { "paper": "1409.0473", "quote": "allowing a model to automatically (soft-)search for parts of a source sentence that are relevant to predicting a target word" } },
-            { "id": "1508.04025",
-              "contribution": { "paper": "1508.04025", "quote": "a global approach which always attends to all source words and a local one that only looks at a subset of source words at a time" } }
+            {
+              "id": "1409.0473",
+              "contribution": {
+                "paper": "1409.0473",
+                "quote": "allowing a model to automatically (soft-)search for parts of a source sentence that are relevant to predicting a target word"
+              }
+            },
+            {
+              "id": "1508.04025",
+              "contribution": {
+                "paper": "1508.04025",
+                "quote": "a global approach which always attends to all source words and a local one that only looks at a subset of source words at a time"
+              }
+            }
           ]
         },
         {
           "id": "modelo",
           "title": "¿Cómo se construye un modelo solo con atención?",
           "papers": [
-            { "id": "1706.03762",
-              "contribution": { "paper": "1706.03762", "quote": "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely." },
+            {
+              "id": "1706.03762",
+              "contribution": {
+                "paper": "1706.03762",
+                "quote": "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely."
+              },
               "figure": "fig:model-arch",
-              "pending": { "paper": "1706.03762", "quote": "investigate local, restricted attention mechanisms to efficiently handle large inputs and outputs such as images, audio and video" } }
+              "pending": {
+                "paper": "1706.03762",
+                "quote": "investigate local, restricted attention mechanisms to efficiently handle large inputs and outputs such as images, audio and video"
+              }
+            }
           ]
         },
         {
           "id": "despues",
           "title": "¿Qué se hizo después con ese modelo?",
           "papers": [
-            { "id": "1810.04805",
-              "contribution": { "paper": "1810.04805", "quote": "pre-train deep bidirectional representations from unlabeled text by jointly conditioning on both left and right context in all layers" } },
-            { "id": "2005.14165",
-              "contribution": { "paper": "2005.14165", "quote": "scaling up language models greatly improves task-agnostic, few-shot performance" } },
-            { "id": "2010.11929",
-              "contribution": { "paper": "2010.11929", "quote": "a pure transformer applied directly to sequences of image patches can perform very well on image classification tasks" } }
+            {
+              "id": "1810.04805",
+              "contribution": {
+                "paper": "1810.04805",
+                "quote": "pre-train deep bidirectional representations from unlabeled text by jointly conditioning on both left and right context in all layers"
+              }
+            },
+            {
+              "id": "2005.14165",
+              "contribution": {
+                "paper": "2005.14165",
+                "quote": "scaling up language models greatly improves task-agnostic, few-shot performance"
+              }
+            },
+            {
+              "id": "2010.11929",
+              "contribution": {
+                "paper": "2010.11929",
+                "quote": "a pure transformer applied directly to sequences of image patches can perform very well on image classification tasks"
+              }
+            }
           ]
         }
-      ]
+      ],
+      "layout": {
+        "regions": {
+          "origen": {
+            "cx": 340,
+            "cy": 380,
+            "r": 220
+          },
+          "modelo": {
+            "cx": 800,
+            "cy": 560,
+            "r": 190
+          },
+          "despues": {
+            "cx": 1280,
+            "cy": 420,
+            "r": 270
+          }
+        },
+        "pos": {
+          "1409.0473": [
+            250,
+            310
+          ],
+          "1508.04025": [
+            410,
+            450
+          ],
+          "1706.03762": [
+            800,
+            560
+          ],
+          "1810.04805": [
+            1170,
+            300
+          ],
+          "2005.14165": [
+            1360,
+            400
+          ],
+          "2010.11929": [
+            1250,
+            560
+          ]
+        },
+        "edges": [
+          {
+            "from": "1706.03762",
+            "to": "1409.0473",
+            "kind": "bibliografia",
+            "paper": "1706.03762",
+            "refKey": "bahdanau2014neural"
+          },
+          {
+            "from": "1706.03762",
+            "to": "1508.04025",
+            "kind": "bibliografia",
+            "paper": "1706.03762",
+            "refKey": "luong2015effective"
+          },
+          {
+            "from": "1508.04025",
+            "to": "1409.0473",
+            "kind": "curado"
+          },
+          {
+            "from": "1810.04805",
+            "to": "1706.03762",
+            "kind": "curado"
+          },
+          {
+            "from": "2005.14165",
+            "to": "1706.03762",
+            "kind": "curado"
+          },
+          {
+            "from": "2010.11929",
+            "to": "1706.03762",
+            "kind": "curado"
+          }
+        ]
+      }
     },
     {
       "id": "escalado",
@@ -47,33 +161,137 @@
           "id": "reparto",
           "title": "¿Cómo se reparte el cómputo entre tamaño y datos?",
           "papers": [
-            { "id": "2001.08361",
-              "contribution": { "paper": "2001.08361", "quote": "optimally compute-efficient training involves training very large models on a relatively modest amount of data" } },
-            { "id": "2203.15556",
-              "contribution": { "paper": "2203.15556", "quote": "the model size and the number of training tokens should be scaled equally" } }
+            {
+              "id": "2001.08361",
+              "contribution": {
+                "paper": "2001.08361",
+                "quote": "optimally compute-efficient training involves training very large models on a relatively modest amount of data"
+              }
+            },
+            {
+              "id": "2203.15556",
+              "contribution": {
+                "paper": "2203.15556",
+                "quote": "the model size and the number of training tokens should be scaled equally"
+              }
+            }
           ]
         },
         {
           "id": "desacuerdo",
           "title": "¿Por qué no coinciden?",
           "papers": [
-            { "id": "2406.12907",
-              "contribution": { "paper": "2406.12907", "quote": "much of this discrepancy can be attributed to Kaplan counting non-embedding rather than total parameters" } },
-            { "id": "2406.19146",
-              "contribution": { "paper": "2406.19146", "quote": "identifying three factors causing the difference: last layer computational cost, warmup duration, and scale-dependent optimizer tuning" } }
+            {
+              "id": "2406.12907",
+              "contribution": {
+                "paper": "2406.12907",
+                "quote": "much of this discrepancy can be attributed to Kaplan counting non-embedding rather than total parameters"
+              }
+            },
+            {
+              "id": "2406.19146",
+              "contribution": {
+                "paper": "2406.19146",
+                "quote": "identifying three factors causing the difference: last layer computational cost, warmup duration, and scale-dependent optimizer tuning"
+              }
+            }
           ],
           "tension": {
             "curada": true,
-            "a": { "label": "Kaplan et al.", "paper": "2001.08361", "quote": "optimally compute-efficient training involves training very large models on a relatively modest amount of data" },
-            "b": { "label": "Hoffmann et al. (Chinchilla)", "paper": "2203.15556", "quote": "the model size and the number of training tokens should be scaled equally" },
-            "numbers": { "paper": "2406.12907", "quote": "Kaplan: $N_\\text{optimal} \\propto C^{0.73}$, Chinchilla: $N_\\text{optimal} \\propto C^{0.50}$" },
+            "a": {
+              "label": "Kaplan et al.",
+              "paper": "2001.08361",
+              "quote": "optimally compute-efficient training involves training very large models on a relatively modest amount of data"
+            },
+            "b": {
+              "label": "Hoffmann et al. (Chinchilla)",
+              "paper": "2203.15556",
+              "quote": "the model size and the number of training tokens should be scaled equally"
+            },
+            "numbers": {
+              "paper": "2406.12907",
+              "quote": "Kaplan: $N_\\text{optimal} \\propto C^{0.73}$, Chinchilla: $N_\\text{optimal} \\propto C^{0.50}$"
+            },
             "resolution": [
-              { "paper": "2406.12907", "quote": "much of this discrepancy can be attributed to Kaplan counting non-embedding rather than total parameters" },
-              { "paper": "2406.19146", "quote": "identifying three factors causing the difference: last layer computational cost, warmup duration, and scale-dependent optimizer tuning" }
+              {
+                "paper": "2406.12907",
+                "quote": "much of this discrepancy can be attributed to Kaplan counting non-embedding rather than total parameters"
+              },
+              {
+                "paper": "2406.19146",
+                "quote": "identifying three factors causing the difference: last layer computational cost, warmup duration, and scale-dependent optimizer tuning"
+              }
             ]
           }
         }
-      ]
+      ],
+      "layout": {
+        "regions": {
+          "reparto": {
+            "cx": 430,
+            "cy": 500,
+            "r": 270
+          },
+          "desacuerdo": {
+            "cx": 1120,
+            "cy": 500,
+            "r": 300
+          }
+        },
+        "pos": {
+          "2001.08361": [
+            300,
+            420
+          ],
+          "2203.15556": [
+            560,
+            580
+          ],
+          "2406.12907": [
+            990,
+            400
+          ],
+          "2406.19146": [
+            1250,
+            600
+          ]
+        },
+        "edges": [
+          {
+            "from": "2203.15556",
+            "to": "2001.08361",
+            "kind": "curado"
+          },
+          {
+            "from": "2406.12907",
+            "to": "2001.08361",
+            "kind": "abstract",
+            "paper": "2406.12907",
+            "quote": "Kaplan counting non-embedding rather than total parameters"
+          },
+          {
+            "from": "2406.12907",
+            "to": "2203.15556",
+            "kind": "abstract",
+            "paper": "2406.12907",
+            "quote": "reaffirms Chinchilla's scaling coefficients"
+          },
+          {
+            "from": "2406.19146",
+            "to": "2001.08361",
+            "kind": "abstract",
+            "paper": "2406.19146",
+            "quote": "Kaplan et al. and Hoffmann et al. developed influential scaling laws"
+          },
+          {
+            "from": "2406.19146",
+            "to": "2203.15556",
+            "kind": "abstract",
+            "paper": "2406.19146",
+            "quote": "Kaplan et al. and Hoffmann et al. developed influential scaling laws"
+          }
+        ]
+      }
     }
   ]
 }

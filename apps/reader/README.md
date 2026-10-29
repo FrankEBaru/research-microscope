@@ -21,6 +21,7 @@ Requisitos: Node ≥ 22, pandoc, `pdftocairo` (poppler) y Python 3 (+ numpy solo
 | Hover en oración: tarjeta lateral | **Simulado** (rotulado «ejemplo simulado») |
 | Lectura semántica de celdas de tabla | **Simulado** |
 | Ráfaga de ejemplo (preguntas, clusters, vista de un minuto, tensión) | **Curada a mano**; no es la salida del motor de ráfaga |
+| Mapa-platina (RRM-10): arrastrar, rueda, lentes ×1/×2/×4/×8, minimapa, retícula, lente con vista de un minuto | Real (interacción); **posiciones ilustrativas** y relaciones: sólidas solo si el build las confirma (bibliografía del paper o frase del abstract), punteadas = curadas |
 | Instrumento √d_k (apuesta, deslizadores, histogramas, softmax) | Real: cálculo bajo los supuestos del paper |
 
 Todo lo que no es texto del paper lleva una etiqueta de procedencia (`del paper`, `curado a mano`, `cálculo…`, `ejemplo simulado`).

@@ -4,6 +4,7 @@ import { Paper } from "@/lib/types";
 import { Rich } from "@/lib/math";
 import { Coverage, ProvChip } from "./Bits";
 import PaperView, { plainOf } from "./Paper";
+import MapView from "./MapView";
 
 type Route = { q?: string; c?: string; p?: string; b?: string };
 const parse = (h: string): Route => {
@@ -97,13 +98,16 @@ export default function Engine() {
 
 /* ---------- Nivel 1: área ---------- */
 function Area({ q, questions, papers, go }: any) {
+  const [view, setView] = useState<"mapa" | "tarjetas">("mapa");
   return (
     <section className="lvl lvl1">
       <p className="eyebrow">Nivel 1 · Área</p>
       <div className="qtabs">{questions.map((x: any) => <button key={x.id} className={x.id === q.id ? "on" : ""} onClick={() => go({ q: x.id })}>{x.text}</button>)}</div>
       <h1 className="question">{q.text}</h1>
       <p className="sub"><ProvChip kind="curado" text="ráfaga de ejemplo curada a mano" /> No es la salida del motor de ráfaga: es el formato que ese motor llenará.</p>
-      <div className="clusters">
+      <div className="view-toggle" role="tablist" aria-label="Vista"><button className={view === "mapa" ? "on" : ""} onClick={() => setView("mapa")}>Mapa</button><button className={view === "tarjetas" ? "on" : ""} onClick={() => setView("tarjetas")}>Tarjetas</button></div>
+      {view === "mapa" && <MapView q={q} papers={papers} go={go} />}
+      {view === "tarjetas" && <div className="clusters">
         {q.clusters.map((c: any, i: number) => {
           const have = c.papers.filter((p: any) => papers[p.id]?.full).length;
           return (
@@ -117,7 +121,7 @@ function Area({ q, questions, papers, go }: any) {
             </button>
           );
         })}
-      </div>
+      </div>}
     </section>
   );
 }

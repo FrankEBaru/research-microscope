@@ -440,6 +440,18 @@ def resolve(paper: dict, quote: str, what: str) -> dict:
     return {"quote": quote, **hits[0]}
 
 
+def check_refkeys(node, papers: dict, ctx: str):
+    """Relaciones `bibliografia`: la clave debe existir en la bibliografía real del paper citante."""
+    if isinstance(node, dict):
+        if "refKey" in node and node["refKey"] not in papers[node["paper"]].get("refs", {}):
+            sys.exit(f"RELACIÓN INVÁLIDA ({ctx}): {node['refKey']} no está en la bibliografía de {node['paper']}")
+        for v in node.values():
+            check_refkeys(v, papers, ctx)
+    elif isinstance(node, list):
+        for v in node:
+            check_refkeys(v, papers, ctx)
+
+
 def resolve_all(node, papers: dict, ctx: str, path=""):
     """Recorre el contenido curado y resuelve todo objeto con 'quote' y 'paper'."""
     if isinstance(node, dict):
@@ -470,6 +482,7 @@ def main():
             continue
         data = json.loads(f.read_text())
         resolve_all(data, papers, f.name)
+        check_refkeys(data, papers, f.name)
         resolved[f.stem] = data
     (OUT / "_content.json").write_text(json.dumps(resolved, ensure_ascii=False))
     n_full = sum(1 for p in papers.values() if p["full"])
