@@ -196,3 +196,17 @@ test("compañero por permanencia: una ecuación quieta ofrece desglosar sus sím
   assert.ok((await p.$$(".breakdown li")).length >= 3, "símbolos de la ecuación con su definición");
   assert.deepEqual(p.errs, []); await p.close();
 });
+
+test("Panorama: frases literales, convergencia contada, matriz y apertura del paper", async () => {
+  const p = await page("#/"); await p.waitForSelector(".view-toggle");
+  await p.click('.view-toggle button:has-text("Panorama")'); await p.waitForSelector(".pano-claim");
+  assert.equal(await p.$$eval(".pano-claim", (n) => n.length), 3, "3 enunciados en la pregunta de atención");
+  assert.match(await p.$eval(".pano-lead", (e) => e.textContent), /No es un veredicto/);
+  const conv = await p.$$eval(".conv span", (n) => n.map((e) => e.textContent));
+  assert.ok(conv.some((t) => /3 de 6/.test(t)) && conv.some((t) => /4 de 6/.test(t)) && conv.some((t) => /2 de 6/.test(t)), "k de n contados: " + conv.join(" | "));
+  assert.match(conv[0], /Wilson 95%/);
+  assert.equal(await p.$$eval(".matrix tbody tr", (n) => n.length), 6); assert.equal(await p.$$eval(".matrix .dot.yes", (n) => n.length), 9, "9 frases en la matriz (3+2+4)");
+  assert.match(await p.$eval(".pano-claim .muted", (e) => e.textContent), /No es lo mismo que «no lo dice»/);
+  assert.match(await p.$eval(".pano > .small", (e) => e.textContent), /simulado|simula/);
+  await p.click(".pano-claim .evi .link >> nth=0"); await p.waitForSelector(".paper"); assert.deepEqual(p.errs, []); await p.close();
+});
