@@ -251,6 +251,281 @@ def test_sam_parser_and_missing_key(tmp_path: Path, monkeypatch):
 def test_queue_and_abstract_shape(tmp_path: Path):
     assert mark_queued(tmp_path / "5", 5) == "queued"
     assert mark_queued(tmp_path / "5", 5) == "queued"
-    paper = abstract_paper({"corpusid": 5, "title": "T", "abstract": "Hello there.", "tldr": "short"})
+    paper = abstract_paper({
+        "corpusid": 5, "title": "T", "abstract": "Hello there.", "tldr": "short",
+        "authors": ["Ada"], "refs": {"s2:9": "Ada. A paper."},
+    })
     assert paper["full"] is False and paper["source"] == "abstract"
+    assert paper["tldr"] == "short" and paper["authors"] == ["Ada"]
+    assert paper["refs"]["s2:9"] == "Ada. A paper."
     assert paper["blocks"][0]["kind"] == "p"
+
+
+def test_macro_args_let_and_def_file(tmp_path: Path):
+    tex = r"""
+\documentclass{article}
+\newcommand{\p}[2][x]{#1+#2}
+\def\vect#1{\mathbf{#1}}
+\newcommand{\myvec}[1]{\vec{#1}}
+\let\vv\myvec
+\DeclareMathOperator{\argmin}{arg\,min}
+\begin{document}
+\begin{equation}
+a = \p{y} + \p[b]{z} + \vect x + \vv{w} + \argmin
+\end{equation}
+\end{document}
+"""
+    macros = collect_macros(tex)
+    assert expand_math(r"\p{y}", macros) == "x+y"
+    assert expand_math(r"\p[b]{z}", macros) == "b+z"
+    assert expand_math(r"\vect x", macros) == r"\mathbf{x}"
+    assert expand_math(r"\hat\bx_0", {"bx": {"n": 0, "opt": None, "body": r"\mathbf{x}"}}) == r"\hat{\mathbf{x}}_0"
+    assert expand_math(r"\defeq p", {"defeq": {"n": 0, "opt": None, "body": r"\coloneqq"}}) == r"\coloneqq p"
+    assert expand_math(r"\vv{w}", macros) == r"\vec{w}"
+    assert r"\operatorname{arg\,min}" in expand_math(r"\argmin", macros)
+    (tmp_path / "main.tex").write_text(r"""
+\documentclass{article}
+\input{body}
+\begin{document}
+\begin{equation}
+z = \widecheck{q}
+\end{equation}
+\end{document}
+""")
+    (tmp_path / "body.tex").write_text("See the equation.\n")
+    (tmp_path / "cmds.def").write_text(r"\newcommand{\widecheck}[1]{\check{#1}}" + "\n")
+    parsed = parse_tree(tmp_path)
+    eq = next(b for b in parsed["paper"]["blocks"] if b["kind"] == "eq")
+    assert r"\check{q}" in eq["tex"]
+    # unknown environment still keeps the raw TeX
+    raw = parse_tex(r"\documentclass{article}\begin{document}\begin{mystery}keep\end{mystery}\end{document}")
+    assert any(b.get("raw") and "keep" in plain(b["inlines"]) for b in raw["blocks"])
+
+
+def test_priority_open_jumps_the_prefetch_queue():
+    from rrm.reader.queue import forget, note, release
+
+    order, hot = [], []
+    for cid in (1, 2, 3):
+        order, hot = note(order, hot, cid, front=False)
+    assert order == [1, 2, 3]
+    order, hot = note(order, hot, 3, front=True)
+    assert order[0] == 3
+    order, hot = release(order, hot, 3)
+    assert order == [1, 2] and 3 in hot
+    order, hot = note(order, hot, 3, front=False)
+    assert order[0] == 3
+    order, hot = note(order, hot, 9, front=True)
+    order, hot = note(order, hot, 1, front=False)
+    order, hot = note(order, hot, 9, front=False)
+    assert order[0] == 9
+    order, hot = forget(order, hot, 9)
+    assert 9 not in order and 9 not in hot
+
+
+def test_arxiv_burst_slots():
+    from rrm.reader.fetch import BurstGate, arxiv_index_at, arxiv_slot_start
+
+    starts = [arxiv_slot_start(i) for i in range(8)]
+    assert starts[:4] == [0.0, 0.25, 0.5, 0.75]
+    assert starts[4] == 2.0
+    assert arxiv_index_at(0.8) == 4
+    assert arxiv_index_at(0.5) == 2
+    now = [0.0]
+    slept = []
+
+    def sleep(seconds):
+        slept.append(seconds)
+        now[0] += seconds
+
+    gate = BurstGate(sleep=sleep, now=lambda: now[0])
+    for _ in range(5):
+        gate.wait()
+    # four gaps inside the burst, then the fifth request waits out the 1 s sleep
+    assert len(slept) == 4
+    assert abs(now[0] - 2.0) < 1e-9
+
+
+def test_page_split_merges_in_order():
+    from rrm.reader.ocr import merge_ocr_parts, page_spans
+
+    assert page_spans(0) == []
+    assert page_spans(1) == [(0, 1)]
+    assert page_spans(15) == [(0, 4), (4, 8), (8, 12), (12, 15)]
+    parts = [
+        {"start": 10, "blocks": [{"kind": "p", "id": "b0", "inlines": [{"t": "text", "v": "c"}]}]},
+        {"start": 0, "blocks": [{"kind": "h", "id": "b7", "level": 1, "unnumbered": False, "number": "1", "inlines": [{"t": "text", "v": "A"}]}]},
+        {"start": 5, "blocks": [{"kind": "eq", "id": "b1", "tex": "b", "env": "display", "katex_ok": None, "source": "ocr", "raw": False, "sents": [1]}]},
+    ]
+    blocks = merge_ocr_parts(parts)
+    assert [b["kind"] for b in blocks] == ["h", "eq", "p"]
+    assert [b["id"] for b in blocks] == ["b0", "b1", "b2"]
+    assert blocks[1]["tex"] == "b"
+    assert "sents" not in blocks[1]
+
+
+def test_stub_shape_and_ocr_fields():
+    from rrm.reader.pipeline import apply_s2_fields, make_stub, paper_from_ocr
+
+    info = {
+        "corpusid": 4,
+        "title": "Title",
+        "authors": ["Ada Lovelace"],
+        "abstract": "An abstract.",
+        "tldr": "One line.",
+        "arxiv": "1706.03762",
+        "year": 2017,
+        "refs": {"s2:8": "Semantic Scholar corpus 8"},
+    }
+    stub = make_stub(info)
+    assert stub["full"] is False
+    assert stub["title"] == "Title" and stub["authors"] == ["Ada Lovelace"]
+    assert stub["abstract"] == "An abstract." and stub["tldr"] == "One line."
+    assert stub["stage"] == "stub" and stub["stages"]["stub"] == "done"
+    assert stub["stages"]["sections"] == "pending" and stub["stages"]["crops"] == "pending"
+    assert stub["blocks"][0]["kind"] == "p"
+    latex = {"title": "", "authors": [], "abstract": "", "refs": {}, "source": "latex", "blocks": []}
+    apply_s2_fields(latex, info)
+    assert latex["tldr"] == "One line." and latex["authors"] == ["Ada Lovelace"]
+    assert latex["refs"]["s2:8"].startswith("Semantic Scholar")
+    ocr = paper_from_ocr(info, [{"kind": "eq", "tex": "E=mc^2", "env": "display", "katex_ok": None, "source": "ocr", "raw": False}])
+    assert ocr["source"] == "ocr" and ocr["full"] is True
+    assert ocr["authors"] == ["Ada Lovelace"] and ocr["tldr"] == "One line."
+    assert ocr["abstract"] == "An abstract." and "s2:8" in ocr["refs"]
+
+
+def test_sections_land_before_the_parse_finishes(tmp_path: Path, monkeypatch):
+    import io
+    import tarfile
+
+    from rrm.reader import pipeline
+
+    tex = rb"""\documentclass{article}
+\newcommand{\vect}[1]{\mathbf{#1}}
+\begin{document}
+\section{Intro}
+\begin{equation}
+y = \vect{x}
+\end{equation}
+\end{document}
+"""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        info = tarfile.TarInfo("main.tex")
+        info.size = len(tex)
+        tf.addfile(info, io.BytesIO(tex))
+    blob = buf.getvalue()
+    monkeypatch.setattr(pipeline, "reader_identity", lambda *a, **k: {
+        "corpusid": 9, "title": "From S2", "authors": ["Ada"], "abstract": "Abs",
+        "tldr": "tl", "arxiv": "1234.5678", "refs": {"s2:1": "Semantic Scholar corpus 1"}, "year": 2020,
+    })
+    monkeypatch.setattr(pipeline, "arxiv_eprint", lambda arxiv: blob)
+    stages = []
+    real = pipeline._publish
+
+    def spy(folder, meta, paper, commit, stage):
+        stages.append(stage)
+        return real(folder, meta, paper, commit, stage)
+
+    monkeypatch.setattr(pipeline, "_publish", spy)
+    out = pipeline.parse_corpus(9, tmp_path, None)
+    assert stages.index("sections") < stages.index("done")
+    paper = out["paper"]
+    assert paper["tldr"] == "tl"
+    assert "Ada" in paper["authors"]
+    assert paper["refs"]["s2:1"].startswith("Semantic Scholar")
+    eq = next(b for b in paper["blocks"] if b["kind"] == "eq")
+    assert r"\mathbf{x}" in eq["tex"]
+    assert out["meta"]["first_content_s"] is not None
+    assert out["meta"]["sections_s"] <= out["meta"]["full_s"]
+    assert paper["stages"]["sections"] == "done"
+    assert paper["stages"]["crops"] == "pending"
+
+
+def test_volume_authors_and_graph_refs(tmp_path: Path):
+    import numpy as np
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from rrm.reader.fetch import graph_reference_map, reader_identity
+
+    release = tmp_path / "2026-10-20"
+    index = release / "index"
+    index.mkdir(parents=True)
+    papers = release / "papers"
+    papers.mkdir()
+    abstracts = release / "abstracts"
+    abstracts.mkdir()
+    pq.write_table(pa.table({
+        "corpusid": pa.array([4], type=pa.int64()),
+        "title": ["Local title"],
+        "arxiv": ["1706.03762"],
+        "doi": [None],
+        "tldr": ["local tldr"],
+    }), index / "display.parquet")
+    pq.write_table(pa.table({
+        "corpusid": pa.array([4], type=pa.int64()),
+        "authors": [[{"authorId": "1", "name": "Ada Lovelace"}]],
+        "title": ["Local title"],
+        "year": [2017],
+    }), papers / "part.parquet")
+    pq.write_table(pa.table({
+        "corpusid": pa.array([4], type=pa.int64()),
+        "abstract": ["From the volume."],
+    }), abstracts / "part.parquet")
+    np.save(index / "graph_ids.npy", np.array([4, 8], dtype=np.int64))
+    np.save(index / "out_indptr.npy", np.array([0, 1, 1], dtype=np.int64))
+    np.save(index / "out_indices.npy", np.array([1], dtype=np.int32))
+    info = reader_identity(4, index / "display.parquet", remote=False, refs=True)
+    assert info["authors"] == ["Ada Lovelace"]
+    assert info["abstract"] == "From the volume."
+    assert info["tldr"] == "local tldr"
+    assert info["refs"]["s2:8"] == "Semantic Scholar corpus 8"
+    assert graph_reference_map(index, 99) == {}
+
+
+def test_crop_pages_are_capped_and_parallel(tmp_path: Path, monkeypatch):
+    import pymupdf
+
+    from rrm.reader.sam import parse_pages, segment_pages
+
+    assert parse_pages("1-3,1,9") == [1, 2, 3, 9]
+    assert parse_pages(",".join(str(i) for i in range(10))) == [0, 1, 2, 3]
+    assert parse_pages("30,31") == []
+    calls = []
+
+    def fake(png, phrase, key, timeout=90):
+        calls.append((phrase, len(png)))
+        return [{"x1": 0, "y1": 0, "x2": 4, "y2": 4, "w": 10, "h": 10}]
+
+    monkeypatch.setattr("rrm.reader.sam.segment_png", fake)
+    monkeypatch.setenv("MODEL_API_KEY", "test-key")
+    pdf = tmp_path / "pages.pdf"
+    doc = pymupdf.open()
+    for i in range(6):
+        page = doc.new_page(width=80, height=80)
+        page.insert_text((10, 40), str(i))
+    doc.save(pdf)
+    doc.close()
+    out = segment_pages(pdf, tmp_path / "crops", list(range(6)))
+    phrases = {row["phrase"] for row in out["crops"]}
+    pages = {row["page"] for row in out["crops"]}
+    assert phrases == {"diagram", "table"}
+    assert pages == {0, 1, 2, 3}
+    assert len(calls) == 8
+    assert all(p in ("diagram", "table") for p, _ in calls)
+
+
+def test_crops_page_with_no_hits_is_done(tmp_path, monkeypatch):
+    import rrm.reader.sam as sam
+    calls = []
+    monkeypatch.setattr(sam, "api_key", lambda: "k")
+    monkeypatch.setattr(sam, "render_selected", lambda pdf, pages, dpi=150: {p: b"png" for p in pages})
+    monkeypatch.setattr(sam, "segment_png", lambda png, phrase, key, timeout=90: calls.append(phrase) or [])
+    pdf = tmp_path / "a.pdf"
+    pdf.write_bytes(b"%PDF")
+    out = sam.segment_pages(pdf, tmp_path / "crops", [0, 1])
+    assert out["crops"] == [] and len(calls) == 4
+    import json
+    index = json.loads((tmp_path / "crops" / "index.json").read_text())
+    assert index["done_pages"] == [0, 1]

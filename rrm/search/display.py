@@ -141,6 +141,71 @@ def empty_tldrs():
     })
 
 
+class IdTable:
+    """Binary search over a display table sorted by corpusid."""
+
+    def __init__(self, table):
+        self.table = table
+        self._starts = {}
+        self.ids = np.zeros(0, dtype=np.int64)
+        if table is not None and table.num_rows:
+            self.ids = np.asarray(table.column("corpusid").to_numpy(zero_copy_only=False), dtype=np.int64)
+
+    def row(self, cid):
+        cid = int(cid)
+        if self.ids.size == 0:
+            return None
+        at = int(np.searchsorted(self.ids, cid))
+        if at >= self.ids.size or int(self.ids[at]) != cid:
+            return None
+
+        def cell(name):
+            if name not in self.table.column_names:
+                return None
+            return self.table.column(name)[at].as_py()
+
+        count = cell("citationcount")
+        return {
+            "corpusid": cid,
+            "title": cell("title"),
+            "year": cell("year"),
+            "venue": cell("venue"),
+            "citationcount": None if count is None else int(count),
+        }
+
+
+    def rows(self, cids):
+        """row() for many ids. Cells are read from their chunk directly: indexing a
+        ChunkedArray scans its chunks, and take() on it copies whole columns."""
+        out = []
+        for cid in cids:
+            cid = int(cid)
+            at = int(np.searchsorted(self.ids, cid)) if self.ids.size else 0
+            if self.ids.size == 0 or at >= self.ids.size or int(self.ids[at]) != cid:
+                out.append(None)
+                continue
+            count = self._cell("citationcount", at)
+            out.append({
+                "corpusid": cid,
+                "title": self._cell("title", at),
+                "year": self._cell("year", at),
+                "venue": self._cell("venue", at),
+                "citationcount": None if count is None else int(count),
+            })
+        return out
+
+    def _cell(self, name, at):
+        if name not in self.table.column_names:
+            return None
+        if name not in self._starts:
+            col = self.table.column(name)
+            lengths = [len(chunk) for chunk in col.chunks]
+            self._starts[name] = (col, np.cumsum([0] + lengths[:-1]).astype(np.int64))
+        col, starts = self._starts[name]
+        c = int(np.searchsorted(starts, at, side="right")) - 1
+        return col.chunk(c)[at - int(starts[c])].as_py()
+
+
 def hydrate(corpusids, table):
     if table is None or table.num_rows == 0:
         return [_blank(cid) for cid in corpusids]
@@ -166,6 +231,10 @@ def _blank(cid):
     return {"corpusid": int(cid), "title": None, "year": None, "venue": None, "citationcount": None, "tldr": None}
 
 
+TITLE_MIN_WORDS = 4  # "speech recognition" must search, not open a 1998 paper of that name
+TITLE_MIN_CITES = 1000  # ...but "Layer Normalization" still opens the paper
+
+
 class PaperLookup:
     """Exact DOI, arXiv, corpus id, or normalized title. First row wins."""
 
@@ -180,7 +249,26 @@ class PaperLookup:
         self.ids = {int(cid) for cid in ids if cid is not None}
         self._fill(self.doi, ids, table, "doi")
         self._fill(self.arxiv, ids, table, "arxiv")
-        self._fill(self.title, ids, table, "title_norm")
+        self._fill_titles(ids, table)
+
+    def _fill_titles(self, ids, table):
+        """Most-cited row per title. A short title needs TITLE_MIN_CITES to count."""
+        if "title_norm" not in table.column_names:
+            return
+        if "citationcount" in table.column_names:
+            counts = table.column("citationcount").to_pylist()
+        else:
+            counts = [None] * len(ids)
+        best = {}
+        for cid, raw, count in zip(ids, table.column("title_norm").to_pylist(), counts):
+            if cid is None or not raw:
+                continue
+            count = int(count or 0)
+            if len(raw.split()) < TITLE_MIN_WORDS and count < TITLE_MIN_CITES:
+                continue
+            if raw not in best or count > best[raw][0]:
+                best[raw] = (count, int(cid))
+        self.title = {raw: cid for raw, (_count, cid) in best.items()}
 
     def _fill(self, dest, ids, table, column):
         if column not in table.column_names:
