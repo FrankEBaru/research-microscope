@@ -5,7 +5,21 @@ import os
 import subprocess
 from pathlib import Path
 
-_SCRIPT = Path(__file__).with_name("katex_check.cjs")
+# The check script lives here: add_local_python_source ships only .py files,
+# so a separate .cjs never reached the Modal container.
+_JS = r'''
+const katex = require("katex");
+const fs = require("fs");
+const items = JSON.parse(fs.readFileSync(0, "utf8") || "[]");
+const out = items.map((tex) => {
+  const tries = [tex, "\\begin{equation}" + tex + "\\end{equation}", "\\begin{align}" + tex + "\\end{align}"];
+  for (const t of tries) {
+    try { katex.renderToString(t, { throwOnError: true, displayMode: true }); return true; } catch (e) {}
+  }
+  return false;
+});
+process.stdout.write(JSON.stringify(out));
+'''
 _CANDIDATES = (
     os.environ.get("NODE_PATH", ""),
     "/opt/katex/node_modules",
@@ -32,7 +46,7 @@ def check_tex(items: list[str]) -> list[bool]:
     env = dict(os.environ)
     env["NODE_PATH"] = _node_path()
     proc = subprocess.run(
-        ["node", str(_SCRIPT)],
+        ["node", "-e", _JS],
         input=json.dumps(items).encode(),
         capture_output=True,
         env=env,

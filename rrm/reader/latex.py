@@ -656,35 +656,99 @@ def finalize(blocks: list) -> list:
     return kept
 
 
+def inline_math(blocks: list) -> list:
+    """Inline math tokens in reading order. `sents` repeats `inlines`, so it is skipped."""
+    found = []
+
+    def walk(x):
+        if isinstance(x, dict):
+            if x.get("t") == "math":
+                found.append(x)
+            for k, v in x.items():
+                if k != "sents":
+                    walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+
+    for b in blocks:
+        if b.get("kind") != "eq":
+            walk(b)
+    return found
+
+
 def attach_katex(blocks: list) -> int:
     eqs = [b for b in blocks if b.get("kind") == "eq"]
-    if not eqs:
+    inl = inline_math(blocks)
+    if not eqs and not inl:
         return 0
     if not katex_available():
         for b in eqs:
             b["katex_ok"] = None
         return 0
-    flags = check_tex([b.get("tex") or "" for b in eqs])
+    flags = check_tex([b.get("tex") or "" for b in eqs] + [m.get("v") or "" for m in inl])
     ok = 0
-    for b, flag in zip(eqs, flags):
+    for b, flag in zip(eqs, flags[:len(eqs)]):
         b["katex_ok"] = bool(flag)
         ok += int(bool(flag))
+    for m, flag in zip(inl, flags[len(eqs):]):
+        m["katex_ok"] = bool(flag)
     return ok
 
 
+def _drop_cmd_args(text: str, names: tuple) -> str:
+    """Remove \\name{...} including its balanced argument (thanks, footnote, texttt...)."""
+    out = text
+    for name in names:
+        pat = re.compile(r"\\" + name + r"\*?\s*(?:\[[^\]]*\])?\s*\{")
+        while True:
+            m = pat.search(out)
+            if not m:
+                break
+            depth, j = 1, m.end()
+            while j < len(out) and depth:
+                depth += {"{": 1, "}": -1}.get(out[j], 0)
+                j += 1
+            out = out[:m.start()] + " " + out[j:]
+    return out
+
+
+_AFFIL = ("university", "dept", "department", "google", "stanford", "institute", "openai", "research",
+          "mit", "laboratory", "lab", "college", "school", "inc", "equal contribution", "work done", "work performed")
+
+
+_ACCENTS = (("{\\L}", "Ł"), ("\\L ", "Ł"), ("\\L{}", "Ł"), ("{\\l}", "ł"),
+            ('\\"u', "ü"), ('\\"o', "ö"), ('\\"a', "ä"), ('\\"{u}', "ü"), ('\\"{o}', "ö"),
+            ("\\'e", "é"), ("\\'a", "á"), ("\\'i", "í"), ("\\'o", "ó"), ("\\~n", "ñ"))
+
+
 def _authors(raw: str) -> list:
-    text = re.sub(r"\\and\b", "\n", raw)
+    text = _drop_cmd_args(raw, ("thanks", "footnote", "footnotetext", "texttt", "url", "href", "email",
+                                "textsuperscript", "affil", "affiliation", "institute", "color", "textcolor",
+                                "hspace", "vspace", "footnotemark"))
+    text = re.sub(r"~~+|\\quad|\\qquad", "\n", text)
+    text = re.sub(r"\$[^$]*\$", " ", text)
+    for a, b in _ACCENTS:
+        text = text.replace(a, b)
+    text = re.sub(r"\\and\b", "\n", text, flags=re.I)
     text = re.sub(r"\\\\", "\n", text)
-    text = re.sub(r"\\thanks\s*\{", "{", text)
     text = re.sub(r"\\[A-Za-z@]+\*?(?:\[[^\]]*\])?", " ", text)
-    text = text.replace("{", " ").replace("}", " ")
+    text = re.sub(r"\S+@\S+", " ", text)
+    text = text.replace("{", " ").replace("}", " ").replace("~", " ")
     names = []
     for line in text.splitlines():
-        for part in line.split(","):
-            name = re.sub(r"\s+", " ", part).strip(" ;")
-            if name and len(name) > 1 and not name.lower().startswith(("university", "dept", "department", "google", "stanford")):
+        for part in re.split(r",|;|\band\b", line):
+            name = re.sub(r"\s+", " ", part).strip(" ;.*")
+            low = name.lower()
+            words = name.split()
+            if not name or len(name) < 3 or len(words) > 5 or any(ch.isdigit() for ch in name):
+                continue
+            if any(w in low.split() or low.startswith(w) for w in _AFFIL):
+                continue
+            if not words[0][:1].isupper():
+                continue
+            if name not in names:
                 names.append(name)
-    # comma-separated author lists are common; if every piece is short, the split was wrong
     return names[:40]
 
 
@@ -820,6 +884,7 @@ def parse_tree(root: Path, arxiv_id: str = "") -> dict:
 def stats(paper: dict) -> dict:
     blocks = paper.get("blocks") or []
     eqs = [b for b in blocks if b.get("kind") == "eq"]
+    inl = inline_math(blocks)
     return {
         "equations": len(eqs),
         "katex_ok": sum(1 for b in eqs if b.get("katex_ok") is True),
@@ -828,4 +893,6 @@ def stats(paper: dict) -> dict:
         "figures": sum(1 for b in blocks if b.get("kind") == "fig"),
         "tables": sum(1 for b in blocks if b.get("kind") == "table"),
         "sections": sum(1 for b in blocks if b.get("kind") == "h"),
+        "inline_math": len(inl),
+        "inline_katex_ok": sum(1 for m in inl if m.get("katex_ok") is True),
     }

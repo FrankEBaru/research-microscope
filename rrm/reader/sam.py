@@ -12,6 +12,7 @@ import base64
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -19,7 +20,8 @@ from pathlib import Path
 API = "https://api.meta.ai/v1/responses"
 MODEL = "sam-3.1"
 USD_PER_IMAGE = 0.0025
-PHRASES = ("figure", "table", "equation")
+# "figure" found nothing on Attention pages 3-4; "diagram" found all 3 panels (2026-10-29).
+PHRASES = ("diagram", "table", "equation")
 _TOK = re.compile(r"<\|(box|mask);(.*?)\|>", re.S)
 
 
@@ -138,11 +140,19 @@ def segment_png(png: bytes, phrase: str, key: str, timeout: int = 90) -> list[di
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8", "replace")
-    except urllib.error.HTTPError:
-        raise
+    # The API answers 404 model_not_found on a large share of valid sam-3.1 calls
+    # (4 of 5 in a row, 2026-10-29), so 404, 429 and 5xx are retried.
+    delay = 1.0
+    for attempt in range(6):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read().decode("utf-8", "replace")
+            break
+        except urllib.error.HTTPError as err:
+            if attempt == 5 or not (err.code in (404, 429) or err.code >= 500):
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 8)
     return parse_sam_text(_output_text(raw))
 
 
@@ -158,19 +168,20 @@ def render_pages(pdf: Path, max_pages: int = 30, dpi: int = 150):
 
 def _crop(png: bytes, box: dict, dest: Path) -> bool:
     import pymupdf
-    doc = pymupdf.open(stream=png, filetype="png")
-    pix = doc[0].get_pixmap()
-    x1 = max(0, min(box["x1"], pix.width - 1))
-    y1 = max(0, min(box["y1"], pix.height - 1))
-    x2 = max(x1 + 1, min(box["x2"] + 1, pix.width))
-    y2 = max(y1 + 1, min(box["y2"] + 1, pix.height))
     try:
-        clipped = pymupdf.Pixmap(pix, pymupdf.IRect(x1, y1, x2, y2))
-        clipped.save(dest)
+        pix = pymupdf.Pixmap(png)
+        x1 = max(0, min(box["x1"], pix.width - 1))
+        y1 = max(0, min(box["y1"], pix.height - 1))
+        x2 = max(x1 + 1, min(box["x2"] + 1, pix.width))
+        y2 = max(y1 + 1, min(box["y2"] + 1, pix.height))
+        rect = pymupdf.IRect(x1, y1, x2, y2)
+        # Pixmap(pix, IRect) is not a pymupdf constructor; copy the region instead.
+        out = pymupdf.Pixmap(pix.colorspace, rect, pix.alpha)
+        out.copy(pix, rect)
+        out.set_origin(0, 0)
+        out.save(dest)
     except Exception:
-        doc.close()
         return False
-    doc.close()
     return True
 
 

@@ -111,25 +111,55 @@ def s2_graph(corpusid: int) -> dict:
     }
 
 
+def _display_row(path: Path, corpusid: int) -> dict | None:
+    """Read only the row group whose corpusid range holds the id (file is sorted). None if not found."""
+    import pyarrow.parquet as pq
+    cols = ["corpusid", "title", "arxiv", "doi", "tldr"]
+    pf = pq.ParquetFile(path)
+    names = pf.schema_arrow.names
+    cols = [c for c in cols if c in names]
+    ci = names.index("corpusid")
+    cid = int(corpusid)
+    for rg in range(pf.metadata.num_row_groups):
+        st = pf.metadata.row_group(rg).column(ci).statistics
+        if st is None or not st.has_min_max:
+            return None
+        if st.min <= cid <= st.max:
+            t = pf.read_row_group(rg, columns=cols)
+            ids = t.column("corpusid").to_pylist()
+            for i, v in enumerate(ids):
+                if v == cid:
+                    return {name: t.column(name)[i].as_py() for name in cols}
+            return {}
+    return {}
+
+
 def lookup_display(path: Path, corpusid: int) -> dict:
-    """Binary search a sorted display.parquet (corpusid, title, arxiv, doi, tldr). Missing file -> {}."""
+    """Sorted display.parquet (corpusid, title, arxiv, doi, tldr). Missing file or id -> {}.
+
+    Reads one row group by corpusid statistics; the full file is 2.6 GB, so a full read took 14 s.
+    """
     path = Path(path)
     if not path.is_file():
         return {}
-    import pyarrow.parquet as pq
-    table = pq.read_table(path, columns=["corpusid", "title", "arxiv", "doi", "tldr"])
-    ids = table.column("corpusid").fill_null(-1).to_pylist()
-    lo, hi = 0, len(ids)
     cid = int(corpusid)
-    while lo < hi:
-        mid = (lo + hi) // 2
-        if ids[mid] < cid:
-            lo = mid + 1
-        else:
-            hi = mid
-    if lo >= len(ids) or ids[lo] != cid:
+    row = _display_row(path, cid)
+    if row is None:
+        import pyarrow.parquet as pq
+        table = pq.read_table(path, columns=["corpusid", "title", "arxiv", "doi", "tldr"])
+        ids = table.column("corpusid").fill_null(-1).to_pylist()
+        lo, hi = 0, len(ids)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if ids[mid] < cid:
+                lo = mid + 1
+            else:
+                hi = mid
+        if lo >= len(ids) or ids[lo] != cid:
+            return {}
+        row = {name: table.column(name)[lo].as_py() for name in table.column_names}
+    if not row:
         return {}
-    row = {name: table.column(name)[lo].as_py() for name in table.column_names}
     return {
         "corpusid": cid,
         "title": row.get("title") or "",

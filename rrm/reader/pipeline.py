@@ -15,7 +15,6 @@ import time
 from pathlib import Path
 
 from rrm.reader.fetch import arxiv_eprint, arxiv_pdf, fetch_url, resolve_identity, unpack_eprint
-from rrm.reader.katex import check_tex
 from rrm.reader.latex import attach_katex, materialize_figures, parse_inlines, parse_tree, stats, text_tokens
 from rrm.reader.sam import segment_pdf
 
@@ -88,16 +87,23 @@ def abstract_paper(info: dict) -> dict:
     }
 
 
+STALE_S = 1800  # a parse older than the function timeout died; queue it again
+
+
 def mark_queued(folder: Path, corpusid: int):
     current = load_meta(folder)
-    if current and current.get("status") in ("done", "abstract_only", "parsing", "queued"):
+    if current and current.get("status") in ("done", "abstract_only"):
         return current["status"]
+    if current and current.get("status") in ("parsing", "queued"):
+        if time.time() - float(current.get("started") or 0) < STALE_S:
+            return current["status"]
     save_meta(folder, {
         "corpusid": int(corpusid),
         "status": "queued",
         "reason": None,
         "source": None,
         "timings": _blank_timings(),
+        "started": time.time(),
     })
     return "queued"
 
@@ -145,6 +151,7 @@ def parse_corpus(
         "source": None,
         "timings": _blank_timings(),
         "page_count": None,
+        "started": time.time(),
     }
     save_meta(folder, meta)
     if commit:
@@ -342,17 +349,14 @@ def _ocr_route(folder, info, meta, pdf_path, ocr, why: str):
         return "abstract", abstract_paper(info), pdf_path
     t = time.time()
     eqs = [b for b in blocks if b.get("kind") == "eq"]
-    if eqs:
-        try:
-            flags = check_tex([b.get("tex") or "" for b in eqs])
-            for b, flag in zip(eqs, flags):
-                b["katex_ok"] = bool(flag)
-                b["source"] = "ocr"
-        except Exception as err:
-            for b in eqs:
-                b["katex_ok"] = False
-                b["source"] = "ocr"
-            meta["katex_error"] = str(err)[:300]
+    for b in eqs:
+        b["source"] = "ocr"
+    try:
+        attach_katex(blocks)  # display and inline math, same check as the LaTeX path
+    except Exception as err:
+        for b in eqs:
+            b["katex_ok"] = False
+        meta["katex_error"] = str(err)[:300]
     meta["timings"]["katex"] += time.time() - t
     paper = abstract_paper(info)
     paper["full"] = True

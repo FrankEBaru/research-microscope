@@ -29,7 +29,7 @@ SAM_USD_PER_IMAGE = 0.0025
 cpu_image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("nodejs", "npm", "ghostscript", "ca-certificates")
-    .pip_install("pymupdf", "requests", "pyarrow")
+    .pip_install("pymupdf", "requests", "pyarrow", "fastapi[standard]")
     .run_commands("npm install --prefix /opt/katex katex@0.19.1")
     .env({"NODE_PATH": "/opt/katex/node_modules"})
     .add_local_python_source("rrm")
@@ -83,7 +83,8 @@ def _run(corpusid: int, sam: bool) -> dict:
     return parse_corpus(int(corpusid), PAPERS, DISPLAY, sam=sam, ocr=_ocr, commit=vol.commit)
 
 
-@app.function(image=gpu_image, gpu="L4", volumes={DATA: vol}, timeout=1800, memory=16384, cpu=2)
+# L4 first; A10G (24 GB) when L4 has no capacity (seen 2026-10-29: 10+ min queue).
+@app.function(image=gpu_image, gpu=["L4", "A10G"], volumes={DATA: vol}, timeout=1800, memory=16384, cpu=2)
 def ocr_one(pdf: str, out: str) -> dict:
     vol.reload()
     t = time.time()
@@ -165,7 +166,7 @@ def _cost_row(meta: dict) -> dict:
 def bench(ids: str = ""):
     """Parse each corpus id and print seconds and a priced estimate per step."""
     header = (
-        "id", "status", "source", "eqs", "katex_ok",
+        "id", "status", "source", "eqs", "katex_ok", "inline", "inline_ok",
         "resolve", "download", "parse", "katex", "figures", "ocr", "sam",
         "cpu_usd", "ocr_usd", "sam_usd",
     )
@@ -184,6 +185,8 @@ def bench(ids: str = ""):
             meta.get("source"),
             meta.get("equations"),
             meta.get("katex_ok"),
+            meta.get("inline_math"),
+            meta.get("inline_katex_ok"),
             timings.get("resolve"),
             timings.get("download"),
             timings.get("parse"),
