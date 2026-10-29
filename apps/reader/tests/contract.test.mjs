@@ -63,6 +63,18 @@ test("ref text uses number", async () => {
   assert.match(paperSrc, /case "ref"/);
 });
 
+test("missing is not settled and mbox is text", async () => {
+  const { settled, katexSource } = await load();
+  assert.equal(settled("missing"), false);
+  assert.equal(settled(undefined), false);
+  assert.equal(settled("queued"), false);
+  assert.equal(settled("parsing"), false);
+  assert.equal(settled("done"), true);
+  assert.equal(settled("abstract_only"), true);
+  assert.equal(settled("failed"), true);
+  assert.equal(katexSource("\\mbox{a} + \\mboxx"), "\\text{a} + \\mboxx");
+});
+
 test("eq tag comes from number", async () => {
   const { eqTex } = await load();
   assert.equal(eqTex({ tex: "y = x", number: 1 }), "y = x\\tag{1}");

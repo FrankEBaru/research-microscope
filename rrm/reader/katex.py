@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -39,10 +40,16 @@ def _node_path() -> str:
     return os.pathsep.join(parts)
 
 
+def for_katex(tex: str) -> str:
+    """KaTeX has no \\mbox. The stored TeX is unchanged; render and the check use \\text."""
+    return re.sub(r"\\mbox(?![A-Za-z])", r"\\text", tex or "")
+
+
 def check_tex(items: list[str]) -> list[bool]:
     """katex_ok for each string. Missing node or katex leaves every entry None-sized False and raises FileNotFoundError / RuntimeError."""
     if not items:
         return []
+    items = [for_katex(s) for s in items]
     env = dict(os.environ)
     env["NODE_PATH"] = _node_path()
     proc = subprocess.run(

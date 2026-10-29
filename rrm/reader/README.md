@@ -1,6 +1,6 @@
 # rrm/reader
 
-When a burst returns, it spawns `prepare` for the top 10 corpus ids (fire-and-forget). Opening one paper calls `paper`, which returns in the request: the cached parse, or a stub (title, authors, abstract, tldr) while the parse continues. The opened id is marked hot, so its arXiv download takes the next harvest slot ahead of those prefetch jobs. SAM is not part of opening a paper.
+When a burst returns, it writes `status: queued` for the top 10 corpus ids on the shared volume, then spawns `prefetch` (fire-and-forget). The queued rows are written before that spawn returns, including when the reader container is still cold. Opening one paper calls `paper`, which returns in the request: the cached parse, or a stub (title, authors, abstract, tldr — from Semantic Scholar when `s2.json` or the Graph API has them) while the parse continues. The opened id is marked hot, so its arXiv download takes the next harvest slot ahead of those prefetch jobs. SAM is not part of opening a paper. MinerU figure files are copied into `papers/{id}/figures/` and the block stores that basename; `/file` does not read the chunk output directory.
 
 ## Order
 
@@ -16,6 +16,8 @@ arXiv fetches use `export.arxiv.org` and share one clock: a burst of 4 requests 
 `queued`, `parsing`, `done`, `abstract_only`, `failed`, `missing` (plus `reason`, `stage`, and `stages`). `stages` is `stub`, `sections`, `figures`, `crops`, each `pending`, `running`, `done`, `skipped`, or `failed`. A paper is cached at `papers/{corpusid}/` on the volume: `paper.json` (rewritten as sections, then figures, arrive), `meta.json` (seconds per step, `first_content_s`, `sections_s`, `full_s`, page count, equation and katex_ok counts), `figures/`, `crops/`.
 
 The demo token (`RRM_DEMO_TOKEN`, inlined in the static bundle as `NEXT_PUBLIC_RRM_DEMO_TOKEN`) is readable by anyone who can load the site; it only stops a person who has the modal.run URL and not the bundle.
+
+`RRM_DEMO_KEEP_WARM=1` on the `modal deploy` command (not the default) sets a 20 minute `scaledown_window` on this HTTP app and on the burst class. `min_containers` is never set. `scripts/warm.sh` pings `/burst` and `/status` during that window. The OCR cap for a 12-prompt run counts only papers whose `ocr_invoked_at` falls in that run and whose `ocr_gpu_s` is greater than 0 (`scripts/e2e_rules.py`). `missing` is not a settled status.
 
 ## SAM
 

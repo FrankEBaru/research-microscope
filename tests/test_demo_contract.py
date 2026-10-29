@@ -105,6 +105,44 @@ def test_display_math_is_its_own_block():
     assert all("\\tag" not in (b.get("tex") or "") for b in eqs)
 
 
+def test_keep_warm_is_an_explicit_deploy_flag(monkeypatch):
+    from rrm.demo_warm import DEMO_SCALEDOWN_S, demo_keep_warm, scaledown_window
+
+    monkeypatch.delenv("RRM_DEMO_KEEP_WARM", raising=False)
+    assert demo_keep_warm() is False
+    assert scaledown_window() is None
+    monkeypatch.setenv("RRM_DEMO_KEEP_WARM", "1")
+    assert scaledown_window() == DEMO_SCALEDOWN_S == 1200
+    root = Path(__file__).parents[1]
+    for name in ("rrm/search/serve.py", "rrm/reader/serve.py"):
+        text = (root / name).read_text(encoding="utf-8")
+        assert "min_containers=" not in text
+
+
+def test_missing_status_is_not_settled_and_cached_ocr_does_not_count():
+    from rrm.demo_e2e import is_settled, ocr_cap_reached, top_settled
+
+    assert is_settled("missing") is False
+    assert is_settled(None) is False
+    assert is_settled("queued") is False
+    assert is_settled("parsing") is False
+    assert is_settled("done") is True
+    assert is_settled("abstract_only") is True
+    rows = [{"id": 1, "status": "done"}, {"id": 2, "status": "missing"}]
+    assert top_settled([1, 2], rows) is False
+    assert top_settled([1], rows) is True
+    assert top_settled([1, 3], rows) is False
+    start = 1000.0
+    cached = {"source": "ocr", "ocr_gpu_s": 40, "status": "done"}
+    this = {"source": "ocr", "ocr_gpu_s": 3, "ocr_invoked_at": 1100, "status": "done"}
+    earlier = {"source": "ocr", "ocr_gpu_s": 3, "ocr_invoked_at": 900, "status": "done"}
+    idle = {"source": "ocr", "ocr_gpu_s": 0, "ocr_invoked_at": 1100}
+    assert ocr_cap_reached([cached, cached], start) is False
+    assert ocr_cap_reached([this, earlier], start) is False
+    assert ocr_cap_reached([this, idle], start) is False
+    assert ocr_cap_reached([this, dict(this)], start) is True
+
+
 def test_burst_fixture_has_corpusid_not_arxiv():
     burst = json.loads((FIX / "burst.json").read_text(encoding="utf-8"))
     assert burst["mode"] == "short" and burst["subtopics"] == []
