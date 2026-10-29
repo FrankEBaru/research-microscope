@@ -1,5 +1,6 @@
 import katex from "katex";
 import { useMemo } from "react";
+import { katexSource } from "@/lib/backend.js";
 
 export interface Sym { id: string; latex: string; name: string; color: string }
 
@@ -39,7 +40,7 @@ export function colorize(tex: string, syms: Sym[]): string {
 export function Tex({ tex, display = false, syms = [] as Sym[], className = "" }: { tex: string; display?: boolean; syms?: Sym[]; className?: string }) {
   const html = useMemo(() => {
     try {
-      return { ok: true, h: katex.renderToString(colorize(tex, syms), { displayMode: display, throwOnError: true, trust: true, strict: "ignore" }) };
+      return { ok: true, h: katex.renderToString(colorize(katexSource(tex), syms), { displayMode: display, throwOnError: true, trust: true, strict: "ignore" }) };
     } catch {
       return { ok: false, h: "" };
     }

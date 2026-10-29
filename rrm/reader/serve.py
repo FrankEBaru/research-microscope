@@ -21,6 +21,7 @@ from pathlib import Path
 import modal
 
 from rrm.demo_guard import check, cors_kwargs
+from rrm.demo_warm import scaledown_window
 from rrm.reader.files import resolve_figure
 
 import rrm.reader.fetch as _fetch
@@ -29,6 +30,7 @@ from rrm.reader.ocr import (
     merge_ocr_parts,
     page_spans,
     pdf_page_count,
+    place_ocr_figures,
     run_chunk,
     slice_pdf,
 )
@@ -37,6 +39,8 @@ from rrm.reader.pipeline import (
     load_paper,
     make_stub,
     mark_queued,
+    prefer_stub,
+    seed_stub_from_cache,
     parse_corpus,
     save_meta,
     save_paper,
@@ -299,6 +303,11 @@ def _ocr(pdf, work):
         ))
         err.chunks = chunks
         raise err
+    # Chunk images land under the MinerU out dir. /file only serves papers/{id}/figures.
+    vol.reload()
+    figures = Path(work).parent / "figures"
+    for row, (_path, out, _start, _end) in zip(results, jobs):
+        place_ocr_figures(row.get("blocks") or [], [out], figures)
     blocks = merge_ocr_parts(results)
     gpu_s = sum(float(row.get("seconds") or 0) for row in results)
     pages = sum(int(row.get("page_count") or 0) for row in results) or n
@@ -366,7 +375,7 @@ def _write_stub(folder: Path, corpusid: int):
         info = reader_identity(int(corpusid), DISPLAY, remote=True, refs=False, shards=False)
     except Exception:
         info = {"corpusid": int(corpusid)}
-    paper = make_stub(info)
+    paper = prefer_stub(current, make_stub(info))
     if current and len(current.get("blocks") or []) > len(paper.get("blocks") or []):
         return current
     meta = load_meta(folder) or {}
@@ -403,6 +412,7 @@ def _prepare_ids(ids) -> dict:
         cid = int(raw)
         status = mark_queued(PAPERS / str(cid), cid)
         if status == "queued":
+            seed_stub_from_cache(PAPERS / str(cid), cid)
             parse_one.spawn(cid, False)
         rows.append({"id": cid, "status": status})
     vol.commit()
@@ -552,6 +562,8 @@ def read_status(ids: str = ""):
                 "first_content_s": meta.get("first_content_s"),
                 "sections_s": meta.get("sections_s"),
                 "full_s": meta.get("full_s"),
+                "ocr_gpu_s": meta.get("ocr_gpu_s"),
+                "ocr_invoked_at": meta.get("ocr_invoked_at"),
             })
     return {"papers": rows}
 
@@ -566,7 +578,13 @@ _FILE_TYPES = {
 }
 
 
-@app.function(image=cpu_image, volumes={DATA: vol}, timeout=60, secrets=[secret])
+# Same demo flag as the burst class. GPU functions are not kept warm.
+_api_fn = dict(image=cpu_image, volumes={DATA: vol}, timeout=60, secrets=[secret])
+if scaledown_window() is not None:
+    _api_fn["scaledown_window"] = scaledown_window()
+
+
+@app.function(**_api_fn)
 @modal.asgi_app()
 def api():
     from fastapi import FastAPI, Request

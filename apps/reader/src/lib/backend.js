@@ -33,6 +33,18 @@ export function eqTex(b) {
   return b.number != null ? `${b.tex}\\tag{${b.number}}` : b.tex;
 }
 
+/** KaTeX has no \\mbox. Call this before render; do not rewrite the stored TeX. */
+export function katexSource(tex) {
+  return String(tex ?? "").replace(/\\mbox(?![A-Za-z])/g, "\\text");
+}
+
+/** done / abstract_only / failed. `missing` is still in flight. */
+export const SETTLED = new Set(["done", "abstract_only", "failed"]);
+
+export function settled(status) {
+  return SETTLED.has(status);
+}
+
 async function getJson(url) {
   const res = await fetch(url, { headers: { "X-RRM-Demo": TOKEN } });
   if (!res.ok) throw new Error(String(res.status));
