@@ -514,3 +514,18 @@ def test_crop_pages_are_capped_and_parallel(tmp_path: Path, monkeypatch):
     assert pages == {0, 1, 2, 3}
     assert len(calls) == 8
     assert all(p in ("diagram", "table") for p, _ in calls)
+
+
+def test_crops_page_with_no_hits_is_done(tmp_path, monkeypatch):
+    import rrm.reader.sam as sam
+    calls = []
+    monkeypatch.setattr(sam, "api_key", lambda: "k")
+    monkeypatch.setattr(sam, "render_selected", lambda pdf, pages, dpi=150: {p: b"png" for p in pages})
+    monkeypatch.setattr(sam, "segment_png", lambda png, phrase, key, timeout=90: calls.append(phrase) or [])
+    pdf = tmp_path / "a.pdf"
+    pdf.write_bytes(b"%PDF")
+    out = sam.segment_pages(pdf, tmp_path / "crops", [0, 1])
+    assert out["crops"] == [] and len(calls) == 4
+    import json
+    index = json.loads((tmp_path / "crops" / "index.json").read_text())
+    assert index["done_pages"] == [0, 1]

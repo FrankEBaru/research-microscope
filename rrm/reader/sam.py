@@ -261,6 +261,9 @@ def segment_pages(pdf: Path, crops_dir: Path, pages: list[int], phrases=PHRASES,
         "cost_usd": 0.0,
         "error": previous.get("error"),
         "pages": len(wanted),
+        # Pages SAM already answered, even with zero hits. Without this a page with no
+        # diagram looked unfinished and every /crops poll re-ran SAM (QA 2026-10-29: 96 images for 2 pages).
+        "done_pages": set(int(p) for p in (previous.get("done_pages") or [])),
     }
     kept = [row for row in (previous.get("crops") or []) if row.get("page") not in wanted]
     if not key:
@@ -300,6 +303,8 @@ def segment_pages(pdf: Path, crops_dir: Path, pages: list[int], phrases=PHRASES,
             rows = list(pool.map(_one, tasks))
     else:
         rows = []
+    failed_pages = {page for page, _, _, err in rows if err}
+    result["done_pages"] |= {page for page in pngs if page not in failed_pages}
     for page, phrase, hits, err in rows:
         result["images"] += 1
         if err:
@@ -394,5 +399,6 @@ def _write_index(crops_dir: Path, index: list, result: dict):
         "cost_usd": round(result["images"] * USD_PER_IMAGE, 6),
         "error": result["error"],
         "pages": result["pages"],
+        "done_pages": sorted(int(p) for p in (result.get("done_pages") or [])),
     }
     (crops_dir / "index.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")

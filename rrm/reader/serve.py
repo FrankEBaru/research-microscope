@@ -457,7 +457,7 @@ def crops(id: str, pages: str = ""):
             index = json.loads(index_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             index = {"crops": [], "error": None, "images": 0}
-    have = {row.get("page") for row in (index.get("crops") or [])}
+    have = {row.get("page") for row in (index.get("crops") or [])} | {int(p) for p in (index.get("done_pages") or [])}
     fresh = [p for p in wanted if p not in have]
     meta = load_meta(folder) or {}
     inflight = {int(p) for p in (meta.get("crops_inflight") or [])}
