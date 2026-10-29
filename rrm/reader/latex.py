@@ -4,9 +4,10 @@ Schema (one paper object):
 
     {
       "arxivId": str, "corpusid": int | null, "title": str, "authors": [str],
-      "date": str, "abstract": str, "license": str | null, "authorNotes": [str],
+      "date": str, "abstract": str, "tldr": str, "license": str | null, "authorNotes": [str],
       "full": true, "source": "latex" | "ocr" | "abstract",
-      "refs": {citekey: str}, "blocks": [Block]
+      "refs": {citekey: str}, "blocks": [Block],
+      "status": str, "stage": str, "stages": {name: str}
     }
 
 Block is `{id, kind, ...}`. kind is one of:
@@ -823,9 +824,11 @@ def _render_graphic(src: Path, dest: Path) -> Path | None:
 
 
 def parse_tex(tex: str, macros: dict | None = None, arxiv_id: str = "") -> dict:
-    macros = dict(_FALLBACK_MACROS)
-    macros.update(macros or {})
-    macros.update(collect_macros(tex))
+    # Keep the caller's macros (.sty / .def). Rebinding `macros` first used to drop them.
+    defined = dict(_FALLBACK_MACROS)
+    defined.update(macros or {})
+    defined.update(collect_macros(tex))
+    macros = defined
     prose = _prose_names(tex)
     abstract = ""
     m = re.search(r"\\begin\{abstract\}", tex)

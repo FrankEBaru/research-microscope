@@ -14,8 +14,76 @@ from rrm.reader.latex import finalize, parse_inlines, text_tokens
 
 # MinerU2.5 (1.2B) formula CDM 95.77 on OmniDocBench v1.6, above olmOCR 88.10
 # and Marker 85.24 (C report, 2026-10-28). Apache-2.0 with a revenue threshold
-# that this prototype is under. vlm-auto-engine is that VLM, not the older pipeline.
+# that this prototype is under. One backend: vlm-auto-engine. On Linux, MinerU
+# 2.7 selects the vLLM engine when the vllm package is installed, and the
+# transformers engine otherwise (QA 2026-10-29: ~20 s/page without vLLM).
+# The 2.7 CLI rejects the literal name vlm-vllm-engine.
 MINERU_BACKEND = "vlm-auto-engine"
+# 15 pages -> 4 chunks of 4, 4, 4, 3 so a slow page rate still overlaps on Modal .map.
+PAGES_PER_PART = 4
+MAX_OCR_PARTS = 4
+
+
+def page_spans(n: int, pages_per_part: int = PAGES_PER_PART, max_parts: int = MAX_OCR_PARTS) -> list[tuple[int, int]]:
+    """Half-open page ranges, in order, at most max_parts of them."""
+    n = int(n)
+    if n <= 0:
+        return []
+    pages_per_part = max(1, int(pages_per_part))
+    max_parts = max(1, int(max_parts))
+    parts = min(max_parts, (n + pages_per_part - 1) // pages_per_part)
+    base, extra = divmod(n, parts)
+    spans = []
+    start = 0
+    for i in range(parts):
+        size = base + (1 if i < extra else 0)
+        if size <= 0:
+            continue
+        spans.append((start, start + size))
+        start += size
+    return spans
+
+
+def slice_pdf(pdf: Path, dest: Path, start: int, end: int) -> Path:
+    """Write pages [start, end) to dest. end is exclusive."""
+    import pymupdf
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    doc = pymupdf.open(pdf)
+    part = pymupdf.open()
+    try:
+        last = min(int(end), len(doc)) - 1
+        if last >= int(start):
+            part.insert_pdf(doc, from_page=int(start), to_page=last)
+        part.save(dest)
+    finally:
+        part.close()
+        doc.close()
+    return dest
+
+
+def pdf_page_count(pdf: Path) -> int | None:
+    try:
+        import pymupdf
+        doc = pymupdf.open(pdf)
+        n = len(doc)
+        doc.close()
+        return n
+    except Exception:
+        return None
+
+
+def merge_ocr_parts(parts: list[dict]) -> list:
+    """Concatenate per-chunk blocks in ascending start-page order and reassign ids."""
+    ordered = sorted(parts, key=lambda part: int(part.get("start") or 0))
+    blocks = []
+    for part in ordered:
+        for block in part.get("blocks") or []:
+            item = {k: v for k, v in block.items() if k not in ("id", "sents")}
+            blocks.append(item)
+    if not blocks:
+        return []
+    return finalize(blocks)
 
 
 def run_mineru(pdf: Path, out_dir: Path, end_page: int | None = None) -> Path:

@@ -175,7 +175,28 @@ def collect_macros(tex: str) -> dict:
                 macros[op] = {"n": 0, "opt": None, "body": wrap + text + "}"}
             i = j
             continue
-        if name == "def":
+        if name == "let":
+            j = _skip_ws(tex, j)
+            if j >= n or tex[j] != "\\":
+                i = max(j, i + 1)
+                continue
+            dest, j = read_name(tex, j)
+            j = _skip_ws(tex, j)
+            if j < n and tex[j] == "=":
+                j += 1
+                j = _skip_ws(tex, j)
+            if not dest:
+                i = j
+                continue
+            if j < n and tex[j] == "\\":
+                src, j = read_name(tex, j)
+                macros[dest] = {"n": 0, "opt": None, "body": "\\" + src, "let": src}
+            elif j < n:
+                macros[dest] = {"n": 0, "opt": None, "body": tex[j]}
+                j += 1
+            i = j
+            continue
+        if name in ("def", "gdef", "edef", "xdef"):
             j = _skip_ws(tex, j)
             if j >= n or tex[j] != "\\":
                 i = max(j, i + 1)
@@ -242,6 +263,39 @@ def collect_macros(tex: str) -> dict:
     return macros
 
 
+def _resolve_spec(spec, macros, seen):
+    """Follow \\let aliases to the command that actually has arguments."""
+    alias = spec.get("let")
+    if not alias or alias in seen:
+        return spec
+    target = macros.get(alias)
+    if not target:
+        return spec
+    return _resolve_spec(target, macros, seen | {alias})
+
+
+def _take_arg(tex, k):
+    """One undelimited argument. Braces, or a single token when the author omitted them.
+
+    Returns (value, index, ok). Alignment tokens are left alone so a failed
+    expansion keeps the original command.
+    """
+    k = _skip_ws(tex, k)
+    if k >= len(tex):
+        return None, k, False
+    if tex[k] == "{":
+        val, k = read_braced(tex, k)
+        return val, k, True
+    if tex.startswith("\\\\", k) or tex[k] in "&$":
+        return None, k, False
+    if tex[k] == "\\":
+        _name, k2 = read_name(tex, k)
+        return tex[k:k2], k2, True
+    if tex[k] in " \t\r\n[]{}":
+        return None, k, False
+    return tex[k], k + 1, True
+
+
 def _subst(body, args):
     out = []
     i = 0
@@ -258,6 +312,40 @@ def _subst(body, args):
         out.append(body[i])
         i += 1
     return "".join(out)
+
+
+_ACCENTS = {
+    "hat", "bar", "tilde", "dot", "ddot", "vec", "breve", "check",
+    "acute", "grave", "mathring", "widehat", "widetilde", "overline", "underline",
+}
+
+
+def _prev_command(tex: str, i: int) -> str:
+    j = i - 1
+    while j >= 0 and tex[j] in " \t\r\n":
+        j -= 1
+    if j < 0 or not tex[j].isalpha():
+        return ""
+    end = j + 1
+    while j >= 0 and tex[j].isalpha():
+        j -= 1
+    if j >= 0 and tex[j] == "\\":
+        return tex[j + 1:end]
+    return ""
+
+
+def _finish_repl(repl: str, nxt: str, accent: bool) -> str:
+    """Brace a grouped replacement after an accent, and keep a control word from swallowing the next letter."""
+    if accent and "{" in repl and not (repl.startswith("{") and repl.endswith("}")):
+        repl = "{" + repl + "}"
+    if nxt.isalpha() and repl:
+        k = len(repl) - 1
+        if repl[k].isalpha():
+            while k >= 0 and repl[k].isalpha():
+                k -= 1
+            if k >= 0 and repl[k] == "\\":
+                repl += " "
+    return repl
 
 
 def expand_math(tex: str, macros: dict, rounds: int = 12) -> str:
@@ -279,6 +367,7 @@ def expand_math(tex: str, macros: dict, rounds: int = 12) -> str:
                 out.append(tex[i:j])
                 i = j
                 continue
+            spec = _resolve_spec(spec, macros, {name})
             k = _skip_ws(tex, j)
             args = []
             ok = True
@@ -289,17 +378,19 @@ def expand_math(tex: str, macros: dict, rounds: int = 12) -> str:
                 else:
                     args.append(spec["opt"])
             for _a in range(spec["n"]):
-                k = _skip_ws(tex, k)
-                if k >= n or tex[k] != "{":
+                val, k, took = _take_arg(tex, k)
+                if not took:
                     ok = False
                     break
-                val, k = read_braced(tex, k)
                 args.append(val)
             if not ok:
                 out.append(tex[i:j])
                 i = j
                 continue
-            out.append(_subst(spec["body"], args))
+            repl = _subst(spec["body"], args)
+            nxt = tex[k] if k < n else ""
+            repl = _finish_repl(repl, nxt, _prev_command(tex, i) in _ACCENTS)
+            out.append(repl)
             changed = True
             i = k
         tex = "".join(out)
@@ -426,7 +517,8 @@ def find_main_tex(root: Path) -> Path | None:
 
 def _sty_macros(root: Path) -> dict:
     macros = {}
-    for p in list(root.rglob("*.sty"))[:40]:
+    files = list(root.rglob("*.sty"))[:40] + list(root.rglob("*.def"))[:40]
+    for p in files:
         try:
             macros.update(collect_macros(strip_comments(p.read_text(encoding="utf-8", errors="replace"))))
         except OSError:

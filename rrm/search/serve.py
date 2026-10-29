@@ -129,6 +129,7 @@ class BurstSearch:
             split=None,  # papers never wait on Muse; labels come from GET /subtopics
         )
         papers = result["papers"]
+        _prefetch_reader(papers["corpusids"][:10])
         first = None
         if result["first_id"] is not None:
             first = self._rows([result["first_id"]], [None])[0]
@@ -159,6 +160,22 @@ class BurstSearch:
         except Exception:
             topics = []
         return {"query": q, "subtopics": topics, "seconds": round(time.perf_counter() - t0, 4)}
+
+
+def _prefetch_reader(corpusids):
+    """Fire-and-forget prepare of the top papers. A missing reader app must not fail the burst."""
+    ids = []
+    for raw in list(corpusids or [])[:10]:
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return
+    try:
+        modal.Function.from_name("rrm-reader", "prefetch").spawn(ids)
+    except Exception:
+        return
 
 
 @app.local_entrypoint()
