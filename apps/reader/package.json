@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "data": "python3 scripts/build_data.py",
-    "verify": "node scripts/check_math.mjs && node --test tests/instrument.test.mjs tests/scaling.test.mjs tests/bibtex.test.mjs tests/companion.test.mjs",
+    "verify": "node scripts/check_math.mjs && node --test tests/instrument.test.mjs tests/scaling.test.mjs tests/bibtex.test.mjs tests/companion.test.mjs tests/tablechart.test.mjs tests/panorama.test.mjs",
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "npx serve out -l 3000",
