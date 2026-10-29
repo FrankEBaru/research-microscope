@@ -768,7 +768,10 @@ def process_shard(dataset: str, idx: int, release: str, url: str, max_mb: int = 
 
     started = time.perf_counter()
     dataset, release = _safe(dataset), _release(release)
-    vol.reload()
+    try:
+        vol.reload()
+    except Exception as exc:  # a reused container can still hold a file open
+        print(f"reload skipped: {exc}")
     if max_mb:
         dest = Path(MOUNT) / "_test" / f"{dataset}-{idx}.parquet"
     else:
