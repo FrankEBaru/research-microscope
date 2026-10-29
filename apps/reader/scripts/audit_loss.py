@@ -7,9 +7,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 from build_data import plain, block_plain, note_texts  # noqa
 
 ROOT = Path(__file__).resolve().parent.parent
+NOMACROS = {"1810.04805"}  # pandoc se cuelga con la expansión de macros en este paper (ver build_data.py)
 aid = sys.argv[1] if len(sys.argv) > 1 else "1706.03762"
 src = ROOT / ".cache" / f"{aid}.src"
-ref = subprocess.run(["pandoc", "ms.tex", "-f", "latex", "-t", "markdown", "--wrap=none"], cwd=src, capture_output=True, text=True).stdout
+ref = subprocess.run(["pandoc", "_flat.tex", "-f", "latex-latex_macros" if aid in NOMACROS else "latex", "-t", "markdown", "--wrap=none"], cwd=src, capture_output=True, text=True, timeout=120).stdout
 bundle = json.loads((ROOT / "public" / "papers" / f"{aid}.json").read_text())
 parts = []
 def cells(rows):
@@ -36,3 +37,13 @@ missing = r - u
 tot = sum(r.values()); miss = sum(missing.values())
 print(f"{aid}: {tot} palabras (≥4 letras) en la referencia; {miss} faltan en la UI ({100*miss/tot:.2f}%)")
 print("faltan:", dict(missing.most_common(25)))
+
+if "--blocks" in sys.argv:  # dónde se pierden las palabras: bloques de la referencia con más faltantes
+    ours = tok(text)
+    rows = []
+    for para in re.split(r"\n\s*\n", ref):
+        c = tok(para); m = sum((c - ours).values())
+        if m >= 8: rows.append((m, para[:150].replace("\n", " ")))
+    rows.sort(reverse=True)
+    print(f"{len(rows)} bloques de la referencia con ≥8 palabras faltantes:")
+    for m, t in rows[:6]: print(f"  {m:3d} | {t}")

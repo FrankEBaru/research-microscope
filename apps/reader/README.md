@@ -38,6 +38,10 @@ Afirmación y supuesto: nota 1 de §3.2.1 de *Attention Is All You Need* (compon
 El paper no fija la distribución: se usa normal estándar y la UI lo declara. `tests/instrument.test.mjs` (6 pruebas): Var(q·k) ≈ d_k, media ≈ 0, Var(q·k/√d_k) ≈ 1, con σ²=2 la varianza escalada es σ⁴ (no 1), el softmax sin escala es más puntiagudo, y coincidencia con una reimplementación independiente en numpy (`scripts/numpy_check.py` → `tests/numpy_reference.json`).
 **El contrato está pendiente de aprobación de Franklin.**
 
+## Probado con 5 papers completos (RRM-8 A)
+Attention, BERT, Kaplan, Chinchilla y Pearce y Song (e-prints de arXiv): **1,099 de 1,108 fórmulas (99.2%) renderizan** en KaTeX; las 9 restantes usan una macro propia (`\mathpalette`) y se muestran como LaTeX crudo, sin ocultarse. Pérdida de texto (auditoría independiente contra pandoc→markdown): 0.7% a 3.0%; lo que quedó entre los peores bloques es en su mayoría ruido de la referencia (macros y matemática sin delimitar), salvo tablas con celdas anidadas, ya corregidas. Referencias cruzadas resueltas: 83 de 86 en Chinchilla.
+Fallos de robustez encontrados y corregidos al ampliar: pandoc se cuelga con la expansión de macros en BERT (tiempo límite y segunda estrategia), líneas en blanco dentro de `\caption`, `\graphicspath`, bibliografías `.bbl` y autor-año, `\label` y `\hat \mathbb{E}` dentro de matemática, ecuaciones de bloque dentro de párrafos, apéndices con letras.
+
 ## Datos y licencias
 - Los papers y figuras se descargan de arXiv al correr `npm run data` y quedan en `public/papers/` y `.cache/` (ambos en `.gitignore`): el repo es público y `AGENTS.md` prohíbe commitear corpus o PDFs.
 - Attention: Google permite reproducir tablas y figuras con atribución para trabajos periodísticos o académicos (aviso visible en la UI). Cada paper enlaza a su original en arXiv.

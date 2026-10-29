@@ -70,6 +70,12 @@ def abs_meta(arxiv_id: str) -> dict:
 
 
 # ------------------------------------------------------------- AST de pandoc
+def clean_math(tex: str) -> str:
+    """Normaliza LaTeX que KaTeX no acepta, sin cambiar el significado: \\label (no renderiza) y \\hat \\mathbb{E} -> \\hat{\\mathbb{E}}."""
+    tex = re.sub(r"\\label\{[^}]*\}", "", tex)
+    return re.sub(r"\\(hat|tilde|bar|vec|dot|ddot|widehat|widetilde|overline)\s*(\\[A-Za-z]+\{[^{}]*\})", r"\\\1{\2}", tex)
+
+
 def inl(nodes):
     out = []
     for x in nodes:
@@ -82,7 +88,11 @@ def inl(nodes):
             out.append({"t": "text", "v": " "})
         elif t == "Math":
             kind, tex = x["c"]
-            out.append({"t": "math", "v": tex, "display": kind["t"] == "DisplayMath"})
+            node = {"t": "math", "v": clean_math(tex), "display": kind["t"] == "DisplayMath"}
+            lbl = re.findall(r"\\label\{([^}]*)\}", tex)
+            if lbl:
+                node["labels"] = lbl
+            out.append(node)
         elif t == "Emph":
             out.append({"t": "em", "c": inl(x["c"])})
         elif t == "Strong":
@@ -144,12 +154,33 @@ def find_images(node, acc):
     return acc
 
 
-def cell_text(cell):
-    bl = cell[4]
-    inls = []
+def cell_inlines(bl):
+    """Aplana los bloques de una celda (párrafos, listas, divs, líneas) a inlines, sin perder texto."""
+    sp = {"t": "text", "v": " "}
+    out = []
     for b in bl:
-        if b["t"] in ("Plain", "Para"):
-            inls += inl(b["c"]) + [{"t": "text", "v": " "}]
+        t = b["t"]
+        if t in ("Plain", "Para"):
+            out += inl(b["c"]) + [sp]
+        elif t == "LineBlock":
+            for line in b["c"]:
+                out += inl(line) + [sp]
+        elif t in ("BulletList", "OrderedList"):
+            items = b["c"] if t == "BulletList" else b["c"][1]
+            for item in items:
+                out += [{"t": "text", "v": "• "}] + cell_inlines(item)
+        elif t == "Div":
+            out += cell_inlines(b["c"][1])
+        elif t == "Table":
+            for tb in b["c"][4]:
+                for row in tb[3]:
+                    for c in row[1]:
+                        out += cell_inlines(c[4])
+    return out
+
+
+def cell_text(cell):
+    inls = cell_inlines(cell[4])
     while inls and inls[-1] == {"t": "text", "v": " "}:
         inls.pop()
     return inls
@@ -169,19 +200,35 @@ def table_block(t):
     return {"kind": "table", "label": attr[0], "head": head, "body": body, "caption": cap}
 
 
+def flush(seg, out):
+    """Cierra un segmento de párrafo (sin espacios sobrantes en los bordes); descarta los vacíos."""
+    while seg and seg[0]["t"] == "text" and seg[0]["v"].strip() == "":
+        seg.pop(0)
+    while seg and seg[-1]["t"] == "text" and seg[-1]["v"].strip() == "":
+        seg.pop()
+    if seg:
+        out.append({"kind": "p", "inlines": seg})
+
+
 def blocks(bl):
     out = []
     for b in bl:
         t = b["t"]
         if t == "Header":
             lvl, attr, content = b["c"]
-            out.append({"kind": "h", "level": lvl, "id": attr[0], "unnumbered": "unnumbered" in attr[1], "inlines": inl(content)})
+            out.append({"kind": "h", "level": lvl, "label": attr[0], "id": attr[0], "unnumbered": "unnumbered" in attr[1], "inlines": inl(content)})
         elif t in ("Para", "Plain"):
             ins = inl(b["c"])
-            if len(ins) == 1 and ins[0]["t"] == "math" and ins[0]["display"]:
-                out.append({"kind": "eq", "tex": ins[0]["v"]})
-            else:
-                out.append({"kind": "p", "inlines": ins})
+            # las ecuaciones de bloque que pandoc deja dentro de un párrafo pasan a ser bloques `eq` propios
+            seg = []
+            for x in ins:
+                if x["t"] == "math" and x["display"]:
+                    flush(seg, out)
+                    seg = []
+                    out.append({"kind": "eq", "tex": x["v"], **({"labels": x["labels"]} if x.get("labels") else {})})
+                else:
+                    seg.append(x)
+            flush(seg, out)
         elif t == "BulletList":
             items = []
             for item in b["c"]:
@@ -202,7 +249,14 @@ def blocks(bl):
         elif t == "Table":
             out.append(table_block(b))
         elif t == "Div":
-            out += blocks(b["c"][1])
+            inner = blocks(b["c"][1])
+            lab = b["c"][0][0]  # el id del div envuelve a la tabla o figura: es su etiqueta
+            if lab:
+                for ib in inner:
+                    if ib["kind"] in ("table", "fig") and not ib.get("label"):
+                        ib["label"] = lab
+                        break
+            out += inner
         elif t == "RawBlock":
             pass
         # otros tipos: se ignoran
@@ -254,19 +308,23 @@ def split_sentences(inls):
     return sents
 
 
-def bibliography(src: Path) -> dict:
-    refs = {}
-    for f in src.glob("*.tex"):
+def bibliography(src: Path):
+    refs, labels = {}, {}
+    for f in list(src.glob("*.tex")) + list(src.glob("*.bbl")):
         t = f.read_text(errors="replace")
-        for m in re.finditer(r"\\bibitem(?:\[[^\]]*\])?\{([^}]+)\}(.*?)(?=\\bibitem|\\end\{thebibliography\})", t, re.S):
-            s = m.group(2)
+        for m in re.finditer(r"\\bibitem(?:\[([^\]]*)\])?\{([^}]+)\}(.*?)(?=\\bibitem|\\end\{thebibliography\})", t, re.S):
+            if m.group(1):
+                lab = re.sub(r"\s+", " ", m.group(1).replace("~", " ").replace("{", "").replace("}", "")).strip()
+                short = re.match(r"(.*?\(\d{4}[a-z]?\))", lab)  # natbib: «Corto(año)Autores completos»
+                labels[m.group(2)] = re.sub(r"\((\d{4}[a-z]?)\)", r", \1", short.group(1) if short else lab)
+            s = m.group(3)
             s = re.sub(r"%.*", "", s)
             s = s.replace("\\newblock", " ")
             s = re.sub(r"\{\\(?:em|it)\s+([^{}]*)\}", r"\1", s)
             s = re.sub(r"\\(?:emph|textit|url)\{([^{}]*)\}", r"\1", s)
             s = s.replace("~", " ").replace("{", "").replace("}", "").replace("\\", "")
-            refs[m.group(1)] = re.sub(r"\s+", " ", s).strip()
-    return refs
+            refs[m.group(2)] = re.sub(r"\s+", " ", s).strip()
+    return refs, labels
 
 
 def author_notes(src: Path, main_tex: str) -> list:
@@ -282,6 +340,21 @@ def author_notes(src: Path, main_tex: str) -> list:
     return out
 
 
+def fix_captions(t: str) -> str:
+    """Quita líneas en blanco dentro de \\caption{...} (válidas en LaTeX; pandoc falla o se cuelga)."""
+    out, i = [], 0
+    for m in re.finditer(r"\\caption(\[[^\]]*\])?\{", t):
+        if m.start() < i:
+            continue
+        j, d = m.end(), 1
+        while j < len(t) and d:
+            d += (t[j] == "{") - (t[j] == "}")
+            j += 1
+        out.append(t[i:m.end()]); out.append(re.sub(r"\n\s*\n", " ", t[m.end():j])); i = j
+    out.append(t[i:])
+    return "".join(out)
+
+
 def flatten_and_number(src: Path, main_tex: str, out: str = "_flat.tex") -> str:
     """Aplana \\input y numera las ecuaciones `equation` (pandoc pierde el número). Devuelve el .tex aplanado.
     Si el paper reinicia la numeración por sección (numberwithin/counterwithin) no se numera: sería falso."""
@@ -294,7 +367,7 @@ def flatten_and_number(src: Path, main_tex: str, out: str = "_flat.tex") -> str:
         t = re.sub(r"(?m)(?<!\\)%.*$", "", t)
         return re.sub(r"\\input\{([^}]+)\}", lambda m: rd(m.group(1)) if exists(m.group(1)) else m.group(0), t)
 
-    t = rd(main_tex)
+    t = fix_captions(rd(main_tex))
     if not re.search(r"\\(numberwithin|counterwithin)\{equation\}", t):
         n = [0]
 
@@ -317,6 +390,14 @@ def add_sentences(bl):
 
 
 # ------------------------------------------------- bundle de un paper completo
+def detect_main(src: Path) -> str:
+    """Archivo .tex con \\documentclass (el de mayor tamaño si hay varios)."""
+    c = [f for f in src.rglob("*.tex") if "\\documentclass" in f.read_text(errors="replace")[:5000] and not f.name.startswith("_")]
+    if not c:
+        sys.exit("no se encontró el .tex principal")
+    return str(max(c, key=lambda f: f.stat().st_size).relative_to(src))
+
+
 def build_full_paper(arxiv_id: str, main_tex: str, skip_first_div=True) -> dict:
     meta = abs_meta(arxiv_id)
     tar = cached(f"{arxiv_id}.eprint", f"https://arxiv.org/e-print/{arxiv_id}")
@@ -331,14 +412,22 @@ def build_full_paper(arxiv_id: str, main_tex: str, skip_first_div=True) -> dict:
         t2 = re.sub(r"\\(begin|end)\{(figure|table)\*\}", r"\\\1{\2}", t_)
         if t2 != t_:
             tf_.write_text(t2)
+    if main_tex == "auto":
+        main_tex = detect_main(src)
     main_tex = flatten_and_number(src, main_tex)
     ast_path = CACHE / f"{arxiv_id}.pandoc.json"
-    res = subprocess.run(
-        ["pandoc", main_tex, "-f", "latex", "-t", "json", "-o", str(ast_path)],
-        cwd=src, capture_output=True, text=True,
-    )
-    if res.returncode != 0:
-        sys.exit(f"pandoc falló para {arxiv_id}: {res.stderr[:400]}")
+    res = None
+    for fmt in ("latex", "latex-latex_macros"):  # 2.ª estrategia: sin expansión de macros (evita bucles)
+        try:
+            res = subprocess.run(["pandoc", main_tex, "-f", fmt, "-t", "json", "-o", str(ast_path)], cwd=src, capture_output=True, text=True, timeout=90)
+        except subprocess.TimeoutExpired:
+            print(f"  pandoc se colgó con -f {fmt}; se reintenta")
+            continue
+        if res.returncode == 0:
+            break
+        print(f"  pandoc falló con -f {fmt}: {res.stderr[:120]}")
+    if res is None or res.returncode != 0:
+        sys.exit(f"pandoc no pudo convertir {arxiv_id}")
     ast = json.loads(ast_path.read_text())
     bl = blocks(ast["blocks"])
     # el primer bloque es un aviso de licencia de Google, lo mostramos aparte
@@ -358,7 +447,10 @@ def build_full_paper(arxiv_id: str, main_tex: str, skip_first_div=True) -> dict:
         if b["kind"] == "fig":
             files = []
             for im in b["images"]:
+                base = Path(im).name
                 cand = [src / im] + [src / (im + e) for e in (".png", ".jpg", ".jpeg", ".pdf")]
+                if not any(c.exists() and c.is_file() for c in cand):  # \\graphicspath: se busca por nombre en todo el árbol
+                    cand = [f for e in ("", ".png", ".jpg", ".jpeg", ".pdf") for f in src.rglob(base + e) if f.is_file()]
                 f = next((c for c in cand if c.exists() and c.is_file()), None)
                 if f and f.suffix == ".pdf":
                     # figura vectorial en PDF -> PNG (pdftocairo), para poder mostrarla en el navegador
@@ -378,7 +470,8 @@ def build_full_paper(arxiv_id: str, main_tex: str, skip_first_div=True) -> dict:
         "license": notice,
         "authorNotes": author_notes(src, main_tex),
         "full": True,
-        "refs": bibliography(src),
+        "refs": (bib := bibliography(src))[0],
+        "refLabels": bib[1],
         "blocks": bl,
     }
 
@@ -431,10 +524,13 @@ def resolve(paper: dict, quote: str, what: str) -> dict:
     hits = []
     for b in paper["blocks"]:
         if quote in block_plain(b):
-            hits.append({"blockId": b["id"], "where": "block"})
+            hits.append({"blockId": b["id"], "where": "block", "abs": bool(b.get("abs"))})
         for nt in note_texts(b):
             if quote in nt:
                 hits.append({"blockId": b["id"], "where": "note"})
+    if len(hits) > 1 and sum(h["abs"] for h in hits) == 1:  # frase del abstract que reaparece en el texto: vale el abstract
+        hits = [h for h in hits if h["abs"]]
+    hits = [{k: v for k, v in h.items() if k != "abs"} for h in hits]
     if len(hits) != 1:
         sys.exit(f"ANCLA INVÁLIDA ({what}): la cita aparece {len(hits)} veces en {paper['arxivId']}: «{quote[:90]}»")
     return {"quote": quote, **hits[0]}

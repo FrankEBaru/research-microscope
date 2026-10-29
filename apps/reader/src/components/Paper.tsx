@@ -13,7 +13,7 @@ export function plainOf(inls: Inline[]): string {
   return (inls || []).map((x) => x.t === "text" ? x.v : x.t === "math" ? `$${x.v}$` : x.t === "cite" ? "" : x.t === "note" ? "" : Array.isArray(x.c) ? plainOf(x.c) : x.v || "").join("").replace(/\s+/g, " ").trim();
 }
 
-interface Ctx { syms: Sym[]; refIndex: Record<string, number>; counter: { n: number } }
+interface Ctx { syms: Sym[]; refIndex: Record<string, number>; refLabels?: Record<string, string>; xref?: Record<string, string>; counter: { n: number } }
 
 function Inlines({ inls, ctx }: { inls: Inline[]; ctx: Ctx }) {
   return <>{(inls || []).map((x, i) => <One key={i} x={x} ctx={ctx} />)}</>;
@@ -28,12 +28,16 @@ function One({ x, ctx }: { x: Inline; ctx: Ctx }) {
     case "span": return <Inlines inls={x.c} ctx={ctx} />;
     case "code": return <code>{x.v}</code>;
     case "link": {
-      if (x.href.startsWith("#")) return <a href={x.href} className="xref" data-xref={x.href.slice(1)}><Inlines inls={x.c} ctx={ctx} /></a>;
+      if (x.href.startsWith("#")) {
+        const lab = x.href.slice(1), shown = ctx.xref?.[lab];
+        const raw = plainOf(x.c);  // pandoc deja «[etiqueta]» cuando no resuelve la referencia
+        return <a href={x.href} className="xref" data-xref={lab}>{shown && (raw === `[${lab}]` || raw === lab) ? shown : <Inlines inls={x.c} ctx={ctx} />}</a>;
+      }
       return <a href={x.href} target="_blank" rel="noreferrer"><Inlines inls={x.c} ctx={ctx} /></a>;
     }
     case "cite": {
-      const nums = x.keys.map((k: string) => ctx.refIndex[k] ?? "?");
-      return <span className="cite" tabIndex={0} data-pop={`c|${x.keys.join(",")}`}>[{nums.join(", ")}]</span>;
+      const lab = x.keys.map((k: string) => ctx.refLabels?.[k] ?? ctx.refIndex[k] ?? "?");
+      return <span className="cite" tabIndex={0} data-pop={`c|${x.keys.join(",")}`}>[{lab.join("; ")}]</span>;
     }
     case "note": {
       const n = ++ctx.counter.n;
@@ -51,7 +55,7 @@ function Popover({ pop, paper, model, content }: { pop: NonNullable<PopState>; p
   const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, counter: { n: 0 } };
   let body: any = null;
   if (kind === "c") {
-    body = r[0].split(",").map((k) => <p key={k} className="pop-ref"><b>[{model.refIndex[k] ?? "?"}]</b> {paper.refs[k] || "referencia no encontrada en el paper"}</p>);
+    body = r[0].split(",").map((k) => <p key={k} className="pop-ref"><b>[{paper.refLabels?.[k] ?? model.refIndex[k] ?? "?"}]</b> {paper.refs[k] || "referencia no encontrada en el paper"}</p>);
     body = <>{body}<div className="pop-meta"><ProvChip kind="paper" text="bibliografía del paper" /></div></>;
   } else if (kind === "y") {
     const s = content.attention.symbols.find((s: any) => s.id === r[0]);
@@ -135,21 +139,28 @@ export default function PaperView({ paper, content, focus }: { paper: Paper; con
     const notes: { blocks: Block[] }[] = [];
     const noteBase: Record<string, number> = {};
     const toc: { id: string; label: string; level: number }[] = [];
-    let h = [0, 0, 0], cur = "", fig = 0, tab = 0;
+    let h = [0, 0, 0], cur = "", fig = 0, tab = 0, app = false;
+    const xref: Record<string, string> = {}, target: Record<string, string> = {};
+    const letter = (n: number) => String.fromCharCode(64 + n);
     const figN: Record<string, number> = {}, tabN: Record<string, number> = {};
     const walk = (inls: Inline[]) => (inls || []).forEach((x) => { if (x.t === "note") notes.push({ blocks: x.blocks }); else if (Array.isArray(x.c)) walk(x.c); });
     for (const b of paper.blocks) {
       byId[b.id] = b; noteBase[b.id] = notes.length;
-      if (b.kind === "h" && b.unnumbered) { cur = ""; toc.push({ id: b.id, label: plainOf(b.inlines), level: 1 }); }
+      if (b.kind === "h" && b.unnumbered) {
+        cur = ""; toc.push({ id: b.id, label: plainOf(b.inlines), level: 1 });
+        if (/^(appendix|ap[ée]ndice)/i.test(plainOf(b.inlines))) { app = true; h = [0, 0, 0]; }
+      }
       else if (b.kind === "h" && b.level <= 3) {
         h[b.level - 1]++; for (let j = b.level; j < 3; j++) h[j] = 0;
-        cur = h.slice(0, b.level).join("."); nums[b.id] = cur;
+        cur = h.slice(0, b.level).map((n, i) => (app && i === 0 ? letter(n) : n)).join("."); nums[b.id] = cur;
+        if (b.label) { xref[b.label] = `${app ? "Apéndice" : "Sección"} ${cur}`; target[b.label] = `sec-${b.id}`; }
         if (b.level <= 2) toc.push({ id: b.id, label: `${cur} ${plainOf(b.inlines)}`, level: b.level });
       }
       secOf[b.id] = cur;
-      if (b.kind === "fig") figN[b.id] = ++fig;
+      if (b.kind === "fig") { figN[b.id] = ++fig; if (b.label) xref[b.label] = `Figura ${fig}`; }
+      if (b.kind === "eq") { const tg = /\\tag\{([^}]*)\}/.exec(b.tex); (b.labels || []).forEach((l: string) => { if (tg) xref[l] = `(${tg[1]})`; target[l] = `blk-${b.id}`; }); }
       if (b.kind === "table") {
-        tabN[b.id] = ++tab;
+        tabN[b.id] = ++tab; if (b.label) xref[b.label] = `Tabla ${tab}`;
         const all: Inline[][][] = [...(b.head || []), ...(b.body || [])];
         // cabecera de varias líneas (p. ej. «Sequential» / «Operations»): se funden las filas casi vacías que siguen a la primera
         const hdr = all[0].map((c) => [...c]);
@@ -162,7 +173,7 @@ export default function PaperView({ paper, content, focus }: { paper: Paper; con
       }
       walk(b.inlines);
     }
-    return { syms, refIndex, byId, secOf, nums, notes, noteBase, toc, figN, tabN };
+    return { syms, refIndex, byId, secOf, nums, notes, noteBase, toc, figN, tabN, xref, target };
   }, [paper, att]);
 
   // handlers
@@ -180,7 +191,7 @@ export default function PaperView({ paper, content, focus }: { paper: Paper; con
     const sym = t.closest("[data-sym]") as HTMLElement | null;
     if (sym && att) { const s = att.symbols.find((y: any) => y.id === sym.dataset.sym); if (s) goTo(s.def.anchor.blockId); return; }
     const xr = t.closest("[data-xref]") as HTMLElement | null;
-    if (xr) { e.preventDefault(); const el = document.getElementById(xr.dataset.xref!); el?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    if (xr) { e.preventDefault(); const el = document.getElementById(model.target[xr.dataset.xref!] || xr.dataset.xref!); el?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
     const cp = t.closest("[data-copy]") as HTMLElement | null;
     if (cp) { navigator.clipboard?.writeText(cp.dataset.copy!); cp.textContent = "copiado"; setTimeout(() => (cp.textContent = "LaTeX"), 1200); }
   };
@@ -224,7 +235,7 @@ export default function PaperView({ paper, content, focus }: { paper: Paper; con
         </header>
 
         {paper.blocks.map((b) => {
-          const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, counter: { n: model.noteBase[b.id] } };
+          const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, refLabels: paper.refLabels, xref: model.xref, counter: { n: model.noteBase[b.id] } };
           let el: any = null;
           if (b.kind === "h") {
             const Tag: any = b.level === 1 ? "h2" : b.level === 2 ? "h3" : "h4";
