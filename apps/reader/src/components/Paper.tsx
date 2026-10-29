@@ -6,6 +6,7 @@ import { ProvChip } from "./Bits";
 import Instrument from "./Instrument";
 import { bibtex } from "@/lib/bibtex.js";
 import { createTracker } from "@/lib/companion.js";
+import { analyze, bars } from "@/lib/tablechart.js";
 import Companion, { Offer } from "./Companion";
 
 /* ---------- utilidades ---------- */
@@ -95,12 +96,12 @@ function Popover({ pop, paper, model, content }: { pop: NonNullable<PopState>; p
       </>
     );
   } else if (kind === "t") {
-    const t = model.byId[r[0]]; const ri = +r[1], ci = +r[2];
-    const rows = t.rows; const head = t.hdr; const cell = rows[ri][ci];
+    const t = model.byId[r[0]]; const an = t.an; const ri = +r[1], col = +r[2];
+    const row = an.bodyRows[ri]; const cell = row.find((c: any) => c.col === col) || row[0];
     body = (
       <>
-        <p className="pop-title">Tabla · fila «<Inlines inls={rows[ri][0]} ctx={ctx} />»</p>
-        <p className="pop-line">Columna «<Inlines inls={head[ci] || []} ctx={ctx} />»: <b><Inlines inls={cell} ctx={ctx} /></b></p>
+        <p className="pop-title">Tabla · fila «<Inlines inls={row[0].c} ctx={ctx} />»</p>
+        <p className="pop-line">Columna «{an.headers[col] || "—"}»: <b><Inlines inls={cell.c} ctx={ctx} /></b></p>
         <div className="pop-sim"><ProvChip kind="simulado" /><span>Lectura simulada: el motor explicará qué mide esta celda y con qué texto del paper se relaciona.</span></div>
       </>
     );
@@ -111,20 +112,54 @@ function Popover({ pop, paper, model, content }: { pop: NonNullable<PopState>; p
   return <div className="popover" style={style} role="tooltip">{body}</div>;
 }
 
-/* ---------- tabla ---------- */
+/* ---------- tabla (+ gráfica viva) ---------- */
+function TableChart({ model, n }: { model: any; n: number }) {
+  const [col, setCol] = useState<number>(model.numericCols[0]);
+  const [sort, setSort] = useState<"original" | "desc" | "asc">("original");
+  const [log, setLog] = useState(false);
+  const data = useMemo(() => bars(model, col, { sort, log }), [model, col, sort, log]);
+  return (
+    <div className="tchart" role="group" aria-label={`Gráfica de la Tabla ${n}`}>
+      <div className="chips"><ProvChip kind="paper" text={`gráfica de la Tabla ${n}: valores del paper, sin cambiar`} /></div>
+      <div className="tchart-tools">
+        <div className="pills" role="tablist" aria-label="Columna">{model.numericCols.map((c: number) => <button key={c} role="tab" aria-selected={c === col} className={c === col ? "on" : ""} onClick={() => setCol(c)}>{model.headers[c] || `col. ${c + 1}`}</button>)}</div>
+        <label>orden <select value={sort} onChange={(e) => setSort(e.target.value as any)}><option value="original">como en la tabla</option><option value="desc">mayor a menor</option><option value="asc">menor a mayor</option></select></label>
+        <label className="chk"><input type="checkbox" checked={log} onChange={(e) => setLog(e.target.checked)} /> escala logarítmica</label>
+      </div>
+      <div className="tbars">
+        {data.map((d: any) => (
+          <div key={d.row} className="tbar-row" data-row-label={d.label} onMouseEnter={() => window.dispatchEvent(new CustomEvent("rrm-row", { detail: d.label }))} onMouseLeave={() => window.dispatchEvent(new CustomEvent("rrm-row", { detail: "" }))}>
+            <span className="tb-label" title={d.label}>{d.label}</span>
+            <span className="tb-track"><i style={{ width: `${Math.max(1.5, d.frac * 100)}%` }} /></span>
+            <span className="tb-val"><Rich text={d.raw} /></span>
+          </div>
+        ))}
+      </div>
+      <p className="small">{log ? "Escala logarítmica: la longitud no es proporcional al valor." : "Longitud proporcional al valor."} Se omiten las filas sin valor en esta columna. Para ver todo, la tabla sigue debajo.</p>
+    </div>
+  );
+}
+
 function Table({ b, ctx, n }: { b: Block; ctx: Ctx; n: number }) {
   const [hc, setHc] = useState<number | null>(null);
-  const rows: Inline[][][] = b.rows;
-  const headRow = b.hdr;
+  const [showChart, setShowChart] = useState(false);
+  const [hl, setHl] = useState("");
+  const model = b.an;
+  const chartable = model.numericCols.length > 0 && bars(model, model.numericCols[0]).length >= 3;
+  useEffect(() => { const f = (e: any) => setHl(e.detail || ""); window.addEventListener("rrm-row", f); return () => window.removeEventListener("rrm-row", f); }, []);
   return (
     <figure className="table-fig" id={b.label || undefined} data-tab={b.id}>
+      {chartable && <div className="tchart-bar"><button className="tchart-toggle" aria-pressed={showChart} onClick={() => setShowChart((v) => !v)}>{showChart ? "Ocultar gráfica" : "Ver como gráfica"}</button></div>}
+      {showChart && <TableChart model={model} n={n} />}
       <div className="table-wrap" onMouseLeave={() => setHc(null)}>
         <table data-hc={hc ?? undefined}>
-          <thead><tr>{headRow.map((c, ci) => <th key={ci} data-c={ci} className={hc === ci ? "col-on" : ""} onMouseEnter={() => setHc(ci)}><Inlines inls={c} ctx={ctx} /></th>)}</tr></thead>
+          <thead>{model.headRows.map((hr: any[], ri: number) => (
+            <tr key={ri}>{hr.map((c: any, ci: number) => <th key={ci} colSpan={c.span} data-c={c.col} className={hc !== null && hc >= c.col && hc < c.col + c.span ? "col-on" : ""} onMouseEnter={() => setHc(c.col)}><Inlines inls={c.c} ctx={ctx} /></th>)}</tr>
+          ))}</thead>
           <tbody>
-            {rows.slice(1).map((r, ri) => (
-              <tr key={ri} style={{ animationDelay: `${ri * 35}ms` }}>
-                {r.map((c, ci) => <td key={ci} data-c={ci} className={hc === ci ? "col-on" : ""} onMouseEnter={() => setHc(ci)} data-pop={`t|${b.id}|${ri + 1}|${ci}`} tabIndex={0}><Inlines inls={c} ctx={ctx} /></td>)}
+            {model.bodyRows.map((r: any[], ri: number) => (
+              <tr key={ri} className={hl && plainOf(r[0].c).replace(/\[cite\]/g, "").trim() === hl ? "row-on" : ""} style={{ animationDelay: `${ri * 35}ms` }}>
+                {r.map((c: any, ci: number) => <td key={ci} colSpan={c.span} data-c={c.col} className={hc !== null && hc >= c.col && hc < c.col + c.span ? "col-on" : ""} onMouseEnter={() => setHc(c.col)} data-pop={`t|${b.id}|${ri}|${c.col}`} tabIndex={0}><Inlines inls={c.c} ctx={ctx} /></td>)}
               </tr>
             ))}
           </tbody>
@@ -176,6 +211,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       if (b.kind === "fig") { figN[b.id] = ++fig; if (b.label) { xref[b.label] = `Figura ${fig}`; byLabel[b.label] = b; figs.add(b.label); } }
       if (b.kind === "eq") { const tg = /\\tag\{([^}]*)\}/.exec(b.tex); (b.labels || []).forEach((l: string) => { xref[l] = tg ? `(${tg[1]})` : "ecuación"; target[l] = `blk-${b.id}`; }); }
       if (b.kind === "table") {
+        b.an = analyze(b as any);
         tabN[b.id] = ++tab; if (b.label) xref[b.label] = `Tabla ${tab}`;
         const all: Inline[][][] = [...(b.head || []), ...(b.body || [])];
         // cabecera de varias líneas (p. ej. «Sequential» / «Operations»): se funden las filas casi vacías que siguen a la primera
