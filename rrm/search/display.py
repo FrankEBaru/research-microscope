@@ -82,10 +82,18 @@ def filter_tldrs(table, cs_sorted):
     return table.select(["corpusid", "text"]).take(_keep(table, cs_sorted))
 
 
+def _large_strings(table):
+    """string -> large_string, so a column over 2 GB (all CS tldrs) can be sorted."""
+    import pyarrow as pa
+
+    fields = [pa.field(f.name, pa.large_string()) if pa.types.is_string(f.type) else f for f in table.schema]
+    return table.cast(pa.schema(fields))
+
+
 def unique_sorted(table):
     if table.num_rows == 0:
         return table
-    table = table.sort_by("corpusid")
+    table = _large_strings(table).sort_by("corpusid")
     ids = table.column("corpusid").fill_null(-1).to_numpy(zero_copy_only=False)
     keep = np.ones(len(ids), dtype=bool)
     keep[1:] = ids[1:] != ids[:-1]
