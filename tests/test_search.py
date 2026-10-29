@@ -6,9 +6,9 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
-from eval.citation_recall import evaluate_one, offline_split, recall_at_k, sample_local_ids
-from rrm.search.burst import burst_query, rank_expanded
-from rrm.search.display import PaperLookup, filter_papers, hydrate, merge_display
+from eval.citation_recall import evaluate_one, ndcg_at_k, precision_at_k, recall_at_k, sample_local_ids
+from rrm.search.burst import burst_query, link_rank, seed_weights
+from rrm.search.display import IdTable, PaperLookup, filter_papers, hydrate, merge_display
 from rrm.search.encode import use_proximity
 from rrm.search.faissutil import add_vectors, merge_indexes, search_vectors, train_ivfpq, vector_at, vectors_from_table
 from rrm.search.graph import Graph, csr_from_edges, edges_from_pairs, int_column, stack_edges
@@ -58,23 +58,51 @@ def test_csr_from_shards_and_one_hop():
     assert indptr.tolist() == [0, 1, 2, 2]
     assert indices.tolist() == [1, 0]
     graph = Graph.from_edges(cs, src, dst)
-    # 10 cites 20. One hop from 10 reaches 20, and the paper that cites 10.
-    ranked = rank_expanded([[10]], graph, k=10)
-    assert ranked["corpusids"] == [10, 20]
-    assert {"citing": 10, "cited": 20} in ranked["edges"]
-    assert 30 not in ranked["corpusids"]
+    # 10 cites 20. That citation, plus the seed bonus on 10, is the whole score.
+    cc = np.array([1, 4, 0], dtype=np.int64)
+    chosen, scores = link_rank(np.array([0]), np.array([0.2]), graph, cc, False, 10)
+    assert graph.ids[chosen].tolist() == [20, 10]
+    assert scores[0] > scores[1]
+    assert 30 not in graph.ids[chosen]
 
 
-def test_rank_boosts_bridges_and_drops_singletons():
-    ids = np.array([1, 2, 3, 4, 9], dtype=np.int64)
-    # 1→2 and 3→4. 9 has no edge.
-    graph = Graph.from_edges(ids, np.array([0, 2]), np.array([1, 3]))
-    ranked = rank_expanded([[1], [3, 2], [9]], graph, k=10)
-    assert 9 not in ranked["corpusids"]
-    order = ranked["corpusids"]
-    assert order.index(1) < order.index(3)
-    assert order.index(2) < order.index(4)
-    assert {edge["citing"] for edge in ranked["edges"]} == {1, 3}
+def test_weights_scores_and_tie_break():
+    dists = np.array([0.0, 1.0, 3.0])
+    scale = float(np.std(dists))
+    assert np.allclose(seed_weights(dists, True), np.exp(-(dists - dists.min()) / scale))
+    assert np.allclose(seed_weights(np.array([4.0, 100.0]), False), [1.0, 1.0 / 1.05])
+    assert np.allclose(seed_weights(np.array([2.0, 2.0]), True), [1.0, 1.0])
+
+    ids = np.array([10, 20, 30, 40], dtype=np.int64)
+    # 10 cites 30 and 40. One short seed, so both cited papers share a score.
+    graph = Graph.from_edges(ids, np.array([0, 0]), np.array([2, 3]))
+    tied = np.array([0, 0, 5, 5], dtype=np.int64)
+    chosen, scores = link_rank(np.array([0]), np.array([0.2]), graph, tied, False, 10)
+    assert ids[chosen].tolist() == [30, 40, 10]
+    assert np.allclose(scores, [1.0, 1.0, 0.5])
+    higher = np.array([0, 0, 1, 9], dtype=np.int64)
+    chosen, _scores = link_rank(np.array([0]), np.array([0.2]), graph, higher, False, 10)
+    assert ids[chosen].tolist() == [40, 30, 10]
+
+    # 20 cites 10. Seeds are 20 then 10, so 10 keeps the incoming weight and its bonus.
+    back = Graph.from_edges(np.array([10, 20], dtype=np.int64), np.array([1]), np.array([0]))
+    chosen, scores = link_rank(np.array([1, 0]), np.array([0.1, 0.2]), back, np.zeros(2, dtype=np.int64), False, 10)
+    assert back.ids[chosen].tolist() == [10, 20]
+    assert np.allclose(scores[0], 1.0 + 0.5 / 1.05)
+    assert np.allclose(scores[1], 0.5)
+
+    # Short ranking keeps 100 seeds. The 101st seed's citation stays out.
+    n = 120
+    wide = np.arange(n, dtype=np.int64)
+    src = np.arange(101, dtype=np.int64)
+    dst = np.array([110] * 100 + [111], dtype=np.int64)
+    wide_graph = Graph.from_edges(wide, src, dst)
+    cc = np.zeros(n, dtype=np.int64)
+    short, _s = link_rank(np.arange(101), np.arange(101, dtype=np.float64), wide_graph, cc, False, 20)
+    assert 110 in short
+    assert 111 not in short
+    long, _s = link_rank(np.arange(101), np.zeros(101), wide_graph, cc, True, 20)
+    assert 111 in long
 
 
 def test_faiss_search_and_merge():
@@ -131,10 +159,21 @@ def test_display_join_and_hydrate():
     rows = hydrate([2, 7], table)
     assert rows[0]["title"] == "b" and rows[0]["tldr"] is None
     assert rows[1]["title"] is None
+    ext = IdTable(pa.table({
+        "corpusid": pa.array([8], type=pa.int64()),
+        "title": ["Quantum"],
+        "year": pa.array([2014], type=pa.int64()),
+        "venue": ["PRL"],
+        "citationcount": pa.array([12], type=pa.int64()),
+    }))
+    assert ext.row(8)["title"] == "Quantum"
+    assert ext.row(2) is None
 
 
 def test_eval_recall_uses_graph_references():
     assert recall_at_k([1, 9, 2, 3], [1, 2, 3, 4], 100) == 0.75
+    assert precision_at_k([1, 9, 2], [1, 2], 10) == 0.2
+    assert ndcg_at_k([12, 13], [12, 13], 10) > ndcg_at_k([11], [12, 13], 10)
     indptr = np.array([0, 1, 21], dtype=np.int64)
     picked = sample_local_ids(indptr, n=1, min_refs=20, seed=0)
     assert picked.tolist() == [1]
@@ -149,46 +188,66 @@ def test_eval_recall_uses_graph_references():
         return [(11, 0.1), (10, 0.2)]
 
     row = evaluate_one(
-        "A title about graphs\nAn abstract long enough to split into pieces here",
+        "A title about graphs\nAn abstract long enough to count as paper text here",
         exclude=10,
         relevant=[12, 13],
         encode=encode,
         search=search,
         graph=graph,
-        split_fn=offline_split,
-        k=100,
+        cc=np.zeros(4, dtype=np.int64),
     )
-    assert row["recall"]["knn"] == 0.0
-    assert row["recall"]["knn_hop"] == 1.0
-    assert row["recall"]["split"] == 1.0
-    assert set(row["seconds"]) >= {"encode", "search", "split", "rank_hop"}
+    assert row["recall"]["knn"]["10"] == 0.0
+    assert row["recall"]["burst"]["10"] == 1.0
+    assert row["recall"]["burst"]["100"] == 1.0
+    assert row["precision_at_10"]["burst"] == 0.2
+    assert row["ndcg_at_10"]["burst"] == ndcg_at_k([12, 13, 11], [12, 13], 10)
+    assert set(row["seconds"]) == {"encode", "search", "rank"}
 
 
-def test_full_text_search_overlaps_split():
+def test_muse_failure_does_not_change_ranking():
     ids = np.array([1, 2], dtype=np.int64)
     graph = Graph.from_edges(ids, np.array([0]), np.array([1]))
-    order = []
+    cc = np.array([0, 3], dtype=np.int64)
 
     def encode(texts):
-        order.append("encode")
         return np.zeros((len(texts), 4), dtype=np.float32)
 
     def search(vector, k):
-        order.append("search")
-        return [(1, 0.2)]
+        return [(1, 0.2), (2, 0.4)]
 
-    def split(query):
-        order.append("split-start")
+    base = burst_query("graph neural networks", encode, search, graph, cc, n=10)
+    assert base["mode"] == "short"
+    assert base["papers"]["corpusids"][0] == 2
+
+    def boom(query):
+        raise RuntimeError("muse down")
+
+    failed = burst_query("graph neural networks", encode, search, graph, cc, n=10, split=boom)
+    assert failed["subtopics"] == []
+    assert failed["papers"] == base["papers"]
+
+    def slow(query):
         import time
-        time.sleep(0.05)
-        order.append("split-end")
-        return ["citation graphs", "spectral ranking", "query expansion"]
+        time.sleep(0.4)
+        return ["too late"]
 
-    out = burst_query("How do graph neural networks use citation structure?", encode, search, split, graph)
-    assert order.index("search") < order.index("split-end")
-    assert out["subtopics"][0] == "citation graphs"
-    assert 1 in out["first_ids"]
-    assert 2 in out["papers"]["corpusids"]
+    late = burst_query(
+        "graph neural networks", encode, search, graph, cc, n=10, split=slow, split_timeout=0.05
+    )
+    assert late["subtopics"] == []
+    assert late["papers"]["corpusids"] == base["papers"]["corpusids"]
+
+    labeled = burst_query(
+        "graph neural networks",
+        encode,
+        search,
+        graph,
+        cc,
+        n=10,
+        split=lambda query: ["citation graphs", "a second label"],
+    )
+    assert labeled["subtopics"] == ["citation graphs", "a second label"]
+    assert labeled["papers"] == base["papers"]
 
 
 def test_paper_seed_and_adapter_rule():
@@ -233,12 +292,61 @@ def test_paper_seed_and_adapter_rule():
         "10.1145/3292500.3330919",
         encode,
         search,
-        split,
         graph,
+        np.array([2, 1], dtype=np.int64),
         resolve=lambda query: 5,
         vector_of=lambda corpusid: np.array([3.0, 0.0, 0.0, 0.0], dtype=np.float32),
+        split=split,
     )
     assert calls == {"encode": 0, "split": 0}
+    assert out["mode"] == "paper"
     assert out["subtopics"] == []
+    assert out["first_id"] == 5
     assert out["papers"]["corpusids"][0] == 5
     assert 7 in out["papers"]["corpusids"]
+    assert {"citing": 5, "cited": 7} in out["edges"]
+
+
+def test_exact_paper_caps_refs_and_citers():
+    # 0 cites 1..101 and is cited by 201..301. Citation count equals the id.
+    ids = np.arange(400, dtype=np.int64)
+    src = np.array([0] * 101 + list(range(201, 302)), dtype=np.int64)
+    dst = np.array(list(range(1, 102)) + [0] * 101, dtype=np.int64)
+    graph = Graph.from_edges(ids, src, dst)
+    cc = ids.copy()
+
+    def encode(texts):
+        raise AssertionError("exact paper does not encode the query")
+
+    def search(vector, k):
+        return []
+
+    out = burst_query(
+        "1706.03762",
+        encode,
+        search,
+        graph,
+        cc,
+        n=300,
+        resolve=lambda query: 0,
+        vector_of=lambda corpusid: np.zeros(4, dtype=np.float32),
+        split=lambda query: ["should not run"],
+    )
+    papers = out["papers"]["corpusids"]
+    assert papers[0] == 0
+    assert papers[1:101] == list(range(101, 1, -1))
+    assert 1 not in papers
+    assert papers[101:201] == list(range(301, 201, -1))
+    assert 201 not in papers
+    assert out["subtopics"] == []
+    short = burst_query(
+        "1706.03762",
+        encode,
+        search,
+        graph,
+        cc,
+        n=50,
+        resolve=lambda query: 0,
+        vector_of=lambda corpusid: None,
+    )
+    assert short["papers"]["corpusids"] == [0] + list(range(101, 52, -1))

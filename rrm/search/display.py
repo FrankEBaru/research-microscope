@@ -141,6 +141,38 @@ def empty_tldrs():
     })
 
 
+class IdTable:
+    """Binary search over a display table sorted by corpusid."""
+
+    def __init__(self, table):
+        self.table = table
+        self.ids = np.zeros(0, dtype=np.int64)
+        if table is not None and table.num_rows:
+            self.ids = np.asarray(table.column("corpusid").to_numpy(zero_copy_only=False), dtype=np.int64)
+
+    def row(self, cid):
+        cid = int(cid)
+        if self.ids.size == 0:
+            return None
+        at = int(np.searchsorted(self.ids, cid))
+        if at >= self.ids.size or int(self.ids[at]) != cid:
+            return None
+
+        def cell(name):
+            if name not in self.table.column_names:
+                return None
+            return self.table.column(name)[at].as_py()
+
+        count = cell("citationcount")
+        return {
+            "corpusid": cid,
+            "title": cell("title"),
+            "year": cell("year"),
+            "venue": cell("venue"),
+            "citationcount": None if count is None else int(count),
+        }
+
+
 def hydrate(corpusids, table):
     if table is None or table.num_rows == 0:
         return [_blank(cid) for cid in corpusids]
