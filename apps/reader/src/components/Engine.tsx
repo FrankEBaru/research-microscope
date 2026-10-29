@@ -21,6 +21,7 @@ export default function Engine() {
   const [content, setContent] = useState<any>(null);
   const [papers, setPapers] = useState<Record<string, Paper>>({});
   const [err, setErr] = useState<string>("");
+  const [companion, setCompanion] = useState(false); // opt-in: apagado por defecto y sin persistencia
 
   useEffect(() => {
     const on = () => setRoute(parse(location.hash));
@@ -41,6 +42,11 @@ export default function Engine() {
         setErr("No se encontraron los datos. Ejecuta `npm run data` (descarga los papers de arXiv; no se commitean).");
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if ((e.key === "c" || e.key === "C") && !e.metaKey && !e.ctrlKey && !e.altKey && !/INPUT|TEXTAREA/.test((e.target as HTMLElement).tagName)) setCompanion((v) => !v); };
+    window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
   }, []);
 
   const go = useCallback((r: Route) => { location.hash = fmt(r); window.scrollTo({ top: 0 }); }, []);
@@ -78,13 +84,14 @@ export default function Engine() {
             </button>
           ))}
         </nav>
+        <button className="companion-toggle" aria-pressed={companion} onClick={() => setCompanion((v) => !v)} title="Compañero de lectura opcional: ofrece ayuda, nunca interrumpe, no guarda nada (tecla C)">Compañero {companion ? "activado" : "apagado"}</button>
         <span className="proto">prototipo · datos locales</span>
       </header>
 
       <main key={`${level}-${route.c}-${route.p}`} className="zoom-in">
         {level === 1 && <Area q={q} questions={questions} papers={papers} go={go} />}
         {level === 2 && cluster && <Cluster q={q} cl={cluster} papers={papers} go={go} />}
-        {level === 3 && paper && <PaperView paper={paper} content={content} focus={route.b} />}
+        {level === 3 && paper && <PaperView paper={paper} content={content} focus={route.b} companion={companion} onHideCompanion={() => setCompanion(false)} />}
         {level === 3 && !paper && <p className="center-msg">Paper no encontrado.</p>}
       </main>
 

@@ -5,6 +5,8 @@ import { Tex, Rich, Sym } from "@/lib/math";
 import { ProvChip } from "./Bits";
 import Instrument from "./Instrument";
 import { bibtex } from "@/lib/bibtex.js";
+import { createTracker } from "@/lib/companion.js";
+import Companion, { Offer } from "./Companion";
 
 /* ---------- utilidades ---------- */
 const countNotes = (inls: Inline[]): number =>
@@ -115,7 +117,7 @@ function Table({ b, ctx, n }: { b: Block; ctx: Ctx; n: number }) {
   const rows: Inline[][][] = b.rows;
   const headRow = b.hdr;
   return (
-    <figure className="table-fig" id={b.label || undefined}>
+    <figure className="table-fig" id={b.label || undefined} data-tab={b.id}>
       <div className="table-wrap" onMouseLeave={() => setHc(null)}>
         <table data-hc={hc ?? undefined}>
           <thead><tr>{headRow.map((c, ci) => <th key={ci} data-c={ci} className={hc === ci ? "col-on" : ""} onMouseEnter={() => setHc(ci)}><Inlines inls={c} ctx={ctx} /></th>)}</tr></thead>
@@ -134,11 +136,14 @@ function Table({ b, ctx, n }: { b: Block; ctx: Ctx; n: number }) {
 }
 
 /* ---------- vista principal ---------- */
-export default function PaperView({ paper, content, focus }: { paper: Paper; content: any; focus?: string }) {
+export default function PaperView({ paper, content, focus, companion, onHideCompanion }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void }) {
   const art = useRef<HTMLElement>(null);
   const [pop, setPop] = useState<PopState>(null);
   const timer = useRef<any>(null);
   const [active, setActive] = useState<string>("");
+  const tracker = useRef(createTracker());
+  const [offer, setOffer] = useState<Offer | null>(null);
+  useEffect(() => { tracker.current.reset(); setOffer(null); }, [paper.arxivId, companion]);
 
   const att = content.attention?.paper === paper.arxivId ? content.attention : null;
   const model = useMemo(() => {
@@ -193,8 +198,25 @@ export default function PaperView({ paper, content, focus }: { paper: Paper; con
     clearTimeout(timer.current);
     if (!el) return;
     const key = el.dataset.pop || `y|${el.dataset.sym}`;
+    if (companion) signal(key);
     const show = () => setPop({ key, rect: el.getBoundingClientRect() });
     if (key.startsWith("s|")) timer.current = setTimeout(show, 380); else show();
+  };
+  // el compañero solo mira repeticiones de lo que el lector ya hace con el ratón; nada sale de esta pestaña
+  const signal = (key: string) => {
+    const [kind, a, b] = key.split("|");
+    const sk = kind === "y" ? `sym:${a}` : kind === "f" ? `fig:${a}` : kind === "t" ? `row:${a}:${b}` : "";
+    if (!sk) return;
+    const hit = tracker.current.track(sk);
+    if (!hit) return;
+    if (kind === "y" && att) {
+      const sy = att.symbols.find((q: any) => q.id === a);
+      setOffer({ key: hit, text: `Llevas un rato con «${sy.name}». ¿Te llevo a donde el paper lo define?`, accept: "Sí, llévame", onAccept: () => goTo(sy.def.anchor.blockId) });
+    } else if (kind === "f") {
+      setOffer({ key: hit, text: `Has vuelto varias veces a la ${model.xref[a]}. ¿Te llevo a ella?`, accept: "Sí, llévame", onAccept: () => document.getElementById(a)?.scrollIntoView({ behavior: "smooth", block: "center" }) });
+    } else if (kind === "t") {
+      setOffer({ key: hit, text: "Estás recorriendo esta tabla. ¿Te llevo a su leyenda, que explica qué mide?", accept: "Sí, llévame", onAccept: () => document.querySelector(`[data-tab="${a}"] figcaption`)?.scrollIntoView({ behavior: "smooth", block: "center" }) });
+    }
   };
   const onOut = () => { clearTimeout(timer.current); setPop(null); };
   const onClick = (e: React.MouseEvent) => {
@@ -292,6 +314,7 @@ export default function PaperView({ paper, content, focus }: { paper: Paper; con
         </footer>
       </article>
       {pop && <Popover pop={pop} paper={paper} model={model} content={content} />}
+      {companion && <Companion offer={offer} onAnswer={() => setOffer(null)} onHide={() => onHideCompanion?.()} />}
     </div>
   );
 }
