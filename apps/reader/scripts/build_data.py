@@ -282,6 +282,34 @@ def author_notes(src: Path, main_tex: str) -> list:
     return out
 
 
+def flatten_and_number(src: Path, main_tex: str, out: str = "_flat.tex") -> str:
+    """Aplana \\input y numera las ecuaciones `equation` (pandoc pierde el número). Devuelve el .tex aplanado.
+    Si el paper reinicia la numeración por sección (numberwithin/counterwithin) no se numera: sería falso."""
+    def exists(name):
+        return (src / name).exists() or (src / (name + ".tex")).exists()
+
+    def rd(name):
+        f = src / name if (src / name).exists() else src / (name + ".tex")
+        t = f.read_text(errors="replace")
+        t = re.sub(r"(?m)(?<!\\)%.*$", "", t)
+        return re.sub(r"\\input\{([^}]+)\}", lambda m: rd(m.group(1)) if exists(m.group(1)) else m.group(0), t)
+
+    t = rd(main_tex)
+    if not re.search(r"\\(numberwithin|counterwithin)\{equation\}", t):
+        n = [0]
+
+        def tag(m):
+            body = m.group(1)
+            if re.search(r"\\(nonumber|notag|tag)\b", body):
+                return m.group(0)
+            n[0] += 1
+            return "\\begin{equation}\\tag{%d}%s\\end{equation}" % (n[0], body)
+
+        t = re.sub(r"\\begin\{equation\}(.*?)\\end\{equation\}", tag, t, flags=re.S)
+    (src / out).write_text(t)
+    return out
+
+
 def add_sentences(bl):
     for b in bl:
         if b["kind"] == "p":
@@ -303,6 +331,7 @@ def build_full_paper(arxiv_id: str, main_tex: str, skip_first_div=True) -> dict:
         t2 = re.sub(r"\\(begin|end)\{(figure|table)\*\}", r"\\\1{\2}", t_)
         if t2 != t_:
             tf_.write_text(t2)
+    main_tex = flatten_and_number(src, main_tex)
     ast_path = CACHE / f"{arxiv_id}.pandoc.json"
     res = subprocess.run(
         ["pandoc", main_tex, "-f", "latex", "-t", "json", "-o", str(ast_path)],
