@@ -1,0 +1,26 @@
+name: reader
+on:
+  push:
+    paths: ["apps/reader/**", ".github/workflows/reader.yml"]
+  pull_request:
+    paths: ["apps/reader/**", ".github/workflows/reader.yml"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults: { run: { working-directory: apps/reader } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: apps/reader/package-lock.json }
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq pandoc poppler-utils
+      - run: npm ci
+      - run: npm i --no-save playwright && npx playwright install --with-deps chromium
+      - name: Caché de descargas de arXiv (no se commitean datos)
+        uses: actions/cache@v4
+        with: { path: apps/reader/.cache, key: arxiv-${{ hashFiles('apps/reader/content/papers.json') }} }
+      - run: npm run data
+      - run: npm run test:unit
+      - run: npm run verify
+      - run: npm run build
+      - run: npm run test:e2e
