@@ -167,3 +167,19 @@ test("compañero: aceptar lleva a la definición; alternar personaje; se oculta 
   await p.click(".c-avatar"); await p.waitForTimeout(200); assert.equal(await p.$(".companion"), null);
   await p.close();
 });
+
+test("gráficas vivas: la Tabla 2 de Attention se ve como barras con los números del paper", async () => {
+  const p = await page("#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".paper");
+  const toggles = await p.$$(".tchart-toggle"); assert.ok(toggles.length >= 1, "al menos una tabla numérica es graficable");
+  const fig = (await p.$$(".table-fig"))[1]; await fig.evaluate((e) => e.scrollIntoView({ block: "center" }));
+  await (await fig.$(".tchart-toggle")).click(); await p.waitForSelector(".tchart .tbar-row");
+  assert.match(await p.$eval(".tchart .chips", (e) => e.textContent), /sin cambiar/);
+  const rows = await p.$$eval(".tchart .tbar-row", (n) => n.map((e) => [e.dataset.rowLabel, e.querySelector(".tb-val").textContent.trim()]));
+  assert.ok(rows.length >= 6); assert.ok(rows.some(([l, v]) => /ByteNet/.test(l) && v === "23.75"), "ByteNet 23.75, tal cual la tabla");
+  await p.selectOption(".tchart select", "desc"); await p.waitForTimeout(300);
+  const first = await p.$eval(".tchart .tbar-row .tb-val", (e) => parseFloat(e.textContent)); const all = await p.$$eval(".tchart .tb-val", (n) => n.map((e) => parseFloat(e.textContent)));
+  assert.equal(first, Math.max(...all), "orden de mayor a menor");
+  await p.click(".tchart .pills button >> nth=1"); await p.waitForTimeout(300); assert.ok((await p.$$(".tchart .tbar-row")).length >= 3);
+  await (await p.$(".tchart .tbar-row")).hover(); await p.waitForTimeout(200); assert.ok(await p.$("tr.row-on"), "la fila de la tabla se resalta");
+  assert.deepEqual(p.errs, []); await p.close();
+});
