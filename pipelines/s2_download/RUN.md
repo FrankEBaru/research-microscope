@@ -13,3 +13,5 @@ modal run --detach pipelines/s2_download/app.py::main --datasets embeddings-spec
 ```
 
 One line per shard, then `total in_mb out_mb rows container_s`. Run papers, then `build_cs_ids`, then embeddings.
+
+The burst index, search, and citation-recall commands are in [`../index_build/RUN.md`](../index_build/RUN.md).
