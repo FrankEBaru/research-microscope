@@ -461,6 +461,7 @@ def _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish=None):
     lock = threading.Lock()
     state = {"best": None, "route": None, "pdf_path": pdf_path, "published": False, "eprint_pdf": None}
     eprint_dl = threading.Event()
+    eprint_done = threading.Event()
     pdf_dl = threading.Event()
 
     def note_download(row):
@@ -555,6 +556,7 @@ def _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish=None):
                     meta["reason"] = meta.get("reason") or f"e-print failed: {err}"
         finally:
             eprint_dl.set()
+            eprint_done.set()
 
     def pdf_worker():
         try:
@@ -578,6 +580,13 @@ def _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish=None):
             pdf_dl.set()
             if not pdf_path.is_file() or pdf_path.stat().st_size < 8:
                 return
+            # OCR only when the e-print gave no LaTeX parse. QA 2026-10-29: running MinerU on
+            # every arXiv paper "for the race" cost GPU minutes and held papers in `figures`.
+            eprint_done.wait()
+            with lock:
+                best = state["best"]
+            if best is not None and best.get("source") == "latex":
+                return
             why = f"pdf {meta.get('pdf_source') or 'fetched'}"
             route, paper, _path = _ocr_route(
                 folder, info, meta, pdf_path, ocr, why, publish, announce=False,
@@ -595,6 +604,7 @@ def _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish=None):
         workers.append(threading.Thread(target=eprint_worker, name="rrm-eprint", daemon=True))
     else:
         eprint_dl.set()
+        eprint_done.set()
     if arxiv or oa:
         workers.append(threading.Thread(target=pdf_worker, name="rrm-pdf", daemon=True))
     else:

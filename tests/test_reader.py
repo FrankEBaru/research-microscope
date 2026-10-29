@@ -804,12 +804,20 @@ def test_latex_upgrades_ocr_and_never_downgrades(tmp_path, monkeypatch):
             "chunks": [{"start": 0, "end": 1, "seconds": 0.05, "engine": "vllm", "ok": True}],
         }
 
-    route, paper, published = run(slow_eprint, quick_ocr)
+    ocr_calls = []
+
+    def counted_ocr(path, work):
+        ocr_calls.append(path)
+        return quick_ocr(path, work)
+
+    # A slow LaTeX e-print still wins, and MinerU does not run (no GPU spend on LaTeX papers).
+    route, paper, published = run(slow_eprint, counted_ocr)
     assert route == "latex" and paper["source"] == "latex"
-    assert paper["upgraded_from"] == "ocr"
-    assert published[0][1] == "ocr"
-    assert any(src == "latex" and up == "ocr" for _stage, src, up in published)
-    assert "ocr" in (paper.get("upgraded_from"),)
+    assert ocr_calls == []
+    assert all(src != "ocr" for _stage, src, _up in published)
+
+    up = pipeline.prefer_parsed({"source": "ocr", "blocks": [2]}, {"source": "latex", "blocks": [1]}, published=True)
+    assert up["source"] == "latex" and up["upgraded_from"] == "ocr"
 
     kept = pipeline.prefer_parsed({"source": "latex", "blocks": [1]}, {"source": "ocr", "blocks": [2]}, published=True)
     assert kept["source"] == "latex" and "upgraded_from" not in kept
@@ -878,3 +886,10 @@ def test_s2_key_header_and_stub_skips_retry(monkeypatch, tmp_path):
     fetch.S2_LIMIT.next = 0
     fetch.s2_batch([7])
     assert calls and calls[0].get_header("X-api-key") is None
+
+
+def test_authors_drop_affiliation_lines_and_split_ampersand():
+    from rrm.reader.latex import extract_authors
+    assert extract_authors(r"\author{Jonathan Ho \\ UC Berkeley \And Ajay Jain \\ UC Berkeley}") == ["Jonathan Ho", "Ajay Jain"]
+    assert extract_authors(r"\author{Jiaming Song, Chenlin Meng \& Stefano Ermon \\ Stanford University}") == [
+        "Jiaming Song", "Chenlin Meng", "Stefano Ermon"]

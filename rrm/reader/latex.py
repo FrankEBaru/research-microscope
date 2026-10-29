@@ -718,6 +718,7 @@ _AFFIL = (
     "university", "universit", "dept", "department", "google", "deepmind", "institute", "openai",
     "mit", "laboratory", "lab", "college", "school", "inc", "equal contribution", "work done",
     "work performed", "correspondence", "research", "microsoft", "nvidia", "meta", "stanford",
+    "uc", "berkeley", "facebook", "corp", "ltd", "gmbh",
 )
 
 
@@ -799,6 +800,7 @@ def _authors(raw: str) -> list:
     for src, dst in _ACCENTS:
         text = text.replace(src, dst)
     text = re.sub(r"\\(?:And|AND|and)\b", "\n", text)
+    text = re.sub(r"\\&|(?<=\s)&(?=\s)", "\n", text)  # "Chenlin Meng \& Stefano Ermon"
     text = text.replace("\\\\", "\n")
     text = re.sub(r"\\[A-Za-z@]+\*?(?:\[[^\]]*\])?(?:\{[^{}]*\})?", " ", text)
     text = re.sub(r"\S+@\S+", " ", text)
