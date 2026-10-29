@@ -1,0 +1,2888 @@
+{
+ "release": "2026-10-20",
+ "n_queries": 11,
+ "graph_nodes": 39737200,
+ "graph_edges": 307328461,
+ "faiss_ntotal": 8802241,
+ "load_s": 22.191,
+ "elapsed_s": 52.866,
+ "cost_estimate_usd": 0.0051,
+ "note": "Compact summary of rrm20_results.json (full 1 MB dump kept on the box, not committed). Run 2026-10-29 ~3:50 PM CDMX on Modal CPU.",
+ "queries": [
+  {
+   "query": "diffusion models",
+   "resolved_title": null,
+   "top_score_share": 0.07388,
+   "reconstruct_l2_mae": 142.861338,
+   "neighbors_top5": [
+    {
+     "rank": 0,
+     "title": "Examining Diffusion in the Real World",
+     "year": 2015,
+     "dist": 141.55,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 1,
+     "title": "Real-world diffusion dynamics based on point process approaches: a review",
+     "year": 2017,
+     "dist": 144.27,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 2,
+     "title": "Network models of the diffusion of innovations",
+     "year": 1995,
+     "dist": 144.68,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 3,
+     "title": "A Multidisciplinary Survey of Social Network Diffusion Models",
+     "year": 2015,
+     "dist": 145.71,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 4,
+     "title": "The Principles of Diffusion Models",
+     "year": 2025,
+     "dist": 146.68,
+     "embed_cluster": 1
+    }
+   ],
+   "neighbor_token_counts": {
+    "diffusion": 61,
+    "denois": 1,
+    "generative": 1,
+    "influence": 12,
+    "graph": 1,
+    "attention": 1,
+    "forecast": 3
+   },
+   "neighbor_year": {
+    "n": 100,
+    "median": 2016,
+    "min": 1973,
+    "max": 2026,
+    "before_2018": 57,
+    "from_2020": 40
+   },
+   "embed_clusters": {
+    "k": 2,
+    "silhouette": 0.117617,
+    "groups": [
+     {
+      "size": 82,
+      "weight": 28.32,
+      "exemplars": [
+       "Examining Diffusion in the Real World",
+       "Real-world diffusion dynamics based on point process approaches: a review",
+       "Network models of the diffusion of innovations"
+      ],
+      "winners": [
+       {
+        "title": "Maximizing the spread of influence through a social network",
+        "weight_coverage": 0.280147
+       },
+       {
+        "title": "Uncovering the Temporal Dynamics of Diffusion Networks",
+        "weight_coverage": 0.182772
+       }
+      ]
+     },
+     {
+      "size": 18,
+      "weight": 7.94,
+      "exemplars": [
+       "The Principles of Diffusion Models",
+       "Non-Denoising Forward-Time Diffusions",
+       "Teach Diffusion Language Models to Learn from Their Own Mistakes"
+      ],
+      "winners": [
+       {
+        "title": "Denoising Diffusion Probabilistic Models",
+        "weight_coverage": 0.65389
+       },
+       {
+        "title": "Score-Based Generative Modeling through Stochastic Differential Equations",
+        "weight_coverage": 0.494135
+       }
+      ]
+     }
+    ]
+   },
+   "cite_clusters": {
+    "k": 5,
+    "silhouette": 0.004496,
+    "sizes": [
+     96,
+     1,
+     1,
+     1,
+     1
+    ]
+   },
+   "top10": [
+    {
+     "rank": 1,
+     "corpusid": 7214363,
+     "title": "Maximizing the spread of influence through a social network",
+     "score": 7.934,
+     "vote_sum": 7.934,
+     "neighbor_bonus": 0.0,
+     "n_voters": 19,
+     "in_degree": 8035,
+     "is_neighbor": false
+    },
+    {
+     "rank": 2,
+     "corpusid": 12901792,
+     "title": "Uncovering the Temporal Dynamics of Diffusion Networks",
+     "score": 5.393,
+     "vote_sum": 5.176,
+     "neighbor_bonus": 0.217,
+     "n_voters": 13,
+     "in_degree": 547,
+     "is_neighbor": true
+    },
+    {
+     "rank": 3,
+     "corpusid": 219955663,
+     "title": "Denoising Diffusion Probabilistic Models",
+     "score": 5.19,
+     "vote_sum": 5.19,
+     "neighbor_bonus": 0.0,
+     "n_voters": 12,
+     "in_degree": 31190,
+     "is_neighbor": false
+    },
+    {
+     "rank": 4,
+     "corpusid": 3034643,
+     "title": "Collective dynamics of ‘small-world’ networks",
+     "score": 4.74,
+     "vote_sum": 4.74,
+     "neighbor_bonus": 0.0,
+     "n_voters": 13,
+     "in_degree": 26742,
+     "is_neighbor": false
+    },
+    {
+     "rank": 5,
+     "corpusid": 2327990,
+     "title": "Inferring networks of diffusion and influence",
+     "score": 4.699,
+     "vote_sum": 4.699,
+     "neighbor_bonus": 0.0,
+     "n_voters": 11,
+     "in_degree": 1003,
+     "is_neighbor": false
+    },
+    {
+     "rank": 6,
+     "corpusid": 18616882,
+     "title": "A New Product Growth for Model Consumer Durables",
+     "score": 4.621,
+     "vote_sum": 4.621,
+     "neighbor_bonus": 0.0,
+     "n_voters": 12,
+     "in_degree": 2807,
+     "is_neighbor": false
+    },
+    {
+     "rank": 7,
+     "corpusid": 204933234,
+     "title": "The dynamics of viral marketing",
+     "score": 4.216,
+     "vote_sum": 4.216,
+     "neighbor_bonus": 0.0,
+     "n_voters": 11,
+     "in_degree": 1957,
+     "is_neighbor": false
+    },
+    {
+     "rank": 8,
+     "corpusid": 524106,
+     "title": "Emergence of Scaling in Random Networks",
+     "score": 4.143,
+     "vote_sum": 4.143,
+     "neighbor_bonus": 0.0,
+     "n_voters": 14,
+     "in_degree": 21948,
+     "is_neighbor": false
+    },
+    {
+     "rank": 9,
+     "corpusid": 9544021,
+     "title": "Influentials, Networks, and Public Opinion Formation",
+     "score": 4.14,
+     "vote_sum": 4.14,
+     "neighbor_bonus": 0.0,
+     "n_voters": 11,
+     "in_degree": 1105,
+     "is_neighbor": false
+    },
+    {
+     "rank": 10,
+     "corpusid": 49314397,
+     "title": "Threshold Models of Collective Behavior",
+     "score": 3.992,
+     "vote_sum": 3.992,
+     "neighbor_bonus": 0.0,
+     "n_voters": 9,
+     "in_degree": 2785,
+     "is_neighbor": false
+    }
+   ],
+   "score_check_abs": 0.0
+  },
+  {
+   "query": "graph neural networks",
+   "resolved_title": null,
+   "top_score_share": 0.069213,
+   "reconstruct_l2_mae": 132.310615,
+   "neighbors_top5": [
+    {
+     "rank": 0,
+     "title": "Graph Neural Networks: A Review of Methods and Applications",
+     "year": 2018,
+     "dist": 129.12,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 1,
+     "title": "Survey on Graph Neural Networks",
+     "year": 2024,
+     "dist": 129.98,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 2,
+     "title": "A Survey on Graph Neural Networks and its Applications in Various Domains",
+     "year": 2024,
+     "dist": 132.06,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 3,
+     "title": "Introduction to Graph Neural Networks for Machine Learning Engineers",
+     "year": 2024,
+     "dist": 133.16,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 4,
+     "title": "A survey on graph neural networks",
+     "year": 2023,
+     "dist": 135.2,
+     "embed_cluster": 0
+    }
+   ],
+   "neighbor_token_counts": {
+    "generative": 1,
+    "image": 1,
+    "graph": 93,
+    "transformer": 1,
+    "attention": 13
+   },
+   "neighbor_year": {
+    "n": 100,
+    "median": 2021,
+    "min": 2017,
+    "max": 2026,
+    "before_2018": 3,
+    "from_2020": 78
+   },
+   "embed_clusters": {
+    "k": 2,
+    "silhouette": 0.157979,
+    "groups": [
+     {
+      "size": 99,
+      "weight": 36.09,
+      "exemplars": [
+       "Graph Neural Networks: A Review of Methods and Applications",
+       "Survey on Graph Neural Networks",
+       "A Survey on Graph Neural Networks and its Applications in Various Domains"
+      ],
+      "winners": [
+       {
+        "title": "Semi-Supervised Classification with Graph Convolutional Networks",
+        "weight_coverage": 0.756615
+       },
+       {
+        "title": "Inductive Representation Learning on Large Graphs",
+        "weight_coverage": 0.640374
+       }
+      ]
+     },
+     {
+      "size": 1,
+      "weight": 0.17,
+      "exemplars": [
+       "Fast vertex-based graph convolutional neural network and its application to brain images"
+      ],
+      "winners": [
+       {
+        "title": "Geometric Deep Learning on Graphs and Manifolds Using Mixture Model CNNs",
+        "weight_coverage": 1.0
+       },
+       {
+        "title": "3D comparison of hippocampal atrophy in amnestic mild cognitive impairment and Alzheimer's disease.",
+        "weight_coverage": 1.0
+       }
+      ]
+     }
+    ]
+   },
+   "cite_clusters": {
+    "k": 5,
+    "silhouette": 0.042835,
+    "sizes": [
+     96,
+     1,
+     1,
+     1,
+     1
+    ]
+   },
+   "top10": [
+    {
+     "rank": 1,
+     "corpusid": 3144218,
+     "title": "Semi-Supervised Classification with Graph Convolutional Networks",
+     "score": 27.305,
+     "vote_sum": 27.305,
+     "neighbor_bonus": 0.0,
+     "n_voters": 73,
+     "in_degree": 32585,
+     "is_neighbor": false
+    },
+    {
+     "rank": 2,
+     "corpusid": 4755450,
+     "title": "Inductive Representation Learning on Large Graphs",
+     "score": 23.11,
+     "vote_sum": 23.11,
+     "neighbor_bonus": 0.0,
+     "n_voters": 61,
+     "in_degree": 18571,
+     "is_neighbor": false
+    },
+    {
+     "rank": 3,
+     "corpusid": 3292002,
+     "title": "Graph Attention Networks",
+     "score": 21.387,
+     "vote_sum": 21.187,
+     "neighbor_bonus": 0.2,
+     "n_voters": 61,
+     "in_degree": 24705,
+     "is_neighbor": true
+    },
+    {
+     "rank": 4,
+     "corpusid": 3016223,
+     "title": "Convolutional Neural Networks on Graphs with Fast Localized Spectral Filtering",
+     "score": 19.757,
+     "vote_sum": 19.757,
+     "neighbor_bonus": 0.0,
+     "n_voters": 51,
+     "in_degree": 7797,
+     "is_neighbor": false
+    },
+    {
+     "rank": 5,
+     "corpusid": 57375753,
+     "title": "A Comprehensive Survey on Graph Neural Networks",
+     "score": 17.636,
+     "vote_sum": 17.236,
+     "neighbor_bonus": 0.4,
+     "n_voters": 39,
+     "in_degree": 9578,
+     "is_neighbor": true
+    },
+    {
+     "rank": 6,
+     "corpusid": 206756462,
+     "title": "The Graph Neural Network Model",
+     "score": 16.901,
+     "vote_sum": 16.901,
+     "neighbor_bonus": 0.0,
+     "n_voters": 42,
+     "in_degree": 8107,
+     "is_neighbor": false
+    },
+    {
+     "rank": 7,
+     "corpusid": 17682909,
+     "title": "Spectral Networks and Locally Connected Networks on Graphs",
+     "score": 16.752,
+     "vote_sum": 16.752,
+     "neighbor_bonus": 0.0,
+     "n_voters": 40,
+     "in_degree": 4853,
+     "is_neighbor": false
+    },
+    {
+     "rank": 8,
+     "corpusid": 9665943,
+     "title": "Neural Message Passing for Quantum Chemistry",
+     "score": 16.158,
+     "vote_sum": 16.158,
+     "neighbor_bonus": 0.0,
+     "n_voters": 40,
+     "in_degree": 8377,
+     "is_neighbor": false
+    },
+    {
+     "rank": 9,
+     "corpusid": 52895589,
+     "title": "How Powerful are Graph Neural Networks?",
+     "score": 15.992,
+     "vote_sum": 15.992,
+     "neighbor_bonus": 0.0,
+     "n_voters": 40,
+     "in_degree": 9450,
+     "is_neighbor": false
+    },
+    {
+     "rank": 10,
+     "corpusid": 3051291,
+     "title": "DeepWalk: online learning of social representations",
+     "score": 12.76,
+     "vote_sum": 12.76,
+     "neighbor_bonus": 0.0,
+     "n_voters": 33,
+     "in_degree": 9855,
+     "is_neighbor": false
+    }
+   ],
+   "score_check_abs": 0.0
+  },
+  {
+   "query": "neural radiance fields",
+   "resolved_title": null,
+   "top_score_share": 0.058629,
+   "reconstruct_l2_mae": 150.51127,
+   "neighbors_top5": [
+    {
+     "rank": 0,
+     "title": "Neural Radiance Fields for the Real World: A Survey",
+     "year": 2025,
+     "dist": 148.96,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 1,
+     "title": "Baking Neural Radiance Fields for Real-Time View Synthesis",
+     "year": 2024,
+     "dist": 149.92,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 2,
+     "title": "Baking Neural Radiance Fields for Real-Time View Synthesis",
+     "year": 2021,
+     "dist": 150.36,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 3,
+     "title": "MS-NeRF: Multi-Space Neural Radiance Fields",
+     "year": 2023,
+     "dist": 152.51,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 4,
+     "title": "Neural Radiance Field-Based Visual Rendering: A Comprehensive Review",
+     "year": 2024,
+     "dist": 152.76,
+     "embed_cluster": 0
+    }
+   ],
+   "neighbor_token_counts": {
+    "denois": 1,
+    "generative": 1,
+    "image": 4,
+    "influence": 1,
+    "radiance": 91
+   },
+   "neighbor_year": {
+    "n": 100,
+    "median": 2023,
+    "min": 2020,
+    "max": 2026,
+    "before_2018": 0,
+    "from_2020": 100
+   },
+   "embed_clusters": {
+    "k": 2,
+    "silhouette": 0.20109,
+    "groups": [
+     {
+      "size": 97,
+      "weight": 35.19,
+      "exemplars": [
+       "Neural Radiance Fields for the Real World: A Survey",
+       "Baking Neural Radiance Fields for Real-Time View Synthesis",
+       "Baking Neural Radiance Fields for Real-Time View Synthesis"
+      ],
+      "winners": [
+       {
+        "title": "Instant neural graphics primitives with a multiresolution hash encoding",
+        "weight_coverage": 0.617273
+       },
+       {
+        "title": "NeRF in the Wild: Neural Radiance Fields for Unconstrained Photo Collections",
+        "weight_coverage": 0.516901
+       }
+      ]
+     },
+     {
+      "size": 3,
+      "weight": 1.06,
+      "exemplars": [
+       "Mixed Spiking NeRF: Towards a More Efficient Neural Radiance Fields",
+       "SaENeRF: Suppressing Artifacts in Event-based Neural Radiance Fields",
+       "Coherence Awareness in Diffractive Neural Networks"
+      ],
+      "winners": [
+       {
+        "title": "Representing Scenes as Neural Radiance Fields for View Synthesis",
+        "weight_coverage": 0.830743
+       },
+       {
+        "title": "Simple model of spiking neurons",
+        "weight_coverage": 0.447323
+       }
+      ]
+     }
+    ]
+   },
+   "cite_clusters": {
+    "k": 5,
+    "silhouette": 0.054397,
+    "sizes": [
+     96,
+     1,
+     1,
+     1,
+     1
+    ]
+   },
+   "top10": [
+    {
+     "rank": 1,
+     "corpusid": 246016186,
+     "title": "Instant neural graphics primitives with a multiresolution hash encoding",
+     "score": 22.131,
+     "vote_sum": 22.131,
+     "neighbor_bonus": 0.0,
+     "n_voters": 62,
+     "in_degree": 5632,
+     "is_neighbor": false
+    },
+    {
+     "rank": 2,
+     "corpusid": 232352655,
+     "title": "Mip-NeRF: A Multiscale Representation for Anti-Aliasing Neural Radiance Fields",
+     "score": 18.259,
+     "vote_sum": 18.259,
+     "neighbor_bonus": 0.0,
+     "n_voters": 45,
+     "in_degree": 2711,
+     "is_neighbor": false
+    },
+    {
+     "rank": 3,
+     "corpusid": 220968781,
+     "title": "NeRF in the Wild: Neural Radiance Fields for Unconstrained Photo Collections",
+     "score": 18.19,
+     "vote_sum": 18.19,
+     "neighbor_bonus": 0.0,
+     "n_voters": 47,
+     "in_degree": 1754,
+     "is_neighbor": false
+    },
+    {
+     "rank": 4,
+     "corpusid": 282134003,
+     "title": "Representing Scenes as Neural Radiance Fields for View Synthesis",
+     "score": 16.448,
+     "vote_sum": 16.448,
+     "neighbor_bonus": 0.0,
+     "n_voters": 50,
+     "in_degree": 6789,
+     "is_neighbor": false
+    },
+    {
+     "rank": 5,
+     "corpusid": 220686483,
+     "title": "Neural Sparse Voxel Fields",
+     "score": 16.329,
+     "vote_sum": 16.329,
+     "neighbor_bonus": 0.0,
+     "n_voters": 38,
+     "in_degree": 1400,
+     "is_neighbor": false
+    },
+    {
+     "rank": 6,
+     "corpusid": 232352425,
+     "title": "PlenOctrees for Real-time Rendering of Neural Radiance Fields",
+     "score": 16.155,
+     "vote_sum": 16.024,
+     "neighbor_bonus": 0.132,
+     "n_voters": 41,
+     "in_degree": 1238,
+     "is_neighbor": true
+    },
+    {
+     "rank": 7,
+     "corpusid": 260545139,
+     "title": "Local light field fusion",
+     "score": 15.355,
+     "vote_sum": 15.355,
+     "neighbor_bonus": 0.0,
+     "n_voters": 36,
+     "in_degree": 1170,
+     "is_neighbor": false
+    },
+    {
+     "rank": 8,
+     "corpusid": 4766599,
+     "title": "The Unreasonable Effectiveness of Deep Features as a Perceptual Metric",
+     "score": 15.337,
+     "vote_sum": 15.337,
+     "neighbor_bonus": 0.0,
+     "n_voters": 39,
+     "in_degree": 18544,
+     "is_neighbor": false
+    },
+    {
+     "rank": 9,
+     "corpusid": 245006364,
+     "title": "Plenoxels: Radiance Fields without Neural Networks",
+     "score": 14.62,
+     "vote_sum": 14.62,
+     "neighbor_bonus": 0.0,
+     "n_voters": 41,
+     "in_degree": 2184,
+     "is_neighbor": false
+    },
+    {
+     "rank": 10,
+     "corpusid": 232352619,
+     "title": "KiloNeRF: Speeding up Neural Radiance Fields with Thousands of Tiny MLPs",
+     "score": 14.479,
+     "vote_sum": 14.479,
+     "neighbor_bonus": 0.0,
+     "n_voters": 39,
+     "in_degree": 929,
+     "is_neighbor": false
+    }
+   ],
+   "score_check_abs": 0.0
+  },
+  {
+   "query": "transformers for time series forecasting",
+   "resolved_title": null,
+   "top_score_share": 0.09927,
+   "reconstruct_l2_mae": 186.599284,
+   "neighbors_top5": [
+    {
+     "rank": 0,
+     "title": "Applying transformers to short-term node price forecasting in power systems",
+     "year": 2025,
+     "dist": 181.97,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 1,
+     "title": "A Benchmark for Electrical Load Forecasting Across Grid Levels: Time-Series Transformers Outperform Established Methods",
+     "year": 2026,
+     "dist": 184.77,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 2,
+     "title": "Transformer training strategies for forecasting multiple load time series",
+     "year": 2023,
+     "dist": 189.7,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 3,
+     "title": "Short-Term Electricity Load Forecasting Using the Temporal Fusion Transformer: Effect of Grid Hierarchies and Data Sources",
+     "year": 2023,
+     "dist": 190.1,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 4,
+     "title": "Just in Time Transformers",
+     "year": 2024,
+     "dist": 191.43,
+     "embed_cluster": 0
+    }
+   ],
+   "neighbor_token_counts": {
+    "generative": 1,
+    "graph": 1,
+    "transformer": 77,
+    "attention": 5,
+    "forecast": 60,
+    "lstm": 9
+   },
+   "neighbor_year": {
+    "n": 100,
+    "median": 2024,
+    "min": 1977,
+    "max": 2026,
+    "before_2018": 9,
+    "from_2020": 85
+   },
+   "embed_clusters": {
+    "k": 2,
+    "silhouette": 0.191022,
+    "groups": [
+     {
+      "size": 79,
+      "weight": 30.18,
+      "exemplars": [
+       "Applying transformers to short-term node price forecasting in power systems",
+       "A Benchmark for Electrical Load Forecasting Across Grid Levels: Time-Series Transformers Outperform Established Methods",
+       "Transformer training strategies for forecasting multiple load time series"
+      ],
+      "winners": [
+       {
+        "title": "Attention is All you Need",
+        "weight_coverage": 0.470595
+       },
+       {
+        "title": "Informer: Beyond Efficient Transformer for Long Sequence Time-Series Forecasting",
+        "weight_coverage": 0.41717
+       }
+      ]
+     },
+     {
+      "size": 21,
+      "weight": 6.07,
+      "exemplars": [
+       "Predictive Analytics Usage for Power Transformer Operating Costs Optimization",
+       "Transformer performance assessment",
+       "Prognostics & health management methods & tools for transformer condition monitoring in smart grids"
+      ],
+      "winners": [
+       {
+        "title": "An Updated Model to Determine the Life Remaining of Transformer Insulation",
+        "weight_coverage": 0.148617
+       },
+       {
+        "title": "IEEE Guide for Loading Mineral- Oil-Immersed Transformers and Step-Voltage Regulators",
+        "weight_coverage": 0.138531
+       }
+      ]
+     }
+    ]
+   },
+   "cite_clusters": {
+    "k": 5,
+    "silhouette": 0.011191,
+    "sizes": [
+     96,
+     1,
+     1,
+     1,
+     1
+    ]
+   },
+   "top10": [
+    {
+     "rank": 1,
+     "corpusid": 13756489,
+     "title": "Attention is All you Need",
+     "score": 14.204,
+     "vote_sum": 14.204,
+     "neighbor_bonus": 0.0,
+     "n_voters": 35,
+     "in_degree": 156957,
+     "is_neighbor": false
+    },
+    {
+     "rank": 2,
+     "corpusid": 229156802,
+     "title": "Informer: Beyond Efficient Transformer for Long Sequence Time-Series Forecasting",
+     "score": 12.591,
+     "vote_sum": 12.591,
+     "neighbor_bonus": 0.0,
+     "n_voters": 33,
+     "in_degree": 5617,
+     "is_neighbor": false
+    },
+    {
+     "rank": 3,
+     "corpusid": 235623791,
+     "title": "Autoformer: Decomposition Transformers with Auto-Correlation for Long-Term Series Forecasting",
+     "score": 10.179,
+     "vote_sum": 10.179,
+     "neighbor_bonus": 0.0,
+     "n_voters": 28,
+     "in_degree": 3974,
+     "is_neighbor": false
+    },
+    {
+     "rank": 4,
+     "corpusid": 254044221,
+     "title": "A Time Series is Worth 64 Words: Long-term Forecasting with Transformers",
+     "score": 8.723,
+     "vote_sum": 8.723,
+     "neighbor_bonus": 0.0,
+     "n_voters": 24,
+     "in_degree": 3656,
+     "is_neighbor": false
+    },
+    {
+     "rank": 5,
+     "corpusid": 1915014,
+     "title": "Long Short-Term Memory",
+     "score": 8.507,
+     "vote_sum": 8.507,
+     "neighbor_bonus": 0.0,
+     "n_voters": 21,
+     "in_degree": 78549,
+     "is_neighbor": false
+    },
+    {
+     "rank": 6,
+     "corpusid": 246430171,
+     "title": "FEDformer: Frequency Enhanced Decomposed Transformer for Long-term Series Forecasting",
+     "score": 7.324,
+     "vote_sum": 7.324,
+     "neighbor_bonus": 0.0,
+     "n_voters": 19,
+     "in_degree": 2795,
+     "is_neighbor": false
+    },
+    {
+     "rank": 7,
+     "corpusid": 209414891,
+     "title": "Temporal Fusion Transformers for Interpretable Multi-horizon Time Series Forecasting",
+     "score": 6.329,
+     "vote_sum": 6.329,
+     "neighbor_bonus": 0.0,
+     "n_voters": 16,
+     "in_degree": 1792,
+     "is_neighbor": false
+    },
+    {
+     "rank": 8,
+     "corpusid": 249097444,
+     "title": "Are Transformers Effective for Time Series Forecasting?",
+     "score": 5.933,
+     "vote_sum": 5.816,
+     "neighbor_bonus": 0.118,
+     "n_voters": 16,
+     "in_degree": 3271,
+     "is_neighbor": true
+    },
+    {
+     "rank": 9,
+     "corpusid": 52967399,
+     "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+     "score": 5.216,
+     "vote_sum": 5.216,
+     "neighbor_bonus": 0.0,
+     "n_voters": 13,
+     "in_degree": 100295,
+     "is_neighbor": false
+    },
+    {
+     "rank": 10,
+     "corpusid": 210861210,
+     "title": "Deep Transformer Models for Time Series Forecasting: The Influenza Prevalence Case",
+     "score": 4.849,
+     "vote_sum": 4.849,
+     "neighbor_bonus": 0.0,
+     "n_voters": 7,
+     "in_degree": 383,
+     "is_neighbor": false
+    }
+   ],
+   "score_check_abs": 0.0
+  },
+  {
+   "query": "denoising diffusion probabilistic models",
+   "resolved_title": "Denoising Diffusion Probabilistic Models",
+   "top_score_share": 0.086843,
+   "reconstruct_l2_mae": 145.826,
+   "neighbors_top5": [
+    {
+     "rank": 0,
+     "title": "Computationally Efficient Diffusion Models in Medical Imaging: A Comprehensive Review",
+     "year": 2025,
+     "dist": 140.8,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 1,
+     "title": "Structured Denoising Diffusion Models in Discrete State-Spaces",
+     "year": 2021,
+     "dist": 143.9,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 2,
+     "title": "Bilateral Denoising Diffusion Models",
+     "year": 2021,
+     "dist": 146.12,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 3,
+     "title": "Diffusion Models in Vision: A Survey",
+     "year": 2022,
+     "dist": 146.83,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 4,
+     "title": "Denoising Diffusion Probabilistic Models",
+     "year": 2020,
+     "dist": 147.82,
+     "embed_cluster": 0
+    }
+   ],
+   "neighbor_token_counts": {
+    "diffusion": 91,
+    "denois": 34,
+    "score": 2,
+    "generative": 10,
+    "image": 8,
+    "graph": 1,
+    "forecast": 3
+   },
+   "neighbor_year": {
+    "n": 100,
+    "median": 2023,
+    "min": 2009,
+    "max": 2026,
+    "before_2018": 1,
+    "from_2020": 98
+   },
+   "embed_clusters": {
+    "k": 2,
+    "silhouette": 0.167202,
+    "groups": [
+     {
+      "size": 99,
+      "weight": 36.04,
+      "exemplars": [
+       "Computationally Efficient Diffusion Models in Medical Imaging: A Comprehensive Review",
+       "Structured Denoising Diffusion Models in Discrete State-Spaces",
+       "Bilateral Denoising Diffusion Models"
+      ],
+      "winners": [
+       {
+        "title": "Denoising Diffusion Probabilistic Models",
+        "weight_coverage": 0.867622
+       },
+       {
+        "title": "Score-Based Generative Modeling through Stochastic Differential Equations",
+        "weight_coverage": 0.778779
+       }
+      ]
+     },
+     {
+      "size": 1,
+      "weight": 0.22,
+      "exemplars": [
+       "Deep Structured Mixtures of Gaussian Processes"
+      ],
+      "winners": [
+       {
+        "title": "A differential approach to inference in Bayesian networks",
+        "weight_coverage": 1.0
+       },
+       {
+        "title": "On the Relationship between Sum-Product Networks and Bayesian Networks",
+        "weight_coverage": 1.0
+       }
+      ]
+     }
+    ]
+   },
+   "cite_clusters": {
+    "k": 5,
+    "silhouette": 0.0574,
+    "sizes": [
+     96,
+     1,
+     1,
+     1,
+     1
+    ]
+   },
+   "top10": [
+    {
+     "rank": 1,
+     "corpusid": 219955663,
+     "title": "Denoising Diffusion Probabilistic Models",
+     "score": 31.684,
+     "vote_sum": 31.268,
+     "neighbor_bonus": 0.417,
+     "n_voters": 86,
+     "in_degree": 31190,
+     "is_neighbor": true
+    },
+    {
+     "rank": 2,
+     "corpusid": 227209335,
+     "title": "Score-Based Generative Modeling through Stochastic Differential Equations",
+     "score": 28.066,
+     "vote_sum": 28.066,
+     "neighbor_bonus": 0.0,
+     "n_voters": 78,
+     "in_degree": 11470,
+     "is_neighbor": false
+    },
+    {
+     "rank": 3,
+     "corpusid": 14888175,
+     "title": "Deep Unsupervised Learning using Nonequilibrium Thermodynamics",
+     "score": 26.369,
+     "vote_sum": 26.369,
+     "neighbor_bonus": 0.0,
+     "n_voters": 72,
+     "in_degree": 9767,
+     "is_neighbor": false
+    },
+    {
+     "rank": 4,
+     "corpusid": 222140788,
+     "title": "Denoising Diffusion Implicit Models",
+     "score": 21.676,
+     "vote_sum": 21.463,
+     "neighbor_bonus": 0.213,
+     "n_voters": 60,
+     "in_degree": 12708,
+     "is_neighbor": true
+    },
+    {
+     "rank": 5,
+     "corpusid": 234357997,
+     "title": "Diffusion Models Beat GANs on Image Synthesis",
+     "score": 21.629,
+     "vote_sum": 21.629,
+     "neighbor_bonus": 0.0,
+     "n_voters": 61,
+     "in_degree": 11712,
+     "is_neighbor": false
+    },
+    {
+     "rank": 6,
+     "corpusid": 196470871,
+     "title": "Generative Modeling by Estimating Gradients of the Data Distribution",
+     "score": 19.638,
+     "vote_sum": 19.638,
+     "neighbor_bonus": 0.0,
+     "n_voters": 55,
+     "in_degree": 5510,
+     "is_neighbor": false
+    },
+    {
+     "rank": 7,
+     "corpusid": 245335280,
+     "title": "High-Resolution Image Synthesis with Latent Diffusion Models",
+     "score": 17.815,
+     "vote_sum": 17.815,
+     "neighbor_bonus": 0.0,
+     "n_voters": 50,
+     "in_degree": 25228,
+     "is_neighbor": false
+    },
+    {
+     "rank": 8,
+     "corpusid": 231979499,
+     "title": "Improved Denoising Diffusion Probabilistic Models",
+     "score": 16.288,
+     "vote_sum": 16.288,
+     "neighbor_bonus": 0.0,
+     "n_voters": 42,
+     "in_degree": 5292,
+     "is_neighbor": false
+    },
+    {
+     "rank": 9,
+     "corpusid": 326772,
+     "title": "GANs Trained by a Two Time-Scale Update Rule Converge to a Local Nash Equilibrium",
+     "score": 13.286,
+     "vote_sum": 13.286,
+     "neighbor_bonus": 0.0,
+     "n_voters": 38,
+     "in_degree": 17948,
+     "is_neighbor": false
+    },
+    {
+     "rank": 10,
+     "corpusid": 5560643,
+     "title": "A Connection Between Score Matching and Denoising Autoencoders",
+     "score": 12.685,
+     "vote_sum": 12.685,
+     "neighbor_bonus": 0.0,
+     "n_voters": 32,
+     "in_degree": 2183,
+     "is_neighbor": false
+    }
+   ],
+   "score_check_abs": 0.0
+  },
+  {
+   "query": "diffusion models image generation",
+   "resolved_title": null,
+   "top_score_share": 0.078547,
+   "reconstruct_l2_mae": 128.38466,
+   "neighbors_top5": [
+    {
+     "rank": 0,
+     "title": "SIGGRAPH 2023 Course on Diffusion Models",
+     "year": 2023,
+     "dist": 129.64,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 1,
+     "title": "Diffusion models for Handwriting Generation",
+     "year": 2020,
+     "dist": 129.98,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 2,
+     "title": "Synthetic data generation by diffusion models",
+     "year": 2024,
+     "dist": 131.42,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 3,
+     "title": "Compositional Visual Generation with Composable Diffusion Models",
+     "year": 2022,
+     "dist": 133.47,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 4,
+     "title": "Spatiotemporal diffusion model for satellite imagery",
+     "year": 2025,
+     "dist": 133.67,
+     "embed_cluster": 1
+    }
+   ],
+   "neighbor_token_counts": {
+    "diffusion": 86,
+    "generative": 6,
+    "image": 44,
+    "graph": 3,
+    "attention": 2
+   },
+   "neighbor_year": {
+    "n": 100,
+    "median": 2024,
+    "min": 2020,
+    "max": 2026,
+    "before_2018": 0,
+    "from_2020": 100
+   },
+   "embed_clusters": {
+    "k": 2,
+    "silhouette": 0.07434,
+    "groups": [
+     {
+      "size": 75,
+      "weight": 26.77,
+      "exemplars": [
+       "SIGGRAPH 2023 Course on Diffusion Models",
+       "Diffusion models for Handwriting Generation",
+       "Synthetic data generation by diffusion models"
+      ],
+      "winners": [
+       {
+        "title": "High-Resolution Image Synthesis with Latent Diffusion Models",
+        "weight_coverage": 0.698954
+       },
+       {
+        "title": "Denoising Diffusion Probabilistic Models",
+        "weight_coverage": 0.598075
+       }
+      ]
+     },
+     {
+      "size": 25,
+      "weight": 9.48,
+      "exemplars": [
+       "Spatiotemporal diffusion model for satellite imagery",
+       "Pixel-wise RL on Diffusion Models: Reinforcement Learning from Rich Feedback",
+       "Fixed Point Diffusion Models"
+      ],
+      "winners": [
+       {
+        "title": "Denoising Diffusion Probabilistic Models",
+        "weight_coverage": 0.88109
+       },
+       {
+        "title": "High-Resolution Image Synthesis with Latent Diffusion Models",
+        "weight_coverage": 0.815895
+       }
+      ]
+     }
+    ]
+   },
+   "cite_clusters": {
+    "k": 5,
+    "silhouette": 0.04672,
+    "sizes": [
+     96,
+     1,
+     1,
+     1,
+     1
+    ]
+   },
+   "top10": [
+    {
+     "rank": 1,
+     "corpusid": 245335280,
+     "title": "High-Resolution Image Synthesis with Latent Diffusion Models",
+     "score": 26.45,
+     "vote_sum": 26.45,
+     "neighbor_bonus": 0.0,
+     "n_voters": 75,
+     "in_degree": 25228,
+     "is_neighbor": false
+    },
+    {
+     "rank": 2,
+     "corpusid": 219955663,
+     "title": "Denoising Diffusion Probabilistic Models",
+     "score": 24.367,
+     "vote_sum": 24.367,
+     "neighbor_bonus": 0.0,
+     "n_voters": 70,
+     "in_degree": 31190,
+     "is_neighbor": false
+    },
+    {
+     "rank": 3,
+     "corpusid": 234357997,
+     "title": "Diffusion Models Beat GANs on Image Synthesis",
+     "score": 17.306,
+     "vote_sum": 17.306,
+     "neighbor_bonus": 0.0,
+     "n_voters": 49,
+     "in_degree": 11712,
+     "is_neighbor": false
+    },
+    {
+     "rank": 4,
+     "corpusid": 14888175,
+     "title": "Deep Unsupervised Learning using Nonequilibrium Thermodynamics",
+     "score": 16.502,
+     "vote_sum": 16.502,
+     "neighbor_bonus": 0.0,
+     "n_voters": 45,
+     "in_degree": 9767,
+     "is_neighbor": false
+    },
+    {
+     "rank": 5,
+     "corpusid": 222140788,
+     "title": "Denoising Diffusion Implicit Models",
+     "score": 16.353,
+     "vote_sum": 16.353,
+     "neighbor_bonus": 0.0,
+     "n_voters": 45,
+     "in_degree": 12708,
+     "is_neighbor": false
+    },
+    {
+     "rank": 6,
+     "corpusid": 245335086,
+     "title": "GLIDE: Towards Photorealistic Image Generation and Editing with Text-Guided Diffusion Models",
+     "score": 15.808,
+     "vote_sum": 15.808,
+     "neighbor_bonus": 0.0,
+     "n_voters": 41,
+     "in_degree": 4705,
+     "is_neighbor": false
+    },
+    {
+     "rank": 7,
+     "corpusid": 248986576,
+     "title": "Photorealistic Text-to-Image Diffusion Models with Deep Language Understanding",
+     "score": 15.746,
+     "vote_sum": 15.746,
+     "neighbor_bonus": 0.0,
+     "n_voters": 46,
+     "in_degree": 8257,
+     "is_neighbor": false
+    },
+    {
+     "rank": 8,
+     "corpusid": 227209335,
+     "title": "Score-Based Generative Modeling through Stochastic Differential Equations",
+     "score": 15.728,
+     "vote_sum": 15.728,
+     "neighbor_bonus": 0.0,
+     "n_voters": 40,
+     "in_degree": 11470,
+     "is_neighbor": false
+    },
+    {
+     "rank": 9,
+     "corpusid": 248097655,
+     "title": "Hierarchical Text-Conditional Image Generation with CLIP Latents",
+     "score": 15.694,
+     "vote_sum": 15.694,
+     "neighbor_bonus": 0.0,
+     "n_voters": 43,
+     "in_degree": 8635,
+     "is_neighbor": false
+    },
+    {
+     "rank": 10,
+     "corpusid": 231591445,
+     "title": "Learning Transferable Visual Models From Natural Language Supervision",
+     "score": 15.595,
+     "vote_sum": 15.595,
+     "neighbor_bonus": 0.0,
+     "n_voters": 45,
+     "in_degree": 50890,
+     "is_neighbor": false
+    }
+   ],
+   "score_check_abs": 0.0
+  },
+  {
+   "query": "score-based generative models",
+   "resolved_title": null,
+   "top_score_share": 0.080038,
+   "reconstruct_l2_mae": 196.201741,
+   "neighbors_top5": [
+    {
+     "rank": 0,
+     "title": "On Maximum Likelihood Training of Score-Based Generative Models",
+     "year": 2021,
+     "dist": 180.51,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 1,
+     "title": "Riemannian Score-Based Generative Modeling",
+     "year": 2022,
+     "dist": 191.61,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 2,
+     "title": "Algorithm- and Data-Dependent Generalization Bounds for Diffusion Models",
+     "year": 2025,
+     "dist": 192.71,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 3,
+     "title": "Score-based Generative Models for Calorimeter Shower Simulation",
+     "year": 2022,
+     "dist": 193.48,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 4,
+     "title": "Classification via score-based generative modelling",
+     "year": 2022,
+     "dist": 195.11,
+     "embed_cluster": 0
+    }
+   ],
+   "neighbor_token_counts": {
+    "diffusion": 12,
+    "score": 36,
+    "generative": 79,
+    "graph": 2,
+    "transformer": 1
+   },
+   "neighbor_year": {
+    "n": 100,
+    "median": 2022,
+    "min": 2004,
+    "max": 2026,
+    "before_2018": 17,
+    "from_2020": 75
+   },
+   "embed_clusters": {
+    "k": 2,
+    "silhouette": 0.147849,
+    "groups": [
+     {
+      "size": 95,
+      "weight": 35.27,
+      "exemplars": [
+       "On Maximum Likelihood Training of Score-Based Generative Models",
+       "Riemannian Score-Based Generative Modeling",
+       "Algorithm- and Data-Dependent Generalization Bounds for Diffusion Models"
+      ],
+      "winners": [
+       {
+        "title": "Score-Based Generative Modeling through Stochastic Differential Equations",
+        "weight_coverage": 0.530383
+       },
+       {
+        "title": "Denoising Diffusion Probabilistic Models",
+        "weight_coverage": 0.476538
+       }
+      ]
+     },
+     {
+      "size": 5,
+      "weight": 0.98,
+      "exemplars": [
+       "Competitive generative models with structure learning for NLP classification tasks",
+       "Using Captum to Explain Generative Language Models",
+       "Visual Analytics for Generative Transformer Models"
+      ],
+      "winners": [
+       {
+        "title": "Axiomatic Attribution for Deep Networks",
+        "weight_coverage": 0.419095
+       },
+       {
+        "title": "Language Models are Few-Shot Learners",
+        "weight_coverage": 0.419095
+       }
+      ]
+     }
+    ]
+   },
+   "cite_clusters": {
+    "k": 5,
+    "silhouette": 0.016614,
+    "sizes": [
+     96,
+     1,
+     1,
+     1,
+     1
+    ]
+   },
+   "top10": [
+    {
+     "rank": 1,
+     "corpusid": 227209335,
+     "title": "Score-Based Generative Modeling through Stochastic Differential Equations",
+     "score": 18.709,
+     "vote_sum": 18.709,
+     "neighbor_bonus": 0.0,
+     "n_voters": 43,
+     "in_degree": 11470,
+     "is_neighbor": false
+    },
+    {
+     "rank": 2,
+     "corpusid": 219955663,
+     "title": "Denoising Diffusion Probabilistic Models",
+     "score": 16.809,
+     "vote_sum": 16.809,
+     "neighbor_bonus": 0.0,
+     "n_voters": 37,
+     "in_degree": 31190,
+     "is_neighbor": false
+    },
+    {
+     "rank": 3,
+     "corpusid": 196470871,
+     "title": "Generative Modeling by Estimating Gradients of the Data Distribution",
+     "score": 16.188,
+     "vote_sum": 16.188,
+     "neighbor_bonus": 0.0,
+     "n_voters": 33,
+     "in_degree": 5510,
+     "is_neighbor": false
+    },
+    {
+     "rank": 4,
+     "corpusid": 5560643,
+     "title": "A Connection Between Score Matching and Denoising Autoencoders",
+     "score": 15.2,
+     "vote_sum": 15.2,
+     "neighbor_bonus": 0.0,
+     "n_voters": 31,
+     "in_degree": 2183,
+     "is_neighbor": false
+    },
+    {
+     "rank": 5,
+     "corpusid": 1152227,
+     "title": "Estimation of Non-Normalized Statistical Models by Score Matching",
+     "score": 13.741,
+     "vote_sum": 13.741,
+     "neighbor_bonus": 0.0,
+     "n_voters": 26,
+     "in_degree": 1961,
+     "is_neighbor": false
+    },
+    {
+     "rank": 6,
+     "corpusid": 234357997,
+     "title": "Diffusion Models Beat GANs on Image Synthesis",
+     "score": 12.626,
+     "vote_sum": 12.626,
+     "neighbor_bonus": 0.0,
+     "n_voters": 29,
+     "in_degree": 11712,
+     "is_neighbor": false
+    },
+    {
+     "rank": 7,
+     "corpusid": 14888175,
+     "title": "Deep Unsupervised Learning using Nonequilibrium Thermodynamics",
+     "score": 11.745,
+     "vote_sum": 11.745,
+     "neighbor_bonus": 0.0,
+     "n_voters": 26,
+     "in_degree": 9767,
+     "is_neighbor": false
+    },
+    {
+     "rank": 8,
+     "corpusid": 3897405,
+     "title": "Reverse-time diffusion equation models",
+     "score": 9.984,
+     "vote_sum": 9.984,
+     "neighbor_bonus": 0.0,
+     "n_voters": 19,
+     "in_degree": 1290,
+     "is_neighbor": false
+    },
+    {
+     "rank": 9,
+     "corpusid": 235294278,
+     "title": "Diffusion Schrödinger Bridge with Applications to Score-Based Generative Modeling",
+     "score": 7.016,
+     "vote_sum": 7.016,
+     "neighbor_bonus": 0.0,
+     "n_voters": 13,
+     "in_degree": 729,
+     "is_neighbor": false
+    },
+    {
+     "rank": 10,
+     "corpusid": 219708245,
+     "title": "Improved Techniques for Training Score-Based Generative Models",
+     "score": 6.957,
+     "vote_sum": 6.957,
+     "neighbor_bonus": 0.0,
+     "n_voters": 15,
+     "in_degree": 1383,
+     "is_neighbor": false
+    }
+   ],
+   "score_check_abs": 0.0
+  },
+  {
+   "query": "speech recognition",
+   "resolved_title": null,
+   "top_score_share": 0.064329,
+   "reconstruct_l2_mae": 169.859719,
+   "neighbors_top5": [
+    {
+     "rank": 0,
+     "title": "Speech recognition by machines and humans",
+     "year": 1997,
+     "dist": 169.67,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 1,
+     "title": "Telephonetic: Making Neural Language Models Robust to ASR and Semantic Noise",
+     "year": 2019,
+     "dist": 173.16,
+     "embed_cluster": 1
+    },
+    {
+     "rank": 2,
+     "title": "Machine Learning Methods for Signal, Image and Speech Processing",
+     "year": 2022,
+     "dist": 174.72,
+     "embed_cluster": 1
+    },
+    {
+     "rank": 3,
+     "title": "Enhancing continuous speech recognition with CapsNet and WaveRNN: a transfer learning approach",
+     "year": 2026,
+     "dist": 175.08,
+     "embed_cluster": 1
+    },
+    {
+     "rank": 4,
+     "title": "A Hybrid Architecture Combining CNN, LSTM, and Attention Mechanisms for Automatic Speech Recognition",
+     "year": 2025,
+     "dist": 176.69,
+     "embed_cluster": 1
+    }
+   ],
+   "neighbor_token_counts": {
+    "denois": 1,
+    "generative": 1,
+    "image": 1,
+    "transformer": 1,
+    "attention": 9,
+    "speech": 93,
+    "lstm": 1
+   },
+   "neighbor_year": {
+    "n": 100,
+    "median": 2021,
+    "min": 1987,
+    "max": 2026,
+    "before_2018": 25,
+    "from_2020": 62
+   },
+   "embed_clusters": {
+    "k": 3,
+    "silhouette": 0.090963,
+    "groups": [
+     {
+      "size": 16,
+      "weight": 5.67,
+      "exemplars": [
+       "Speech recognition by machines and humans",
+       "Computer Speech Recognition in Psychiatry",
+       "Speech Recognition and Understanding"
+      ],
+      "winners": [
+       {
+        "title": "Towards increasing speech recognition error rates",
+        "weight_coverage": 0.22915
+       },
+       {
+        "title": "The development of an experimental discrete dictation recognizer",
+        "weight_coverage": 0.22915
+       }
+      ]
+     },
+     {
+      "size": 82,
+      "weight": 30.21,
+      "exemplars": [
+       "Telephonetic: Making Neural Language Models Robust to ASR and Semantic Noise",
+       "Machine Learning Methods for Signal, Image and Speech Processing",
+       "Enhancing continuous speech recognition with CapsNet and WaveRNN: a transfer learning approach"
+      ],
+      "winners": [
+       {
+        "title": "Attention is All you Need",
+        "weight_coverage": 0.319861
+       },
+       {
+        "title": "Librispeech: An ASR corpus based on public domain audio books",
+        "weight_coverage": 0.316931
+       }
+      ]
+     },
+     {
+      "size": 2,
+      "weight": 0.38,
+      "exemplars": [
+       "Statistical Language and Speech Processing",
+       "Why Softmax Attention Outperforms Linear Attention"
+      ],
+      "winners": [
+       {
+        "title": "Comparing Stochastic Approaches to Spoken Language Understanding in Multiple Languages",
+        "weight_coverage": 0.535545
+       },
+       {
+        "title": "Discriminative Training and Maximum Entropy Models for Statistical Machine Translation",
+        "weight_coverage": 0.535545
+       }
+      ]
+     }
+    ]
+   },
+   "cite_clusters": {
+    "k": 5,
+    "silhouette": 0.009863,
+    "sizes": [
+     96,
+     1,
+     1,
+     1,
+     1
+    ]
+   },
+   "top10": [
+    {
+     "rank": 1,
+     "corpusid": 13756489,
+     "title": "Attention is All you Need",
+     "score": 9.839,
+     "vote_sum": 9.839,
+     "neighbor_bonus": 0.0,
+     "n_voters": 26,
+     "in_degree": 156957,
+     "is_neighbor": false
+    },
+    {
+     "rank": 2,
+     "corpusid": 2191379,
+     "title": "Librispeech: An ASR corpus based on public domain audio books",
+     "score": 9.574,
+     "vote_sum": 9.574,
+     "neighbor_bonus": 0.0,
+     "n_voters": 21,
+     "in_degree": 7760,
+     "is_neighbor": false
+    },
+    {
+     "rank": 3,
+     "corpusid": 6628106,
+     "title": "Adam: A Method for Stochastic Optimization",
+     "score": 7.639,
+     "vote_sum": 7.639,
+     "neighbor_bonus": 0.0,
+     "n_voters": 19,
+     "in_degree": 145912,
+     "is_neighbor": false
+    },
+    {
+     "rank": 4,
+     "corpusid": 1915014,
+     "title": "Long Short-Term Memory",
+     "score": 7.495,
+     "vote_sum": 7.495,
+     "neighbor_bonus": 0.0,
+     "n_voters": 16,
+     "in_degree": 78549,
+     "is_neighbor": false
+    },
+    {
+     "rank": 5,
+     "corpusid": 219966759,
+     "title": "wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations",
+     "score": 7.188,
+     "vote_sum": 7.188,
+     "neighbor_bonus": 0.0,
+     "n_voters": 17,
+     "in_degree": 7978,
+     "is_neighbor": false
+    },
+    {
+     "rank": 6,
+     "corpusid": 1921173,
+     "title": "Attention-Based Models for Speech Recognition",
+     "score": 7.033,
+     "vote_sum": 7.033,
+     "neighbor_bonus": 0.0,
+     "n_voters": 14,
+     "in_degree": 2465,
+     "is_neighbor": false
+    },
+    {
+     "rank": 7,
+     "corpusid": 11590585,
+     "title": "Deep Speech 2 : End-to-End Speech Recognition in English and Mandarin",
+     "score": 6.704,
+     "vote_sum": 6.704,
+     "neighbor_bonus": 0.0,
+     "n_voters": 16,
+     "in_degree": 2774,
+     "is_neighbor": false
+    },
+    {
+     "rank": 8,
+     "corpusid": 18165915,
+     "title": "Listen, attend and spell: A neural network for large vocabulary conversational speech recognition",
+     "score": 6.518,
+     "vote_sum": 6.518,
+     "neighbor_bonus": 0.0,
+     "n_voters": 16,
+     "in_degree": 2239,
+     "is_neighbor": false
+    },
+    {
+     "rank": 9,
+     "corpusid": 11212020,
+     "title": "Neural Machine Translation by Jointly Learning to Align and Translate",
+     "score": 6.479,
+     "vote_sum": 6.479,
+     "neighbor_bonus": 0.0,
+     "n_voters": 16,
+     "in_degree": 25562,
+     "is_neighbor": false
+    },
+    {
+     "rank": 10,
+     "corpusid": 9901844,
+     "title": "Connectionist Temporal Classiﬁcation: Labelling Unsegmented Sequence Data with Recurrent Neural Networks",
+     "score": 5.884,
+     "vote_sum": 5.884,
+     "neighbor_bonus": 0.0,
+     "n_voters": 16,
+     "in_degree": 4715,
+     "is_neighbor": false
+    }
+   ],
+   "score_check_abs": 0.0
+  },
+  {
+   "query": "attention",
+   "resolved_title": null,
+   "top_score_share": 0.069322,
+   "reconstruct_l2_mae": 179.546454,
+   "neighbors_top5": [
+    {
+     "rank": 0,
+     "title": "Hierarchical Attention Networks",
+     "year": 2016,
+     "dist": 181.24,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 1,
+     "title": "Corrigendum: Attention in Psychology, Neuroscience, and Machine Learning",
+     "year": 2021,
+     "dist": 182.08,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 2,
+     "title": "ABC: Attention with Bounded-memory Control",
+     "year": 2021,
+     "dist": 182.39,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 3,
+     "title": "From Human Attention to Computational Attention: A Multidisciplinary Approach",
+     "year": 2016,
+     "dist": 184.1,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 4,
+     "title": "From Human Attention to Computational Attention: A Multidisciplinary Approach",
+     "year": 2016,
+     "dist": 184.1,
+     "embed_cluster": 0
+    }
+   ],
+   "neighbor_token_counts": {
+    "diffusion": 1,
+    "generative": 1,
+    "image": 17,
+    "graph": 2,
+    "transformer": 5,
+    "attention": 84
+   },
+   "neighbor_year": {
+    "n": 100,
+    "median": 2020,
+    "min": 1991,
+    "max": 2026,
+    "before_2018": 31,
+    "from_2020": 54
+   },
+   "embed_clusters": {
+    "k": 2,
+    "silhouette": 0.17104,
+    "groups": [
+     {
+      "size": 97,
+      "weight": 35.47,
+      "exemplars": [
+       "Hierarchical Attention Networks",
+       "Corrigendum: Attention in Psychology, Neuroscience, and Machine Learning",
+       "ABC: Attention with Bounded-memory Control"
+      ],
+      "winners": [
+       {
+        "title": "A Model of Saliency-Based Visual Attention for Rapid Scene Analysis",
+        "weight_coverage": 0.354297
+       },
+       {
+        "title": "Attention is All you Need",
+        "weight_coverage": 0.321615
+       }
+      ]
+     },
+     {
+      "size": 3,
+      "weight": 0.79,
+      "exemplars": [
+       "Support for Big Data's Limiting Resource: Human Attention",
+       "Attention! Rethinking What We Measure in CHIIR Studies",
+       "Attention!: How to Interrupt, Yell, Whisper, and Touch Consumers"
+      ],
+      "winners": [
+       {
+        "title": "Can We Ever Escape from Data Overload? A Cognitive Systems Diagnosis",
+        "weight_coverage": 0.356877
+       },
+       {
+        "title": "Big data: the management revolution.",
+        "weight_coverage": 0.356877
+       }
+      ]
+     }
+    ]
+   },
+   "cite_clusters": {
+    "k": 5,
+    "silhouette": 0.013886,
+    "sizes": [
+     96,
+     1,
+     1,
+     1,
+     1
+    ]
+   },
+   "top10": [
+    {
+     "rank": 1,
+     "corpusid": 3108956,
+     "title": "A Model of Saliency-Based Visual Attention for Rapid Scene Analysis",
+     "score": 12.566,
+     "vote_sum": 12.566,
+     "neighbor_bonus": 0.0,
+     "n_voters": 35,
+     "in_degree": 9439,
+     "is_neighbor": false
+    },
+    {
+     "rank": 2,
+     "corpusid": 13756489,
+     "title": "Attention is All you Need",
+     "score": 11.407,
+     "vote_sum": 11.407,
+     "neighbor_bonus": 0.0,
+     "n_voters": 30,
+     "in_degree": 156957,
+     "is_neighbor": false
+    },
+    {
+     "rank": 3,
+     "corpusid": 206594692,
+     "title": "Deep Residual Learning for Image Recognition",
+     "score": 9.502,
+     "vote_sum": 9.502,
+     "neighbor_bonus": 0.0,
+     "n_voters": 27,
+     "in_degree": 197995,
+     "is_neighbor": false
+    },
+    {
+     "rank": 4,
+     "corpusid": 11212020,
+     "title": "Neural Machine Translation by Jointly Learning to Align and Translate",
+     "score": 8.689,
+     "vote_sum": 8.689,
+     "neighbor_bonus": 0.0,
+     "n_voters": 21,
+     "in_degree": 25562,
+     "is_neighbor": false
+    },
+    {
+     "rank": 5,
+     "corpusid": 1055111,
+     "title": "Show, Attend and Tell: Neural Image Caption Generation with Visual Attention",
+     "score": 8.332,
+     "vote_sum": 8.332,
+     "neighbor_bonus": 0.0,
+     "n_voters": 21,
+     "in_degree": 9613,
+     "is_neighbor": false
+    },
+    {
+     "rank": 6,
+     "corpusid": 16445820,
+     "title": "Learning to predict where humans look",
+     "score": 7.896,
+     "vote_sum": 7.896,
+     "neighbor_bonus": 0.0,
+     "n_voters": 23,
+     "in_degree": 1991,
+     "is_neighbor": false
+    },
+    {
+     "rank": 7,
+     "corpusid": 14124313,
+     "title": "Very Deep Convolutional Networks for Large-Scale Image Recognition",
+     "score": 7.642,
+     "vote_sum": 7.642,
+     "neighbor_bonus": 0.0,
+     "n_voters": 19,
+     "in_degree": 94624,
+     "is_neighbor": false
+    },
+    {
+     "rank": 8,
+     "corpusid": 353246,
+     "title": "A feature-integration theory of attention.",
+     "score": 7.268,
+     "vote_sum": 7.268,
+     "neighbor_bonus": 0.0,
+     "n_voters": 19,
+     "in_degree": 5150,
+     "is_neighbor": false
+    },
+    {
+     "rank": 9,
+     "corpusid": 13927710,
+     "title": "What Do Different Evaluation Metrics Tell Us About Saliency Models?",
+     "score": 7.054,
+     "vote_sum": 7.054,
+     "neighbor_bonus": 0.0,
+     "n_voters": 18,
+     "in_degree": 832,
+     "is_neighbor": false
+    },
+    {
+     "rank": 10,
+     "corpusid": 629401,
+     "title": "Graph-Based Visual Saliency",
+     "score": 6.88,
+     "vote_sum": 6.88,
+     "neighbor_bonus": 0.0,
+     "n_voters": 18,
+     "in_degree": 3391,
+     "is_neighbor": false
+    }
+   ],
+   "score_check_abs": 0.0
+  },
+  {
+   "query": "transformers",
+   "resolved_title": null,
+   "top_score_share": 0.143709,
+   "reconstruct_l2_mae": 181.586705,
+   "neighbors_top5": [
+    {
+     "rank": 0,
+     "title": "Key Point Matching with Transformers",
+     "year": 2021,
+     "dist": 174.97,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 1,
+     "title": "A Two-Parameter Weibull Framework for Diagnosing Transformer Weight Distributions",
+     "year": 2026,
+     "dist": 181.33,
+     "embed_cluster": 1
+    },
+    {
+     "rank": 2,
+     "title": "Topic classification of electric vehicle consumer experiences with transformer-based deep learning",
+     "year": 2021,
+     "dist": 183.86,
+     "embed_cluster": 1
+    },
+    {
+     "rank": 3,
+     "title": "Length-Adaptive Transformer: Train Once with Length Drop, Use Anytime with Search",
+     "year": 2020,
+     "dist": 184.06,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 4,
+     "title": "Enhancing Transformer Training Efficiency with Dynamic Dropout",
+     "year": 2024,
+     "dist": 184.17,
+     "embed_cluster": 0
+    }
+   ],
+   "neighbor_token_counts": {
+    "generative": 1,
+    "influence": 1,
+    "graph": 3,
+    "transformer": 87,
+    "attention": 16,
+    "forecast": 3
+   },
+   "neighbor_year": {
+    "n": 100,
+    "median": 2024,
+    "min": 1979,
+    "max": 2026,
+    "before_2018": 3,
+    "from_2020": 94
+   },
+   "embed_clusters": {
+    "k": 3,
+    "silhouette": 0.181566,
+    "groups": [
+     {
+      "size": 72,
+      "weight": 25.65,
+      "exemplars": [
+       "Key Point Matching with Transformers",
+       "Length-Adaptive Transformer: Train Once with Length Drop, Use Anytime with Search",
+       "Enhancing Transformer Training Efficiency with Dynamic Dropout"
+      ],
+      "winners": [
+       {
+        "title": "Attention is All you Need",
+        "weight_coverage": 0.598569
+       },
+       {
+        "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+        "weight_coverage": 0.325798
+       }
+      ]
+     },
+     {
+      "size": 20,
+      "weight": 7.83,
+      "exemplars": [
+       "A Two-Parameter Weibull Framework for Diagnosing Transformer Weight Distributions",
+       "Topic classification of electric vehicle consumer experiences with transformer-based deep learning",
+       "Handbook of Transformer Design and Applications"
+      ],
+      "winners": [
+       {
+        "title": "Attention is All you Need",
+        "weight_coverage": 0.349519
+       },
+       {
+        "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+        "weight_coverage": 0.230883
+       }
+      ]
+     },
+     {
+      "size": 8,
+      "weight": 2.77,
+      "exemplars": [
+       "Elementary Students Learn How To Engineer Online (RTP)",
+       "Retraction: Design of College English Teaching Information Platform Based on Artificial Intelligence Technology (J. Phys.: Conf. Ser. 1852 022031)",
+       "Retraction: Design of Network Teaching Platform Based on Artificial Intelligence Technology (J. Phys.: Conf. Ser. 1852 042044)"
+      ],
+      "winners": [
+       {
+        "title": "Character-level Convolutional Networks for Text Classification",
+        "weight_coverage": 0.091456
+       },
+       {
+        "title": "Recursive Deep Models for Semantic Compositionality Over a Sentiment Treebank",
+        "weight_coverage": 0.091456
+       }
+      ]
+     }
+    ]
+   },
+   "cite_clusters": {
+    "k": 5,
+    "silhouette": 0.010703,
+    "sizes": [
+     96,
+     1,
+     1,
+     1,
+     1
+    ]
+   },
+   "top10": [
+    {
+     "rank": 1,
+     "corpusid": 13756489,
+     "title": "Attention is All you Need",
+     "score": 18.347,
+     "vote_sum": 18.347,
+     "neighbor_bonus": 0.0,
+     "n_voters": 50,
+     "in_degree": 156957,
+     "is_neighbor": false
+    },
+    {
+     "rank": 2,
+     "corpusid": 52967399,
+     "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+     "score": 10.42,
+     "vote_sum": 10.42,
+     "neighbor_bonus": 0.0,
+     "n_voters": 27,
+     "in_degree": 100295,
+     "is_neighbor": false
+    },
+    {
+     "rank": 3,
+     "corpusid": 218971783,
+     "title": "Language Models are Few-Shot Learners",
+     "score": 7.144,
+     "vote_sum": 7.144,
+     "neighbor_bonus": 0.0,
+     "n_voters": 20,
+     "in_degree": 53942,
+     "is_neighbor": false
+    },
+    {
+     "rank": 4,
+     "corpusid": 160025533,
+     "title": "Language Models are Unsupervised Multitask Learners",
+     "score": 6.79,
+     "vote_sum": 6.79,
+     "neighbor_bonus": 0.0,
+     "n_voters": 17,
+     "in_degree": 26383,
+     "is_neighbor": false
+    },
+    {
+     "rank": 5,
+     "corpusid": 225039882,
+     "title": "An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale",
+     "score": 5.689,
+     "vote_sum": 5.689,
+     "neighbor_bonus": 0.0,
+     "n_voters": 18,
+     "in_degree": 58780,
+     "is_neighbor": false
+    },
+    {
+     "rank": 6,
+     "corpusid": 204838007,
+     "title": "Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer",
+     "score": 5.08,
+     "vote_sum": 5.08,
+     "neighbor_bonus": 0.0,
+     "n_voters": 13,
+     "in_degree": 23945,
+     "is_neighbor": false
+    },
+    {
+     "rank": 7,
+     "corpusid": 8236317,
+     "title": "Layer Normalization",
+     "score": 3.919,
+     "vote_sum": 3.919,
+     "neighbor_bonus": 0.0,
+     "n_voters": 10,
+     "in_degree": 11957,
+     "is_neighbor": false
+    },
+    {
+     "rank": 8,
+     "corpusid": 220831004,
+     "title": "Big Bird: Transformers for Longer Sequences",
+     "score": 3.856,
+     "vote_sum": 3.856,
+     "neighbor_bonus": 0.0,
+     "n_voters": 9,
+     "in_degree": 2759,
+     "is_neighbor": false
+    },
+    {
+     "rank": 9,
+     "corpusid": 195069387,
+     "title": "XLNet: Generalized Autoregressive Pretraining for Language Understanding",
+     "score": 3.785,
+     "vote_sum": 3.785,
+     "neighbor_bonus": 0.0,
+     "n_voters": 6,
+     "in_degree": 8208,
+     "is_neighbor": false
+    },
+    {
+     "rank": 10,
+     "corpusid": 248085924,
+     "title": "Saturated Transformers are Constant-Depth Threshold Circuits",
+     "score": 3.742,
+     "vote_sum": 3.742,
+     "neighbor_bonus": 0.0,
+     "n_voters": 9,
+     "in_degree": 167,
+     "is_neighbor": false
+    }
+   ],
+   "score_check_abs": 0.0
+  },
+  {
+   "query": "graph",
+   "resolved_title": null,
+   "top_score_share": 0.089304,
+   "reconstruct_l2_mae": 138.569407,
+   "neighbors_top5": [
+    {
+     "rank": 0,
+     "title": "Which Algorithms Can Graph Neural Networks Learn?",
+     "year": 2026,
+     "dist": 138.52,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 1,
+     "title": "Toward the Analysis of Graph Neural Networks",
+     "year": 2022,
+     "dist": 138.69,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 2,
+     "title": "Graph Deep Learning: Methods and Applications",
+     "year": 2019,
+     "dist": 141.52,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 3,
+     "title": "A Survey on Graph Neural Networks and its Applications in Various Domains",
+     "year": 2024,
+     "dist": 143.94,
+     "embed_cluster": 0
+    },
+    {
+     "rank": 4,
+     "title": "GraphStorm: All-in-one Graph Machine Learning Framework for Industry Applications",
+     "year": 2024,
+     "dist": 145.35,
+     "embed_cluster": 0
+    }
+   ],
+   "neighbor_token_counts": {
+    "diffusion": 3,
+    "generative": 3,
+    "image": 1,
+    "graph": 76,
+    "transformer": 11,
+    "attention": 21
+   },
+   "neighbor_year": {
+    "n": 100,
+    "median": 2023,
+    "min": 1992,
+    "max": 2026,
+    "before_2018": 7,
+    "from_2020": 81
+   },
+   "embed_clusters": {
+    "k": 2,
+    "silhouette": 0.219107,
+    "groups": [
+     {
+      "size": 99,
+      "weight": 35.59,
+      "exemplars": [
+       "Which Algorithms Can Graph Neural Networks Learn?",
+       "Toward the Analysis of Graph Neural Networks",
+       "Graph Deep Learning: Methods and Applications"
+      ],
+      "winners": [
+       {
+        "title": "Semi-Supervised Classification with Graph Convolutional Networks",
+        "weight_coverage": 0.644829
+       },
+       {
+        "title": "Graph Attention Networks",
+        "weight_coverage": 0.540505
+       }
+      ]
+     },
+     {
+      "size": 1,
+      "weight": 0.67,
+      "exemplars": [
+       "Gratitude and Graph Theory in the Time of Coronavirus"
+      ],
+      "winners": []
+     }
+    ]
+   },
+   "cite_clusters": {
+    "k": 5,
+    "silhouette": 0.02955,
+    "sizes": [
+     96,
+     1,
+     1,
+     1,
+     1
+    ]
+   },
+   "top10": [
+    {
+     "rank": 1,
+     "corpusid": 3144218,
+     "title": "Semi-Supervised Classification with Graph Convolutional Networks",
+     "score": 22.949,
+     "vote_sum": 22.949,
+     "neighbor_bonus": 0.0,
+     "n_voters": 63,
+     "in_degree": 32585,
+     "is_neighbor": false
+    },
+    {
+     "rank": 2,
+     "corpusid": 3292002,
+     "title": "Graph Attention Networks",
+     "score": 19.44,
+     "vote_sum": 19.236,
+     "neighbor_bonus": 0.204,
+     "n_voters": 53,
+     "in_degree": 24705,
+     "is_neighbor": true
+    },
+    {
+     "rank": 3,
+     "corpusid": 4755450,
+     "title": "Inductive Representation Learning on Large Graphs",
+     "score": 18.411,
+     "vote_sum": 18.411,
+     "neighbor_bonus": 0.0,
+     "n_voters": 50,
+     "in_degree": 18571,
+     "is_neighbor": false
+    },
+    {
+     "rank": 4,
+     "corpusid": 9665943,
+     "title": "Neural Message Passing for Quantum Chemistry",
+     "score": 14.309,
+     "vote_sum": 14.309,
+     "neighbor_bonus": 0.0,
+     "n_voters": 36,
+     "in_degree": 8377,
+     "is_neighbor": false
+    },
+    {
+     "rank": 5,
+     "corpusid": 13756489,
+     "title": "Attention is All you Need",
+     "score": 12.337,
+     "vote_sum": 12.337,
+     "neighbor_bonus": 0.0,
+     "n_voters": 33,
+     "in_degree": 156957,
+     "is_neighbor": false
+    },
+    {
+     "rank": 6,
+     "corpusid": 52895589,
+     "title": "How Powerful are Graph Neural Networks?",
+     "score": 10.764,
+     "vote_sum": 10.764,
+     "neighbor_bonus": 0.0,
+     "n_voters": 31,
+     "in_degree": 9450,
+     "is_neighbor": false
+    },
+    {
+     "rank": 7,
+     "corpusid": 3051291,
+     "title": "DeepWalk: online learning of social representations",
+     "score": 10.746,
+     "vote_sum": 10.746,
+     "neighbor_bonus": 0.0,
+     "n_voters": 28,
+     "in_degree": 9855,
+     "is_neighbor": false
+    },
+    {
+     "rank": 8,
+     "corpusid": 3016223,
+     "title": "Convolutional Neural Networks on Graphs with Fast Localized Spectral Filtering",
+     "score": 9.695,
+     "vote_sum": 9.695,
+     "neighbor_bonus": 0.0,
+     "n_voters": 28,
+     "in_degree": 7797,
+     "is_neighbor": false
+    },
+    {
+     "rank": 9,
+     "corpusid": 207238980,
+     "title": "node2vec: Scalable Feature Learning for Networks",
+     "score": 8.55,
+     "vote_sum": 8.55,
+     "neighbor_bonus": 0.0,
+     "n_voters": 22,
+     "in_degree": 11151,
+     "is_neighbor": false
+    },
+    {
+     "rank": 10,
+     "corpusid": 62016134,
+     "title": "Collective Classification in Network Data",
+     "score": 8.119,
+     "vote_sum": 8.119,
+     "neighbor_bonus": 0.0,
+     "n_voters": 25,
+     "in_degree": 4378,
+     "is_neighbor": false
+    }
+   ],
+   "score_check_abs": 0.0
+  }
+ ],
+ "hubs": [
+  {
+   "corpusid": 13756489,
+   "title": "Attention is All you Need",
+   "in_degree": 156957,
+   "citationcount": 197480,
+   "n_queries_in_top10": 5,
+   "queries": [
+    [
+     "transformers for time series forecasting",
+     1
+    ],
+    [
+     "speech recognition",
+     1
+    ],
+    [
+     "attention",
+     2
+    ],
+    [
+     "transformers",
+     1
+    ],
+    [
+     "graph",
+     5
+    ]
+   ]
+  },
+  {
+   "corpusid": 219955663,
+   "title": "Denoising Diffusion Probabilistic Models",
+   "in_degree": 31190,
+   "citationcount": 36556,
+   "n_queries_in_top10": 4,
+   "queries": [
+    [
+     "diffusion models",
+     3
+    ],
+    [
+     "denoising diffusion probabilistic models",
+     1
+    ],
+    [
+     "diffusion models image generation",
+     2
+    ],
+    [
+     "score-based generative models",
+     2
+    ]
+   ]
+  },
+  {
+   "corpusid": 234357997,
+   "title": "Diffusion Models Beat GANs on Image Synthesis",
+   "in_degree": 11712,
+   "citationcount": 13403,
+   "n_queries_in_top10": 3,
+   "queries": [
+    [
+     "denoising diffusion probabilistic models",
+     5
+    ],
+    [
+     "diffusion models image generation",
+     3
+    ],
+    [
+     "score-based generative models",
+     6
+    ]
+   ]
+  },
+  {
+   "corpusid": 227209335,
+   "title": "Score-Based Generative Modeling through Stochastic Differential Equations",
+   "in_degree": 11470,
+   "citationcount": 12628,
+   "n_queries_in_top10": 3,
+   "queries": [
+    [
+     "denoising diffusion probabilistic models",
+     2
+    ],
+    [
+     "diffusion models image generation",
+     8
+    ],
+    [
+     "score-based generative models",
+     1
+    ]
+   ]
+  },
+  {
+   "corpusid": 14888175,
+   "title": "Deep Unsupervised Learning using Nonequilibrium Thermodynamics",
+   "in_degree": 9767,
+   "citationcount": 10993,
+   "n_queries_in_top10": 3,
+   "queries": [
+    [
+     "denoising diffusion probabilistic models",
+     3
+    ],
+    [
+     "diffusion models image generation",
+     4
+    ],
+    [
+     "score-based generative models",
+     7
+    ]
+   ]
+  },
+  {
+   "corpusid": 52967399,
+   "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+   "in_degree": 100295,
+   "citationcount": 122935,
+   "n_queries_in_top10": 2,
+   "queries": [
+    [
+     "transformers for time series forecasting",
+     9
+    ],
+    [
+     "transformers",
+     2
+    ]
+   ]
+  },
+  {
+   "corpusid": 1915014,
+   "title": "Long Short-Term Memory",
+   "in_degree": 78549,
+   "citationcount": 111819,
+   "n_queries_in_top10": 2,
+   "queries": [
+    [
+     "transformers for time series forecasting",
+     5
+    ],
+    [
+     "speech recognition",
+     4
+    ]
+   ]
+  },
+  {
+   "corpusid": 3144218,
+   "title": "Semi-Supervised Classification with Graph Convolutional Networks",
+   "in_degree": 32585,
+   "citationcount": 37836,
+   "n_queries_in_top10": 2,
+   "queries": [
+    [
+     "graph neural networks",
+     1
+    ],
+    [
+     "graph",
+     1
+    ]
+   ]
+  },
+  {
+   "corpusid": 11212020,
+   "title": "Neural Machine Translation by Jointly Learning to Align and Translate",
+   "in_degree": 25562,
+   "citationcount": 30226,
+   "n_queries_in_top10": 2,
+   "queries": [
+    [
+     "speech recognition",
+     9
+    ],
+    [
+     "attention",
+     4
+    ]
+   ]
+  },
+  {
+   "corpusid": 245335280,
+   "title": "High-Resolution Image Synthesis with Latent Diffusion Models",
+   "in_degree": 25228,
+   "citationcount": 28282,
+   "n_queries_in_top10": 2,
+   "queries": [
+    [
+     "denoising diffusion probabilistic models",
+     7
+    ],
+    [
+     "diffusion models image generation",
+     1
+    ]
+   ]
+  },
+  {
+   "corpusid": 3292002,
+   "title": "Graph Attention Networks",
+   "in_degree": 24705,
+   "citationcount": 29013,
+   "n_queries_in_top10": 2,
+   "queries": [
+    [
+     "graph neural networks",
+     3
+    ],
+    [
+     "graph",
+     2
+    ]
+   ]
+  },
+  {
+   "corpusid": 4755450,
+   "title": "Inductive Representation Learning on Large Graphs",
+   "in_degree": 18571,
+   "citationcount": 21622,
+   "n_queries_in_top10": 2,
+   "queries": [
+    [
+     "graph neural networks",
+     2
+    ],
+    [
+     "graph",
+     3
+    ]
+   ]
+  },
+  {
+   "corpusid": 222140788,
+   "title": "Denoising Diffusion Implicit Models",
+   "in_degree": 12708,
+   "citationcount": 14006,
+   "n_queries_in_top10": 2,
+   "queries": [
+    [
+     "denoising diffusion probabilistic models",
+     4
+    ],
+    [
+     "diffusion models image generation",
+     5
+    ]
+   ]
+  },
+  {
+   "corpusid": 3051291,
+   "title": "DeepWalk: online learning of social representations",
+   "in_degree": 9855,
+   "citationcount": 11057,
+   "n_queries_in_top10": 2,
+   "queries": [
+    [
+     "graph neural networks",
+     10
+    ],
+    [
+     "graph",
+     7
+    ]
+   ]
+  },
+  {
+   "corpusid": 52895589,
+   "title": "How Powerful are Graph Neural Networks?",
+   "in_degree": 9450,
+   "citationcount": 10685,
+   "n_queries_in_top10": 2,
+   "queries": [
+    [
+     "graph neural networks",
+     9
+    ],
+    [
+     "graph",
+     6
+    ]
+   ]
+  },
+  {
+   "corpusid": 9665943,
+   "title": "Neural Message Passing for Quantum Chemistry",
+   "in_degree": 8377,
+   "citationcount": 9735,
+   "n_queries_in_top10": 2,
+   "queries": [
+    [
+     "graph neural networks",
+     8
+    ],
+    [
+     "graph",
+     4
+    ]
+   ]
+  },
+  {
+   "corpusid": 3016223,
+   "title": "Convolutional Neural Networks on Graphs with Fast Localized Spectral Filtering",
+   "in_degree": 7797,
+   "citationcount": 8894,
+   "n_queries_in_top10": 2,
+   "queries": [
+    [
+     "graph neural networks",
+     4
+    ],
+    [
+     "graph",
+     8
+    ]
+   ]
+  },
+  {
+   "corpusid": 196470871,
+   "title": "Generative Modeling by Estimating Gradients of the Data Distribution",
+   "in_degree": 5510,
+   "citationcount": 6122,
+   "n_queries_in_top10": 2,
+   "queries": [
+    [
+     "denoising diffusion probabilistic models",
+     6
+    ],
+    [
+     "score-based generative models",
+     3
+    ]
+   ]
+  },
+  {
+   "corpusid": 5560643,
+   "title": "A Connection Between Score Matching and Denoising Autoencoders",
+   "in_degree": 2183,
+   "citationcount": 2408,
+   "n_queries_in_top10": 2,
+   "queries": [
+    [
+     "denoising diffusion probabilistic models",
+     10
+    ],
+    [
+     "score-based generative models",
+     4
+    ]
+   ]
+  }
+ ]
+}

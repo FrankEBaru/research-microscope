@@ -17,7 +17,8 @@ from pathlib import Path
 import numpy as np
 
 _HERE = Path(__file__).resolve()
-ROOT = _HERE.parents[2]
+# In the Modal container the script is /root/rrm20_dump.py (no parents[2]); rrm is added by add_local_python_source.
+ROOT = _HERE.parents[2] if len(_HERE.parents) > 2 else _HERE.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
