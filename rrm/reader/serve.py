@@ -27,6 +27,7 @@ from rrm.reader.files import resolve_figure
 import rrm.reader.fetch as _fetch
 from rrm.reader.fetch import ARXIV, arxiv_index_at, arxiv_pdf, arxiv_slot_start, reader_identity
 from rrm.reader.ocr import (
+    heal_cached_ocr_figures,
     merge_ocr_parts,
     page_spans,
     pdf_page_count,
@@ -48,6 +49,7 @@ from rrm.reader.pipeline import (
 )
 from rrm.reader.queue import forget as forget_job
 from rrm.reader.queue import note as note_job
+from rrm.search.prefetch import load_burst_top, missing_status
 from rrm.reader.queue import release as release_job
 from rrm.reader.sam import parse_pages, segment_pages
 
@@ -425,6 +427,15 @@ def prefetch(ids: list) -> dict:
     return _prepare_ids(ids)
 
 
+def _heal_figures(folder: Path, paper):
+    """One-time copy for OCR papers cached before figures lived in figures/."""
+    try:
+        if heal_cached_ocr_figures(folder, paper):
+            vol.commit()
+    except Exception:
+        return
+
+
 def read_paper(id: str):
     """Return whatever is already readable. Parsing continues in the background."""
     vol.reload()
@@ -434,7 +445,9 @@ def read_paper(id: str):
     folder.mkdir(parents=True, exist_ok=True)
     meta = load_meta(folder)
     if meta and meta.get("status") in ("done", "abstract_only", "failed"):
-        return {"status": meta["status"], "meta": meta, "paper": load_paper(folder), "cached": True}
+        paper = load_paper(folder)
+        _heal_figures(folder, paper)
+        return {"status": meta["status"], "meta": meta, "paper": paper, "cached": True}
     try:
         prioritize(cid)
     except Exception:
@@ -446,6 +459,8 @@ def read_paper(id: str):
     if paper_obj is None or paper_obj.get("stage") in (None, "stub"):
         paper_obj = _write_stub(folder, cid)
         vol.commit()
+    else:
+        _heal_figures(folder, paper_obj)
     meta = load_meta(folder) or {}
     return {"status": meta.get("status"), "meta": meta, "paper": paper_obj, "cached": False}
 
@@ -539,8 +554,10 @@ def read_crops(id: str, pages: str = ""):
     }
 
 
-def read_status(ids: str = ""):
+def read_status(ids: str = "", pending=None):
     vol.reload()
+    if pending is None:
+        pending = load_burst_top()
     rows = []
     for raw in ids.split(","):
         raw = raw.strip()
@@ -549,7 +566,9 @@ def read_status(ids: str = ""):
         cid = int(raw)
         meta = load_meta(PAPERS / str(cid))
         if not meta:
-            rows.append({"id": cid, "status": "missing"})
+            # Top-10 ids are noted before the volume commit lands. First poll
+            # still sees queued; anything else with no meta.json stays missing.
+            rows.append({"id": cid, "status": missing_status(cid, pending)})
         else:
             rows.append({
                 "id": cid,
@@ -639,6 +658,15 @@ def api():
         if denied:
             return denied
         path = resolve_figure(PAPERS, id, name)
+        if path is None and str(id).isdigit():
+            try:
+                vol.reload()
+                folder = PAPERS / str(int(id))
+                if heal_cached_ocr_figures(folder, load_paper(folder)):
+                    vol.commit()
+                path = resolve_figure(PAPERS, id, name)
+            except Exception:
+                path = None
         if path is None:
             return Response(status_code=404)
         return FileResponse(

@@ -973,6 +973,51 @@ def test_mbox_is_rewritten_only_for_katex():
     assert for_katex(r"\mboxx") == r"\mboxx"
 
 
+def test_cached_ocr_figures_are_placed_when_the_paper_is_read(tmp_path: Path):
+    import json
+
+    from rrm.reader.files import resolve_figure
+    from rrm.reader.ocr import heal_cached_ocr_figures
+    from rrm.reader.pipeline import load_paper
+
+    root = tmp_path / "papers"
+    images = root / "6628106" / "ocr" / "part_0" / "out" / "demo" / "vlm" / "images"
+    images.mkdir(parents=True)
+    (images / "a.png").write_bytes(b"\x89PNG-old")
+    folder = root / "6628106"
+    paper = {
+        "source": "ocr",
+        "blocks": [{"kind": "fig", "images": ["images/a.png"], "caption": []}],
+    }
+    (folder / "paper.json").write_text(json.dumps(paper), encoding="utf-8")
+    assert heal_cached_ocr_figures(folder, paper) is True
+    assert paper["blocks"][0]["images"] == ["a.png"]
+    assert (folder / "figures" / "a.png").read_bytes() == b"\x89PNG-old"
+    saved = load_paper(folder)
+    assert saved["blocks"][0]["images"] == ["a.png"]
+    found = resolve_figure(root, "6628106", "a.png")
+    assert found is not None and found.read_bytes() == b"\x89PNG-old"
+    assert heal_cached_ocr_figures(folder, saved) is False
+
+
+def test_nerf_and_instant_ngp_tex_is_rewritten_for_katex():
+    from rrm.reader.katex import for_katex
+
+    # The stored form of \renewcommand{\left}{\mathopen{}\mathclose\bgroup\originalleft}.
+    raw = (
+        r"\exp\mathopen{}\mathclose\bgroup\mathopen{}\mathclose\bgroup\originalleft"
+        r"(-\sigma_i \delta_i\aftergroup\egroup\aftergroup\egroup\originalright)"
+    )
+    assert for_katex(raw) == r"\exp\left(-\sigma_i \delta_i\right)"
+    assert for_katex(r"\mathopen\langle a \mathclose\rangle") == r"\langle a \rangle"
+    assert for_katex(r"\nicefrac{1}{8}") == r"\frac{1}{8}"
+    assert for_katex(r"\pi_2 = \num{2654435761}") == r"\pi_2 = 2654435761"
+    assert for_katex(r"\SI{5}{\second}") == r"5\,\mathrm{s}"
+    assert for_katex(r"\SI{5}{\minute}") == r"5\,\mathrm{min}"
+    assert for_katex(r"\partialm(\mathrm{enc}(x))") == r"\partial m(\mathrm{enc}(x))"
+    assert for_katex(r"\number{1}") == r"\number{1}"
+
+
 def test_seed_stub_keeps_s2_authors_and_abstract(tmp_path: Path, monkeypatch):
     import json
 
@@ -1036,3 +1081,40 @@ def test_queue_top_writes_queued_before_spawn_and_survives_failure(tmp_path: Pat
     meta = load_meta(tmp_path / "fresh" / "4")
     assert meta["status"] == "queued"
     assert worker_alive(meta) is False
+
+
+def test_detach_queue_notes_top_ids_and_defers_the_volume_write(tmp_path: Path):
+    from rrm.reader.pipeline import load_meta
+    from rrm.search.prefetch import detach_queue, load_burst_top, missing_status, note_burst_top
+
+    store = {}
+    note_burst_top([1], store)
+    note_burst_top([1, 2, "nope"], store)
+    assert store["burst_top"] == [1, 2]
+    assert load_burst_top(store) == {1, 2}
+    assert missing_status(1, load_burst_top(store)) == "queued"
+    assert missing_status(9, load_burst_top(store)) == "missing"
+
+    log = []
+    held = []
+
+    def note(ids):
+        log.append(("note", list(ids)))
+
+    def commit():
+        log.append("commit")
+
+    def spawn(ids):
+        log.append(("spawn", list(ids)))
+
+    def start(work):
+        log.append("start")
+        held.append(work)
+
+    got = detach_queue(list(range(1, 12)), tmp_path / "papers", spawn=spawn, commit=commit, note=note, start=start)
+    assert got == list(range(1, 11))
+    assert log == [("note", list(range(1, 11))), "start"]
+    assert held
+    held[0]()
+    assert log == [("note", list(range(1, 11))), "start", "commit", ("spawn", list(range(1, 11)))]
+    assert load_meta(tmp_path / "papers" / "1")["status"] == "queued"

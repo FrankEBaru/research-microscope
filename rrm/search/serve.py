@@ -8,6 +8,7 @@ GET /subtopics?q= . Subtopics stays off the paper list, so the list never waits 
 
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -22,7 +23,7 @@ import modal
 from rrm.demo_guard import check, cors_kwargs
 from rrm.demo_warm import scaledown_window
 from rrm.search.burst import burst_query
-from rrm.search.prefetch import queue_top
+from rrm.search.prefetch import detach_queue, note_burst_top
 from rrm.search.display import IdTable, PaperLookup
 from rrm.search.encode import QueryEncoder
 from rrm.search.faissutil import ensure_direct_map, search_vectors, vector_at
@@ -157,7 +158,8 @@ class BurstSearch:
         }
         out["seconds"]["hydrate"] = round(time.perf_counter() - t0, 4)
         # After the payload exists: a spawn failure must not drop the papers.
-        # queue_top writes status=queued for all top-10 before spawn returns.
+        # The top-10 ids are noted for /status here. The volume commit that
+        # used to run inside queue_top stays off this return.
         _prefetch_reader(papers["corpusids"][:10])
         return out
 
@@ -208,12 +210,26 @@ class BurstSearch:
 
 
 def _prefetch_reader(corpusids):
-    """Write queued rows, then fire-and-forget prepare. A missing reader app must not fail the burst."""
+    """Note the top ids, then write queued rows off the response path.
+
+    A missing reader app must not fail the burst. `/status` treats a noted id
+    with no meta.json as queued, so the first poll does not wait for the commit.
+    """
     def spawn(ids):
         modal.Function.from_name("rrm-reader", "prefetch").spawn(ids)
 
+    def start(work):
+        threading.Thread(target=work, name="rrm-queue-top", daemon=True).start()
+
     try:
-        queue_top(corpusids, Path(MOUNT) / "papers", spawn=spawn, commit=vol.commit)
+        detach_queue(
+            corpusids,
+            Path(MOUNT) / "papers",
+            spawn=spawn,
+            commit=vol.commit,
+            note=note_burst_top,
+            start=start,
+        )
     except Exception:
         return
 

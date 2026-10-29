@@ -33,9 +33,27 @@ export function eqTex(b) {
   return b.number != null ? `${b.tex}\\tag{${b.number}}` : b.tex;
 }
 
-/** KaTeX has no \\mbox. Call this before render; do not rewrite the stored TeX. */
+const SI_UNITS = { minute: "min", second: "s", hour: "h", meter: "m", metre: "m", gram: "g", kilogram: "kg" };
+
+/** Render-time TeX. Do not rewrite the stored source. Keep in step with rrm/reader/katex.py. */
 export function katexSource(tex) {
-  return String(tex ?? "").replace(/\\mbox(?![A-Za-z])/g, "\\text");
+  let s = String(tex ?? "");
+  s = s.replace(/\\mbox(?![A-Za-z])/g, "\\text");
+  // NeRF / Instant-NGP: \left -> \mathopen{}\mathclose\bgroup\originalleft
+  s = s.replace(/(?:\\mathopen\{\}\s*\\mathclose(?![A-Za-z])\s*\\bgroup\s*)+/g, "");
+  s = s.replace(/(?:\\aftergroup\s*\\egroup\s*)+/g, "");
+  s = s.replace(/\\originalleft(?![A-Za-z])/g, "\\left");
+  s = s.replace(/\\originalright(?![A-Za-z])/g, "\\right");
+  s = s.replace(/\\mathopen(?![A-Za-z])\s*/g, "");
+  s = s.replace(/\\mathclose(?![A-Za-z])\s*/g, "");
+  s = s.replace(/\\nicefrac(?![A-Za-z])/g, "\\frac");
+  s = s.replace(/\\num(?![A-Za-z])\s*\{([^{}]*)\}/g, "$1");
+  s = s.replace(/\\SI(?![A-Za-z])\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, (_, num, unit) => {
+    const name = String(unit).replace(/^\\/, "");
+    return `${num}\\,\\mathrm{${SI_UNITS[name] || name}}`;
+  });
+  s = s.replace(/\\partialm(?![A-Za-z])/g, "\\partial m");
+  return s;
 }
 
 /** done / abstract_only / failed. `missing` is still in flight. */

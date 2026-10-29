@@ -7,7 +7,7 @@ Every route checks `RRM_DEMO_TOKEN` (`rrm/demo_guard.py`). Send it as `X-RRM-Dem
 Reader, app `rrm-reader`, function `api`:
 
 - `GET /paper?id=`
-- `GET /status?ids=` (comma-separated corpus ids; unknown ids are `missing`)
+- `GET /status?ids=` (comma-separated corpus ids; unknown ids are `missing`, except a top-10 id just returned by `/burst`, which is `queued` until its `meta.json` commit lands)
 - `POST /prepare` with `{"ids": []}`
 - `GET /crops?id=&pages=`
 - `GET /file?id=&name=&k=` (a file under `papers/{id}/figures/` or `papers/{id}/crops/`, or 404)
@@ -21,7 +21,7 @@ Burst, app `rrm-burst`, class `BurstSearch`, method `api`:
 
 The UI calls `/burst` with `n=10`, then `/status`, `/paper`, and `/file`. It does not call `/subtopics`. `run_burst` is a Modal method with no public URL.
 
-`/status` rows include `ocr_gpu_s` and `ocr_invoked_at` when the reader has them. `missing` means no `meta.json` yet.
+`/status` rows include `ocr_gpu_s` and `ocr_invoked_at` when the reader has them. `missing` means no `meta.json` yet and the id was not in the top 10 noted by the latest bursts. That note is a single dict write on the burst handler; the volume commit runs after `/burst` has returned.
 
 ## Demo window
 
