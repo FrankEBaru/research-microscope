@@ -65,13 +65,9 @@ cpu_image = (
 gpu_image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git", "libgl1", "libglib2.0-0", "ca-certificates")
-    .pip_install("torch", "torchvision", extra_index_url="https://download.pytorch.org/whl/cu124")
-    .pip_install(
-        "vllm>=0.10.1",
-        "pymupdf",
-        "mineru[core]>=2.5,<3",
-        extra_index_url="https://download.pytorch.org/whl/cu124",
-    )
+    # mineru 2.7.6 pins vllm<0.12 via its [vllm] extra; an unpinned vllm resolves to 0.3x
+    # and its own torch. Let vllm choose torch (no separate cu124 torch install).
+    .pip_install("pymupdf", "mineru[core,vllm]>=2.5,<3")
     .add_local_python_source("rrm")
 )
 
