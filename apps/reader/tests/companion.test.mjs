@@ -35,3 +35,11 @@ test("no persiste nada fuera de memoria", () => {
   const src = createTracker.toString();
   assert.doesNotMatch(src, /localStorage|sessionStorage|fetch\(|indexedDB|document\.cookie/);
 });
+
+test("offer (permanencia): una vez por clave y respeta el enfriamiento compartido", () => {
+  const c = clock(); const tr = createTracker({ threshold: 3, cooldownMs: 45_000, now: c.now });
+  assert.equal(tr.offer("dwell:b5"), "dwell:b5"); assert.equal(tr.offer("dwell:b5"), null, "no repite");
+  assert.equal(tr.offer("dwell:b9"), null, "dentro del enfriamiento");
+  c.tick(46_000); assert.equal(tr.offer("dwell:b9"), "dwell:b9");
+  tr.track("sym:x"); tr.track("sym:x"); assert.equal(tr.track("sym:x"), null, "el enfriamiento también frena a las repeticiones");
+});

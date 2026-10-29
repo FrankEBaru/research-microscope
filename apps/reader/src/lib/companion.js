@@ -19,6 +19,13 @@ export function createTracker({ threshold = 3, windowMs = 90_000, cooldownMs = 4
       done.add(key); lastOffer = t; hits.delete(key);
       return key;
     },
+    /** Oferta inmediata por permanencia (p. ej. una ecuación quieta en pantalla): mismas reglas de enfriamiento y de no repetir. */
+    offer(key) {
+      const t = now();
+      if (done.has(key) || t - lastOffer < cooldownMs) return null;
+      done.add(key); lastOffer = t;
+      return key;
+    },
     /** Olvida todo (cambio de paper o apagado). */
     reset() { hits = new Map(); done.clear(); lastOffer = -Infinity; },
     /** Para pruebas: cuántas señales recientes hay por clave. */
