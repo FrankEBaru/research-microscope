@@ -20,3 +20,15 @@ Commits posteriores a `42abbf7` no tienen hito hasta el siguiente.
 git tag -a reader-v0.2 955a37b -m "v0.2" && git push origin reader-v0.2
 ```
 (y lo mismo con los otros hashes).
+
+## Rama `claude/ui-edge` (trabajo nuevo, aparte de la rama estable)
+Cada fila es un commit atómico; se revierte uno solo con `git revert <hash>`.
+
+| Commit | Qué hace |
+|---|---|
+| `a28556a` | las tablas conservan `colspan` en los bundles (`hspan`/`bspan`) |
+| `e5c77f1` | módulo `tablechart.js`: números, cabeceras multicolumna, barras |
+| `2eff9a1` | botón «Ver como gráfica» y cabeceras de tabla con colspan |
+| `7b4528a` | compañero por permanencia + panel de desglose curado |
+| `62f6828` | convergencia (Wilson) y compuerta de selecciones del adaptador de Muse (simulado) |
+| `b240a74` | pestaña Panorama: frases literales, convergencia contada, matriz |
