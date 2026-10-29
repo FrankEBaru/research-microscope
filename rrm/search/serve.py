@@ -87,6 +87,7 @@ class BurstSearch:
         )
         table = bundle["display"]
         papers = result["papers"]
+        _prefetch_reader(papers["corpusids"][:10])
         return {
             "query": query,
             "subtopics": result["subtopics"],
@@ -95,6 +96,22 @@ class BurstSearch:
             "edges": papers["edges"],
             "seconds": result["seconds"],
         }
+
+
+def _prefetch_reader(corpusids):
+    """Fire-and-forget prepare of the top papers. A missing reader app must not fail the burst."""
+    ids = []
+    for raw in list(corpusids or [])[:10]:
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return
+    try:
+        modal.Function.from_name("rrm-reader", "prepare").spawn({"ids": ids})
+    except Exception:
+        return
 
 
 def _safe(name):

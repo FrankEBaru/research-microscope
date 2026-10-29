@@ -14,12 +14,20 @@ import json
 import time
 from pathlib import Path
 
-from rrm.reader.fetch import arxiv_eprint, arxiv_pdf, fetch_url, resolve_identity, unpack_eprint
+from rrm.reader.fetch import (
+    arxiv_eprint,
+    arxiv_pdf,
+    fetch_url,
+    graph_reference_map,
+    reader_identity,
+    s2_reference_map,
+    unpack_eprint,
+)
 from rrm.reader.latex import attach_katex, materialize_figures, parse_inlines, parse_tree, stats, text_tokens
-from rrm.reader.sam import segment_pdf
 
 STATUSES = ("queued", "parsing", "done", "abstract_only", "failed")
 TIMING_KEYS = ("resolve", "download", "parse", "katex", "figures", "ocr", "sam")
+STAGE_NAMES = ("stub", "sections", "figures", "crops")
 
 
 def _blank_timings():
@@ -50,18 +58,78 @@ def _round(timings):
     return {k: round(float(timings.get(k) or 0), 4) for k in TIMING_KEYS}
 
 
-def _finish(folder, meta, paper, commit):
-    meta["timings"] = _round(meta.get("timings") or {})
+def _stages_for(meta, stage: str) -> dict:
+    stages = dict(meta.get("stages") or blank_stages())
+    status = meta.get("status")
+    if stage == "stub":
+        stages["stub"] = "done"
+    elif stage in ("resolve", "download"):
+        stages["stub"] = "done"
+        stages["sections"] = "pending"
+    elif stage == "sections":
+        stages["stub"] = "done"
+        stages["sections"] = "done"
+        stages["figures"] = "running"
+    elif stage == "figures":
+        stages["stub"] = "done"
+        stages["figures"] = "running"
+    elif stage == "ocr":
+        stages["stub"] = "done"
+        stages["sections"] = "running"
+    elif stage == "done" or status in ("done", "abstract_only"):
+        stages["stub"] = "done"
+        if status == "abstract_only":
+            stages["sections"] = "skipped"
+            stages["figures"] = "skipped"
+        else:
+            stages["sections"] = "done"
+            stages["figures"] = "done"
+    elif stage == "failed" or status == "failed":
+        stages["stub"] = stages.get("stub") or "done"
+    return stages
+
+
+def _publish(folder, meta, paper, commit, stage: str):
+    """Write the snapshot a poll of paper?id= will read. Terminal snapshots record counts."""
+    meta["stage"] = stage
+    meta["stages"] = _stages_for(meta, stage)
+    now = time.time()
+    started = float(meta.get("started") or now)
     if paper is not None:
-        counts = stats(paper)
-        meta.update(counts)
         paper["corpusid"] = meta.get("corpusid")
-        paper["status"] = meta["status"]
+        paper["status"] = meta.get("status")
+        paper["stage"] = stage
+        paper["stages"] = meta["stages"]
+        readable = bool(paper.get("title") or paper.get("abstract") or paper.get("tldr") or paper.get("blocks"))
+        if readable and meta.get("first_content_s") is None:
+            meta["first_content_s"] = round(now - started, 4)
+        if stage == "sections" and meta.get("sections_s") is None:
+            meta["sections_s"] = round(now - started, 4)
         save_paper(folder, paper)
+    if meta.get("status") in ("done", "abstract_only", "failed"):
+        meta["full_s"] = round(now - started, 4)
+        if (
+            paper is not None
+            and meta.get("sections_s") is None
+            and any(b.get("kind") in ("h", "eq", "p") for b in (paper.get("blocks") or []))
+        ):
+            meta["sections_s"] = meta["full_s"]
+        if paper is not None and meta["status"] != "failed":
+            meta.update(stats(paper))
+    meta["timings"] = _round(meta.get("timings") or {})
     save_meta(folder, meta)
     if commit:
         commit()
     return {"status": meta["status"], "meta": meta, "paper": paper}
+
+
+def _finish(folder, meta, paper, commit):
+    stage = "failed" if meta.get("status") == "failed" else "done"
+    return _publish(folder, meta, paper, commit, stage)
+
+
+def blank_stages() -> dict:
+    return {name: "pending" for name in STAGE_NAMES}
 
 
 def abstract_paper(info: dict) -> dict:
@@ -82,9 +150,67 @@ def abstract_paper(info: dict) -> dict:
         "authorNotes": [],
         "full": False,
         "source": "abstract",
-        "refs": {},
+        "refs": dict(info.get("refs") or {}),
         "blocks": blocks,
     }
+
+
+def apply_s2_fields(paper: dict, info: dict) -> dict:
+    """Fill gaps from Semantic Scholar. Existing LaTeX authors, abstract, and refs stay."""
+    if paper is None:
+        return paper
+    paper["tldr"] = paper.get("tldr") or info.get("tldr") or ""
+    if not paper.get("authors"):
+        paper["authors"] = list(info.get("authors") or [])
+    if not paper.get("abstract"):
+        paper["abstract"] = info.get("abstract") or ""
+    if not paper.get("title"):
+        paper["title"] = info.get("title") or ""
+    if not paper.get("refs"):
+        paper["refs"] = dict(info.get("refs") or {})
+    if not paper.get("arxivId"):
+        paper["arxivId"] = info.get("arxiv") or ""
+    if paper.get("corpusid") is None:
+        paper["corpusid"] = info.get("corpusid")
+    return paper
+
+
+def make_stub(info: dict) -> dict:
+    """Readable title, authors, abstract, and tldr before sections exist."""
+    paper = abstract_paper(info)
+    paper["status"] = "parsing"
+    paper["stage"] = "stub"
+    stages = blank_stages()
+    stages["stub"] = "done"
+    paper["stages"] = stages
+    return paper
+
+
+def paper_from_ocr(info: dict, blocks: list) -> dict:
+    paper = abstract_paper(info)
+    paper["full"] = True
+    paper["source"] = "ocr"
+    paper["blocks"] = blocks
+    apply_s2_fields(paper, info)
+    paper["abstract"] = info.get("abstract") or paper.get("abstract") or ""
+    paper["authors"] = list(info.get("authors") or paper.get("authors") or [])
+    paper["tldr"] = info.get("tldr") or paper.get("tldr") or ""
+    paper["refs"] = dict(info.get("refs") or paper.get("refs") or {})
+    return paper
+
+
+def load_paper(folder: Path) -> dict | None:
+    path = folder / "paper.json"
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def worker_alive(meta: dict | None, now: float | None = None) -> bool:
+    if not meta or meta.get("status") not in ("queued", "parsing"):
+        return False
+    now = time.time() if now is None else now
+    return now - float(meta.get("started") or 0) < STALE_S
 
 
 STALE_S = 1800  # a parse older than the function timeout died; queue it again
@@ -106,6 +232,27 @@ def mark_queued(folder: Path, corpusid: int):
         "started": time.time(),
     })
     return "queued"
+
+
+def _fill_refs(info: dict, display_path):
+    if info.get("refs"):
+        return
+    root = None
+    if display_path:
+        path = Path(display_path)
+        if path.name == "display.parquet" and path.parent.name == "index":
+            root = path.parent
+    if root is not None:
+        try:
+            info["refs"] = graph_reference_map(root, int(info.get("corpusid") or 0))
+        except Exception:
+            info["refs"] = {}
+    if info.get("refs"):
+        return
+    try:
+        info["refs"] = s2_reference_map(int(info.get("corpusid") or 0))
+    except Exception:
+        info["refs"] = info.get("refs") or {}
 
 
 def _apply_katex(paper):
@@ -131,49 +278,66 @@ def parse_corpus(
 ) -> dict:
     """Parse one paper. Cached terminal results return immediately.
 
-    ocr(pdf_path, work_dir) -> {"blocks": [...], "seconds": float} or raises.
-    sam=True is the user-open path: page crops for this paper only.
+    ocr(pdf_path, work_dir) -> {"blocks": [...], "seconds": float, "gpu_s": float} or raises.
+    sam is ignored: crops are a separate request for the pages in view.
+    The stub (title, authors, abstract, tldr) is written before download, and
+    LaTeX sections are written before figures are rendered.
     """
+    del sam  # crops are not part of this path
     folder = Path(papers_root) / str(int(corpusid))
     folder.mkdir(parents=True, exist_ok=True)
     cached = load_meta(folder)
-    paper = None
     if cached and cached.get("status") in ("done", "abstract_only") and (folder / "paper.json").is_file():
         paper = json.loads((folder / "paper.json").read_text(encoding="utf-8"))
-        if not sam or cached.get("sam_done"):
-            return {"status": cached["status"], "meta": cached, "paper": paper, "cached": True}
-        return _run_sam(folder, cached, paper, commit)
+        return {"status": cached["status"], "meta": cached, "paper": paper, "cached": True}
 
     meta = {
         "corpusid": int(corpusid),
         "status": "parsing",
+        "stage": "resolve",
+        "stages": blank_stages(),
         "reason": None,
         "source": None,
         "timings": _blank_timings(),
         "page_count": None,
         "started": time.time(),
+        "ocr_gpu_s": 0.0,
     }
     save_meta(folder, meta)
     if commit:
         commit()
+
+    def publish(paper, stage):
+        return _publish(folder, meta, paper, commit, stage)
+
     try:
         t = time.time()
-        info = resolve_identity(int(corpusid), display_path)
+        # Refs from the citation graph are local. The Graph API runs only for gaps,
+        # and reference strings are filled here so the open request can stay on the stub.
+        # Refs come after the stub: the citation graph is large, and the reference
+        # API is a second request. Neither should delay the first readable snapshot.
+        info = reader_identity(int(corpusid), display_path, remote=True, refs=False, shards=True)
         meta["timings"]["resolve"] = time.time() - t
         meta["title"] = info.get("title") or ""
+        meta["tldr"] = info.get("tldr") or ""
         meta["arxiv"] = info.get("arxiv") or ""
     except Exception as err:
         meta["status"] = "failed"
         meta["reason"] = f"resolve failed: {err}"
         return _finish(folder, meta, None, commit)
 
+    publish(make_stub(info), "stub")
     pdf_path = folder / "source.pdf"
     try:
-        route, paper, pdf_path = _fetch_and_parse(folder, info, meta, pdf_path, ocr)
+        route, paper, pdf_path = _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish)
     except Exception as err:
         meta["status"] = "failed"
         meta["reason"] = str(err)[:500]
-        return _finish(folder, meta, None, commit)
+        return _finish(folder, meta, load_paper(folder), commit)
+
+    _fill_refs(info, display_path)
+    if paper is not None:
+        apply_s2_fields(paper, info)
 
     if route == "abstract":
         meta["status"] = "abstract_only"
@@ -184,67 +348,13 @@ def parse_corpus(
     if paper is None:
         meta["status"] = "failed"
         meta["reason"] = meta.get("reason") or "empty parse"
-        return _finish(folder, meta, None, commit)
+        return _finish(folder, meta, load_paper(folder), commit)
 
     meta["status"] = "done"
     meta["source"] = paper.get("source")
     if pdf_path and Path(pdf_path).is_file() and meta.get("page_count") is None:
         meta["page_count"] = _page_count(Path(pdf_path))
-    if sam:
-        pdf_path = _ensure_pdf(Path(pdf_path) if pdf_path else folder / "source.pdf", meta)
-        _attach_sam(folder, meta, pdf_path)
     return _finish(folder, meta, paper, commit)
-
-
-def _ensure_pdf(pdf_path: Path, meta: dict) -> Path:
-    if pdf_path.is_file() or not meta.get("arxiv"):
-        return pdf_path
-    t = time.time()
-    try:
-        pdf_path.write_bytes(arxiv_pdf(meta["arxiv"]))
-    except Exception as err:
-        meta["sam_error"] = f"pdf download failed: {err}"
-    meta["timings"]["download"] = float(meta["timings"].get("download") or 0) + time.time() - t
-    return pdf_path
-
-
-def _run_sam(folder, meta, paper, commit):
-    pdf = folder / "source.pdf"
-    if not pdf.is_file() and meta.get("arxiv"):
-        t = time.time()
-        try:
-            pdf.write_bytes(arxiv_pdf(meta["arxiv"]))
-            meta["timings"]["download"] = round(meta["timings"].get("download", 0) + time.time() - t, 4)
-        except Exception as err:
-            meta["sam_error"] = f"pdf download failed: {err}"
-            meta["sam_done"] = False
-            save_meta(folder, meta)
-            if commit:
-                commit()
-            return {"status": meta["status"], "meta": meta, "paper": paper, "cached": True}
-    _attach_sam(folder, meta, pdf if pdf.is_file() else None)
-    save_meta(folder, meta)
-    if commit:
-        commit()
-    return {"status": meta["status"], "meta": meta, "paper": paper, "cached": True}
-
-
-def _attach_sam(folder, meta, pdf_path):
-    t = time.time()
-    if not pdf_path or not Path(pdf_path).is_file():
-        meta["sam_done"] = False
-        meta["sam_error"] = "no pdf"
-        meta["timings"]["sam"] = 0
-        return
-    out = segment_pdf(Path(pdf_path), folder / "crops")
-    meta["timings"]["sam"] = time.time() - t
-    meta["sam_images"] = out["images"]
-    meta["sam_cost_usd"] = out["cost_usd"]
-    meta["sam_error"] = out["error"]
-    # A missing key is not cached as done, so a later key still crops this paper.
-    meta["sam_done"] = out["error"] is None or out["images"] > 0
-    if meta.get("page_count") is None:
-        meta["page_count"] = out.get("pages")
 
 
 def _page_count(pdf_path: Path) -> int | None:
@@ -258,7 +368,7 @@ def _page_count(pdf_path: Path) -> int | None:
         return None
 
 
-def _fetch_and_parse(folder, info, meta, pdf_path, ocr):
+def _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish=None):
     t = time.time()
     arxiv = info.get("arxiv") or ""
     src = folder / "src"
@@ -295,11 +405,11 @@ def _fetch_and_parse(folder, info, meta, pdf_path, ocr):
                     return _ocr_route(folder, info, meta, pdf_path, ocr, parsed["reason"])
                 paper = parsed["paper"]
                 paper["arxivId"] = arxiv
-                paper["title"] = paper.get("title") or info.get("title") or ""
-                if not paper.get("authors"):
-                    paper["authors"] = info.get("authors") or []
+                apply_s2_fields(paper, info)
                 t = time.time()
                 meta["timings"]["katex"] += _apply_katex(paper)
+                if publish:
+                    publish(paper, "sections")
                 t = time.time()
                 materialize_figures(paper["blocks"], src, folder / "figures")
                 meta["timings"]["figures"] += time.time() - t
@@ -335,6 +445,8 @@ def _ocr_route(folder, info, meta, pdf_path, ocr, why: str):
         paper = abstract_paper(info)
         paper["full"] = False
         return "abstract", paper, pdf_path
+    if publish:
+        publish(abstract_paper(info), "ocr")
     t = time.time()
     try:
         result = ocr(pdf_path, folder / "ocr")
@@ -343,6 +455,7 @@ def _ocr_route(folder, info, meta, pdf_path, ocr, why: str):
         meta["reason"] = f"ocr failed: {err}"[:500]
         return "abstract", abstract_paper(info), pdf_path
     meta["timings"]["ocr"] += float(result.get("seconds") or (time.time() - t))
+    meta["ocr_gpu_s"] = float(meta.get("ocr_gpu_s") or 0) + float(result.get("gpu_s") or result.get("seconds") or 0)
     blocks = result.get("blocks") or []
     if not blocks:
         meta["reason"] = f"{why}; ocr returned no blocks"
@@ -358,11 +471,7 @@ def _ocr_route(folder, info, meta, pdf_path, ocr, why: str):
             b["katex_ok"] = False
         meta["katex_error"] = str(err)[:300]
     meta["timings"]["katex"] += time.time() - t
-    paper = abstract_paper(info)
-    paper["full"] = True
-    paper["source"] = "ocr"
-    paper["blocks"] = blocks
-    paper["abstract"] = info.get("abstract") or ""
+    paper = paper_from_ocr(info, blocks)
     meta["page_count"] = result.get("page_count") or _page_count(pdf_path)
     meta["reason"] = why
     return "ocr", paper, pdf_path

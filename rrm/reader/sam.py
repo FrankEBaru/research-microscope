@@ -20,8 +20,12 @@ from pathlib import Path
 API = "https://api.meta.ai/v1/responses"
 MODEL = "sam-3.1"
 USD_PER_IMAGE = 0.0025
-# "figure" found nothing on Attention pages 3-4; "diagram" found all 3 panels (2026-10-29).
-PHRASES = ("diagram", "table", "equation")
+# "figure" and "equation" found nothing on Attention pages; "diagram" found every panel
+# and "table" finds tables (QA 2026-10-29). Those two phrases only.
+PHRASES = ("diagram", "table")
+# One viewport. Page indexes at or above MAX_CROP_INDEX are ignored.
+MAX_CROP_PAGES = 4
+MAX_CROP_INDEX = 30
 _TOK = re.compile(r"<\|(box|mask);(.*?)\|>", re.S)
 
 
@@ -156,6 +160,31 @@ def segment_png(png: bytes, phrase: str, key: str, timeout: int = 90) -> list[di
     return parse_sam_text(_output_text(raw))
 
 
+def parse_pages(text: str, cap: int = MAX_CROP_PAGES, max_index: int = MAX_CROP_INDEX) -> list[int]:
+    """`0,2,4-6` -> unique in-range page indexes, capped."""
+    pages = []
+    for bit in str(text or "").replace(" ", "").split(","):
+        if not bit:
+            continue
+        if "-" in bit:
+            left, right = bit.split("-", 1)
+            if left.isdigit() and right.isdigit():
+                lo, hi = int(left), int(right)
+                if lo > hi:
+                    lo, hi = hi, lo
+                pages.extend(range(lo, hi + 1))
+            continue
+        if bit.isdigit():
+            pages.append(int(bit))
+    out = []
+    for n in pages:
+        if 0 <= n < max_index and n not in out:
+            out.append(n)
+        if len(out) >= cap:
+            break
+    return out
+
+
 def render_pages(pdf: Path, max_pages: int = 30, dpi: int = 150):
     import pymupdf
     doc = pymupdf.open(pdf)
@@ -183,6 +212,121 @@ def _crop(png: bytes, box: dict, dest: Path) -> bool:
     except Exception:
         return False
     return True
+
+
+def _load_index(crops_dir: Path) -> dict:
+    path = crops_dir / "index.json"
+    if not path.is_file():
+        return {"crops": [], "images": 0, "cost_usd": 0.0, "error": None, "pages": 0}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"crops": [], "images": 0, "cost_usd": 0.0, "error": None, "pages": 0}
+    data.setdefault("crops", [])
+    return data
+
+
+def render_selected(pdf: Path, pages: list[int], dpi: int = 150) -> dict[int, bytes]:
+    import pymupdf
+
+    doc = pymupdf.open(pdf)
+    out = {}
+    try:
+        n = len(doc)
+        for i in pages:
+            if i < 0 or i >= n:
+                continue
+            pix = doc[i].get_pixmap(dpi=dpi)
+            out[i] = pix.tobytes("png")
+    finally:
+        doc.close()
+    return out
+
+
+def segment_pages(pdf: Path, crops_dir: Path, pages: list[int], phrases=PHRASES, max_pages: int = MAX_CROP_PAGES) -> dict:
+    """Crops for the pages in view. Parallel phrase calls. Never raises."""
+    key = api_key()
+    crops_dir.mkdir(parents=True, exist_ok=True)
+    wanted = []
+    for n in pages:
+        n = int(n)
+        if 0 <= n < MAX_CROP_INDEX and n not in wanted:
+            wanted.append(n)
+        if len(wanted) >= max_pages:
+            break
+    previous = _load_index(crops_dir)
+    result = {
+        "crops": [],
+        "images": int(previous.get("images") or 0),
+        "cost_usd": 0.0,
+        "error": previous.get("error"),
+        "pages": len(wanted),
+    }
+    kept = [row for row in (previous.get("crops") or []) if row.get("page") not in wanted]
+    if not key:
+        result["error"] = "no MODEL_API_KEY"
+        result["crops"] = kept
+        _write_index(crops_dir, kept, result)
+        return result
+    if not pdf.is_file():
+        result["error"] = "no pdf"
+        result["crops"] = kept
+        _write_index(crops_dir, kept, result)
+        return result
+    try:
+        pngs = render_selected(pdf, wanted)
+    except Exception as err:
+        result["error"] = f"render failed: {err}"
+        result["crops"] = kept
+        _write_index(crops_dir, kept, result)
+        return result
+    tasks = [(page, phrase) for page in pngs for phrase in phrases]
+    fresh = []
+
+    def _one(task):
+        page, phrase = task
+        try:
+            hits = segment_png(pngs[page], phrase, key)
+            return page, phrase, hits, None
+        except urllib.error.HTTPError as err:
+            return page, phrase, [], f"sam http {err.code}"
+        except Exception as err:
+            return page, phrase, [], f"sam error: {err}"
+
+    if tasks:
+        from concurrent.futures import ThreadPoolExecutor
+        workers = min(8, len(tasks))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            rows = list(pool.map(_one, tasks))
+    else:
+        rows = []
+    for page, phrase, hits, err in rows:
+        result["images"] += 1
+        if err:
+            result["error"] = err
+            if err in ("sam http 401", "sam http 403"):
+                break
+            continue
+        for n, hit in enumerate(hits):
+            name = f"p{page}_{phrase}_{n}.png"
+            if _crop(pngs[page], hit, crops_dir / name):
+                row = {
+                    "page": page,
+                    "phrase": phrase,
+                    "bbox": [hit["x1"], hit["y1"], hit["x2"], hit["y2"]],
+                    "file": name,
+                }
+                if hit.get("c") is not None:
+                    row["c"] = hit["c"]
+                if hit.get("mask"):
+                    mask_name = f"p{page}_{phrase}_{n}.mask.txt"
+                    (crops_dir / mask_name).write_text(hit["mask"], encoding="utf-8")
+                    row["mask"] = mask_name
+                fresh.append(row)
+    result["crops"] = kept + fresh
+    result["cost_usd"] = round(result["images"] * USD_PER_IMAGE, 6)
+    _write_index(crops_dir, result["crops"], result)
+    return result
 
 
 def segment_pdf(pdf: Path, crops_dir: Path, phrases=PHRASES, max_pages: int = 30) -> dict:
