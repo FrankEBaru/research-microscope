@@ -1,0 +1,40 @@
+{
+  "note": "Panorama de ejemplo: los enunciados y la agrupación son CURADOS (simulan el paso de Muse Spark). Cada frase es literal de un abstract y el build comprueba que exista.",
+  "atencion": {
+    "claims": [
+      { "id": "mirar", "statement": "La atención permite mirar las partes relevantes de la entrada en lugar de comprimirla en un vector fijo.",
+        "evidence": [
+          { "paper": "1409.0473", "quote": "allowing a model to automatically (soft-)search for parts of a source sentence that are relevant to predicting a target word" },
+          { "paper": "1508.04025", "quote": "a global approach which always attends to all source words and a local one that only looks at a subset of source words at a time" },
+          { "paper": "1706.03762", "quote": "based solely on attention mechanisms" } ] },
+      { "id": "sola", "statement": "La atención sola alcanza: no hacen falta recurrencia ni convoluciones.",
+        "evidence": [
+          { "paper": "1706.03762", "quote": "dispensing with recurrence and convolutions entirely" },
+          { "paper": "2010.11929", "quote": "a pure transformer applied directly to sequences of image patches can perform very well on image classification tasks" } ] },
+      { "id": "transfiere", "statement": "El mismo modelo se transfiere a otras tareas y escalas.",
+        "evidence": [
+          { "paper": "1706.03762", "quote": "We show that the Transformer generalizes well to other tasks" },
+          { "paper": "1810.04805", "quote": "can be fine-tuned with just one additional output layer to create state-of-the-art models for a wide range of tasks" },
+          { "paper": "2005.14165", "quote": "scaling up language models greatly improves task-agnostic, few-shot performance" },
+          { "paper": "2010.11929", "quote": "attains excellent results compared to state-of-the-art convolutional networks while requiring substantially fewer computational resources to train" } ] }
+    ]
+  },
+  "escalado": {
+    "claims": [
+      { "id": "crece", "statement": "El tamaño óptimo del modelo crece con el cómputo de entrenamiento.",
+        "evidence": [
+          { "paper": "2001.08361", "quote": "optimally compute-efficient training involves training very large models on a relatively modest amount of data" },
+          { "paper": "2203.15556", "quote": "the model size and the number of training tokens should be scaled equally" } ] },
+      { "id": "tasa", "statement": "Kaplan y Chinchilla recomiendan tasas distintas.",
+        "evidence": [
+          { "paper": "2406.12907", "quote": "Kaplan: $N_\\text{optimal} \\propto C^{0.73}$, Chinchilla: $N_\\text{optimal} \\propto C^{0.50}$" },
+          { "paper": "2406.19146", "quote": "these laws yield substantially different predictions" } ] },
+      { "id": "metodo", "statement": "La discrepancia se explica por detalles de método.",
+        "evidence": [
+          { "paper": "2406.12907", "quote": "much of this discrepancy can be attributed to Kaplan counting non-embedding rather than total parameters" },
+          { "paper": "2406.19146", "quote": "identifying three factors causing the difference: last layer computational cost, warmup duration, and scale-dependent optimizer tuning" } ] },
+      { "id": "subentrenados", "statement": "Los modelos grandes de entonces estaban subentrenados.",
+        "evidence": [ { "paper": "2203.15556", "quote": "current large language models are significantly undertrained" } ] }
+    ]
+  }
+}
