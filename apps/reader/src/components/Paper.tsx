@@ -5,6 +5,7 @@ import { Tex, Rich, Sym } from "@/lib/math";
 import { ProvChip } from "./Bits";
 import Instrument from "./Instrument";
 import { bibtex } from "@/lib/bibtex.js";
+import { eqTex, figureUrl, paperKey, refText } from "@/lib/backend.js";
 import { createTracker } from "@/lib/companion.js";
 import Companion, { Offer } from "./Companion";
 
@@ -45,6 +46,12 @@ function One({ x, ctx }: { x: Inline; ctx: Ctx }) {
     case "note": {
       const n = ++ctx.counter.n;
       return <sup className="fn" tabIndex={0} data-pop={`n|${n}`}>{n}</sup>;
+    }
+    case "ref": {
+      const label = x.label || "";
+      const text = refText(x, ctx.xref);
+      const href = x.target ? `#blk-${x.target}` : `#${label}`;
+      return <a href={href} className="xref" data-xref={label}>{text}</a>;
     }
     default: return null;
   }
@@ -89,7 +96,7 @@ function Popover({ pop, paper, model, content }: { pop: NonNullable<PopState>; p
     const f = model.byLabel[r[0]];
     body = (
       <>
-        <div className="pop-figs">{f.images.slice(0, 2).map((src: string) => <img key={src} src={src} alt={plainOf(f.caption)} />)}</div>
+        <div className="pop-figs">{f.images.slice(0, 2).map((src: string) => <FigImg key={src} paper={paper} name={src} alt={plainOf(f.caption)} />)}</div>
         <p className="pop-line"><b>Figura {model.figN[f.id]}.</b> <Inlines inls={f.caption} ctx={ctx} /></p>
         <div className="pop-meta"><ProvChip kind="paper" text="figura original, sin redibujar" /><span>clic: ir a la figura</span></div>
       </>
@@ -135,15 +142,36 @@ function Table({ b, ctx, n }: { b: Block; ctx: Ctx; n: number }) {
   );
 }
 
+const FILE_NAME = /^[A-Za-z0-9._-]{1,180}$/;
+
+function FigImg({ paper, name, alt }: { paper: Paper; name: string; alt: string }) {
+  const [broken, setBroken] = useState(false);
+  const bare = FILE_NAME.test(name) && !name.includes("..");
+  if (paper.stage === "sections" || broken || (!name.startsWith("/") && !bare)) {
+    return <div className="fig-loading">cargando figura</div>;
+  }
+  return <img src={figureUrl(paperKey(paper), name)} alt={alt} loading="lazy" onError={() => setBroken(true)} />;
+}
+
+function autoSentence(text: string) {
+  const parts = String(text || "").split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
+  return parts.find((s) => /we propose|we present|we show|we introduce/i.test(s)) || parts[0] || "";
+}
+
+export function mountKey(paper: Paper) {
+  if (!paper.stage || paper.stage === "stub") return "stub";
+  return paper.upgraded_from ? "body-up" : "body";
+}
+
 /* ---------- vista principal ---------- */
-export default function PaperView({ paper, content, focus, companion, onHideCompanion }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void }) {
+export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string } | null }) {
   const art = useRef<HTMLElement>(null);
   const [pop, setPop] = useState<PopState>(null);
   const timer = useRef<any>(null);
   const [active, setActive] = useState<string>("");
   const tracker = useRef(createTracker());
   const [offer, setOffer] = useState<Offer | null>(null);
-  useEffect(() => { tracker.current.reset(); setOffer(null); }, [paper.arxivId, companion]);
+  useEffect(() => { tracker.current.reset(); setOffer(null); }, [paper.arxivId, paper.stage, paper.upgraded_from, companion]);
 
   const att = content.attention?.paper === paper.arxivId ? content.attention : null;
   const model = useMemo(() => {
@@ -167,14 +195,25 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         if (/^(appendix|ap[ée]ndice)/i.test(plainOf(b.inlines))) { app = true; h = [0, 0, 0]; }
       }
       else if (b.kind === "h" && b.level <= 3) {
-        h[b.level - 1]++; for (let j = b.level; j < 3; j++) h[j] = 0;
-        cur = h.slice(0, b.level).map((n, i) => (app && i === 0 ? letter(n) : n)).join("."); nums[b.id] = cur;
+        if (b.number != null) cur = String(b.number);
+        else {
+          h[b.level - 1]++; for (let j = b.level; j < 3; j++) h[j] = 0;
+          cur = h.slice(0, b.level).map((n, i) => (app && i === 0 ? letter(n) : n)).join(".");
+        }
+        nums[b.id] = cur;
         if (b.label) { xref[b.label] = `${app ? "Apéndice" : "Sección"} ${cur}`; target[b.label] = `sec-${b.id}`; }
         if (b.level <= 2) toc.push({ id: b.id, label: `${cur} ${plainOf(b.inlines)}`, level: b.level });
       }
       secOf[b.id] = cur;
       if (b.kind === "fig") { figN[b.id] = ++fig; if (b.label) { xref[b.label] = `Figura ${fig}`; byLabel[b.label] = b; figs.add(b.label); } }
-      if (b.kind === "eq") { const tg = /\\tag\{([^}]*)\}/.exec(b.tex); (b.labels || []).forEach((l: string) => { xref[l] = tg ? `(${tg[1]})` : "ecuación"; target[l] = `blk-${b.id}`; }); }
+      if (b.kind === "eq") {
+        const tg = /\\tag\{([^}]*)\}/.exec(b.tex);
+        (b.labels || []).forEach((l: string) => {
+          if (b.number != null) xref[l] = String(l).startsWith("eq") ? `(${b.number})` : String(b.number);
+          else xref[l] = tg ? `(${tg[1]})` : "ecuación";
+          target[l] = `blk-${b.id}`;
+        });
+      }
       if (b.kind === "table") {
         tabN[b.id] = ++tab; if (b.label) xref[b.label] = `Tabla ${tab}`;
         const all: Inline[][][] = [...(b.head || []), ...(b.body || [])];
@@ -255,12 +294,20 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           ))}
         </nav>
       )}
-      <article ref={art} className="paper" onMouseOver={onOver} onMouseOut={onOut} onFocus={onOver} onBlur={onOut} onClick={onClick}>
+      <article key={mountKey(paper)} ref={art} className="paper" onMouseOver={onOver} onMouseOut={onOut} onFocus={onOver} onBlur={onOut} onClick={onClick}>
         <header className="paper-head">
-          <div className="chips"><ProvChip kind="paper" text={`arXiv:${paper.arxivId}`} />{!paper.full && <ProvChip kind="curado" text="solo abstract en esta ráfaga" />}</div>
+          <div className="chips">
+            <ProvChip kind="paper" text={paper.arxivId ? `arXiv:${paper.arxivId}` : `corpus:${paper.corpusid ?? ""}`} />
+            {!paper.full && !remote && <ProvChip kind="curado" text="solo abstract en esta ráfaga" />}
+            {remote?.stage === "stub" && <span className="chip chip-curado">solo abstract · cargando texto completo…</span>}
+            {(remote?.status === "abstract_only" || remote?.stage === "abstract_only") && <span className="chip chip-curado">solo abstract: sin LaTeX ni PDF usable</span>}
+          </div>
           <h1>{paper.title}</h1>
           <p className="authors">{authors}</p>
-          <p className="meta">{paper.date?.slice(0, 4)} · <a href={`https://arxiv.org/abs/${paper.arxivId}`} target="_blank" rel="noreferrer">ver original en arXiv</a>{paper.full && <> · <a href={`https://arxiv.org/pdf/${paper.arxivId}`} target="_blank" rel="noreferrer">PDF</a></>} · <button className="link bib" data-bibtex={bibtex(paper)} data-copy={bibtex(paper)} title="Copiar la ficha BibTeX de arXiv">BibTeX</button></p>
+          <p className="meta">{paper.date?.slice(0, 4)}{paper.arxivId && <> · <a href={`https://arxiv.org/abs/${paper.arxivId}`} target="_blank" rel="noreferrer">ver original en arXiv</a></>}{paper.full && paper.arxivId && <> · <a href={`https://arxiv.org/pdf/${paper.arxivId}`} target="_blank" rel="noreferrer">PDF</a></>}{(remote?.status === "abstract_only" || remote?.status === "failed" || remote?.stage === "abstract_only") && !paper.arxivId && paper.corpusid != null && <> · <a href={`https://www.semanticscholar.org/paper/${paper.corpusid}`} target="_blank" rel="noreferrer">Semantic Scholar</a></>}{paper.arxivId && <> · <button className="link bib" data-bibtex={bibtex(paper)} data-copy={bibtex(paper)} title="Copiar la ficha BibTeX de arXiv">BibTeX</button></>}</p>
+          {remote?.status === "failed" && <p className="fail-reason">{remote.reason}</p>}
+          {remote?.source === "ocr" && <p className="ocr-band">leído por OCR: puede haber errores en ecuaciones</p>}
+          {remote && autoSentence(paper.abstract) && <blockquote><span className="qlab">frase del abstract (automática)</span>«{autoSentence(paper.abstract)}»</blockquote>}
           {paper.license && <p className="license">{paper.license}</p>}
           {paper.authorNotes?.length > 0 && (
             <details className="author-notes"><summary>Notas de autoría del paper</summary>{paper.authorNotes.map((n: string, i: number) => <p key={i}>{n}</p>)}</details>
@@ -277,16 +324,18 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           } else if (b.kind === "p") {
             const nb = countNotes(b.inlines);
             el = (
-              <div id={`blk-${b.id}`} className={`blk ${b.abs ? "abstract" : ""}`}>
+              <div id={`blk-${b.id}`} className={`blk ${b.abs ? "abstract" : ""} ${b.raw ? "raw" : ""}`}>
                 {b.abs && <div className="abs-label">Resumen</div>}
                 <p>{(b.sents || [b.inlines]).map((s: Inline[], i: number) => <span key={i} className="sent" data-pop={`s|${b.id}|${i}`}><Inlines inls={s} ctx={ctx} /></span>)}</p>
+                {b.abs && remote && paper.tldr && <p className="tldr"><span className="chip chip-simulado">TLDR de Semantic Scholar (modelo)</span> {paper.tldr}</p>}
                 {nb > 0 && <ol className="notes" start={model.noteBase[b.id] + 1}>{model.notes.slice(model.noteBase[b.id], model.noteBase[b.id] + nb).map((n, i) => <li key={i} value={model.noteBase[b.id] + i + 1}><Inlines inls={n.blocks.flatMap((x: Block) => x.inlines || [])} ctx={{ ...ctx, counter: { n: 999 } }} /></li>)}</ol>}
               </div>
             );
           } else if (b.kind === "eq") {
             el = (
               <div id={`blk-${b.id}`} className="eq blk">
-                <Tex tex={b.tex} display syms={model.syms} />
+                <Tex tex={eqTex(b)} display syms={model.syms} />
+                {b.katex_ok === false && <span className="math-hint">no se pudo dibujar; TeX original</span>}
                 <button className="copy" data-copy={b.tex} aria-label="Copiar LaTeX">LaTeX</button>
               </div>
             );
@@ -295,7 +344,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           } else if (b.kind === "fig") {
             el = (
               <figure id={b.label || `blk-${b.id}`} className="fig blk">
-                <div className="fig-imgs">{b.images.map((src: string) => <img key={src} src={src} alt={plainOf(b.caption)} loading="lazy" />)}</div>
+                <div className="fig-imgs">{b.images.map((src: string) => <FigImg key={src} paper={paper} name={src} alt={plainOf(b.caption)} />)}</div>
                 <figcaption><b>Figura {model.figN[b.id]}.</b> <Inlines inls={b.caption} ctx={ctx} /> <ProvChip kind="paper" text="figura original, sin redibujar" /></figcaption>
               </figure>
             );

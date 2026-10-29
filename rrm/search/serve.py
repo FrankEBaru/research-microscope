@@ -2,8 +2,8 @@
 
 MODEL_API_KEY is read from the environment. `modal run` copies it from the
 local process with Secret.from_dict. The key is not stored in this repo.
-The HTTP endpoint is GET /burst?q=&n= . GET /subtopics?q= returns the
-Muse labels separately, so the paper list never waits on Muse.
+HTTP is the ASGI app `api` on this class: GET /burst?q=&n= and
+GET /subtopics?q= . Subtopics stays off the paper list, so the list never waits on Muse.
 """
 
 import os
@@ -19,6 +19,7 @@ if len(_HERE.parents) > 2:  # local checkout; inside Modal, rrm is already impor
 
 import modal
 
+from rrm.demo_guard import check, cors_kwargs
 from rrm.search.burst import burst_query
 from rrm.search.display import IdTable, PaperLookup
 from rrm.search.encode import QueryEncoder
@@ -29,7 +30,6 @@ from rrm.search.store import load_display, load_faiss, load_graph
 
 MOUNT = "/s2"
 RELEASE = "2026-10-20"
-_endpoint = getattr(modal, "fastapi_endpoint", None) or modal.web_endpoint
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("torch", extra_index_url="https://download.pytorch.org/whl/cpu")
@@ -39,7 +39,10 @@ image = (
 app = modal.App("rrm-burst")
 vol = modal.Volume.from_name("rrm-data", create_if_missing=True)
 if modal.is_local():
-    model_secret = modal.Secret.from_dict({"MODEL_API_KEY": os.environ.get("MODEL_API_KEY", "")})
+    model_secret = modal.Secret.from_dict({
+        "MODEL_API_KEY": os.environ.get("MODEL_API_KEY", ""),
+        "RRM_DEMO_TOKEN": os.environ.get("RRM_DEMO_TOKEN", ""),
+    })
 else:
     model_secret = modal.Secret.from_dict({})
 
@@ -147,19 +150,50 @@ class BurstSearch:
         out["seconds"]["hydrate"] = round(time.perf_counter() - t0, 4)
         return out
 
-    @_endpoint(method="GET")
-    def burst(self, q: str, n: int = 50):
+    @modal.method()
+    def run_burst(self, q: str, n: int = 50):
         return self._answer(q, n)
 
-    @_endpoint(method="GET")
-    def subtopics(self, q: str):
-        """Muse labels for the same query. Call it in parallel with /burst; it never blocks the list."""
-        t0 = time.perf_counter()
-        try:
-            topics = [str(t) for t in split_query(q)]
-        except Exception:
-            topics = []
-        return {"query": q, "subtopics": topics, "seconds": round(time.perf_counter() - t0, 4)}
+    @modal.asgi_app()
+    def api(self):
+        from fastapi import FastAPI, Request
+        from fastapi.middleware.cors import CORSMiddleware
+        from fastapi.responses import Response
+
+        web = FastAPI()
+        web.add_middleware(CORSMiddleware, **cors_kwargs())
+
+        def gate(request: Request):
+            code = check(
+                request.headers.get("x-rrm-demo"),
+                None,
+                request.headers.get("origin"),
+            )
+            if code:
+                return Response(status_code=code)
+            return None
+
+        @web.get("/burst")
+        def route_burst(request: Request, q: str, n: int = 50):
+            denied = gate(request)
+            if denied:
+                return denied
+            return self._answer(q, n)
+
+        @web.get("/subtopics")
+        def route_subtopics(request: Request, q: str):
+            """Muse labels for the same query. The UI does not call this."""
+            denied = gate(request)
+            if denied:
+                return denied
+            t0 = time.perf_counter()
+            try:
+                topics = [str(t) for t in split_query(q)]
+            except Exception:
+                topics = []
+            return {"query": q, "subtopics": topics, "seconds": round(time.perf_counter() - t0, 4)}
+
+        return web
 
 
 def _prefetch_reader(corpusids):
@@ -186,5 +220,5 @@ def main(query: str, n: int = 50, release: str = "2026-10-20", dest: str = "inde
     _safe(dest)
     if release != RELEASE or dest != "index":
         raise SystemExit("burst reads /s2/2026-10-20/index and /s2/2026-10-20/index_ext")
-    out = BurstSearch().burst.remote(q=query, n=int(n))
+    out = BurstSearch().run_burst.remote(q=query, n=int(n))
     print(json.dumps(out, ensure_ascii=False))

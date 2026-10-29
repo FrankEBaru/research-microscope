@@ -20,6 +20,6 @@ Código de Research Reading Microscope. El código puede ser feo; se pule con el
 
 ## Trabajo
 - Cada tarea corresponde a un ticket RRM-n del repo compass; PRs titulados `RRM-n: ...`.
-- Sin tests ni smoke harness por ahora, hasta que el diseño se asiente. **Excepción (RRM-9, 29 oct):** `apps/reader/` tiene pruebas unitarias, de extremo a extremo y CI (`npm test`); Franklin pidió continuar los tickets planeados, que incluían RRM-9.
+- Sin tests ni smoke harness por ahora, hasta que el diseño se asiente. **Excepción (RRM-9, 29 oct):** `apps/reader/` tiene pruebas unitarias, de extremo a extremo y CI (`npm test`); Franklin pidió continuar los tickets planeados, que incluían RRM-9. `bash scripts/check.sh` es el chequeo del repo; no llama a Modal, Semantic Scholar, arXiv ni Meta.
 - Nunca inventar resultados; reportar números medidos y marcar estimaciones.
 - Semantic Scholar: respetar 1 request/s con backoff exponencial; dar atribución "Semantic Scholar" en la interfaz.

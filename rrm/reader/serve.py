@@ -2,11 +2,12 @@
 
     modal run rrm/reader/serve.py::bench --ids 2048380074,123
 
-Endpoints (CPU):
+HTTP is one ASGI app, `api` (not one host per route):
     POST /prepare   {"ids": [corpusid, ...]}  -> spawn, return per-id status
     GET  /paper?id=corpusid                   -> stub immediately, then the growing cache
     GET  /crops?id=corpusid&pages=0,1         -> SAM for those pages, in the background
     GET  /status?ids=1,2,3                    -> status, stage, per-stage progress
+    GET  /file?id=&name=&k=                   -> a figure or crop file, or 404
 
 `paper` does not call SAM. Crops run only for the pages named in `crops`.
 """
@@ -18,6 +19,9 @@ import time
 from pathlib import Path
 
 import modal
+
+from rrm.demo_guard import check, cors_kwargs
+from rrm.reader.files import resolve_figure
 
 import rrm.reader.fetch as _fetch
 from rrm.reader.fetch import ARXIV, arxiv_index_at, arxiv_pdf, arxiv_slot_start, reader_identity
@@ -75,7 +79,11 @@ gpu_image = (
 app = modal.App("rrm-reader")
 vol = modal.Volume.from_name("rrm-data", create_if_missing=True)
 if modal.is_local():
-    secret = modal.Secret.from_dict({"MODEL_API_KEY": os.environ.get("MODEL_API_KEY", ""), "S2_API_KEY": os.environ.get("S2_API_KEY", "")})
+    secret = modal.Secret.from_dict({
+        "MODEL_API_KEY": os.environ.get("MODEL_API_KEY", ""),
+        "S2_API_KEY": os.environ.get("S2_API_KEY", ""),
+        "RRM_DEMO_TOKEN": os.environ.get("RRM_DEMO_TOKEN", ""),
+    })
 else:
     secret = modal.Secret.from_dict({})
 
@@ -316,7 +324,7 @@ def _run(corpusid: int) -> dict:
 
 # L4 first; A10G (24 GB) when L4 has no capacity (seen 2026-10-29: 10+ min queue).
 # max_inputs=1 and max_containers=8: each chunk is its own container. No min_containers.
-# Function timeout bounds a hung container; run_chunk itself stops an attempt at 120s and retries once.
+# Function timeout bounds a hung container; run_chunk itself stops an attempt at 180s and retries once.
 @app.function(
     image=gpu_image, gpu=["L4", "A10G"], volumes={DATA: vol},
     timeout=400, memory=16384, cpu=2, max_containers=8,
@@ -401,21 +409,13 @@ def _prepare_ids(ids) -> dict:
     return {"papers": rows}
 
 
-@app.function(image=cpu_image, volumes={DATA: vol}, timeout=60, secrets=[secret])
-@modal.fastapi_endpoint(method="POST")
-def prepare(item: dict):
-    return _prepare_ids(item.get("ids") or [])
-
-
 # A web endpoint cannot be .spawn()ed from another app (InvalidError), so /burst spawns this.
 @app.function(image=cpu_image, volumes={DATA: vol}, timeout=60, secrets=[secret])
 def prefetch(ids: list) -> dict:
     return _prepare_ids(ids)
 
 
-@app.function(image=cpu_image, volumes={DATA: vol}, timeout=60, secrets=[secret])
-@modal.fastapi_endpoint(method="GET")
-def paper(id: str):
+def read_paper(id: str):
     """Return whatever is already readable. Parsing continues in the background."""
     vol.reload()
     _shared_arxiv_wait()
@@ -484,9 +484,7 @@ def crops_for(corpusid: int, pages: list):
         _JOB.reset(token)
 
 
-@app.function(image=cpu_image, volumes={DATA: vol}, timeout=30, secrets=[secret])
-@modal.fastapi_endpoint(method="GET")
-def crops(id: str, pages: str = ""):
+def read_crops(id: str, pages: str = ""):
     """SAM for the pages in view. Returns the crops already on disk and keeps working in the background."""
     vol.reload()
     cid = int(id)
@@ -531,9 +529,7 @@ def crops(id: str, pages: str = ""):
     }
 
 
-@app.function(image=cpu_image, volumes={DATA: vol}, timeout=30)
-@modal.fastapi_endpoint(method="GET")
-def status(ids: str = ""):
+def read_status(ids: str = ""):
     vol.reload()
     rows = []
     for raw in ids.split(","):
@@ -558,6 +554,82 @@ def status(ids: str = ""):
                 "full_s": meta.get("full_s"),
             })
     return {"papers": rows}
+
+
+_FILE_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".txt": "text/plain",
+}
+
+
+@app.function(image=cpu_image, volumes={DATA: vol}, timeout=60, secrets=[secret])
+@modal.asgi_app()
+def api():
+    from fastapi import FastAPI, Request
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import FileResponse, Response
+
+    web = FastAPI()
+    web.add_middleware(CORSMiddleware, **cors_kwargs())
+
+    def gate(request: Request, allow_query: bool):
+        code = check(
+            request.headers.get("x-rrm-demo"),
+            request.query_params.get("k") if allow_query else None,
+            request.headers.get("origin"),
+        )
+        if code:
+            return Response(status_code=code)
+        return None
+
+    @web.get("/paper")
+    def route_paper(request: Request, id: str):
+        denied = gate(request, False)
+        if denied:
+            return denied
+        return read_paper(id)
+
+    @web.get("/status")
+    def route_status(request: Request, ids: str = ""):
+        denied = gate(request, False)
+        if denied:
+            return denied
+        return read_status(ids)
+
+    @web.post("/prepare")
+    async def route_prepare(request: Request):
+        denied = gate(request, False)
+        if denied:
+            return denied
+        item = await request.json()
+        return _prepare_ids((item or {}).get("ids") or [])
+
+    @web.get("/crops")
+    def route_crops(request: Request, id: str, pages: str = ""):
+        denied = gate(request, False)
+        if denied:
+            return denied
+        return read_crops(id, pages)
+
+    @web.get("/file")
+    def route_file(request: Request, id: str = "", name: str = ""):
+        denied = gate(request, True)
+        if denied:
+            return denied
+        path = resolve_figure(PAPERS, id, name)
+        if path is None:
+            return Response(status_code=404)
+        return FileResponse(
+            path,
+            media_type=_FILE_TYPES[path.suffix.lower()],
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    return web
 
 
 def _fmt_ocr_chunks(meta: dict) -> str:

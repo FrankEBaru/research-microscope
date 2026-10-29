@@ -23,7 +23,7 @@ MINERU_BACKEND = "vlm-auto-engine"
 # ~4 pages per container. 15 pages -> 4 chunks; longer PDFs use at most 8.
 PAGES_PER_PART = 4
 MAX_OCR_PARTS = 8
-# One attempt is killed at 120s so a hung chunk cannot sit for 13 min (QA 2026-10-29).
+# One attempt is killed at 180s so a hung chunk cannot sit for 13 min (QA 2026-10-29).
 CHUNK_TIMEOUT_S = 180  # QA 2026-10-29: cold vLLM chunks take 97-100 s; one hit 120 s twice and lost 4 pages
 CHUNK_TRIES = 2
 

@@ -6,14 +6,16 @@ When a burst returns, it spawns `prepare` for the top 10 corpus ids (fire-and-fo
 
 1. Resolve the id from `rrm-data` `2026-10-20/index/display.parquet` (arXiv, DOI). The free Semantic Scholar Graph API supplies gaps (`externalIds`, `openAccessPdf`, authors). One request per second, backoff, optional `S2_API_KEY` (`x-api-key`). The stub is written before any S2 retry; a retry fills the stub afterwards. Without a key the batch request and `papers/{id}/s2.json` cache are unchanged.
 2. arXiv e-print and the PDF route start together. Real TeX is parsed (inline `\input`, math macros, KaTeX, figures). A pdfpages wrapper (Adam) is not TeX. The PDF route races the arXiv PDF against the S2 `openAccessPdf` URL (first valid PDF, the other cancelled) and runs MinerU. Whichever parse finishes first is published (`source` is `latex` or `ocr`). A later LaTeX parse replaces OCR (`upgraded_from` names the previous source). OCR never replaces LaTeX.
-3. MinerU 2.5 (`vlm-auto-engine`) runs on its own GPU container per ~4 pages, up to 8 containers, 120s per attempt and one retry. A failed chunk is a raw block; the other pages return in order. The container log line is `mineru chunk=start-end engine=vllm|transformers seconds=…`.
+3. MinerU 2.5 (`vlm-auto-engine`) runs on its own GPU container per ~4 pages, up to 8 containers, 180s per attempt and one retry. A failed chunk is a raw block; the other pages return in order. The container log line is `mineru chunk=start-end engine=vllm|transformers seconds=…`.
 4. Otherwise `abstract_only` (abstract + tldr). Failures set `failed` and a reason.
 
 arXiv fetches use `export.arxiv.org` and share one clock: a burst of 4 requests in 1 second, then a 1 second sleep (the rate arXiv documents for programmatic harvest). The clock is taken only to open the request, not while the body transfers, and it does not apply to non-arXiv PDF hosts. Each download gives up after 10s connect / 30s total or 50MB and the parse falls back to the next source. The S3 requester-pays bucket is not used: one paper lives in a ~500 MB month tar, and the requester pays for the whole object.
 
 ## Status
 
-`queued`, `parsing`, `done`, `abstract_only`, `failed` (plus `reason`, `stage`, and `stages`). `stages` is `stub`, `sections`, `figures`, `crops`, each `pending`, `running`, `done`, `skipped`, or `failed`. A paper is cached at `papers/{corpusid}/` on the volume: `paper.json` (rewritten as sections, then figures, arrive), `meta.json` (seconds per step, `first_content_s`, `sections_s`, `full_s`, page count, equation and katex_ok counts), `figures/`, `crops/`.
+`queued`, `parsing`, `done`, `abstract_only`, `failed`, `missing` (plus `reason`, `stage`, and `stages`). `stages` is `stub`, `sections`, `figures`, `crops`, each `pending`, `running`, `done`, `skipped`, or `failed`. A paper is cached at `papers/{corpusid}/` on the volume: `paper.json` (rewritten as sections, then figures, arrive), `meta.json` (seconds per step, `first_content_s`, `sections_s`, `full_s`, page count, equation and katex_ok counts), `figures/`, `crops/`.
+
+The demo token (`RRM_DEMO_TOKEN`, inlined in the static bundle as `NEXT_PUBLIC_RRM_DEMO_TOKEN`) is readable by anyone who can load the site; it only stops a person who has the modal.run URL and not the bundle.
 
 ## SAM
 

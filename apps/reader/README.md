@@ -22,6 +22,10 @@ Si `content/` cambió, o ese Release no corresponde a este código:
 npm run data      # usa `.cache/` si ya está; si no, arXiv a 1 petición cada 3 s. NO se commitea
 ```
 
+## Vercel
+
+Export estático (`next.config.mjs`: `output: "export"`, `images.unoptimized: true`). En Vercel Hobby la raíz del proyecto es `apps/reader`, Node 22, build `npm ci && npm run build`. Variables de entorno del proyecto, nunca en git: `NEXT_PUBLIC_BURST_URL`, `NEXT_PUBLIC_READER_URL`, `NEXT_PUBLIC_RRM_DEMO_TOKEN`. Si las dos URLs están vacías, la pantalla sigue siendo la ráfaga curada y no llama al backend. Restaurar `public/papers/` desde el Release RRM-11 antes del build. Este repo no despliega.
+
 ## Qué es real y qué es simulado
 | Pieza | Estado |
 |---|---|

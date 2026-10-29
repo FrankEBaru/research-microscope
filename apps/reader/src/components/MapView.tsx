@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Rich } from "@/lib/math";
 import { ProvChip } from "./Bits";
 import { plainOf } from "./Paper";
+import { paperKey } from "@/lib/backend.js";
 
 const W = 1600, H = 1000;
 const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
@@ -157,6 +158,52 @@ export default function MapView({ q, papers, go }: any) {
         <span className="lg lg-full" /> texto completo · <span className="lg lg-abs" /> solo abstract · <span className="lg-line solid" /> relación confirmada en el texto (bibliografía o abstract) · <span className="lg-line dash" /> relación curada a mano ·{" "}
         <ProvChip kind="curado" text="posiciones ilustrativas" /> en el motor real vendrían de una proyección de SPECTER2. Arrastra para mover · rueda, +/− o los lentes para acercar · doble clic acerca.
       </p>
+    </div>
+  );
+}
+
+export function LiveCircle({ papers, edges, states, onOpen }: { papers: any[]; edges: any[]; states: Record<string, any>; onOpen: (id: string) => void }) {
+  const n = Math.max(papers.length, 1);
+  const cx = 320, cy = 200, r = 150;
+  const nodes = papers.map((p, i) => {
+    const ang = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    const id = paperKey(p);
+    return { id, p, x: cx + r * Math.cos(ang), y: cy + r * Math.sin(ang) };
+  });
+  const at: Record<string, (typeof nodes)[number]> = Object.fromEntries(nodes.map((node) => [node.id, node]));
+  const queued = (id: string) => {
+    const st = states[id];
+    return !st || st.status === "missing" || st.status === "queued";
+  };
+  return (
+    <div className="live-map">
+      <svg viewBox="0 0 640 420" width="100%" role="img" aria-label="Ráfaga en vivo">
+        {(edges || []).map((e: any, i: number) => {
+          const a = at[String(e.citing)], b = at[String(e.cited)];
+          if (!a || !b) return null;
+          return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="edge solid" />;
+        })}
+        {nodes.map((node) => (
+          <g key={node.id} className="node-dot" onClick={() => onOpen(node.id)}>
+            <circle cx={node.x} cy={node.y} r={11} className={queued(node.id) ? "ring-queue" : "ring-full"} />
+            <text x={node.x} y={node.y + 26} textAnchor="middle" className="dot-label">{queued(node.id) ? "en cola" : short(node.p.title || node.id, 32)}</text>
+          </g>
+        ))}
+      </svg>
+      <p className="map-legend">aristas = citas (Semantic Scholar); el orden en el círculo es el ranking, no un mapa semántico</p>
+      <ol className="live-rows">
+        {papers.map((p) => {
+          const id = paperKey(p);
+          const st = states[id];
+          return (
+            <li key={id}>
+              <button type="button" onClick={() => onOpen(id)}>{p.title}</button>
+              <span className="authors">{[p.year, p.venue, p.citationcount].filter((x) => x != null && x !== "").join(" · ")}{queued(id) ? " · en cola" : ""}{st?.status === "failed" ? ` · ${st.reason || ""}` : ""}</span>
+            </li>
+          );
+        })}
+      </ol>
+      <p>Datos de papers y citas: Semantic Scholar</p>
     </div>
   );
 }

@@ -51,6 +51,9 @@ out/
 .turbo/
 *.tsbuildinfo
 
+# Cheap-check fixtures (scripts/check.sh downloads them)
+tests/fixtures/
+
 # Local data, indexes, and secrets
 .env*
 data/
