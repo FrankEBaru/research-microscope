@@ -927,7 +927,8 @@ def parse_tex(tex: str, macros: dict | None = None, arxiv_id: str = "") -> dict:
         license_note = plain(blocks[0]["inlines"])
         blocks = blocks[1:]
     blocks = finalize(blocks)
-    title = plain(parse_inlines(_grab(tex, "title"), macros))
+    title = plain(parse_inlines(_grab(tex, "title").replace("\\\\", " "), macros))  # "Scenes as \\ Neural"
+    title = " ".join(title.replace("\\\\", " ").split())
     return {
         "arxivId": arxiv_id,
         "corpusid": None,
