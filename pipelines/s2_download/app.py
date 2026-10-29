@@ -23,9 +23,12 @@ import modal
 
 from pipelines.s2_download.cost_guard import (
     ABORT_USD,
+    CALIBRATION_USD,
     DEFAULT_CONCURRENCY,
     DEFAULT_CPU,
     DEFAULT_MEMORY_MIB,
+    JSON_TWO_CORE_SPEEDUP,
+    SHARD_KILL_MULTIPLIER,
     Ledger,
     cost_usd,
     estimate_seconds,
@@ -47,15 +50,32 @@ from pipelines.s2_download.transform import (
     NEEDS_CS,
     StopShard,
     cs_dir,
-    iter_records,
     load_cs,
     merge_cs,
-    process_records,
+    outputs_for,
+    process_stream,
     shard_complete,
     shard_path,
     verify_tree,
     write_run_record,
 )
+
+# Minimum dollars left for samples that have not started, and a per-sample
+# ceiling. The sum cannot exceed CALIBRATION_USD because each sample's room
+# is the cap minus what is already spent minus the later minimums.
+_CAL_ORDER = ("papers", "citations", "abstracts", "embeddings-specter_v2")
+_CAL_MIN = {
+    "papers": 0.040,
+    "citations": 0.040,
+    "abstracts": 0.008,
+    "embeddings-specter_v2": 0.006,
+}
+_CAL_CEILING = {
+    "papers": 0.050,
+    "citations": 0.055,
+    "abstracts": 0.020,
+    "embeddings-specter_v2": 0.012,
+}
 
 APP_NAME = "rrm-s2-download"
 VOLUME_NAME = "rrm-data"
@@ -350,14 +370,15 @@ def _blank_shard(job: dict, **extra) -> dict:
 def _download_once(url: str, job: dict, cs, should_stop) -> dict:
     gzip_reader, response, counter, length = open_url_stream(url)
     try:
-        result = process_records(
+        result = process_stream(
             job["dataset"],
-            iter_records(gzip_reader),
+            gzip_reader,
             root=MOUNT,
             release=job["release"],
             index=int(job["index"]),
             cs=cs,
             should_stop=should_stop,
+            cpu=float(job.get("cpu") or DEFAULT_CPU),
         )
     finally:
         gzip_reader.close()
@@ -465,7 +486,15 @@ def process_shard(job: dict) -> dict:
             result["cost_usd"] = actual
             if not result.get("wall_seconds"):
                 result["wall_seconds"] = elapsed
-            if result.get("input_bytes") and elapsed > 0 and not result.get("mb_per_s"):
+            # A killed shard's input_bytes is the full object size, not the
+            # bytes actually parsed. Do not turn that into a throughput.
+            if (
+                result.get("ok")
+                and not result.get("stopped_early")
+                and result.get("input_bytes")
+                and elapsed > 0
+                and not result.get("mb_per_s")
+            ):
                 result["mb_per_s"] = (result["input_bytes"] / 1e6) / elapsed
 
 
@@ -493,11 +522,51 @@ def run_merge(release: str) -> dict:
 
 
 def _mb_per_s(dataset: str, measured: dict[str, float]) -> float:
-    if dataset == "embeddings-specter_v2":
-        rate = measured.get("embeddings-specter_v2") or measured.get("papers") or 0.0
+    """Throughput for wave estimates. Citations never borrow the papers rate."""
+    if dataset == "tldrs":
+        rate = measured.get("tldrs") or measured.get("abstracts") or measured.get("papers") or 0.0
+    elif dataset == "abstracts":
+        rate = measured.get("abstracts") or measured.get("papers") or 0.0
     else:
-        rate = measured.get("papers") or measured.get("embeddings-specter_v2") or 0.0
+        rate = measured.get(dataset) or 0.0
     return float(rate)
+
+
+def _smallest_index(sizes: list[int | None]) -> int:
+    best_i = 0
+    best = None
+    for index, size in enumerate(sizes):
+        if not size:
+            continue
+        if best is None or size < best:
+            best = size
+            best_i = index
+    return best_i
+
+
+def _cal_allocation(name: str, later: tuple[str, ...], spent: float) -> float:
+    reserved = sum(_CAL_MIN[item] for item in later)
+    room = CALIBRATION_USD - spent - reserved
+    return max(0.0, min(room, _CAL_CEILING[name]))
+
+
+def _discard_shard(release: str, dataset: str, index: int) -> None:
+    for path in outputs_for(MOUNT, release, dataset, index):
+        if os.path.exists(path):
+            os.remove(path)
+        partial = path + ".partial"
+        if os.path.exists(partial):
+            os.remove(partial)
+
+
+def _seconds_per_byte(item: dict | None) -> float:
+    if not item or not item.get("ok") or item.get("stopped_early"):
+        return 0.0
+    nbytes = int(item.get("input_bytes") or 0)
+    seconds = float(item.get("container_seconds") or item.get("wall_seconds") or 0.0)
+    if nbytes <= 0 or seconds <= 0:
+        return 0.0
+    return seconds / nbytes
 
 
 def _build_jobs(
@@ -802,126 +871,144 @@ def run_calibrate(cpu: float, memory: int, concurrency: int) -> dict:
             byte_totals[name] = total
             byte_estimated[name] = estimated
 
-        jobs = []
-        for name in ("papers", "embeddings-specter_v2"):
-            if not lists[name]:
-                payload = {
-                    "ok": False,
-                    "proceed": False,
-                    "release_id": release_id,
-                    "stop_reason": f"{name} has no shards",
-                }
-                return _finish_stage("calibrate", payload, started, 1, 2048)
-            nbytes = size_map[name][0] or 0
-            jobs.append(
-                {
-                    "dataset": name,
-                    "index": 0,
-                    "url": lists[name][0],
-                    "release": release_id,
-                    "cpu": cpu,
-                    "memory_mib": memory,
-                    "input_bytes": int(nbytes) if nbytes else None,
-                    # Ceiling sits past the shard timeout so a slow sample is measured,
-                    # not killed for missing the guessed rate.
-                    "estimate_usd": cost_usd(90 * 60, cpu, memory),
-                    "skip_existing": False,
-                }
-            )
-        paper_job = [job for job in jobs if job["dataset"] == "papers"]
-        embedding_job = [job for job in jobs if job["dataset"] == "embeddings-specter_v2"]
-        paper_results, aborted = _run_waves(paper_job, cpu, memory, concurrency)
-        if not paper_results:
-            paper_results = [_blank_shard(paper_job[0], error="papers shard returned no record")]
+        indexes = {
+            "papers": 0 if lists.get("papers") else None,
+            "embeddings-specter_v2": 0 if lists.get("embeddings-specter_v2") else None,
+            "abstracts": _smallest_index(size_map["abstracts"]) if lists.get("abstracts") else None,
+            "citations": _smallest_index(size_map["citations"]) if lists.get("citations") else None,
+        }
+        # A previous calibrate may have kept a citations or embeddings shard
+        # filtered with a one-shard CS index. Drop those indexes before
+        # writing new ones. Papers and abstracts shards are complete files.
+        previous = _read_json(_latest_path("calibrate")) or {}
+        if previous.get("release_id") == release_id:
+            old_indexes = previous.get("calibration_indexes") or {}
+            volume.reload()
+            for name in ("citations", "embeddings-specter_v2"):
+                old = old_indexes.get(name)
+                if old is None:
+                    continue
+                _discard_shard(release_id, name, int(old))
+            volume.commit()
+
+        baseline = _ledger().total()
+
+        def sample_spent() -> float:
+            return _ledger().total() - baseline
+
+        by_name: dict[str, dict] = {}
+        aborted = False
         merged = None
         merge_error = None
-        if not aborted:
-            # Papers must be visible before the CS index is built. A failed
-            # papers shard still gets an index (possibly empty) so the
-            # embeddings shard runs and returns its own record.
-            try:
-                volume.reload()
-                merged = merge_cs(MOUNT, release_id, partial=True)
-                volume.commit()
-            except Exception as exc:
-                merge_error = _public_error(exc)
-        embedding_results: list[dict] = []
-        if aborted or _over_budget():
-            embedding_results = [
-                _blank_shard(
-                    embedding_job[0],
+        for position, name in enumerate(_CAL_ORDER):
+            index = indexes.get(name)
+            if index is None or not lists.get(name):
+                by_name[name] = _blank_shard(
+                    {"dataset": name, "index": 0, "input_bytes": 0},
+                    error=f"{name} has no shards",
+                )
+                continue
+            if aborted or _over_budget():
+                by_name[name] = _blank_shard(
+                    {"dataset": name, "index": index, "input_bytes": size_map[name][index] or 0},
                     aborted=True,
                     error=f"not started: cumulative cost reached ${ABORT_USD:.0f}",
                 )
-            ]
-            aborted = True
-        elif not merged:
-            embedding_results = [
-                _blank_shard(
-                    embedding_job[0],
+                aborted = True
+                continue
+            later = _CAL_ORDER[position + 1 :]
+            allocation = _cal_allocation(name, later, sample_spent())
+            if allocation < 0.001:
+                by_name[name] = _blank_shard(
+                    {"dataset": name, "index": index, "input_bytes": size_map[name][index] or 0},
+                    error=f"not started: calibration budget ${CALIBRATION_USD:.2f}",
+                )
+                continue
+            if name in NEEDS_CS and not merged:
+                by_name[name] = _blank_shard(
+                    {"dataset": name, "index": index, "input_bytes": size_map[name][index] or 0},
                     error=merge_error or "not started: CS index was not built",
                 )
-            ]
-        else:
-            embedding_results, emb_aborted = _run_waves(embedding_job, cpu, memory, concurrency)
-            aborted = aborted or emb_aborted
-            if not embedding_results:
-                embedding_results = [
-                    _blank_shard(embedding_job[0], error="embeddings shard returned no record")
-                ]
-        results = paper_results + embedding_results
-        by_name = {}
-        for item in results:
-            if isinstance(item, dict) and item.get("dataset"):
-                by_name[item["dataset"]] = item
-        papers = by_name.get("papers") or {}
-        embeddings = by_name.get("embeddings-specter_v2") or {}
-        ok = bool(papers.get("ok") and embeddings.get("ok")) and not aborted
-
-        def seconds_per_byte(item: dict) -> float:
-            nbytes = int(item.get("input_bytes") or 0)
-            seconds = float(item.get("container_seconds") or item.get("wall_seconds") or 0.0)
-            if nbytes <= 0 or seconds <= 0:
-                return 0.0
-            return seconds / nbytes
-
-        papers_rate = seconds_per_byte(papers)
-        embeddings_rate = seconds_per_byte(embeddings)
-        # Probing can fail. Fall back to sample_bytes * shard_count, which is an estimate.
-        for name, sample in (
-            ("papers", papers.get("input_bytes")),
-            ("embeddings-specter_v2", embeddings.get("input_bytes")),
-        ):
-            if byte_totals.get(name, 0) <= 0 and sample:
-                byte_totals[name] = int(sample) * shard_counts[name]
-                byte_estimated[name] = True
-        sample_bytes = int(papers.get("input_bytes") or embeddings.get("input_bytes") or 0)
-        for name in DATASETS:
-            if name in ("papers", "embeddings-specter_v2"):
                 continue
-            if byte_totals.get(name, 0) <= 0 and sample_bytes:
-                byte_totals[name] = sample_bytes * shard_counts[name]
+            nbytes = size_map[name][index] or 0
+            job = {
+                "dataset": name,
+                "index": int(index),
+                "url": lists[name][index],
+                "release": release_id,
+                "cpu": cpu,
+                "memory_mib": memory,
+                "input_bytes": int(nbytes) if nbytes else None,
+                # 3x this estimate equals the dollars this sample may spend.
+                "estimate_usd": allocation / SHARD_KILL_MULTIPLIER,
+                "skip_existing": False,
+            }
+            ran, wave_aborted = _run_waves([job], cpu, memory, 1)
+            aborted = aborted or wave_aborted
+            if not ran:
+                by_name[name] = _blank_shard(job, error="shard returned no record")
+            else:
+                by_name[name] = ran[0]
+            if name == "papers" and not aborted:
+                try:
+                    volume.reload()
+                    merged = merge_cs(MOUNT, release_id, partial=True)
+                    volume.commit()
+                except Exception as exc:
+                    merge_error = _public_error(exc)
+
+        papers = by_name.get("papers") or {}
+        abstracts = by_name.get("abstracts") or {}
+        citations = by_name.get("citations") or {}
+        embeddings = by_name.get("embeddings-specter_v2") or {}
+        # Citations and embeddings must finish. Abstracts is used when it
+        # finishes; otherwise abstracts and tldrs follow the papers rate.
+        ok = (
+            bool(papers.get("ok") and citations.get("ok") and embeddings.get("ok"))
+            and not aborted
+        )
+
+        def measured_mb(item: dict) -> float | None:
+            if not item.get("ok") or item.get("stopped_early"):
+                return None
+            value = item.get("mb_per_s")
+            return float(value) if value else None
+
+        for name, item in (
+            ("papers", papers),
+            ("abstracts", abstracts),
+            ("citations", citations),
+            ("embeddings-specter_v2", embeddings),
+        ):
+            if byte_totals.get(name, 0) <= 0 and item.get("ok") and item.get("input_bytes"):
+                byte_totals[name] = int(item["input_bytes"]) * shard_counts.get(name, 0)
                 byte_estimated[name] = True
-        # The calibration embeddings shard was filtered with a one-shard CS set.
-        # Drop it so the full run does not treat that file as complete.
+        # Drop samples whose CS filter saw only the calibration papers shard.
+        # Abstracts has no CS filter, so a finished abstracts shard can stay.
         volume.reload()
-        scratch = shard_path(MOUNT, release_id, "embeddings-specter_v2", 0)
-        if os.path.exists(scratch):
-            os.remove(scratch)
+        for name in ("citations", "embeddings-specter_v2"):
+            index = indexes.get(name)
+            if index is None:
+                continue
+            _discard_shard(release_id, name, int(index))
+        volume.commit()
         other_bytes = {name: byte_totals[name] for name in DATASETS if name not in ("papers", "embeddings-specter_v2")}
         other_shards = {name: shard_counts[name] for name in other_bytes}
         projection = project_full_run(
-            papers_seconds_per_byte=papers_rate,
-            papers_shards=shard_counts["papers"],
-            papers_bytes=byte_totals["papers"],
-            embeddings_seconds_per_byte=embeddings_rate,
-            embeddings_shards=shard_counts["embeddings-specter_v2"],
-            embeddings_bytes=byte_totals["embeddings-specter_v2"],
+            papers_seconds_per_byte=_seconds_per_byte(papers),
+            papers_shards=shard_counts.get("papers", 0),
+            papers_bytes=byte_totals.get("papers", 0),
+            embeddings_seconds_per_byte=_seconds_per_byte(embeddings),
+            embeddings_shards=shard_counts.get("embeddings-specter_v2", 0),
+            embeddings_bytes=byte_totals.get("embeddings-specter_v2", 0),
+            citations_seconds_per_byte=_seconds_per_byte(citations),
+            abstracts_seconds_per_byte=_seconds_per_byte(abstracts),
             other_bytes=other_bytes,
             other_shards=other_shards,
             cpu=cpu,
             memory_mib=memory,
             concurrency=concurrency,
+            measured_cpu=cpu,
         )
         if aborted:
             projection["proceed"] = False
@@ -935,16 +1022,25 @@ def run_calibrate(cpu: float, memory: int, concurrency: int) -> dict:
             "cpu": cpu,
             "memory_mib": memory,
             "concurrency": concurrency,
+            "calibration_cap_usd": CALIBRATION_USD,
+            "calibration_spend_usd": sample_spent(),
+            "calibration_indexes": {name: indexes.get(name) for name in _CAL_ORDER},
             "shard_counts": shard_counts,
             "input_bytes": byte_totals,
             "input_bytes_estimated": byte_estimated,
             "mb_per_s": {
-                "papers": papers.get("mb_per_s"),
-                "embeddings-specter_v2": embeddings.get("mb_per_s"),
+                "papers": measured_mb(papers),
+                "abstracts": measured_mb(abstracts),
+                "citations": measured_mb(citations),
+                "embeddings-specter_v2": measured_mb(embeddings),
             },
             "papers": _shard_record(papers, "papers"),
+            "abstracts": _shard_record(abstracts, "abstracts"),
+            "citations": _shard_record(citations, "citations"),
             "embeddings-specter_v2": _shard_record(embeddings, "embeddings-specter_v2"),
             "embeddings_filter": "cs ids from the calibration papers shard only; output GB is not a keep-rate; parquet shard was not kept",
+            "citations_filter": "throughput is from the smallest citations shard; the parquet was not kept because the CS index is partial",
+            "abstracts_kept": bool(abstracts.get("ok")),
             "cs_index_partial": True,
             "projection": projection,
         }
@@ -1001,7 +1097,22 @@ def run_full(
             return _finish_stage("full", payload, started, 1, 2048)
         release_id = _safe_release(str(calibration["release_id"]))
         selected = _parse_datasets(datasets)
-        measured = calibration.get("mb_per_s") or {}
+        measured = dict(calibration.get("mb_per_s") or {})
+        cal_cpu = float(calibration.get("cpu") or cpu)
+        # Same 1.4x two-core factor as the projection. Embeddings are not scaled.
+        if cal_cpu > 0 and cpu > 0 and abs(cpu - cal_cpu) > 1e-9:
+
+            def _json_speed(cores: float) -> float:
+                if cores <= 1.0:
+                    return 1.0
+                if cores >= 2.0:
+                    return JSON_TWO_CORE_SPEEDUP
+                return 1.0 + (JSON_TWO_CORE_SPEEDUP - 1.0) * (cores - 1.0)
+
+            scale = _json_speed(cpu) / _json_speed(cal_cpu)
+            for name, value in list(measured.items()):
+                if name != "embeddings-specter_v2" and value:
+                    measured[name] = float(value) * scale
         skip_existing = not reprocess
         per_dataset: dict[str, dict] = {}
         aborted = False
@@ -1238,8 +1349,10 @@ def _shard_record(item: dict | None, dataset: str) -> dict:
 
 def _format_shard_line(label: str, item: dict | None) -> str:
     item = item or {}
+    index = item.get("index")
+    prefix = label if index is None else f"{label} shard {index}"
     line = (
-        f"{label}: wall {_fmt_num(item.get('wall_seconds'), 1)}s, "
+        f"{prefix}: wall {_fmt_num(item.get('wall_seconds'), 1)}s, "
         f"{_fmt_num(item.get('mb_per_s'), 2)} MB/s, "
         f"peak RAM {_fmt_num(item.get('peak_ram_mib'), 0)} MiB, "
         f"output {_fmt_num(item.get('output_gb'), 4)} GB, "
@@ -1257,6 +1370,8 @@ def _format_calibrate(payload: dict) -> str:
         "stage calibrate",
         f"release_id {payload.get('release_id')}",
         _format_shard_line("papers", payload.get("papers")),
+        _format_shard_line("citations", payload.get("citations")),
+        _format_shard_line("abstracts", payload.get("abstracts")),
         _format_shard_line("embeddings-specter_v2", payload.get("embeddings-specter_v2")),
         (
             "projection (estimated): "
@@ -1266,9 +1381,17 @@ def _format_calibrate(payload: dict) -> str:
             f"proceed={payload.get('proceed')}"
         ),
     ]
-    for name, row in (projection.get("by_dataset") or {}).items():
+    for key, row in (projection.get("by_cpu") or {}).items():
         lines.append(
-            f"input {name}: {_fmt_num(row.get('input_gb'), 2)} GB, {row.get('shards')} shards"
+            f"cpu={key} estimate: ${_fmt_num(row.get('cost_usd'), 2)}, "
+            f"wall {_fmt_num(row.get('wall_hours'), 2)} h, proceed={row.get('proceed')}"
+        )
+    if projection.get("recommended_cpu") is not None:
+        lines.append(f"recommended_cpu {projection.get('recommended_cpu')}")
+    for name, row in (projection.get("by_dataset") or {}).items():
+        source = row.get("rate_source") or "unmeasured"
+        lines.append(
+            f"input {name}: {_fmt_num(row.get('input_gb'), 2)} GB, {row.get('shards')} shards, rate {source}"
         )
     if payload.get("stop_reason"):
         lines.append(f"STOP: {payload['stop_reason']}")

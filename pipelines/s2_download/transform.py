@@ -1,23 +1,30 @@
 """Stream Semantic Scholar JSONL.gz shards into zstd Parquet.
 
-Records are parsed and written in batches. A shard is never held as one
-bytes object or one table. The CS corpus id set is a sorted uint32 array
-plus a packed bitmap, not a Python set.
+Papers, abstracts, citations, and tldrs are decompressed in large
+newline-aligned blocks and parsed with ``pyarrow.json`` (threaded, explicit
+schema). Embeddings stay on a line parser because the vector column is a
+JSON string. A shard is never held as one bytes object or one table. The CS
+corpus id set is a sorted uint32 array plus a packed bitmap, not a Python set.
 """
 
 from __future__ import annotations
 
 import array
+import io
 import json
 import os
+import queue
 import re
 import resource
 import sys
+import threading
 import time
 from typing import Callable, Iterable, Iterator
 
 import numpy as np
 import pyarrow as pa
+import pyarrow.compute as pc
+import pyarrow.json as pj
 import pyarrow.parquet as pq
 
 from pipelines.s2_download.fetch import CountingReader, gzip_stream
@@ -134,6 +141,105 @@ ARXIV_SCHEMA = pa.schema(
     ]
 )
 
+# Parse schemas accept both casings. Nested corpus ids are omitted so a numeric
+# CorpusId does not fail the block; the top-level corpusid is the one we keep.
+# Unknown keys are ignored (the output ``extra`` column stays null).
+_EXT_PARSE_FIELDS = [
+    ("ACL", pa.string()),
+    ("acl", pa.string()),
+    ("DBLP", pa.string()),
+    ("dblp", pa.string()),
+    ("ArXiv", pa.string()),
+    ("arxiv", pa.string()),
+    ("MAG", pa.string()),
+    ("mag", pa.string()),
+    ("PubMed", pa.string()),
+    ("pubmed", pa.string()),
+    ("DOI", pa.string()),
+    ("doi", pa.string()),
+    ("PubMedCentral", pa.string()),
+    ("pubmedcentral", pa.string()),
+    ("Medline", pa.string()),
+    ("medline", pa.string()),
+]
+_EXT_PARSE = pa.struct(_EXT_PARSE_FIELDS)
+_AUTHOR_PARSE = pa.struct(
+    [("authorId", pa.string()), ("authorid", pa.string()), ("name", pa.string())]
+)
+_OA_PARSE = pa.struct(
+    [
+        ("externalids", _EXT_PARSE),
+        ("externalIds", _EXT_PARSE),
+        ("license", pa.string()),
+        ("url", pa.string()),
+        ("status", pa.string()),
+        ("disclaimer", pa.string()),
+    ]
+)
+
+PAPERS_PARSE_SCHEMA = pa.schema(
+    [
+        ("corpusid", pa.int64()),
+        ("corpusId", pa.int64()),
+        ("externalids", _EXT_PARSE),
+        ("externalIds", _EXT_PARSE),
+        ("url", pa.string()),
+        ("title", pa.string()),
+        ("authors", pa.list_(_AUTHOR_PARSE)),
+        ("venue", pa.string()),
+        ("publicationvenueid", pa.string()),
+        ("year", pa.int64()),
+        ("referencecount", pa.int64()),
+        ("citationcount", pa.int64()),
+        ("influentialcitationcount", pa.int64()),
+        ("isopenaccess", pa.bool_()),
+        ("s2fieldsofstudy", pa.list_(_FOS_TYPE)),
+        ("s2FieldsOfStudy", pa.list_(_FOS_TYPE)),
+        ("fieldsofstudy", pa.list_(pa.string())),
+        ("fieldsOfStudy", pa.list_(pa.string())),
+        ("publicationtypes", pa.list_(pa.string())),
+        ("publicationdate", pa.string()),
+        ("journal", _JOURNAL_TYPE),
+    ]
+)
+ABSTRACTS_PARSE_SCHEMA = pa.schema(
+    [
+        ("corpusid", pa.int64()),
+        ("corpusId", pa.int64()),
+        ("abstract", pa.string()),
+        ("openaccessinfo", _OA_PARSE),
+        ("openAccessInfo", _OA_PARSE),
+    ]
+)
+TLDRS_PARSE_SCHEMA = pa.schema(
+    [
+        ("corpusid", pa.int64()),
+        ("corpusId", pa.int64()),
+        ("model", pa.string()),
+        ("text", pa.string()),
+    ]
+)
+CITATIONS_PARSE_SCHEMA = pa.schema(
+    [
+        ("citationid", pa.int64()),
+        ("citingcorpusid", pa.int64()),
+        ("citedcorpusid", pa.int64()),
+        ("isinfluential", pa.bool_()),
+        ("contexts", pa.list_(pa.string())),
+        ("intents", pa.list_(pa.string())),
+    ]
+)
+_PARSE_SCHEMA = {
+    "papers": PAPERS_PARSE_SCHEMA,
+    "abstracts": ABSTRACTS_PARSE_SCHEMA,
+    "tldrs": TLDRS_PARSE_SCHEMA,
+    "citations": CITATIONS_PARSE_SCHEMA,
+}
+_PARSE_OPTIONS = {
+    name: pj.ParseOptions(explicit_schema=schema, unexpected_field_behavior="ignore")
+    for name, schema in _PARSE_SCHEMA.items()
+}
+
 PAPER_KEYS = {field.name for field in PAPERS_SCHEMA if field.name != "extra"}
 ABSTRACT_KEYS = {field.name for field in ABSTRACTS_SCHEMA if field.name != "extra"}
 TLDR_KEYS = {field.name for field in TLDRS_SCHEMA if field.name != "extra"}
@@ -146,6 +252,21 @@ BATCH_SIZE = {
     "citations": 4096,
     "embeddings-specter_v2": 2048,
 }
+
+# Decompressed JSON per parse. 64 MiB keeps the Arrow table under the 4 GiB
+# container (peak stays well below 3 GiB). Callers may pass 32 KiB..256 MiB.
+JSON_BLOCK_BYTES = 64 * 1024 * 1024
+_JSON_DATASETS = frozenset({"papers", "abstracts", "tldrs", "citations"})
+_JSON_READ = pj.ReadOptions(use_threads=True, block_size=16 * 1024 * 1024)
+
+# Quote bare numbers only for fields whose Parquet type is a string. Top-level
+# corpusid / year / counts stay numeric. Applied only after a block fails with
+# a string-vs-number error, then kept on for the rest of the shard.
+_NUMERIC_STRING_KEYS = re.compile(
+    rb'("(?:authorId|authorid|ACL|acl|DBLP|dblp|ArXiv|arxiv|MAG|mag|'
+    rb"PubMed|pubmed|DOI|doi|PubMedCentral|pubmedcentral|Medline|medline|"
+    rb'publicationvenueid|volume|pages)"\s*:\s*)(-?\d+(?:\.\d+)?)'
+)
 
 
 def loads(line: bytes) -> dict:
@@ -892,7 +1013,792 @@ def process_records(
         "max_buffered": max_buffered,
         "flushes": flushes,
         "batch_size": batch,
+        "parser": "python",
     }
+
+
+def _use_cpu(cpu: float | None) -> None:
+    if not cpu:
+        return
+    try:
+        pa.set_cpu_count(max(1, int(cpu)))
+    except Exception:
+        pass
+
+
+def _block_bytes(value: int | None) -> int:
+    if value is None:
+        return JSON_BLOCK_BYTES
+    size = int(value)
+    if size < 32 * 1024:
+        size = 32 * 1024
+    if size > 256 * 1024 * 1024:
+        size = 256 * 1024 * 1024
+    return size
+
+
+def _combine(value):
+    if isinstance(value, pa.ChunkedArray):
+        return value.combine_chunks()
+    return value
+
+
+def _nulls(n: int, typ: pa.DataType) -> pa.Array:
+    return pa.nulls(n, type=typ)
+
+
+def _column(table: pa.Table, name: str, n: int, typ: pa.DataType) -> pa.Array:
+    if name not in table.column_names:
+        return _nulls(n, typ)
+    col = table.column(name)
+    if pa.types.is_null(col.type):
+        return _nulls(n, typ)
+    try:
+        casted = pc.cast(col, typ, safe=True)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError):
+        return _nulls(n, typ)
+    return _combine(casted)
+
+
+def _coalesce_named(table: pa.Table, names: tuple[str, ...], n: int, typ: pa.DataType) -> pa.Array:
+    chosen = None
+    for name in names:
+        if name not in table.column_names:
+            continue
+        col = table.column(name)
+        if pa.types.is_null(col.type):
+            continue
+        try:
+            casted = _combine(pc.cast(col, typ, safe=True))
+        except (pa.ArrowInvalid, pa.ArrowNotImplementedError):
+            continue
+        chosen = casted if chosen is None else _combine(pc.coalesce(chosen, casted))
+    if chosen is None:
+        return _nulls(n, typ)
+    return chosen
+
+
+def _pack_external(struct_arr, n: int) -> pa.Array:
+    struct_arr = None if struct_arr is None else _combine(struct_arr)
+    if struct_arr is None or pa.types.is_null(struct_arr.type) or not pa.types.is_struct(struct_arr.type):
+        return _nulls(n, _EXT_TYPE)
+    names = {field.name for field in struct_arr.type}
+    arrays = []
+    for src, canon in EXT_KEYS:
+        chosen = None
+        for key in (canon, src):
+            if key not in names:
+                continue
+            col = _combine(pc.cast(pc.struct_field(struct_arr, key), pa.string(), safe=True))
+            chosen = col if chosen is None else _combine(pc.coalesce(chosen, col))
+        arrays.append(chosen if chosen is not None else _nulls(n, pa.string()))
+    return pa.StructArray.from_arrays(arrays, names=[canon for _, canon in EXT_KEYS])
+
+
+def _coalesce_external(table: pa.Table, names: tuple[str, ...], n: int) -> pa.Array:
+    packed = []
+    for name in names:
+        if name not in table.column_names:
+            continue
+        col = table.column(name)
+        if pa.types.is_null(col.type):
+            continue
+        packed.append(_pack_external(col, n))
+    if not packed:
+        return _nulls(n, _EXT_TYPE)
+    acc = packed[0]
+    for item in packed[1:]:
+        acc = _combine(pc.coalesce(acc, item))
+    return acc
+
+
+def _rebuild_authors(table: pa.Table, n: int) -> pa.Array:
+    if "authors" not in table.column_names:
+        return _nulls(n, pa.list_(_AUTHOR_TYPE))
+    arr = _combine(table.column("authors"))
+    if pa.types.is_null(arr.type) or not pa.types.is_list(arr.type):
+        return _nulls(n, pa.list_(_AUTHOR_TYPE))
+    flat = _combine(pc.list_flatten(arr))
+    if not pa.types.is_struct(flat.type):
+        return _nulls(n, pa.list_(_AUTHOR_TYPE))
+    fields = {field.name for field in flat.type}
+    chosen = None
+    for key in ("authorId", "authorid"):
+        if key not in fields:
+            continue
+        col = _combine(pc.cast(pc.struct_field(flat, key), pa.string(), safe=True))
+        chosen = col if chosen is None else _combine(pc.coalesce(chosen, col))
+    if chosen is None:
+        chosen = _nulls(len(flat), pa.string())
+    name = (
+        _combine(pc.cast(pc.struct_field(flat, "name"), pa.string(), safe=True))
+        if "name" in fields
+        else _nulls(len(flat), pa.string())
+    )
+    values = pa.StructArray.from_arrays([chosen, name], names=["authorId", "name"])
+    mask = arr.is_null() if hasattr(arr, "is_null") else None
+    return pa.ListArray.from_arrays(arr.offsets, values, mask=mask)
+
+
+def _list_strings(table: pa.Table, names: tuple[str, ...], n: int) -> pa.Array:
+    typ = pa.list_(pa.string())
+    return _coalesce_named(table, names, n, typ)
+
+
+def _any_equal(list_arr, n: int, *, field: str | None) -> np.ndarray:
+    """True where any list element equals 'computer science' (trimmed, lower)."""
+    out = np.zeros(n, dtype=bool)
+    if list_arr is None:
+        return out
+    arr = _combine(list_arr)
+    if pa.types.is_null(arr.type) or not pa.types.is_list(arr.type) or len(arr) == 0:
+        return out
+    flat = _combine(pc.list_flatten(arr))
+    if len(flat) == 0:
+        return out
+    if field is not None:
+        names = {item.name for item in flat.type}
+        if not pa.types.is_struct(flat.type) or field not in names:
+            return out
+        values = pc.struct_field(flat, field)
+    else:
+        values = flat
+    try:
+        text = pc.utf8_lower(pc.utf8_trim_whitespace(pc.cast(values, pa.string(), safe=True)))
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError):
+        return out
+    flag = _combine(pc.fill_null(pc.equal(text, CS_CATEGORY), False))
+    parents = _combine(pc.list_parent_indices(arr)).to_numpy(zero_copy_only=False)
+    flags = np.asarray(flag.to_numpy(zero_copy_only=False), dtype=bool)
+    if parents.size:
+        np.logical_or.at(out, parents, flags)
+    return out
+
+
+def _cs_mask(table: pa.Table) -> np.ndarray:
+    n = table.num_rows
+    mask = np.zeros(n, dtype=bool)
+    for name in ("s2fieldsofstudy", "s2FieldsOfStudy"):
+        if name in table.column_names:
+            mask |= _any_equal(table.column(name), n, field="category")
+    for name in ("fieldsofstudy", "fieldsOfStudy"):
+        if name in table.column_names:
+            mask |= _any_equal(table.column(name), n, field=None)
+    return mask
+
+
+def _intents_json(column, n: int) -> pa.Array:
+    if column is None or pa.types.is_null(column.type):
+        return _nulls(n, pa.string())
+    values = _combine(column).to_pylist()
+    encoded = []
+    for value in values:
+        if value is None:
+            encoded.append(None)
+        else:
+            encoded.append(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+    return pa.array(encoded, type=pa.string())
+
+
+def _align_papers(table: pa.Table) -> tuple[pa.Table, np.ndarray, pa.Table]:
+    n = table.num_rows
+    corpus = _coalesce_named(table, ("corpusid", "corpusId"), n, pa.int64())
+    external = _coalesce_external(table, ("externalids", "externalIds"), n)
+    year = _coalesce_named(table, ("year",), n, pa.int32())
+    fos = _coalesce_named(table, ("s2fieldsofstudy", "s2FieldsOfStudy"), n, pa.list_(_FOS_TYPE))
+    fields = _list_strings(table, ("fieldsofstudy", "fieldsOfStudy"), n)
+    journal = _column(table, "journal", n, _JOURNAL_TYPE)
+    out = pa.Table.from_arrays(
+        [
+            corpus,
+            external,
+            _column(table, "url", n, pa.string()),
+            _column(table, "title", n, pa.string()),
+            _rebuild_authors(table, n),
+            _column(table, "venue", n, pa.string()),
+            _column(table, "publicationvenueid", n, pa.string()),
+            year,
+            _column(table, "referencecount", n, pa.int64()),
+            _column(table, "citationcount", n, pa.int64()),
+            _column(table, "influentialcitationcount", n, pa.int64()),
+            _column(table, "isopenaccess", n, pa.bool_()),
+            fos,
+            fields,
+            _column(table, "publicationtypes", n, pa.list_(pa.string())),
+            _column(table, "publicationdate", n, pa.string()),
+            journal,
+            _nulls(n, pa.string()),
+        ],
+        schema=PAPERS_SCHEMA,
+    )
+    mask = _cs_mask(table)
+    ids = np.asarray(pc.fill_null(corpus, -1).to_numpy(zero_copy_only=False), dtype=np.int64)
+    arxiv = None
+    ext = _combine(external)
+    if pa.types.is_struct(ext.type) and "ArXiv" in {field.name for field in ext.type}:
+        arxiv = pc.utf8_trim_whitespace(pc.struct_field(ext, "ArXiv"))
+    if arxiv is None:
+        arxiv_table = pa.Table.from_pylist([], schema=ARXIV_SCHEMA)
+    else:
+        text = _combine(arxiv)
+        valid_text = pc.and_(pc.is_valid(text), pc.not_equal(text, ""))
+        valid_id = pa.array(ids >= 0)
+        valid = _combine(pc.and_(valid_text, valid_id))
+        if pc.sum(valid).as_py() == 0:
+            arxiv_table = pa.Table.from_pylist([], schema=ARXIV_SCHEMA)
+        else:
+            kept_text = _combine(pc.filter(text, valid))
+            kept_ids = _combine(pc.filter(corpus, valid))
+            versionless = _combine(pc.replace_substring_regex(kept_text, r"v\d+$", ""))
+            arxiv_table = pa.Table.from_arrays(
+                [kept_text, versionless, kept_ids],
+                schema=ARXIV_SCHEMA,
+            )
+    return out, mask, arxiv_table
+
+
+def _align_openaccess(table: pa.Table, n: int) -> pa.Array:
+    packed = []
+    for name in ("openaccessinfo", "openAccessInfo"):
+        if name not in table.column_names:
+            continue
+        col = _combine(table.column(name))
+        if not pa.types.is_struct(col.type):
+            continue
+        names = {field.name for field in col.type}
+        external = None
+        for key in ("externalids", "externalIds"):
+            if key in names:
+                external = _pack_external(pc.struct_field(col, key), n)
+                break
+        if external is None:
+            external = _nulls(n, _EXT_TYPE)
+
+        def field(key: str) -> pa.Array:
+            if key not in names:
+                return _nulls(n, pa.string())
+            return _combine(pc.cast(pc.struct_field(col, key), pa.string(), safe=True))
+
+        packed.append(
+            pa.StructArray.from_arrays(
+                [external, field("license"), field("url"), field("status"), field("disclaimer")],
+                names=["externalids", "license", "url", "status", "disclaimer"],
+            )
+        )
+    if not packed:
+        return _nulls(n, _OA_TYPE)
+    acc = packed[0]
+    for item in packed[1:]:
+        acc = _combine(pc.coalesce(acc, item))
+    return acc
+
+
+def _align_abstracts(table: pa.Table) -> pa.Table:
+    n = table.num_rows
+    return pa.Table.from_arrays(
+        [
+            _coalesce_named(table, ("corpusid", "corpusId"), n, pa.int64()),
+            _column(table, "abstract", n, pa.string()),
+            _align_openaccess(table, n),
+            _nulls(n, pa.string()),
+        ],
+        schema=ABSTRACTS_SCHEMA,
+    )
+
+
+def _align_tldrs(table: pa.Table) -> pa.Table:
+    n = table.num_rows
+    return pa.Table.from_arrays(
+        [
+            _coalesce_named(table, ("corpusid", "corpusId"), n, pa.int64()),
+            _column(table, "model", n, pa.string()),
+            _column(table, "text", n, pa.string()),
+            _nulls(n, pa.string()),
+        ],
+        schema=TLDRS_SCHEMA,
+    )
+
+
+def _align_citations(table: pa.Table) -> pa.Table:
+    n = table.num_rows
+    intents = table.column("intents") if "intents" in table.column_names else None
+    return pa.Table.from_arrays(
+        [
+            _column(table, "citationid", n, pa.int64()),
+            _column(table, "citingcorpusid", n, pa.int64()),
+            _column(table, "citedcorpusid", n, pa.int64()),
+            _column(table, "isinfluential", n, pa.bool_()),
+            _list_strings(table, ("contexts",), n),
+            _intents_json(intents, n),
+            _nulls(n, pa.string()),
+        ],
+        schema=CITATIONS_SCHEMA,
+    )
+
+
+def _read_json_block(dataset: str, block: bytes) -> pa.Table:
+    return pj.read_json(
+        io.BytesIO(block),
+        read_options=_JSON_READ,
+        parse_options=_PARSE_OPTIONS[dataset],
+    )
+
+
+def _quote_string_ids(block: bytes) -> bytes:
+    return _NUMERIC_STRING_KEYS.sub(rb'\1"\2"', block)
+
+
+class _ParseState:
+    def __init__(self):
+        self.quote_ids = False
+
+    def parse(self, dataset: str, block: bytes) -> pa.Table:
+        data = _quote_string_ids(block) if self.quote_ids else block
+        try:
+            return _read_json_block(dataset, data)
+        except pa.ArrowInvalid as exc:
+            text = str(exc)
+            if not self.quote_ids and "changed from string to number" in text:
+                self.quote_ids = True
+                return _read_json_block(dataset, _quote_string_ids(block))
+            raise
+
+
+def _split_block(block: bytes) -> tuple[bytes, bytes] | None:
+    if block.count(b"\n") <= 1:
+        return None
+    mid = len(block) // 2
+    cut = block.rfind(b"\n", 0, mid)
+    if cut < 0:
+        cut = block.find(b"\n", mid)
+    if cut <= 0 or cut >= len(block) - 1:
+        return None
+    return block[: cut + 1], block[cut + 1 :]
+
+
+class TableWriter:
+    """Write Arrow tables as zstd row groups. One table is one flush."""
+
+    def __init__(self, path: str, schema: pa.Schema):
+        self.path = path
+        self.schema = schema
+        self.rows = 0
+        self.max_buffered = 0
+        self.flushes = 0
+        self._writer: pq.ParquetWriter | None = None
+        self._tmp = path + ".partial"
+
+    def write_table(self, table: pa.Table) -> None:
+        if table is None or table.num_rows == 0:
+            return
+        if table.schema != self.schema:
+            table = table.cast(self.schema, safe=False)
+        if self._writer is None:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            self._writer = pq.ParquetWriter(self._tmp, self.schema, compression="zstd")
+        self._writer.write_table(table, row_group_size=max(table.num_rows, 1))
+        self.rows += table.num_rows
+        self.max_buffered = max(self.max_buffered, table.num_rows)
+        self.flushes += 1
+
+    def close(self) -> None:
+        if self._writer is None:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            pq.write_table(pa.Table.from_pylist([], schema=self.schema), self._tmp, compression="zstd")
+            self.flushes += 1
+        else:
+            self._writer.close()
+            self._writer = None
+        os.replace(self._tmp, self.path)
+
+    def abort(self) -> None:
+        if self._writer is not None:
+            self._writer.close()
+            self._writer = None
+        if os.path.exists(self._tmp):
+            os.remove(self._tmp)
+        if os.path.exists(self.path):
+            os.remove(self.path)
+
+
+def iter_json_blocks(gz, block_bytes: int) -> Iterator[tuple[bytes, int]]:
+    """Yield decompressed newline-terminated blocks and a bad-line count.
+
+    A block ends on a newline at or just after ``block_bytes``. A single line
+    may run past that (up to ``MAX_LINE_BYTES``) so a record is never split.
+    Longer lines are counted as bad and dropped.
+    """
+    buf = bytearray()
+    pending_bad = 0
+    read_size = 8 * 1024 * 1024
+
+    def take(end: int) -> tuple[bytes, int]:
+        nonlocal pending_bad
+        piece = bytes(buf[: end + 1])
+        del buf[: end + 1]
+        bad = pending_bad
+        pending_bad = 0
+        return piece, bad
+
+    while True:
+        if len(buf) >= block_bytes:
+            cut = buf.rfind(b"\n", 0, block_bytes)
+            if cut >= 0:
+                piece, bad = take(cut)
+                if piece and not piece.isspace():
+                    yield piece, bad
+                continue
+            cut = buf.find(b"\n")
+            if cut >= 0:
+                if cut > MAX_LINE_BYTES:
+                    del buf[: cut + 1]
+                    pending_bad += 1
+                else:
+                    piece, bad = take(cut)
+                    if piece and not piece.isspace():
+                        yield piece, bad
+                continue
+            if len(buf) > MAX_LINE_BYTES * 2:
+                pending_bad += 1
+                buf.clear()
+        chunk = gz.read(read_size)
+        if not chunk:
+            # The tail is smaller than one block. Flush it on newline
+            # boundaries instead of treating the whole tail as one line.
+            if buf and not buf.endswith(b"\n"):
+                buf.extend(b"\n")
+            while buf:
+                window = min(len(buf), block_bytes)
+                cut = buf.rfind(b"\n", 0, window)
+                if cut < 0:
+                    cut = buf.find(b"\n")
+                    if cut < 0 or cut > MAX_LINE_BYTES:
+                        pending_bad += 1
+                        buf.clear()
+                        break
+                piece, bad = take(cut)
+                if piece and not piece.isspace():
+                    yield piece, bad
+            if pending_bad:
+                yield b"", pending_bad
+            return
+        buf.extend(chunk)
+
+
+def _append_cs_ids(chunks: list[np.ndarray], ids: np.ndarray) -> None:
+    if ids.size:
+        chunks.append(np.asarray(ids, dtype=np.int64))
+
+
+def _store_cs_ids(chunks: list[np.ndarray]) -> np.ndarray:
+    if not chunks:
+        return np.zeros(0, dtype=np.uint32)
+    values = np.concatenate(chunks)
+    if values.size and int(values.max()) > np.iinfo(np.uint32).max:
+        return values
+    return values.astype(np.uint32, copy=False)
+
+
+def process_json_blocks(
+    dataset: str,
+    gz,
+    *,
+    root: str,
+    release: str,
+    index: int,
+    cs: CSIndex | None = None,
+    should_stop: Callable[[], str | None] | None = None,
+    cpu: float | None = None,
+    block_bytes: int | None = None,
+) -> dict:
+    """Parse one JSONL gzip body with pyarrow and write zstd Parquet."""
+    if dataset not in _JSON_DATASETS:
+        raise ValueError(f"{dataset} is not a JSONL dataset")
+    if dataset in NEEDS_CS and cs is None:
+        raise RuntimeError(f"{dataset} requires the CS corpus id bitmap")
+    _use_cpu(cpu)
+    size = _block_bytes(block_bytes)
+    paths = outputs_for(root, release, dataset, index)
+    writers: list[TableWriter] = []
+    cs_chunks: list[np.ndarray] = []
+    bad_lines = 0
+    rows_in = 0
+    cs_rows = 0
+    both_cs = 0
+    arxiv_rows = 0
+    started = time.perf_counter()
+    blocks_seen = 0
+    state = _ParseState()
+    stop_read = threading.Event()
+
+    def check_stop() -> None:
+        if should_stop is None:
+            return
+        reason = should_stop()
+        if reason:
+            raise StopShard(reason)
+
+    def write_fallback(line: bytes, writer: TableWriter, arxiv_writer: TableWriter | None, cs_writer: TableWriter | None) -> None:
+        nonlocal bad_lines, rows_in, cs_rows, both_cs, arxiv_rows
+        rows_in += 1
+        stripped = line.strip()
+        if not stripped:
+            return
+        if len(stripped) > MAX_LINE_BYTES:
+            bad_lines += 1
+            return
+        try:
+            record = loads(stripped)
+        except Exception:
+            bad_lines += 1
+            return
+        if dataset == "papers":
+            row = paper_row(record)
+            writer.write_table(pa.Table.from_pylist([row], schema=PAPERS_SCHEMA))
+            corpus_id = row["corpusid"]
+            if corpus_id is not None and corpus_id >= 0 and is_computer_science(record):
+                _append_cs_ids(cs_chunks, np.asarray([corpus_id], dtype=np.int64))
+                cs_rows += 1
+            arxiv = extract_arxiv(record)
+            if arxiv and corpus_id is not None and arxiv_writer is not None:
+                arxiv_writer.write_table(
+                    pa.Table.from_pylist(
+                        [
+                            {
+                                "arxiv_id": arxiv,
+                                "arxiv_id_versionless": versionless_arxiv(arxiv),
+                                "corpusid": corpus_id,
+                            }
+                        ],
+                        schema=ARXIV_SCHEMA,
+                    )
+                )
+                arxiv_rows += 1
+            return
+        if dataset == "abstracts":
+            writer.write_table(pa.Table.from_pylist([abstract_row(record)], schema=ABSTRACTS_SCHEMA))
+            return
+        if dataset == "tldrs":
+            writer.write_table(pa.Table.from_pylist([tldr_row(record)], schema=TLDRS_SCHEMA))
+            return
+        row = citation_row(record)
+        writer.write_table(pa.Table.from_pylist([row], schema=CITATIONS_SCHEMA))
+        if cs is None or cs_writer is None:
+            return
+        citing = bool(cs.contains(row["citingcorpusid"]))
+        cited = bool(cs.contains(row["citedcorpusid"]))
+        if citing or cited:
+            flagged = dict(row)
+            flagged["citing_is_cs"] = citing
+            flagged["cited_is_cs"] = cited
+            flagged["both_cs"] = citing and cited
+            cs_writer.write_table(pa.Table.from_pylist([flagged], schema=CITATIONS_CS_SCHEMA))
+            cs_rows += 1
+            if citing and cited:
+                both_cs += 1
+
+    def emit_table(table: pa.Table, writer: TableWriter, arxiv_writer: TableWriter | None, cs_writer: TableWriter | None) -> None:
+        nonlocal rows_in, cs_rows, both_cs, arxiv_rows
+        if table is None or table.num_rows == 0:
+            return
+        rows_in += table.num_rows
+        if dataset == "papers":
+            out, mask, arxiv_table = _align_papers(table)
+            writer.write_table(out)
+            ids = np.asarray(pc.fill_null(out.column("corpusid"), -1).to_numpy(zero_copy_only=False), dtype=np.int64)
+            chosen = ids[mask & (ids >= 0)]
+            _append_cs_ids(cs_chunks, chosen)
+            cs_rows += int(chosen.size)
+            if arxiv_writer is not None and arxiv_table.num_rows:
+                arxiv_writer.write_table(arxiv_table)
+                arxiv_rows += arxiv_table.num_rows
+            return
+        if dataset == "abstracts":
+            writer.write_table(_align_abstracts(table))
+            return
+        if dataset == "tldrs":
+            writer.write_table(_align_tldrs(table))
+            return
+        out = _align_citations(table)
+        writer.write_table(out)
+        if cs is None or cs_writer is None:
+            return
+        citing_ids = np.asarray(pc.fill_null(out.column("citingcorpusid"), -1).to_numpy(zero_copy_only=False), dtype=np.int64)
+        cited_ids = np.asarray(pc.fill_null(out.column("citedcorpusid"), -1).to_numpy(zero_copy_only=False), dtype=np.int64)
+        citing = cs.contains_many(citing_ids)
+        cited = cs.contains_many(cited_ids)
+        keep = citing | cited
+        cs_rows += int(keep.sum())
+        both = citing & cited
+        both_cs += int(both.sum())
+        if not np.any(keep):
+            return
+        mask = pa.array(keep)
+        filtered = out.filter(mask)
+        flagged = filtered.append_column("citing_is_cs", pa.array(citing[keep]))
+        flagged = flagged.append_column("cited_is_cs", pa.array(cited[keep]))
+        flagged = flagged.append_column("both_cs", pa.array(both[keep]))
+        cs_writer.write_table(flagged.cast(CITATIONS_CS_SCHEMA, safe=False))
+
+    def consume(block: bytes, writer: TableWriter, arxiv_writer: TableWriter | None, cs_writer: TableWriter | None) -> None:
+        if not block or block.isspace():
+            return
+        try:
+            emit_table(state.parse(dataset, block), writer, arxiv_writer, cs_writer)
+            return
+        except pa.ArrowInvalid:
+            pass
+        parts = _split_block(block)
+        if parts is None:
+            write_fallback(block, writer, arxiv_writer, cs_writer)
+            return
+        consume(parts[0], writer, arxiv_writer, cs_writer)
+        consume(parts[1], writer, arxiv_writer, cs_writer)
+
+    arxiv_writer: TableWriter | None = None
+    cs_writer: TableWriter | None = None
+    try:
+        check_stop()
+        if dataset == "papers":
+            writer = TableWriter(paths[0], PAPERS_SCHEMA)
+            arxiv_writer = TableWriter(
+                os.path.join(partial_dir(root, release), f"shard-{index:05d}.arxiv.parquet"),
+                ARXIV_SCHEMA,
+            )
+            writers.extend((writer, arxiv_writer))
+        elif dataset == "abstracts":
+            writer = TableWriter(paths[0], ABSTRACTS_SCHEMA)
+            writers.append(writer)
+        elif dataset == "tldrs":
+            writer = TableWriter(paths[0], TLDRS_SCHEMA)
+            writers.append(writer)
+        else:
+            writer = TableWriter(paths[0], CITATIONS_SCHEMA)
+            cs_writer = TableWriter(paths[1], CITATIONS_CS_SCHEMA)
+            writers.extend((writer, cs_writer))
+
+        blocks: queue.Queue = queue.Queue(maxsize=1)
+        producer_error: list[BaseException] = []
+
+        def produce() -> None:
+            try:
+                for block, skipped in iter_json_blocks(gz, size):
+                    if stop_read.is_set():
+                        return
+                    blocks.put((block, skipped))
+            except BaseException as exc:
+                producer_error.append(exc)
+            finally:
+                blocks.put(None)
+
+        reader = threading.Thread(target=produce, name="s2-json-blocks", daemon=True)
+        reader.start()
+        try:
+            while True:
+                item = blocks.get()
+                if item is None:
+                    break
+                check_stop()
+                block, skipped = item
+                bad_lines += int(skipped)
+                rows_in += int(skipped)
+                if block and not block.isspace():
+                    blocks_seen += 1
+                consume(block, writer, arxiv_writer, cs_writer)
+        finally:
+            stop_read.set()
+            while reader.is_alive():
+                try:
+                    leftover = blocks.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                if leftover is None:
+                    break
+            reader.join(timeout=5)
+
+        if producer_error:
+            raise producer_error[0]
+
+        for item in writers:
+            item.close()
+        if dataset == "papers":
+            atomic_npy(
+                os.path.join(partial_dir(root, release), f"shard-{index:05d}.csids.npy"),
+                _store_cs_ids(cs_chunks),
+            )
+    except Exception:
+        stop_read.set()
+        for item in writers:
+            item.abort()
+        _remove(paths)
+        raise
+
+    main = paths[0]
+    rows = pq.read_metadata(main).num_rows if parquet_ok(main) else 0
+    output_bytes = sum(_file_size(path) for path in paths)
+    max_buffered = max((item.max_buffered for item in writers), default=0)
+    flushes = sum(item.flushes for item in writers)
+    return {
+        "ok": True,
+        "dataset": dataset,
+        "index": index,
+        "rows_in": rows_in,
+        "rows": rows,
+        "bad_lines": bad_lines,
+        "cs_rows": cs_rows,
+        "both_cs": both_cs,
+        "arxiv_rows": arxiv_rows,
+        "vector_dim": None,
+        "output_bytes": output_bytes,
+        "wall_seconds": time.perf_counter() - started,
+        "peak_ram_mib": peak_rss_mib(),
+        "max_buffered": max_buffered,
+        "flushes": flushes,
+        "blocks": blocks_seen,
+        "batch_size": size,
+        "block_bytes": size,
+        "parser": "pyarrow.json",
+        "quote_ids": state.quote_ids,
+    }
+
+
+def process_stream(
+    dataset: str,
+    gz,
+    *,
+    root: str,
+    release: str,
+    index: int,
+    cs: CSIndex | None = None,
+    batch_size: int | None = None,
+    should_stop: Callable[[], str | None] | None = None,
+    cpu: float | None = None,
+    block_bytes: int | None = None,
+) -> dict:
+    """Dispatch one decompressed shard. JSONL datasets use the block parser."""
+    _use_cpu(cpu)
+    if dataset in _JSON_DATASETS:
+        return process_json_blocks(
+            dataset,
+            gz,
+            root=root,
+            release=release,
+            index=index,
+            cs=cs,
+            should_stop=should_stop,
+            cpu=cpu,
+            block_bytes=block_bytes,
+        )
+    return process_records(
+        dataset,
+        iter_records(gz),
+        root=root,
+        release=release,
+        index=index,
+        cs=cs,
+        batch_size=batch_size,
+        should_stop=should_stop,
+    )
 
 
 def process_gzip_path(
@@ -906,20 +1812,24 @@ def process_gzip_path(
     batch_size: int | None = None,
     should_stop: Callable[[], str | None] | None = None,
     reader: CountingReader | None = None,
+    cpu: float | None = None,
+    block_bytes: int | None = None,
 ) -> dict:
     raw = reader or CountingReader(open(gz_path, "rb"))
     owns = reader is None
     gz = gzip_stream(raw)
     try:
-        result = process_records(
+        result = process_stream(
             dataset,
-            iter_records(gz),
+            gz,
             root=root,
             release=release,
             index=index,
             cs=cs,
             batch_size=batch_size,
             should_stop=should_stop,
+            cpu=cpu,
+            block_bytes=block_bytes,
         )
     finally:
         gz.close()

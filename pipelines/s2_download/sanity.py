@@ -29,12 +29,12 @@ from pipelines.s2_download.fetch import CountingReader, length_from_headers, ope
 from pipelines.s2_download.s2_client import S2Client, S2ClientError
 from pipelines.s2_download.transform import (
     CSIndex,
+    JSON_BLOCK_BYTES,
     build_cs_index,
-    iter_records,
     load_cs,
     merge_cs,
     process_gzip_path,
-    process_records,
+    process_stream,
     shard_complete,
     verify_tree,
 )
@@ -233,7 +233,61 @@ def check_cost_and_projection() -> None:
         "papers seconds from bytes",
     )
     check(partial["by_dataset"]["embeddings-specter_v2"]["container_seconds"] is None, "unmeasured embeddings cost")
+    check(partial["by_dataset"]["citations"]["container_seconds"] is None, "citations are not priced from papers")
+    check(partial["by_dataset"]["abstracts"]["rate_source"] == "papers", "abstracts can follow papers")
+    check(partial["by_dataset"]["abstracts"]["container_seconds"] is not None, "abstracts still priced")
     check(partial["cost_usd"] is None, "incomplete projection has no total")
+
+    compared = project_full_run(
+        papers_seconds_per_byte=100 / 1e9,
+        papers_shards=1,
+        papers_bytes=1_000_000_000,
+        embeddings_seconds_per_byte=10 / 1e9,
+        embeddings_shards=1,
+        embeddings_bytes=1_000_000_000,
+        citations_seconds_per_byte=10 / 1e9,
+        abstracts_seconds_per_byte=10 / 1e9,
+        other_bytes={
+            "citations": 1_000_000_000,
+            "abstracts": 1_000_000_000,
+            "tldrs": 1_000_000_000,
+        },
+        other_shards={"citations": 1, "abstracts": 1, "tldrs": 1},
+        cpu=2,
+        memory_mib=4096,
+        concurrency=1,
+        overhead_seconds=0,
+        measured_cpu=2,
+    )
+    check(compared["by_dataset"]["citations"]["container_seconds"] == 10, "citations use their own rate")
+    check(compared["by_dataset"]["papers"]["container_seconds"] == 100, "papers at the measured cpu")
+    check(compared["by_dataset"]["tldrs"]["rate_source"] == "abstracts", "tldrs follows abstracts")
+    check(
+        abs(compared["by_cpu"]["1"]["by_dataset"]["papers"]["container_seconds"] - 140) < 1e-6,
+        "json seconds scale by 1.4x at cpu 1",
+    )
+    check(
+        abs(compared["by_cpu"]["1"]["by_dataset"]["embeddings-specter_v2"]["container_seconds"] - 10) < 1e-6,
+        "embeddings seconds stay put at cpu 1",
+    )
+    check(compared["recommended_cpu"] == 1, "cpu 1 is cheaper at a 1.4x two-core speedup")
+    embeddings_only = project_full_run(
+        papers_seconds_per_byte=1 / 1e9,
+        papers_shards=1,
+        papers_bytes=0,
+        embeddings_seconds_per_byte=100 / 1e9,
+        embeddings_shards=1,
+        embeddings_bytes=10_000_000_000,
+        other_bytes={},
+        other_shards={},
+        cpu=2,
+        memory_mib=4096,
+        concurrency=1,
+        overhead_seconds=0,
+        measured_cpu=2,
+    )
+    check(embeddings_only["recommended_cpu"] == 1, "cpu 1 is cheaper when embeddings dominate")
+    check(64 * 1024 * 1024 <= JSON_BLOCK_BYTES <= 256 * 1024 * 1024, "json block size")
 
 
 def check_s2_client() -> None:
@@ -401,19 +455,21 @@ def check_pipeline() -> dict:
             root=root,
             release=RELEASE,
             index=7,
-            batch_size=4,
+            block_bytes=256 * 1024,
         )
-        check(streamed["max_buffered"] <= 4, f"batch held {streamed['max_buffered']} rows")
+        check(streamed["parser"] == "pyarrow.json", "padded shard uses the block parser")
+        check(streamed["blocks"] >= 2, f"padded shard was one block ({streamed['blocks']} blocks)")
         check(streamed["stream_read_all"] is False, "reader asked for the whole file")
         check(streamed["stream_bytes"] > streamed["stream_max_read"], "more than one read")
         check(streamed["rows"] == 80, "padded rows")
         check(streamed["bad_lines"] == 1, "padded bad line")
 
-        first = process_gzip_path("papers", papers0, root=root, release=RELEASE, index=0, batch_size=2)
-        second = process_gzip_path("papers", papers1, root=root, release=RELEASE, index=1, batch_size=2)
+        first = process_gzip_path("papers", papers0, root=root, release=RELEASE, index=0)
+        second = process_gzip_path("papers", papers1, root=root, release=RELEASE, index=1)
+        check(first["parser"] == "pyarrow.json", "papers parser")
+        check(first["block_bytes"] == JSON_BLOCK_BYTES, "default block size")
         check(first["rows"] == 3 and second["rows"] == 2, "paper rows")
         check(first["bad_lines"] == 1 and second["bad_lines"] == 1, "bad lines skipped")
-        check(first["max_buffered"] <= 2, "papers batch bound")
         check(first["cs_rows"] == 2 and second["cs_rows"] == 1, "per-shard CS rows")
         merged = merge_cs(root, RELEASE, partial=False)
         check(merged["cs_papers"] == 3, "CS papers")
@@ -435,8 +491,9 @@ def check_pipeline() -> dict:
 
         papers_table = pq.read_table(os.path.join(root, RELEASE, "papers", "shard-00000.parquet"))
         check(papers_table.column("title")[0].as_py() == "Attention", "title kept")
-        check(papers_table.column("extra")[0].as_py() is not None, "unknown field kept")
+        check(papers_table.column("extra")[0].as_py() is None, "unknown field dropped")
         check(papers_table.column("year")[0].as_py() == 2017, "year kept")
+        check(papers_table.column("authors")[0].as_py() == [{"authorId": "1", "name": "Vaswani"}], "authors kept")
 
         abstracts_result = process_gzip_path(
             "abstracts", paths["abstracts"], root=root, release=RELEASE, index=0, batch_size=2
@@ -535,6 +592,45 @@ def check_pipeline() -> dict:
         check(report["arxiv_rows"] == 3, "verify arxiv rows")
         check(report["cs_papers_with_arxiv"] == 2, "CS papers with arxiv")
         check(report["total_gb"] > 0, "total GB")
+
+        numeric_path = os.path.join(raw, "numeric.gz")
+        _gz_writer(
+            numeric_path,
+            [
+                {
+                    "corpusid": 15,
+                    "title": "Numeric ids",
+                    "authors": [{"authorId": 42, "name": "Ada"}],
+                    "externalids": {"MAG": 99, "ArXiv": "9999.0001v3"},
+                    "journal": {"name": "J", "volume": 12, "pages": 5},
+                    "s2fieldsofstudy": [{"category": " computer science ", "source": "s2-fos-model"}],
+                    "year": 2018,
+                }
+            ],
+        )
+        numeric = process_gzip_path("papers", numeric_path, root=root, release=RELEASE, index=8)
+        check(numeric["rows"] == 1 and numeric["bad_lines"] == 1, "numeric row kept")
+        check(numeric["cs_rows"] == 1, "trimmed category is CS")
+        check(numeric["quote_ids"] is True, "numeric strings were quoted")
+        numeric_table = pq.read_table(os.path.join(root, RELEASE, "papers", "shard-00008.parquet"))
+        check(numeric_table.column("authors")[0].as_py()[0]["authorId"] == "42", "numeric authorId")
+        check(numeric_table.column("journal")[0].as_py()["volume"] == "12", "numeric volume")
+        check(numeric_table.column("externalids")[0].as_py()["MAG"] == "99", "numeric MAG")
+        arxiv_table = pq.read_table(
+            os.path.join(root, RELEASE, "papers", "_partial", "shard-00008.arxiv.parquet")
+        )
+        check(arxiv_table.column("arxiv_id_versionless")[0].as_py() == "9999.0001", "version stripped")
+
+        middle_path = os.path.join(raw, "middle.gz")
+        with gzip.GzipFile(middle_path, "wb") as handle:
+            handle.write(b'{"corpusid":1,"title":"a","year":2000}\n')
+            handle.write(b"not-json\n")
+            handle.write(b'{"corpusid":2,"title":"b","year":2001,"fieldsOfStudy":["Computer Science"]}\n')
+        middle = process_gzip_path("papers", middle_path, root=root, release=RELEASE, index=9)
+        check(middle["rows"] == 2 and middle["bad_lines"] == 1, "bad line in the middle")
+        check(middle["cs_rows"] == 1, "row after the bad line")
+        middle_ids = pq.read_table(os.path.join(root, RELEASE, "papers", "shard-00009.parquet"))
+        check(middle_ids.column("corpusid").to_pylist() == [1, 2], "block order kept")
         return {
             "papers_rows": report["datasets"]["papers"]["rows"],
             "cs_papers": report["cs_papers"],
@@ -546,7 +642,8 @@ def check_pipeline() -> dict:
             "cs_papers_with_arxiv": report["cs_papers_with_arxiv"],
             "stream_max_read": streamed["stream_max_read"],
             "stream_bytes": streamed["stream_bytes"],
-            "max_buffered": streamed["max_buffered"],
+            "flushes": streamed["flushes"],
+            "parser": streamed["parser"],
         }
 
 
@@ -554,14 +651,14 @@ def _stream_url(url: str, dataset: str, root: str, index: int, cs=None) -> tuple
     """Production path: HTTP body → CountingReader → gzip/isal → pyarrow."""
     gzip_reader, response, counter, length = open_url_stream(url)
     try:
-        result = process_records(
+        result = process_stream(
             dataset,
-            iter_records(gzip_reader),
+            gzip_reader,
             root=root,
             release=RELEASE,
             index=index,
             cs=cs,
-            batch_size=4,
+            cpu=2,
         )
     finally:
         gzip_reader.close()
@@ -607,6 +704,33 @@ def check_http_stream() -> None:
             {"corpusid": 11, "model": "specter_v2", "vector": _vector(11)},
         ]
         _gz_writer(os.path.join(www, "embeddings.gz"), embeddings)
+        _gz_writer(
+            os.path.join(www, "abstracts.gz"),
+            [
+                {"corpusid": 10, "abstract": "abs 10", "openaccessinfo": {"license": "odc", "status": "GOLD"}},
+            ],
+        )
+        _gz_writer(
+            os.path.join(www, "citations.gz"),
+            [
+                {
+                    "citationid": 1,
+                    "citingcorpusid": 10,
+                    "citedcorpusid": 11,
+                    "isinfluential": True,
+                    "contexts": ["used the architecture"],
+                    "intents": ["methodology"],
+                },
+                {
+                    "citationid": 3,
+                    "citingcorpusid": 12,
+                    "citedcorpusid": 10,
+                    "isinfluential": False,
+                    "contexts": ["background mention"],
+                    "intents": [["background"]],
+                },
+            ],
+        )
 
         class Handler(SimpleHTTPRequestHandler):
             def __init__(self, *args, **kwargs):
@@ -622,11 +746,17 @@ def check_http_stream() -> None:
         try:
             base = f"http://127.0.0.1:{port}"
             papers, papers_counter = _stream_url(f"{base}/papers.gz", "papers", root, 0)
+            check(papers["parser"] == "pyarrow.json", "http papers parser")
             check(papers["rows"] == 3 + 200, "http papers rows")
             check(papers["bad_lines"] == 1, "http papers bad line")
             check(papers["cs_rows"] == 2, "http CS papers")
             check(papers_counter.max_read <= 1024 * 1024, "http papers read size")
             check(papers_counter.bytes_read > papers_counter.max_read, "http papers more than one read")
+            abstracts, abstracts_counter = _stream_url(f"{base}/abstracts.gz", "abstracts", root, 0)
+            check(abstracts["parser"] == "pyarrow.json" and abstracts["rows"] == 1, "http abstracts")
+            check(abstracts_counter.readinto_calls > 0, "http abstracts readinto")
+            abstract_table = pq.read_table(os.path.join(root, RELEASE, "abstracts", "shard-00000.parquet"))
+            check(abstract_table.column("openaccessinfo")[0].as_py()["license"] == "odc", "http license")
             merged = merge_cs(root, RELEASE, partial=True)
             check(merged["partial"] is True and merged["cs_papers"] == 2, "http partial CS index")
             index = load_cs(os.path.join(root, RELEASE, "_cs"))
@@ -644,6 +774,19 @@ def check_http_stream() -> None:
             )
             check(table.column("corpusid").to_pylist() == [10, 11], "http embedding ids")
             check(table.schema.field("vector").type == pa.list_(pa.float16(), 4), "http fp16")
+            citations, citations_counter = _stream_url(
+                f"{base}/citations.gz",
+                "citations",
+                root,
+                0,
+                cs=index,
+            )
+            check(citations["parser"] == "pyarrow.json", "http citations parser")
+            check(citations["rows"] == 2 and citations["both_cs"] == 1, "http citation rows")
+            check(citations_counter.readinto_calls > 0, "http citations readinto")
+            edges = pq.read_table(os.path.join(root, RELEASE, "citations-cs", "shard-00000.parquet"))
+            nested = [row for row in edges.to_pylist() if row["citationid"] == 3][0]
+            check(json.loads(nested["intents"]) == [["background"]], "http nested intents")
         finally:
             server.shutdown()
             server.server_close()
