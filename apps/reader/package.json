@@ -8,7 +8,10 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "npx serve out -l 3000",
-    "fidelity": "python3 fidelity/run.py"
+    "fidelity": "python3 fidelity/run.py",
+    "test:unit": "python3 -m unittest scripts/test_pipeline.py",
+    "test:e2e": "node --test tests/e2e.test.mjs",
+    "test": "npm run test:unit && npm run verify && npm run test:e2e"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.1.0",

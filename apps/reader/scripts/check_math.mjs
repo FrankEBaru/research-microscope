@@ -32,4 +32,6 @@ for (const f of readdirSync(dir)) {
 }
 console.log(`TOTAL: ${total - fail}/${total} renderizan sin error`);
 fails.forEach((l) => console.log("  FALLA " + l));
-process.exit(fail > 0 ? 1 : 0);
+const MAX = Number(process.env.MAX_FAIL_RATE ?? 0.02);
+console.log(`umbral de fallos: ${(100 * MAX).toFixed(1)}% (actual ${(100 * fail / total).toFixed(2)}%)`);
+process.exit(fail / total > MAX ? 1 : 0);

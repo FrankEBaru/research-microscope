@@ -158,7 +158,7 @@ export default function PaperView({ paper, content, focus }: { paper: Paper; con
       }
       secOf[b.id] = cur;
       if (b.kind === "fig") { figN[b.id] = ++fig; if (b.label) xref[b.label] = `Figura ${fig}`; }
-      if (b.kind === "eq") { const tg = /\\tag\{([^}]*)\}/.exec(b.tex); (b.labels || []).forEach((l: string) => { if (tg) xref[l] = `(${tg[1]})`; target[l] = `blk-${b.id}`; }); }
+      if (b.kind === "eq") { const tg = /\\tag\{([^}]*)\}/.exec(b.tex); (b.labels || []).forEach((l: string) => { xref[l] = tg ? `(${tg[1]})` : "ecuación"; target[l] = `blk-${b.id}`; }); }
       if (b.kind === "table") {
         tabN[b.id] = ++tab; if (b.label) xref[b.label] = `Tabla ${tab}`;
         const all: Inline[][][] = [...(b.head || []), ...(b.body || [])];

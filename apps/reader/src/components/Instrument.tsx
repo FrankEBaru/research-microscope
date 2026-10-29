@@ -138,7 +138,7 @@ export default function Instrument({ content, goTo }: { content: any; goTo: (blo
       </p>
 
       <footer>
-        <p className="small"><strong>Qué es esto:</strong> una ilustración de una afirmación del paper bajo sus supuestos, no un resultado del paper. {I.distributionNote} Pasa 6 pruebas derivadas de §3.2.1 (<code>tests/instrument.test.mjs</code>, incluida la comparación con una reimplementación independiente en numpy). No se llama «verificada».</p>
+        <p className="small"><strong>Qué es esto:</strong> una ilustración de una afirmación del paper bajo sus supuestos, no un resultado del paper. {I.distributionNote} Pasa 6 pruebas derivadas de §3.2.1 (<code>tests/instrument.test.mjs</code>, incluida la comparación con una reimplementación independiente en numpy).</p>
       </footer>
     </aside>
   );
