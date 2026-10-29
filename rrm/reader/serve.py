@@ -75,7 +75,7 @@ gpu_image = (
 app = modal.App("rrm-reader")
 vol = modal.Volume.from_name("rrm-data", create_if_missing=True)
 if modal.is_local():
-    secret = modal.Secret.from_dict({"MODEL_API_KEY": os.environ.get("MODEL_API_KEY", "")})
+    secret = modal.Secret.from_dict({"MODEL_API_KEY": os.environ.get("MODEL_API_KEY", ""), "S2_API_KEY": os.environ.get("S2_API_KEY", "")})
 else:
     secret = modal.Secret.from_dict({})
 
