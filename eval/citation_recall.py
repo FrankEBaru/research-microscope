@@ -171,9 +171,13 @@ def run_loaded(bundle, release, n, min_refs, seed, k, shard_limit, row_limit, sp
     return summarize(rows)
 
 
-def _modal():
+try:
     import modal
+except ImportError:
+    modal = None
 
+# Module scope, so Modal can import Recall inside the container.
+if modal is not None:
     from rrm.search.faissutil import search_vectors
     from rrm.search.serve import image as search_image
     from rrm.search.serve import vol
@@ -244,13 +248,4 @@ def _modal():
         )
         print(json.dumps(out))
 
-    return eval_app
-
-
-try:
-    import modal as _modal_lib
-except ImportError:
-    _modal_lib = None
-
-if _modal_lib is not None:
-    app = _modal()
+    app = eval_app
