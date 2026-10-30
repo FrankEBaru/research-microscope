@@ -239,3 +239,14 @@ test("gráfica: predecir antes de ver oculta las barras hasta elegir y luego rev
   assert.match(await p.$eval(".tp-result", (e) => e.textContent), /Acertaste|el más alto es/);
   assert.equal(await p.$$eval(".tbar-row.hid", (n) => n.length), 0, "al elegir se revelan los valores"); assert.deepEqual(p.errs, []); await p.close();
 });
+
+test("compañero que señala: al aceptar se desliza hasta la ecuación; sin objetivo se queda quieto", async () => {
+  const p = await browser.newPage({ viewport: { width: 1280, height: 900 } }); p.errs = [];
+  p.on("pageerror", (e) => p.errs.push(e.message)); await p.addInitScript(() => { window.__RRM_DWELL_MS = 900; });
+  await p.goto(base + "#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".paper"); await p.keyboard.press("c");
+  assert.equal(await p.$eval(".companion", (e) => e.getAttribute("data-pointing")), null, "quieto por defecto");
+  await p.$eval(".eq.blk", (e) => e.scrollIntoView({ block: "start" }));
+  await p.waitForSelector(".c-bubble", { timeout: 6000 }); await p.click(".c-yes");
+  await p.waitForSelector('.companion[data-pointing^="blk-"]'); assert.match(await p.$eval(".companion", (e) => e.style.transform), /translateY\(-?\d/);
+  assert.deepEqual(p.errs, []); await p.close();
+});

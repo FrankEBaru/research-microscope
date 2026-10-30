@@ -61,8 +61,18 @@ function Character({ idx, wiggle }: { idx: number; wiggle: boolean }) {
   return <svg className={`char char-${c.id} ${wiggle ? "wiggle" : ""}`} width="68" height="68" viewBox={c.vb} role="img" aria-label={`Compañero de lectura: ${c.name}`}>{c.el}</svg>;
 }
 
-export default function Companion({ offer, onAnswer, onHide }: { offer: Offer | null; onAnswer: (accepted: boolean) => void; onHide: () => void }) {
+export default function Companion({ offer, onAnswer, onHide, target }: { offer: Offer | null; onAnswer: (accepted: boolean) => void; onHide: () => void; target?: string | null }) {
   const [idx, setIdx] = useState(0); // personaje elegido: solo en memoria, como todo lo del compañero
+  // Señala: el movimiento SIEMPRE lleva información (se desliza al nivel del bloque del que habla); sin objetivo, no se mueve.
+  const [dy, setDy] = useState(0);
+  useEffect(() => {
+    if (!target) { setDy(0); return; }
+    let raf = 0;
+    const upd = () => { const el = document.getElementById(target); if (!el) return; const r = el.getBoundingClientRect(); const t = Math.min(Math.max(r.top + Math.min(r.height, 300) / 2 - 40, 70), window.innerHeight - 120); setDy(Math.max(0, window.innerHeight - 120 - t)); };
+    upd(); const on = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(upd); };
+    window.addEventListener("scroll", on, { passive: true }); window.addEventListener("resize", on);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("scroll", on); window.removeEventListener("resize", on); };
+  }, [target]);
   useEffect(() => {
     if (!offer) return;
     const t = setTimeout(() => onAnswer(false), 20000);          // sin respuesta: se retira sola, cuenta como descartada
@@ -70,7 +80,7 @@ export default function Companion({ offer, onAnswer, onHide }: { offer: Offer | 
     window.addEventListener("keydown", k); return () => { clearTimeout(t); window.removeEventListener("keydown", k); };
   }, [offer]);
   return (
-    <aside className="companion" aria-label="Compañero de lectura (opcional)">
+    <aside className={`companion ${target ? "pointing" : ""}`} style={{ transform: `translateY(${-dy}px)` }} data-pointing={target || undefined} aria-label="Compañero de lectura (opcional)">
       {offer && (
         <div className="c-bubble" role="status">
           <p>{offer.text}</p>

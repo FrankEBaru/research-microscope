@@ -216,6 +216,9 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const [active, setActive] = useState<string>("");
   const tracker = useRef(createTracker());
   const [offer, setOffer] = useState<Offer | null>(null);
+  const [point, setPoint] = useState<string | null>(null); // bloque al que el compañero señala (se suelta solo)
+  useEffect(() => { if (!point) return; const el = document.getElementById(point); el?.classList.remove("flash"); void el?.offsetWidth; el?.classList.add("flash"); const t = setTimeout(() => setPoint(null), 12000); return () => clearTimeout(t); }, [point]);
+  useEffect(() => { if (companion && focus) setPoint(`blk-${focus}`); }, [focus, companion, paper.arxivId]);
   const [breakdown, setBreakdown] = useState<string | null>(null); // bloque `eq` cuyo desglose está abierto
   useEffect(() => { tracker.current.reset(); setOffer(null); }, [paper.arxivId, paper.stage, paper.upgraded_from, companion]);
 
@@ -326,7 +329,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       timer = setTimeout(() => {
         const b = model.byId[id.replace("blk-", "")]; if (!b || symsInTex(b.tex).length === 0) return;
         const hit = tracker.current.offer(`dwell:${id}`); if (!hit) return;
-        setOffer({ key: hit, text: "Llevas un rato en esta ecuación. ¿Te desgloso sus símbolos con lo que dice el paper?", accept: "Sí, desglósala", onAccept: () => { setBreakdown(b.id); setTimeout(() => document.getElementById(`bd-${b.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 80); } });
+        setOffer({ key: hit, text: "Llevas un rato en esta ecuación. ¿Te desgloso sus símbolos con lo que dice el paper?", accept: "Sí, desglósala", onAccept: () => { setBreakdown(b.id); setPoint(`blk-${b.id}`); setTimeout(() => document.getElementById(`bd-${b.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 80); } });
       }, DWELL);
     };
     const io = new IntersectionObserver((es) => {
@@ -443,7 +446,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         </footer>
       </article>
       {pop && <Popover pop={pop} paper={paper} model={model} content={content} />}
-      {companion && <Companion offer={offer} onAnswer={() => setOffer(null)} onHide={() => onHideCompanion?.()} />}
+      {companion && <Companion offer={offer} target={point} onAnswer={() => setOffer(null)} onHide={() => onHideCompanion?.()} />}
     </div>
   );
 }
