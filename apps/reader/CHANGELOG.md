@@ -49,3 +49,4 @@ Rama de trabajo: `claude/magical-bohr-dzrmt1` (sale de `claude/ui-edge`; la esta
 | `b83b16c` | figura con zonas: 6 partes de la arquitectura del Transformer enlazan con su frase (`content/zones.json`) |
 | `b354445` | pruebas del modo en vivo (`tests/live.test.mjs`, `npm run test:live`) y arreglo con 0 papers leídos |
 | `0721a89` | zonas en la figura 1 de Kaplan + más pruebas e2e |
+| `f8e6f66` | móvil: el Área arranca en tarjetas; miniatura del cluster más grande |
