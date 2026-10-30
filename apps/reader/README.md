@@ -26,6 +26,25 @@ npm run data      # usa `.cache/` si ya está; si no, arXiv a 1 petición cada 3
 
 Export estático (`next.config.mjs`: `output: "export"`, `images.unoptimized: true`). En Vercel Hobby la raíz del proyecto es `apps/reader`, Node 22, build `npm ci && npm run build`. Variables de entorno del proyecto, nunca en git: `NEXT_PUBLIC_BURST_URL`, `NEXT_PUBLIC_READER_URL`, `NEXT_PUBLIC_RRM_DEMO_TOKEN`. Si las dos URLs están vacías, la pantalla sigue siendo la ráfaga curada y no llama al backend. Restaurar `public/papers/` desde el Release RRM-11 antes del build. Este repo no despliega.
 
+## Modo en vivo (backend)
+
+Tres variables de entorno, nunca en git, se inlinean en el export estático:
+
+| Variable | Qué es |
+|---|---|
+| `NEXT_PUBLIC_BURST_URL` | URL del servicio `rrm-burst` (`/burst`) |
+| `NEXT_PUBLIC_READER_URL` | URL del servicio `rrm-reader` (`/status`, `/paper`, `/file`, `/panorama`) |
+| `NEXT_PUBLIC_RRM_DEMO_TOKEN` | token de la demo: va en `X-RRM-Demo` y en `?k=` para `/file` |
+
+Con las dos URLs vacías la pantalla es la ráfaga curada y no llama a nada. Si hay URLs y falta el token, la UI falla al cargar. El token queda dentro del bundle: frena a quien solo tiene la URL, no a quien lee el bundle. Contrato de las rutas: `docs/backend-api.md`.
+
+- **Tiempos de espera** (`src/lib/backend.js`): `/burst` 150 s y sin reintento (un contenedor dormido tarda 100–131 s en arrancar); `/status` 20 s y 2 reintentos; `/paper` 40 s y 1 reintento; `/panorama` 20 s y sin reintento. Se reintenta solo en 429, 5xx, tiempo agotado y red caída, con espera creciente.
+- **Mensajes**: 401 (token), 403 (origen), 429, 5xx, tiempo agotado y sin conexión se explican en la pantalla, sin token ni URL. Un paper `failed` muestra su `reason`.
+- **Papers que no terminan**: tras 90 s con papers en cola aparece «Armar el Panorama con los ya leídos». Los que faltan no cuentan como leídos ni como «no lo dice».
+- **Panorama**: con backend, la UI pide `POST /panorama` (selección SIMULADA en el servidor: coincidencia de términos, no un modelo). Si falla, cae al simulador del navegador y lo dice en pantalla. En ambos casos la compuerta (`validateSelections`) corre en la UI: rechaza toda frase que no exista exactamente una vez en su paper.
+- **Zonas y gráficas**: las zonas de figuras están curadas por `arxivId` (`content/zones.json`); un paper en vivo sin zonas curadas no las muestra. Las gráficas de tabla usan `hspan`/`bspan` si el bundle los trae y leen un span ausente como 1.
+- `npm run build:live` genera `out-live/` con URLs de prueba (`b.test`, `r.test`) para `npm run test:live`; no llama a ningún servidor real.
+
 ## Qué es real y qué es simulado
 | Pieza | Estado |
 |---|---|
