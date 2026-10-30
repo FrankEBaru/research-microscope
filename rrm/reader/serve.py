@@ -55,7 +55,7 @@ from rrm.reader.queue import note as note_job
 from rrm.search.prefetch import load_burst_top, missing_status
 from rrm.reader.queue import release as release_job
 from rrm.reader.ocr_budget import claim_ocr_slot, ocr_gpu_from_env, ocr_limit_from_env
-from rrm.reader.sam import parse_pages, segment_pages
+from rrm.reader.sam import api_key, fill_pdf_crops, key_blocks_crops, parse_pages, segment_pages, segmented_pages
 
 DATA = "/data"
 PAPERS = Path(DATA) / "papers"
@@ -537,14 +537,17 @@ def read_crops(id: str, pages: str = ""):
             index = json.loads(index_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             index = {"crops": [], "error": None, "images": 0}
-    have = {row.get("page") for row in (index.get("crops") or [])} | {int(p) for p in (index.get("done_pages") or [])}
-    fresh = [p for p in wanted if p not in have]
     meta = load_meta(folder) or {}
     inflight = {int(p) for p in (meta.get("crops_inflight") or [])}
     status = "done"
-    if index.get("error") == "no MODEL_API_KEY":
+    # A missing key from an older run is not permanent. Retry when the key is set.
+    if key_blocks_crops(index.get("error"), api_key()):
         status = "skipped"
-    elif fresh:
+        fresh = []
+    else:
+        have = segmented_pages(index, api_key())
+        fresh = [p for p in wanted if p not in have]
+    if fresh:
         status = "running"
         todo = [p for p in fresh if p not in inflight]
         if todo:
@@ -556,15 +559,33 @@ def read_crops(id: str, pages: str = ""):
             except Exception as err:
                 status = "failed"
                 index["error"] = str(err)[:300]
+    # Pages SAM already closed with zero boxes stay empty until something fills
+    # them. The PDF boxes do that here, with no new SAM call. Pages just spawned
+    # are left to crops_for, which applies the same fallback after SAM.
+    busy = set(inflight)
+    if fresh:
+        busy |= {p for p in fresh if p not in inflight}
+    idle = [p for p in wanted if p not in busy]
+    pdf = folder / "source.pdf"
+    if idle and pdf.is_file():
+        try:
+            index, wrote = fill_pdf_crops(pdf, folder / "crops", idle)
+            if wrote:
+                vol.commit()
+        except Exception:
+            pass
     rows = index.get("crops") or []
     if wanted:
         rows = [row for row in rows if row.get("page") in wanted]
+    error = index.get("error")
+    if error == "no MODEL_API_KEY" and status != "skipped":
+        error = None
     return {
         "id": cid,
         "status": status,
         "pages": wanted,
         "crops": rows,
-        "error": index.get("error"),
+        "error": error,
         "images": index.get("images") or 0,
     }
 

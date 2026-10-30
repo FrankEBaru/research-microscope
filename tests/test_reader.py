@@ -520,6 +520,144 @@ def test_crop_pages_are_capped_and_parallel(tmp_path: Path, monkeypatch):
     assert all(p in ("diagram", "table") for p, _ in calls)
 
 
+def test_pdf_regions_merge_tiles_and_keep_tables():
+    import pymupdf
+
+    from rrm.reader.sam import page_regions
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=400, height=500)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 30, 30), 1)
+    pix.set_rect(pix.irect, (20, 20, 20, 255))
+    # two tiles of one figure, plus a separate panel
+    page.insert_image(pymupdf.Rect(40, 40, 100, 100), pixmap=pix)
+    page.insert_image(pymupdf.Rect(104, 40, 164, 100), pixmap=pix)
+    page.insert_image(pymupdf.Rect(40, 220, 180, 340), pixmap=pix)
+    # a ruled table, no raster
+    for y in (380, 400, 420, 440):
+        page.draw_line(pymupdf.Point(40, y), pymupdf.Point(200, y), width=0.6)
+    for x in (40, 90, 140, 200):
+        page.draw_line(pymupdf.Point(x, 380), pymupdf.Point(x, 440), width=0.6)
+    regions = page_regions(page)
+    doc.close()
+    diagrams = [r for r in regions if r["phrase"] == "diagram"]
+    # The two tiles are one panel. The lower raster is another. The ruled grid
+    # is cropped too (as a table, or as a drawing cluster when that is how it is drawn).
+    assert len(regions) == 3
+    assert len(diagrams) >= 2
+    top = diagrams[0]["bbox"]
+    assert top[1] < 150 and top[2] - top[0] > 100
+
+
+def test_empty_sam_falls_back_to_pdf_boxes(tmp_path, monkeypatch):
+    import pymupdf
+
+    import rrm.reader.sam as sam
+
+    calls = []
+    monkeypatch.setattr(sam, "api_key", lambda: "k")
+    monkeypatch.setattr(sam, "segment_png", lambda png, phrase, key, timeout=90: calls.append(phrase) or [])
+    pdf = tmp_path / "fig.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page(width=300, height=300)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 40), 1)
+    pix.set_rect(pix.irect, (10, 10, 200, 255))
+    page.insert_image(pymupdf.Rect(50, 40, 180, 200), pixmap=pix)
+    doc.save(pdf)
+    doc.close()
+    out = sam.segment_pages(pdf, tmp_path / "crops", [0])
+    assert len(calls) == 2
+    assert len(out["crops"]) == 1
+    row = out["crops"][0]
+    assert row["source"] == "pdf" and row["phrase"] == "diagram" and row["page"] == 0
+    assert (tmp_path / "crops" / row["file"]).is_file()
+    assert out["error"] is None and out["images"] == 2
+
+
+def test_sam_boxes_win_over_pdf(tmp_path, monkeypatch):
+    import pymupdf
+
+    import rrm.reader.sam as sam
+
+    monkeypatch.setattr(sam, "api_key", lambda: "k")
+    monkeypatch.setattr(
+        sam, "segment_png",
+        lambda png, phrase, key, timeout=90: [{"x1": 1, "y1": 1, "x2": 8, "y2": 8, "c": 0.4}] if phrase == "diagram" else [],
+    )
+    pdf = tmp_path / "fig.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page(width=200, height=200)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 20, 20), 1)
+    pix.set_rect(pix.irect, (0, 0, 0, 255))
+    page.insert_image(pymupdf.Rect(30, 30, 120, 140), pixmap=pix)
+    doc.save(pdf)
+    doc.close()
+    out = sam.segment_pages(pdf, tmp_path / "crops", [0])
+    assert len(out["crops"]) == 1
+    assert out["crops"][0]["phrase"] == "diagram"
+    assert "source" not in out["crops"][0]
+    assert out["crops"][0]["c"] == 0.4
+
+
+def test_missing_key_is_retried_when_the_key_returns(tmp_path, monkeypatch):
+    import rrm.reader.sam as sam
+
+    crops = tmp_path / "crops"
+    crops.mkdir()
+    (crops / "index.json").write_text(
+        '{"crops": [], "images": 0, "cost_usd": 0.0, "error": "no MODEL_API_KEY", "pages": 1, "done_pages": [0]}',
+        encoding="utf-8",
+    )
+    assert sam.key_blocks_crops("no MODEL_API_KEY", "") is True
+    assert sam.key_blocks_crops("no MODEL_API_KEY", "k") is False
+    assert sam.segmented_pages({"error": "no MODEL_API_KEY", "done_pages": [0], "crops": []}, "k") == set()
+    assert sam.segmented_pages({"error": None, "done_pages": [0], "crops": []}, "k") == {0}
+
+    monkeypatch.setattr(sam, "api_key", lambda: "k")
+    monkeypatch.setattr(sam, "render_selected", lambda pdf, pages, dpi=150: {p: b"png" for p in pages})
+    monkeypatch.setattr(
+        sam, "segment_png",
+        lambda png, phrase, key, timeout=90: [{"x1": 0, "y1": 0, "x2": 2, "y2": 2}],
+    )
+    monkeypatch.setattr(sam, "_crop", lambda png, box, dest: dest.write_bytes(b"png") or True)
+    pdf = tmp_path / "a.pdf"
+    pdf.write_bytes(b"%PDF")
+    out = sam.segment_pages(pdf, crops, [0])
+    assert out["error"] is None
+    assert out["crops"] and out["crops"][0]["page"] == 0
+    import json
+    index = json.loads((crops / "index.json").read_text())
+    assert index["error"] is None
+    assert 0 in index["done_pages"]
+
+
+def test_fill_pdf_crops_does_not_call_sam_twice(tmp_path, monkeypatch):
+    import pymupdf
+
+    import rrm.reader.sam as sam
+
+    monkeypatch.setattr(sam, "segment_png", lambda *a, **k: (_ for _ in ()).throw(AssertionError("sam")))
+    pdf = tmp_path / "fig.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page(width=300, height=300)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 40), 1)
+    pix.set_rect(pix.irect, (10, 10, 200, 255))
+    page.insert_image(pymupdf.Rect(40, 40, 200, 220), pixmap=pix)
+    doc.save(pdf)
+    doc.close()
+    crops = tmp_path / "crops"
+    crops.mkdir()
+    (crops / "index.json").write_text(
+        '{"crops": [], "images": 2, "cost_usd": 0.005, "error": null, "pages": 1, "done_pages": [0]}',
+        encoding="utf-8",
+    )
+    index, wrote = sam.fill_pdf_crops(pdf, crops, [0])
+    assert wrote is True and len(index["crops"]) == 1 and index["crops"][0]["source"] == "pdf"
+    assert index["images"] == 2 and index["pdf_checked"] == [0]
+    index2, wrote2 = sam.fill_pdf_crops(pdf, crops, [0])
+    assert wrote2 is False and len(index2["crops"]) == 1
+
+
 def test_crops_page_with_no_hits_is_done(tmp_path, monkeypatch):
     import rrm.reader.sam as sam
     calls = []
