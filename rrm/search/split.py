@@ -29,6 +29,23 @@ _PROMPT = (
     'Reply as JSON {"subtopics": ["...", "..."]}.'
 )
 CACHE = OrderedDict()
+# Set only when a completion actually returns. A skipped or cached query leaves the previous value.
+LAST_USAGE = None
+
+
+def usage_of(payload):
+    """Token counts from a chat-completions body, or None when the body has none."""
+    if not isinstance(payload, dict):
+        return None
+    usage = payload.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    out = {}
+    for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        value = usage.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            out[key] = value
+    return out or None
 
 
 def skip_split(query):
@@ -91,6 +108,8 @@ def _complete(query):
     )
     with urllib.request.urlopen(req, timeout=90) as resp:
         payload = json.loads(resp.read().decode())
+    global LAST_USAGE
+    LAST_USAGE = usage_of(payload)
     return payload["choices"][0]["message"].get("content") or ""
 
 

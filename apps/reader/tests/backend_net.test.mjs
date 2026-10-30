@@ -38,6 +38,22 @@ test("un paper que no responde corta por tiempo y no cuelga", async () => {
   assert.equal(err.kind, "timeout"); assert.equal(calls.length, 2); assert.ok(Date.now() - t0 < 2000); assert.match(m.explain(err), /no respondió a tiempo/);
 });
 
+test("GET lleva el token en la query y no en un header, así no hay preflight", async () => {
+  script(reply(200, { papers: [] }));
+  await m.burst("how does attention work");
+  await m.status([12]);
+  await m.paper("12");
+  for (const call of calls) {
+    assert.equal(call.init.headers["X-RRM-Demo"], undefined);
+    assert.match(call.url, /[?&]k=tok-secreto(?:&|$)/);
+  }
+  assert.match(calls[0].url, /\/burst\?q=how%20does%20attention%20work&n=10&k=/);
+  script(reply(200, []));
+  await m.panorama("q", ["1"]);
+  assert.equal(calls[0].init.headers["X-RRM-Demo"], "tok-secreto");
+  assert.equal(calls[0].url, "https://reader.example/panorama");
+});
+
 test("burst no se reintenta (arranque en frío) y 5xx se explica", async () => {
   script(reply(500)); const err = await m.burst("q").catch((e) => e);
   assert.equal(calls.length, 1); assert.equal(err.kind, "server"); assert.match(m.explain(err), /falló \(500\)/);

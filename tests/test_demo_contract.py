@@ -117,6 +117,10 @@ def test_keep_warm_is_an_explicit_deploy_flag(monkeypatch):
     for name in ("rrm/search/serve.py", "rrm/reader/serve.py"):
         text = (root / name).read_text(encoding="utf-8")
         assert "min_containers=" not in text
+    burst = (root / "rrm/search/serve.py").read_text(encoding="utf-8")
+    assert 'request.query_params.get("k")' in burst
+    reader = (root / "rrm/reader/serve.py").read_text(encoding="utf-8")
+    assert reader.count("gate(request, True)") >= 4
 
 
 def test_missing_status_is_not_settled_and_cached_ocr_does_not_count():

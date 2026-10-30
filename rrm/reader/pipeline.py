@@ -714,6 +714,13 @@ def _ocr_route(folder, info, meta, pdf_path, ocr, why: str, publish=None, announ
             meta["ocr_chunks"] = chunks
         _note_reason(meta, f"ocr failed: {err}"[:500])
         return "abstract", abstract_paper(info), pdf_path
+    if result.get("skipped"):
+        # The stamp above is only for a GPU call. A cap skip never started one.
+        meta.pop("ocr_invoked_at", None)
+        _note_reason(meta, f"ocr skipped: {result.get('skipped')}"[:500])
+        paper = abstract_paper(info)
+        paper["full"] = False
+        return "abstract", paper, pdf_path
     meta["timings"]["ocr"] += float(result.get("seconds") or (time.time() - t))
     meta["ocr_gpu_s"] = float(meta.get("ocr_gpu_s") or 0) + float(result.get("gpu_s") or result.get("seconds") or 0)
     if result.get("chunks"):

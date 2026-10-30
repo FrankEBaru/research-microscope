@@ -97,13 +97,26 @@ const RETRYABLE = new Set(["timeout", "network", "rate", "server"]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const override = () => (typeof globalThis.__RRM_TIMEOUT_MS === "number" ? globalThis.__RRM_TIMEOUT_MS : null);
 
+/** GET/HEAD carry the token in `k` and no custom header, so the browser skips the CORS preflight.
+ * A preflight waits for the Modal container, and a cold /burst did not answer OPTIONS within 30s.
+ * POST still sends X-RRM-Demo (application/json cannot be a simple request). */
+function authed(url, method) {
+  const m = String(method || "GET").toUpperCase();
+  if (m === "GET" || m === "HEAD") {
+    const join = url.includes("?") ? "&" : "?";
+    return { url: `${url}${join}k=${encodeURIComponent(TOKEN)}`, headers: {} };
+  }
+  return { url, headers: { "X-RRM-Demo": TOKEN } };
+}
+
 async function request(route, url, init = {}) {
   const retries = RETRIES[route];
+  const auth = authed(url, init.method);
   for (let attempt = 0; ; attempt++) {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), override() ?? TIMEOUT[route]);
     try {
-      const res = await fetch(url, { ...init, signal: ctl.signal, headers: { "X-RRM-Demo": TOKEN, ...(init.headers || {}) } });
+      const res = await fetch(auth.url, { ...init, signal: ctl.signal, headers: { ...auth.headers, ...(init.headers || {}) } });
       if (!res.ok) throw new BackendError(kindOf(res.status), res.status);
       try { return await res.json(); } catch { throw new BackendError("http", res.status, "la respuesta no es JSON"); }
     } catch (e) {
