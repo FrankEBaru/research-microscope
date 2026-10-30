@@ -967,7 +967,72 @@ def test_ocr_route_copies_figures_and_marks_this_run(tmp_path: Path):
     assert meta["ocr_invoked_at"] >= before
 
 
-def test_mbox_is_rewritten_only_for_katex():
+def test_ocr_route_skip_does_not_count_as_gpu(tmp_path: Path):
+    from rrm.reader import pipeline
+
+    folder = tmp_path / "8"
+    folder.mkdir()
+
+    def ocr(_pdf, _work):
+        return {"blocks": [], "seconds": 0.0, "gpu_s": 0.0, "skipped": "cap"}
+
+    meta = {"timings": pipeline._blank_timings(), "reason": None, "corpusid": 8, "ocr_gpu_s": 0.0}
+    info = {"corpusid": 8, "title": "T", "authors": ["Ada"], "abstract": "Abs"}
+    route, paper, _path = pipeline._ocr_route(folder, info, meta, folder / "x.pdf", ocr, "pdf", publish=None)
+    assert route == "abstract"
+    assert paper["full"] is False
+    assert "ocr_invoked_at" not in meta
+    assert meta["ocr_gpu_s"] == 0.0
+    assert meta["timings"]["ocr"] == 0.0
+    assert "skipped" in (meta.get("reason") or "")
+
+
+def test_ocr_slot_caps_at_one_and_fails_closed():
+    from rrm.reader.ocr_budget import claim_ocr_slot, ocr_limit_from_env
+
+    class Store(dict):
+        def __getitem__(self, key):
+            if key not in self:
+                raise KeyError(key)
+            return dict.__getitem__(self, key)
+
+    assert ocr_limit_from_env({}) is None
+    assert ocr_limit_from_env({"RRM_OCR_MAX": "1"}) == 1
+    assert ocr_limit_from_env({"RRM_OCR_MAX": "0"}) == 0
+    store = Store()
+    assert claim_ocr_slot(store, None, 7) is True
+    assert store == {}
+    assert claim_ocr_slot(store, 1, 7) is True
+    assert claim_ocr_slot(store, 1, 7) is True
+    assert claim_ocr_slot(store, 1, 8) is False
+    blocked = Store(ocr_block=1)
+    assert claim_ocr_slot(blocked, 1, 1) is False
+
+    class Drop:
+        def __init__(self):
+            self.data = {}
+            self.drops = 1
+
+        def __getitem__(self, key):
+            if key not in self.data:
+                raise KeyError(key)
+            return self.data[key]
+
+        def __setitem__(self, key, value):
+            if key == "ocr_owners" and self.drops:
+                self.drops -= 1
+                return
+            self.data[key] = value
+
+    lost = Drop()
+    assert claim_ocr_slot(lost, 1, 9) is True
+    assert lost.data["ocr_owners"] == ["9"]
+    gone = Drop()
+    gone.drops = 8
+    assert claim_ocr_slot(gone, 1, 4, attempts=3) is False
+    assert "ocr_owners" not in gone.data
+    wired = Path(__file__).parents[1].joinpath("rrm/reader/serve.py").read_text(encoding="utf-8")
+    assert "RRM_OCR_MAX" in wired and "claim_ocr_slot" in wired
     from rrm.reader.katex import for_katex
     assert for_katex(r"\mbox{a} + b") == r"\text{a} + b"
     assert for_katex(r"\mboxx") == r"\mboxx"

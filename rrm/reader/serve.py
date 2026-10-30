@@ -54,6 +54,7 @@ from rrm.reader.queue import forget as forget_job
 from rrm.reader.queue import note as note_job
 from rrm.search.prefetch import load_burst_top, missing_status
 from rrm.reader.queue import release as release_job
+from rrm.reader.ocr_budget import claim_ocr_slot, ocr_limit_from_env
 from rrm.reader.sam import parse_pages, segment_pages
 
 DATA = "/data"
@@ -93,6 +94,8 @@ if modal.is_local():
         "S2_API_KEY": os.environ.get("S2_API_KEY", ""),
         "RRM_DEMO_TOKEN": os.environ.get("RRM_DEMO_TOKEN", ""),
         "RRM_PANORAMA_MODE": os.environ.get("RRM_PANORAMA_MODE", "sim"),
+        # Empty unless this deploy sets it. Unset = no OCR cap.
+        "RRM_OCR_MAX": os.environ.get("RRM_OCR_MAX", ""),
     })
 else:
     secret = modal.Secret.from_dict({})
@@ -277,9 +280,17 @@ def _ocr(pdf, work):
     work = Path(work)
     n = pdf_page_count(pdf) or 0
     spans = page_spans(n)
-    vol.commit()
     if not spans:
         return {"blocks": [], "seconds": 0.0, "gpu_s": 0.0, "page_count": 0, "chunks": []}
+    limit = ocr_limit_from_env()
+    if limit is not None:
+        cid = _JOB.get()
+        if cid is None or not claim_ocr_slot(_queue_dict(), limit, cid):
+            return {
+                "blocks": [], "seconds": 0.0, "gpu_s": 0.0, "page_count": n,
+                "chunks": [], "skipped": "cap",
+            }
+    vol.commit()
     jobs = []
     for start, end in spans:
         part = work / f"part_{start}"
