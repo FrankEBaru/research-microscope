@@ -63,20 +63,76 @@ export function settled(status) {
   return SETTLED.has(status);
 }
 
-async function getJson(url) {
-  const res = await fetch(url, { headers: { "X-RRM-Demo": TOKEN } });
-  if (!res.ok) throw new Error(String(res.status));
-  return res.json();
+/** Error del backend con el motivo ya clasificado: kind = auth | origin | rate | server | timeout | network | http. */
+export class BackendError extends Error {
+  constructor(kind, status, detail = "") {
+    super(detail || `${kind}${status ? ` ${status}` : ""}`);
+    this.name = "BackendError";
+    this.kind = kind;
+    this.status = status;
+  }
+}
+
+function kindOf(status) {
+  return status === 401 ? "auth" : status === 403 ? "origin" : status === 429 ? "rate" : status >= 500 ? "server" : "http";
+}
+
+/** Texto para la persona. No lleva el token ni la URL. */
+export function explain(err) {
+  const k = err?.kind;
+  if (k === "auth") return "El servidor rechazó el token de la demo (401). Revisa NEXT_PUBLIC_RRM_DEMO_TOKEN.";
+  if (k === "origin") return "El servidor no acepta este origen (403). Hay que agregarlo a la lista de orígenes permitidos.";
+  if (k === "rate") return "El servidor está recibiendo demasiadas peticiones (429). Espera unos segundos y vuelve a intentar.";
+  if (k === "server") return `El servidor falló (${err.status}). Vuelve a intentar en un momento.`;
+  if (k === "timeout") return "El servidor no respondió a tiempo. Puede estar arrancando; vuelve a intentar.";
+  if (k === "network") return "No se pudo conectar con el servidor.";
+  if (k === "http") return `El servidor respondió ${err.status}.`;
+  return String(err?.message || err || "Error desconocido");
+}
+
+// Tiempos de espera por ruta (ms). /burst puede tardar 100–131 s si el contenedor estaba dormido.
+const TIMEOUT = { burst: 150000, status: 20000, paper: 40000, panorama: 20000 };
+const RETRIES = { burst: 0, status: 2, paper: 1, panorama: 0 };
+const RETRYABLE = new Set(["timeout", "network", "rate", "server"]);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const override = () => (typeof globalThis.__RRM_TIMEOUT_MS === "number" ? globalThis.__RRM_TIMEOUT_MS : null);
+
+async function request(route, url, init = {}) {
+  const retries = RETRIES[route];
+  for (let attempt = 0; ; attempt++) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), override() ?? TIMEOUT[route]);
+    try {
+      const res = await fetch(url, { ...init, signal: ctl.signal, headers: { "X-RRM-Demo": TOKEN, ...(init.headers || {}) } });
+      if (!res.ok) throw new BackendError(kindOf(res.status), res.status);
+      try { return await res.json(); } catch { throw new BackendError("http", res.status, "la respuesta no es JSON"); }
+    } catch (e) {
+      const err = e instanceof BackendError ? e : new BackendError(ctl.signal.aborted ? "timeout" : "network", 0);
+      if (attempt >= retries || !RETRYABLE.has(err.kind)) throw err;
+      await sleep((override() ? 5 : 400) * 2 ** attempt);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 }
 
 export function burst(q) {
-  return getJson(`${BURST}/burst?q=${encodeURIComponent(q)}&n=10`);
+  return request("burst", `${BURST}/burst?q=${encodeURIComponent(q)}&n=10`);
 }
 
 export function status(ids) {
-  return getJson(`${READER}/status?ids=${ids.join(",")}`);
+  return request("status", `${READER}/status?ids=${ids.join(",")}`);
 }
 
 export function paper(id) {
-  return getJson(`${READER}/paper?id=${encodeURIComponent(id)}`);
+  return request("paper", `${READER}/paper?id=${encodeURIComponent(id)}`);
+}
+
+/** Selecciones SIMULADAS del servidor: [{id, statement, selections: [{paper, quote}]}]. La compuerta sigue en la UI. */
+export function panorama(question, ids) {
+  return request("panorama", `${READER}/panorama`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, ids }),
+  });
 }

@@ -12,4 +12,4 @@ if [[ ! -f tests/fixtures/demo/paper_sections.json ]]; then
   tar -xzf "$tmp/demo-fixtures.tar.gz" -C tests/fixtures/demo
 fi
 python3 -m pytest -q tests/test_demo_contract.py tests/test_search.py tests/test_reader.py tests/test_bundle_contract.py tests/test_panorama.py
-node --test apps/reader/tests/contract.test.mjs apps/reader/tests/instrument.test.mjs apps/reader/tests/scaling.test.mjs apps/reader/tests/bibtex.test.mjs apps/reader/tests/companion.test.mjs
+node --test apps/reader/tests/contract.test.mjs apps/reader/tests/instrument.test.mjs apps/reader/tests/scaling.test.mjs apps/reader/tests/bibtex.test.mjs apps/reader/tests/companion.test.mjs apps/reader/tests/backend_net.test.mjs
