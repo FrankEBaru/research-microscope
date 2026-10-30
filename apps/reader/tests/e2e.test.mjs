@@ -250,3 +250,14 @@ test("compañero que señala: al aceptar se desliza hasta la ecuación; sin obje
   await p.waitForSelector('.companion[data-pointing^="blk-"]'); assert.match(await p.$eval(".companion", (e) => e.style.transform), /translateY\(-?\d/);
   assert.deepEqual(p.errs, []); await p.close();
 });
+
+test("figura con zonas: cada parte de la arquitectura enlaza con la frase del paper que la explica", async () => {
+  const p = await page("#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".zone");
+  assert.equal(await p.$$eval(".zone", (n) => n.length), 6);
+  await p.$eval('[data-zone="dec-masked"]', (e) => e.scrollIntoView({ block: "center" })); await p.hover('[data-zone="dec-masked"]');
+  assert.match(await p.$eval(".zone-card", (e) => e.textContent), /Atención enmascarada[\s\S]*prevent positions from attending to subsequent positions/);
+  assert.match(await p.$eval(".zonefig .chips", (e) => e.textContent), /sin modelo/);
+  await p.click(".zone-card .link"); await p.waitForTimeout(600);
+  assert.ok(await p.$eval("#blk-b20", (e) => e.classList.contains("flash")), "va al párrafo del decodificador");
+  assert.deepEqual(p.errs, []); await p.close();
+});

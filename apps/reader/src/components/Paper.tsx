@@ -189,6 +189,28 @@ function Table({ b, ctx, n }: { b: Block; ctx: Ctx; n: number }) {
 
 const FILE_NAME = /^[A-Za-z0-9._-]{1,180}$/;
 
+/** Figura con zonas: cajas sobre la figura ORIGINAL (marcadas a mano) que enlazan cada parte con la frase del paper que la explica. */
+function ZoneFig({ paper, name, alt, zones, onGo }: { paper: Paper; name: string; alt: string; zones: any[]; onGo: (blockId: string) => void }) {
+  const [on, setOn] = useState<string | null>(null);
+  const z = zones.find((x) => x.id === on);
+  return (
+    <div className="zonefig">
+      <div className="zone-box" onMouseLeave={() => setOn(null)}>
+        <FigImg paper={paper} name={name} alt={alt} />
+        {zones.map((x) => (
+          <button key={x.id} className={`zone ${on === x.id ? "on" : ""}`} data-zone={x.id} aria-label={x.label} onMouseEnter={() => setOn(x.id)} onFocus={() => setOn(x.id)} onClick={() => setOn(x.id)}
+            style={{ left: `${x.box[0] * 100}%`, top: `${x.box[1] * 100}%`, width: `${(x.box[2] - x.box[0]) * 100}%`, height: `${(x.box[3] - x.box[1]) * 100}%` }} />
+        ))}
+      </div>
+      <div className="zone-card" role="status" aria-live="polite">
+        {z ? (<><b>{z.label}</b><blockquote>«{z.quote}»</blockquote><button className="link" onClick={() => onGo(z.anchor.blockId)}>ver dónde lo dice →</button></>)
+          : <span className="muted">Pasa el cursor por una parte de la figura para ver qué dice el paper de ella.</span>}
+      </div>
+      <div className="chips"><ProvChip kind="curado" text="zonas marcadas a mano, sin modelo; la figura no se modifica" /></div>
+    </div>
+  );
+}
+
 function FigImg({ paper, name, alt }: { paper: Paper; name: string; alt: string }) {
   const [broken, setBroken] = useState(false);
   const bare = FILE_NAME.test(name) && !name.includes("..");
@@ -417,7 +439,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           } else if (b.kind === "fig") {
             el = (
               <figure id={b.label || `blk-${b.id}`} className="fig blk">
-                <div className="fig-imgs">{b.images.map((src: string) => <FigImg key={src} paper={paper} name={src} alt={plainOf(b.caption)} />)}</div>
+                <div className="fig-imgs">{b.images.map((src: string, i: number) => { const zs = i === 0 && b.label ? (content.zones?.figures || []).find((f: any) => f.paper === paper.arxivId && f.fig === b.label)?.zones : null;
+                  return zs ? <ZoneFig key={src} paper={paper} name={src} alt={plainOf(b.caption)} zones={zs} onGo={goTo} /> : <FigImg key={src} paper={paper} name={src} alt={plainOf(b.caption)} />; })}</div>
                 <figcaption><b>Figura {model.figN[b.id]}.</b> <Inlines inls={b.caption} ctx={ctx} /> <ProvChip kind="paper" text="figura original, sin redibujar" /></figcaption>
               </figure>
             );

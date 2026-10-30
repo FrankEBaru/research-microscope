@@ -271,3 +271,8 @@ tr.row-on td { background: rgba(39,71,107,.14) !important; }
 .tbar-row.hid { cursor: pointer; } .tbar-row.hid:hover { background: var(--accent-soft); } .tbar-row.guess .tb-label { text-decoration: underline dotted; } .tbar-row.truth .tb-track i { background: #b8741a; }
 .companion { transition: transform .7s cubic-bezier(.3,.7,.2,1); } .companion.pointing .c-avatar::after { content: "← aquí"; position: absolute; right: 76px; top: 20px; white-space: nowrap; font: 600 .75rem var(--sans); background: var(--accent); color: #fff; border-radius: 999px; padding: .15rem .55rem; } .c-avatar { position: relative; }
 @media (prefers-reduced-motion: reduce) { .companion { transition: none; } }
+/* zonas sobre figuras */
+.zonefig { width: 100%; } .zone-box { position: relative; display: inline-block; max-width: 100%; } .zone-box img { display: block; max-width: 100%; max-height: 72vh; width: auto; height: auto; }
+.zone { position: absolute; background: transparent; border: 1.5px dashed rgba(36,70,110,.45); border-radius: 6px; padding: 0; cursor: pointer; transition: background .15s, border-color .15s; }
+.zone:hover, .zone.on, .zone:focus-visible { background: rgba(36,70,110,.14); border: 2px solid var(--accent); outline: none; }
+.zone-card { min-height: 5.2rem; margin: .6rem 0 .3rem; padding: .6rem .9rem; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font: .9rem/1.45 var(--sans); } .zone-card blockquote { margin: .3rem 0; font-family: var(--serif); }
