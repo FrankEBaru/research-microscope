@@ -63,3 +63,5 @@ data/
 
 # E2E benchmark reports (may contain timings of a private deploy)
 e2e-report*.json
+e2e-real-report.json
+e2e-shots/
