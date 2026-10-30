@@ -1,0 +1,125 @@
+{
+ "note": "Zonas marcadas a mano sobre la figura original (sin modelo; caja = fracciones x0,y0,x1,y1). Pendiente de que Franklin las revise.",
+ "figures": [
+  {
+   "paper": "1706.03762",
+   "fig": "fig:model-arch",
+   "zones": [
+    {
+     "paper": "1706.03762",
+     "id": "enc-ff",
+     "label": "Red feed-forward (codificador)",
+     "box": [
+      0.202,
+      0.43,
+      0.442,
+      0.498
+     ],
+     "quote": "each of the layers in our encoder and decoder contains a fully connected feed-forward network, which is applied to each position separately and identically"
+    },
+    {
+     "paper": "1706.03762",
+     "id": "enc-mha",
+     "label": "Atención multi-cabeza (codificador)",
+     "box": [
+      0.202,
+      0.595,
+      0.442,
+      0.663
+     ],
+     "quote": "Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions"
+    },
+    {
+     "paper": "1706.03762",
+     "id": "enc-addnorm",
+     "label": "Suma y normalización (residual)",
+     "box": [
+      0.202,
+      0.393,
+      0.442,
+      0.423
+     ],
+     "quote": "around each of the two sub-layers, followed by layer normalization"
+    },
+    {
+     "paper": "1706.03762",
+     "id": "dec-cross",
+     "label": "Atención sobre la salida del codificador",
+     "box": [
+      0.557,
+      0.405,
+      0.797,
+      0.473
+     ],
+     "quote": "the decoder inserts a third sub-layer, which performs multi-head attention over the output of the encoder stack"
+    },
+    {
+     "paper": "1706.03762",
+     "id": "dec-masked",
+     "label": "Atención enmascarada (decodificador)",
+     "box": [
+      0.557,
+      0.569,
+      0.797,
+      0.663
+     ],
+     "quote": "We also modify the self-attention sub-layer in the decoder stack to prevent positions from attending to subsequent positions"
+    },
+    {
+     "paper": "1706.03762",
+     "id": "posenc",
+     "label": "Codificación posicional",
+     "box": [
+      0,
+      0.74,
+      0.342,
+      0.8
+     ],
+     "quote": "to the input embeddings at the bottoms of the encoder and decoder stacks"
+    }
+   ]
+  },
+  {
+   "paper": "2001.08361",
+   "fig": "fig:BasicPowerLaws",
+   "zones": [
+    {
+     "paper": "2001.08361",
+     "id": "compute",
+     "label": "Cómputo (C_min): pérdida vs. PF-days",
+     "box": [
+      0.067,
+      0.203,
+      0.345,
+      0.558
+     ],
+     "quote": "or the optimally allocated compute budget"
+    },
+    {
+     "paper": "2001.08361",
+     "id": "dataset",
+     "label": "Tamaño del dataset (tokens)",
+     "box": [
+      0.355,
+      0.203,
+      0.636,
+      0.558
+     ],
+     "quote": "can be predicted using a power-law when performance is limited by only either"
+    },
+    {
+     "paper": "2001.08361",
+     "id": "params",
+     "label": "Parámetros (sin embeddings)",
+     "box": [
+      0.658,
+      0.203,
+      0.92,
+      0.558
+     ],
+     "quote": "limited by only either the number of non-embedding parameters"
+    }
+   ]
+  }
+ ]
+}

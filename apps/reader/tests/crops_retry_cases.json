@@ -1,0 +1,23 @@
+[
+  {
+    "error": "no MODEL_API_KEY",
+    "key": "",
+    "index": {"error": "no MODEL_API_KEY", "done_pages": [2], "crops": []},
+    "skip": true,
+    "done": [2]
+  },
+  {
+    "error": "no MODEL_API_KEY",
+    "key": "present",
+    "index": {"error": "no MODEL_API_KEY", "done_pages": [2], "crops": []},
+    "skip": false,
+    "done": []
+  },
+  {
+    "error": null,
+    "key": "present",
+    "index": {"error": null, "done_pages": [1], "crops": [{"page": 4}]},
+    "skip": false,
+    "done": [1, 4]
+  }
+]

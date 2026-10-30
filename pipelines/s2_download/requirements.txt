@@ -1,0 +1,4 @@
+requests
+isal
+pyarrow
+numpy

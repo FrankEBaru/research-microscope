@@ -1,0 +1,32 @@
+{
+  "name": "reader",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "data": "python3 scripts/build_data.py",
+    "verify": "node scripts/check_math.mjs && node --test tests/instrument.test.mjs tests/scaling.test.mjs tests/bibtex.test.mjs tests/companion.test.mjs tests/tablechart.test.mjs tests/panorama.test.mjs tests/contract.test.mjs tests/panorama_live.test.mjs tests/musesim.test.mjs tests/backend_net.test.mjs",
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "npx serve out -l 3000",
+    "fidelity": "python3 fidelity/run.py",
+    "test:unit": "python3 -m unittest scripts/test_pipeline.py",
+    "test:e2e": "node --test tests/e2e.test.mjs",
+    "test": "npm run test:unit && npm run verify && npm run test:e2e && npm run test:live",
+    "build:live": "NEXT_PUBLIC_BURST_URL=http://b.test NEXT_PUBLIC_READER_URL=http://r.test NEXT_PUBLIC_RRM_DEMO_TOKEN=test next build && rm -rf out-live && mv out out-live",
+    "test:live": "npm run build:live && node --test tests/live.test.mjs && npm run build"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.1.0",
+    "@fontsource-variable/source-serif-4": "^5.1.0",
+    "katex": "^0.16.11",
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.6.0"
+  }
+}
