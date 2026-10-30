@@ -8,6 +8,7 @@ HTTP is one ASGI app, `api` (not one host per route):
     GET  /crops?id=corpusid&pages=0,1         -> SAM for those pages, in the background
     GET  /status?ids=1,2,3                    -> status, stage, per-stage progress
     GET  /file?id=&name=&k=                   -> a figure or crop file, or 404
+    POST /panorama  {"question", "ids"}       -> SIMULATED selections [{id, statement, selections}]; reads only
 
 `paper` does not call SAM. Crops run only for the pages named in `crops`.
 """
@@ -22,6 +23,7 @@ import modal
 
 from rrm.demo_guard import check, cors_kwargs
 from rrm.demo_warm import scaledown_window
+from rrm.panorama import docs_for, parse_request, run as run_panorama
 from rrm.reader.files import resolve_figure
 
 import rrm.reader.fetch as _fetch
@@ -89,6 +91,7 @@ if modal.is_local():
         "MODEL_API_KEY": os.environ.get("MODEL_API_KEY", ""),
         "S2_API_KEY": os.environ.get("S2_API_KEY", ""),
         "RRM_DEMO_TOKEN": os.environ.get("RRM_DEMO_TOKEN", ""),
+        "RRM_PANORAMA_MODE": os.environ.get("RRM_PANORAMA_MODE", "sim"),
     })
 else:
     secret = modal.Secret.from_dict({})
@@ -608,7 +611,7 @@ if scaledown_window() is not None:
 def api():
     from fastapi import FastAPI, Request
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import FileResponse, Response
+    from fastapi.responses import FileResponse, JSONResponse, Response
 
     web = FastAPI()
     web.add_middleware(CORSMiddleware, **cors_kwargs())
@@ -644,6 +647,24 @@ def api():
             return denied
         item = await request.json()
         return _prepare_ids((item or {}).get("ids") or [])
+
+    @web.post("/panorama")
+    async def route_panorama(request: Request):
+        denied = gate(request, False)
+        if denied:
+            return denied
+        try:
+            question, ids = parse_request(await request.json())
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+        vol.reload()
+        docs = docs_for(PAPERS, ids, load_meta, load_paper)
+        try:
+            return run_panorama(question, docs)
+        except NotImplementedError as e:
+            return JSONResponse({"error": str(e)}, status_code=501)
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
 
     @web.get("/crops")
     def route_crops(request: Request, id: str, pages: str = ""):

@@ -10,7 +10,10 @@ Reader, app `rrm-reader`, function `api`:
 - `GET /status?ids=` (comma-separated corpus ids; unknown ids are `missing`, except a top-10 id just returned by `/burst`, which is `queued` until its `meta.json` commit lands)
 - `POST /prepare` with `{"ids": []}`
 - `GET /crops?id=&pages=`
+- `POST /panorama` with `{"question": str, "ids": [corpusid, ...]}` (at most 20 ids, question up to 500 characters). Returns `[{id, statement, selections: [{paper, quote}]}]`. **Simulated:** `rrm/panorama.py` ports `apps/reader/src/lib/musesim.js` and picks real sentences from each paper's `blocks[].sents` by term overlap. It only reads papers that are `done` or `abstract_only`, never spawns work, and never returns text that is not in a paper. It is not a gate: the UI's `validateSelections` still rejects any quote that does not occur exactly once in its paper. 400 for a bad body, 501 in `meta` mode.
 - `GET /file?id=&name=&k=` (a file under `papers/{id}/figures/` or `papers/{id}/crops/`, or 404)
+
+`RRM_PANORAMA_MODE` is `sim` (default) or `meta`. `meta` is the future model call: it raises `NotImplementedError` (501) until Franklin explicitly allows calling Meta; its contract is in `rrm/panorama.py::meta_panorama`.
 
 `prefetch` stays a Modal function named `prefetch`. The UI does not call `/crops` or `/prepare`.
 
@@ -19,7 +22,7 @@ Burst, app `rrm-burst`, class `BurstSearch`, method `api`:
 - `GET /burst?q=&n=`
 - `GET /subtopics?q=`
 
-The UI calls `/burst` with `n=10`, then `/status`, `/paper`, and `/file`. It does not call `/subtopics`. `run_burst` is a Modal method with no public URL.
+The UI calls `/burst` with `n=10`, then `/status`, `/paper`, `/file`, and `/panorama`. It does not call `/subtopics`. `run_burst` is a Modal method with no public URL.
 
 `/status` rows include `ocr_gpu_s` and `ocr_invoked_at` when the reader has them. `missing` means no `meta.json` yet and the id was not in the top 10 noted by the latest bursts. That note is a single dict write on the burst handler; the volume commit runs after `/burst` has returned.
 
