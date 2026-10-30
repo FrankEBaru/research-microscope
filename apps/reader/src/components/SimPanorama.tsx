@@ -64,10 +64,11 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
             <div className="coverage-bar"><div style={{ width: `${readable.length ? (100 * done) / readable.length : 100}%` }} /></div>
             <span>{finished ? `${nRead} de ${ids.length} papers leídos` : `leyendo… ${done} de ${readable.length}`}{notRead ? ` · ${notRead} sin leer (no cuentan como «no lo dice»)` : ""}</span>
           </div>
+          {finished && nRead === 0 && <p className="muted" role="alert">No se pudo leer ningún paper de la ráfaga: no hay nada que contar todavía.</p>}
           {themes.length === 0 && finished && <p className="muted">No encontré términos de contenido en la pregunta. Prueba con palabras como «attention» o «escalado».</p>}
           {built.claims.map((c: any) => {
             const cv = convergence(c, Math.max(nRead, 1)); const p = pred[c.id];
-            const hidden = predictOn && finished && p === undefined;
+            const hidden = predictOn && finished && nRead > 0 && p === undefined;
             return (
               <article key={c.id} className="pano-claim" data-claim={c.id}>
                 <h3>{c.statement}</h3>

@@ -4,7 +4,7 @@ import { convergence } from "@/lib/convergence.js";
 import { proposeClaims, museMode } from "@/lib/muse.js";
 import { coverage } from "@/lib/panorama.js";
 import { ProvChip } from "./Bits";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import SimPanorama from "./SimPanorama";
 
 const pct = (x: number) => `${Math.round(100 * x)}%`;
@@ -14,7 +14,7 @@ export default function Panorama({ q, papers, content, go }: any) {
   const [mode, setMode] = useState<"curada" | "libre">("curada");
   const ids0: string[] = q.clusters.flatMap((c: any) => c.papers.map((p: any) => p.id));
   const owner = (id: string) => q.clusters.find((c: any) => c.papers.some((p: any) => p.id === id));
-  const states = Object.fromEntries(ids0.map((i) => [i, { status: papers[i].full ? "done" : "abstract_only" }]));
+  const states = useMemo(() => Object.fromEntries(ids0.map((i) => [i, { status: papers[i].full ? "done" : "abstract_only" }])), [papers, q]);
   const nm = (id: string) => `${papers[id].authors[0]?.split(" ").pop()} ${papers[id].date?.slice(0, 4)}`;
   const modes = (
     <div className="view-toggle" role="tablist" aria-label="Tipo de Panorama">

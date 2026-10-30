@@ -11,7 +11,9 @@
     "fidelity": "python3 fidelity/run.py",
     "test:unit": "python3 -m unittest scripts/test_pipeline.py",
     "test:e2e": "node --test tests/e2e.test.mjs",
-    "test": "npm run test:unit && npm run verify && npm run test:e2e"
+    "test": "npm run test:unit && npm run verify && npm run test:e2e && npm run test:live",
+    "build:live": "NEXT_PUBLIC_BURST_URL=http://b.test NEXT_PUBLIC_READER_URL=http://r.test NEXT_PUBLIC_RRM_DEMO_TOKEN=test next build && rm -rf out-live && mv out out-live",
+    "test:live": "npm run build:live && node --test tests/live.test.mjs && npm run build"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.1.0",
