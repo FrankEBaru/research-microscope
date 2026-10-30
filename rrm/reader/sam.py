@@ -502,7 +502,15 @@ def segment_pages(pdf: Path, crops_dir: Path, pages: list[int], phrases=PHRASES,
         result["crops"] = kept
         _write_index(crops_dir, kept, result)
         return result
-    tasks = [(page, phrase) for page in pngs for phrase in phrases]
+    # PDF figure and table boxes are the crop when the page has them. Concept
+    # prompts come back empty on these papers, or as fragments of a chart.
+    # SAM runs only for a page the PDF does not already segment.
+    pdf_hits = {}
+    for page, png in pngs.items():
+        hits = _pdf_hits(pdf, page, png)
+        if hits:
+            pdf_hits[page] = (png, hits)
+    tasks = [(page, phrase) for page in pngs if page not in pdf_hits for phrase in phrases]
     fresh = []
 
     def _one(task):
@@ -547,16 +555,11 @@ def segment_pages(pdf: Path, crops_dir: Path, pages: list[int], phrases=PHRASES,
                     (crops_dir / mask_name).write_text(hit["mask"], encoding="utf-8")
                     row["mask"] = mask_name
                 fresh.append(row)
-    # Concept prompts often return an empty lane on plots and tables. The PDF
-    # already has those boxes; use them only for pages SAM finished with nothing.
-    sam_pages = {row["page"] for row in fresh}
     checked = set(int(p) for p in (previous.get("pdf_checked") or []))
-    for page, png in pngs.items():
-        if page in failed_pages or page in sam_pages:
-            continue
+    for page, (png, hits) in pdf_hits.items():
         checked.add(page)
         counts = {}
-        for hit in _pdf_hits(pdf, page, png):
+        for hit in hits:
             phrase = hit["phrase"]
             n = counts.get(phrase, 0)
             counts[phrase] = n + 1
@@ -587,16 +590,20 @@ def fill_pdf_crops(pdf: Path, crops_dir: Path, pages: list[int]) -> tuple[dict, 
     index = _load_index(crops_dir)
     if not pdf.is_file():
         return index, False
-    have = set()
+    by_page = {}
     for row in index.get("crops") or []:
         if isinstance(row, dict) and row.get("page") is not None:
-            have.add(int(row["page"]))
+            by_page.setdefault(int(row["page"]), []).append(row)
     checked = set(int(p) for p in (index.get("pdf_checked") or []))
     todo = []
     for n in pages:
         n = int(n)
-        if n in have or n in checked:
+        rows = by_page.get(n) or []
+        if rows and all(r.get("source") == "pdf" for r in rows):
             continue
+        if n in checked:
+            continue
+        # Empty, or SAM fragments. PDF boxes replace those when the page has any.
         todo.append(n)
     if not todo:
         return index, False
@@ -606,8 +613,13 @@ def fill_pdf_crops(pdf: Path, crops_dir: Path, pages: list[int]) -> tuple[dict, 
         return index, False
     crops = list(index.get("crops") or [])
     for page, png in pngs.items():
+        hits = _pdf_hits(pdf, page, png)
+        checked.add(page)
+        if not hits:
+            continue
+        crops = [row for row in crops if int(row.get("page", -1)) != page]
         counts = {}
-        for hit in _pdf_hits(pdf, page, png):
+        for hit in hits:
             phrase = hit["phrase"]
             n = counts.get(phrase, 0)
             counts[phrase] = n + 1
@@ -620,7 +632,6 @@ def fill_pdf_crops(pdf: Path, crops_dir: Path, pages: list[int]) -> tuple[dict, 
                     "file": name,
                     "source": "pdf",
                 })
-        checked.add(page)
     result = {
         "images": int(index.get("images") or 0),
         "error": index.get("error"),
@@ -654,6 +665,24 @@ def segment_pdf(pdf: Path, crops_dir: Path, phrases=PHRASES, max_pages: int = 30
     result["pages"] = len(pages)
     index = []
     for page_i, png, _w, _h in pages:
+        pdf_first = _pdf_hits(pdf, page_i, png)
+        if pdf_first:
+            page_hits = [(hit["phrase"], hit) for hit in pdf_first]
+            counts = {}
+            for phrase, hit in page_hits:
+                n = counts.get(phrase, 0)
+                counts[phrase] = n + 1
+                name = f"p{page_i}_{phrase}_{n}.png"
+                dest = crops_dir / name
+                if _crop(png, hit, dest):
+                    index.append({
+                        "page": page_i,
+                        "phrase": phrase,
+                        "bbox": [hit["x1"], hit["y1"], hit["x2"], hit["y2"]],
+                        "file": name,
+                        "source": "pdf",
+                    })
+            continue
         page_hits = []
         failed = False
         for phrase in phrases:
@@ -672,8 +701,6 @@ def segment_pdf(pdf: Path, crops_dir: Path, phrases=PHRASES, max_pages: int = 30
                 continue
             result["images"] += 1
             page_hits.extend((phrase, hit) for hit in hits)
-        if not page_hits and not failed:
-            page_hits = [(hit["phrase"], hit) for hit in _pdf_hits(pdf, page_i, png)]
         counts = {}
         for phrase, hit in page_hits:
             n = counts.get(phrase, 0)

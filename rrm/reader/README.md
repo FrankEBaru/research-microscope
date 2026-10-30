@@ -21,7 +21,7 @@ The demo token (`RRM_DEMO_TOKEN`, inlined in the static bundle as `NEXT_PUBLIC_R
 
 ## SAM
 
-`GET /crops?id=&pages=0,1` (background). `sam-3.1` on `https://api.meta.ai/v1/responses`, key `MODEL_API_KEY`. Noun phrases `diagram` and `table` only, at most 4 pages per request, page index below 30, parallel calls, retries on 404, 429, and 5xx. $0.0025/image. No key or an API error leaves the parse in place. A stored `no MODEL_API_KEY` is retried once the key is present. When a page's phrases come back with no boxes, crops fall back to the PDF's figure and table boxes (raster tiles in one panel are merged). A page already marked done with no crops is filled from those boxes on the next read, without another SAM call. `prepare` and `paper` do not call SAM.
+`GET /crops?id=&pages=0,1` (background). `sam-3.1` on `https://api.meta.ai/v1/responses`, key `MODEL_API_KEY`. Noun phrases `diagram` and `table` only, at most 4 pages per request, page index below 30, parallel calls, retries on 404, 429, and 5xx. $0.0025/image. No key or an API error leaves the parse in place. A stored `no MODEL_API_KEY` is retried once the key is present. When the PDF already has figure or table boxes, those are the crops and SAM is not called. Otherwise the noun phrases run. A page already marked done with no crops, or with only SAM fragments, is filled from the PDF boxes on the next read. `prepare` and `paper` do not call SAM.
 
 ## Bench
 

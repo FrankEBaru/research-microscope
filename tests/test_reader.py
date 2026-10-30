@@ -566,33 +566,35 @@ def test_empty_sam_falls_back_to_pdf_boxes(tmp_path, monkeypatch):
     doc.save(pdf)
     doc.close()
     out = sam.segment_pages(pdf, tmp_path / "crops", [0])
-    assert len(calls) == 2
+    assert calls == []  # the PDF already has the figure, so SAM is not asked
     assert len(out["crops"]) == 1
     row = out["crops"][0]
     assert row["source"] == "pdf" and row["phrase"] == "diagram" and row["page"] == 0
     assert (tmp_path / "crops" / row["file"]).is_file()
-    assert out["error"] is None and out["images"] == 2
+    assert out["error"] is None and out["images"] == 0
 
 
-def test_sam_boxes_win_over_pdf(tmp_path, monkeypatch):
+def test_sam_boxes_used_when_the_pdf_has_no_figure(tmp_path, monkeypatch):
     import pymupdf
 
     import rrm.reader.sam as sam
 
+    calls = []
     monkeypatch.setattr(sam, "api_key", lambda: "k")
     monkeypatch.setattr(
         sam, "segment_png",
-        lambda png, phrase, key, timeout=90: [{"x1": 1, "y1": 1, "x2": 8, "y2": 8, "c": 0.4}] if phrase == "diagram" else [],
+        lambda png, phrase, key, timeout=90: calls.append(phrase) or (
+            [{"x1": 1, "y1": 1, "x2": 8, "y2": 8, "c": 0.4}] if phrase == "diagram" else []
+        ),
     )
-    pdf = tmp_path / "fig.pdf"
+    pdf = tmp_path / "blank.pdf"
     doc = pymupdf.open()
     page = doc.new_page(width=200, height=200)
-    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 20, 20), 1)
-    pix.set_rect(pix.irect, (0, 0, 0, 255))
-    page.insert_image(pymupdf.Rect(30, 30, 120, 140), pixmap=pix)
+    page.insert_text((40, 80), "Only a paragraph.")
     doc.save(pdf)
     doc.close()
     out = sam.segment_pages(pdf, tmp_path / "crops", [0])
+    assert calls == ["diagram", "table"]
     assert len(out["crops"]) == 1
     assert out["crops"][0]["phrase"] == "diagram"
     assert "source" not in out["crops"][0]
@@ -656,6 +658,15 @@ def test_fill_pdf_crops_does_not_call_sam_twice(tmp_path, monkeypatch):
     assert index["images"] == 2 and index["pdf_checked"] == [0]
     index2, wrote2 = sam.fill_pdf_crops(pdf, crops, [0])
     assert wrote2 is False and len(index2["crops"]) == 1
+    # SAM fragments on a page that has a real figure are replaced, without a new call.
+    (crops / "index.json").write_text(
+        '{"crops": [{"page": 0, "phrase": "table", "bbox": [1, 1, 2, 2], "file": "p0_table_0.png"}],'
+        ' "images": 2, "cost_usd": 0.005, "error": null, "pages": 1, "done_pages": [0], "pdf_checked": []}',
+        encoding="utf-8",
+    )
+    replaced, wrote3 = sam.fill_pdf_crops(pdf, crops, [0])
+    assert wrote3 is True
+    assert len(replaced["crops"]) == 1 and replaced["crops"][0]["source"] == "pdf"
 
 
 def test_crops_page_with_no_hits_is_done(tmp_path, monkeypatch):
