@@ -322,17 +322,33 @@ def _split_top(s: str, sep: str) -> list[str]:
     return parts
 
 
+def _cell(raw: str, macros: dict):
+    """One tabular cell -> (inlines, colspan). `\\multicolumn{n}{spec}{text}` is the only merge read."""
+    c = raw.strip()
+    m = re.match(r"\\multicolumn\s*\{\s*(\d+)\s*\}\s*\{", c)
+    if m:
+        _, after_spec = read_braced(c, m.end() - 1)
+        rest = c[after_spec:].lstrip()
+        if rest.startswith("{"):
+            inner, _ = read_braced(rest, 0)
+            return parse_inlines(inner.strip(), macros), max(1, int(m.group(1)))
+    return parse_inlines(c, macros), 1
+
+
 def _tabular_rows(inner: str, macros: dict):
+    """Rows of inlines, and for each row the colspan of each cell."""
     text = re.sub(r"\\(toprule|midrule|bottomrule|hline)\b", "", inner)
     # drop the column spec if the caller passed only the body; rows are \\-separated
-    rows = []
+    rows, spans = [], []
     for line in _split_top(text, "\\\\"):
         if not line.strip() or line.strip() in {r"\hline"}:
             continue
-        cells = [parse_inlines(c.strip(), macros) for c in _split_top(line, "&")]
+        pairs = [_cell(c, macros) for c in _split_top(line, "&")]
+        cells = [p[0] for p in pairs]
         if any(plain(c) or c for c in cells):
             rows.append(cells)
-    return rows
+            spans.append([p[1] for p in pairs])
+    return rows, spans
 
 
 def _table_block(inner: str, macros: dict):
@@ -353,13 +369,17 @@ def _table_block(inner: str, macros: dict):
             brace_at = tab.find("{")
             _, end = read_braced(tab, brace_at)
             tab = tab[end:]
-    rows = _tabular_rows(tab or inner, macros)
+    rows, spans = _tabular_rows(tab or inner, macros)
     block = {
         "kind": "table",
         "head": rows[:1],
         "body": rows[1:],
         "caption": parse_inlines(cap, macros),
     }
+    # Only tables with a merged cell carry spans; the UI reads a missing span as 1.
+    if any(n > 1 for row in spans for n in row):
+        block["hspan"] = spans[:1]
+        block["bspan"] = spans[1:]
     if labs:
         block["label"] = labs[0]
     if not rows and not cap.strip():

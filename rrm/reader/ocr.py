@@ -263,17 +263,21 @@ def _strip_math(text: str) -> str:
 
 
 def _html_rows(html: str):
-    rows = []
+    """Rows of inlines, and for each row the colspan of each cell."""
+    rows, spans = [], []
     for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, flags=re.I | re.S):
-        cells = re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, flags=re.I | re.S)
-        parsed = []
-        for c in cells:
+        cells = re.findall(r"<t[dh]([^>]*)>(.*?)</t[dh]>", row, flags=re.I | re.S)
+        parsed, widths = [], []
+        for attrs, c in cells:
             plain = re.sub(r"<[^>]+>", " ", c)
             plain = re.sub(r"\s+", " ", plain).strip()
             parsed.append(text_tokens(plain))
+            m = re.search(r"colspan\s*=\s*[\"']?(\d+)", attrs, flags=re.I)
+            widths.append(max(1, int(m.group(1))) if m else 1)
         if parsed:
             rows.append(parsed)
-    return rows
+            spans.append(widths)
+    return rows, spans
 
 
 _FIGURE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
@@ -450,15 +454,20 @@ def blocks_from_content_list(items: list) -> list:
             cap = item.get("table_caption") or []
             if isinstance(cap, list):
                 cap = " ".join(str(c) for c in cap)
-            rows = _html_rows(str(item.get("table_body") or ""))
+            rows, spans = _html_rows(str(item.get("table_body") or ""))
             if not rows and item.get("table_body"):
                 rows = [[text_tokens(re.sub(r"<[^>]+>", " ", str(item["table_body"])))]]
-            blocks.append({
+                spans = []
+            block = {
                 "kind": "table",
                 "head": rows[:1],
                 "body": rows[1:],
                 "caption": parse_inlines(str(cap), {}),
-            })
+            }
+            if any(n > 1 for row in spans for n in row):
+                block["hspan"] = spans[:1]
+                block["bspan"] = spans[1:]
+            blocks.append(block)
         elif kind == "list":
             raw_items = item.get("list_items") or []
             items_inl = [parse_inlines(str(x), {}) for x in raw_items if str(x).strip()]
