@@ -14,6 +14,10 @@ const script = (...steps) => { calls = []; globalThis.fetch = async (url, init) 
 const hang = (init) => new Promise((_, rej) => init.signal.addEventListener("abort", () => rej(new DOMException("abort", "AbortError"))));
 afterEach(() => { globalThis.fetch = realFetch; delete globalThis.__RRM_TIMEOUT_MS; });
 
+test("el navegador espera 45 s el panorama", () => {
+  assert.equal(m.PANORAMA_TIMEOUT_MS, 45000);
+});
+
 test("401 no se reintenta y el mensaje no trae token ni URL", async () => {
   script(reply(401));
   const err = await m.status([1]).catch((e) => e);

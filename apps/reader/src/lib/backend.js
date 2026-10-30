@@ -53,6 +53,7 @@ export function katexSource(tex) {
     return `${num}\\,\\mathrm{${SI_UNITS[name] || name}}`;
   });
   s = s.replace(/\\partialm(?![A-Za-z])/g, "\\partial m");
+  s = s.replace(/\\mathds(?![A-Za-z])/g, "\\mathbb");
   return s;
 }
 
@@ -92,9 +93,19 @@ export function explain(err) {
   return String(err?.message || err || "Error desconocido");
 }
 
+// Un número en NEXT_PUBLIC_RRM_PANORAMA_TIMEOUT_MS (ms) cambia la espera del navegador.
+function panoramaTimeout() {
+  const raw = process.env.NEXT_PUBLIC_RRM_PANORAMA_TIMEOUT_MS;
+  const n = Number(raw);
+  if (raw && Number.isFinite(n) && n >= 1000 && n <= 120000) return n;
+  return 45000;
+}
+
+export const PANORAMA_TIMEOUT_MS = panoramaTimeout();
+
 // Tiempos de espera por ruta (ms). /burst puede tardar 100–131 s si el contenedor estaba dormido.
-const TIMEOUT = { burst: 150000, status: 20000, paper: 40000, panorama: 20000 };
-const RETRIES = { burst: 0, status: 2, paper: 1, panorama: 0 };
+const TIMEOUT = { burst: 150000, status: 20000, paper: 40000, panorama: PANORAMA_TIMEOUT_MS, crops: 20000, subtopics: 20000 };
+const RETRIES = { burst: 0, status: 2, paper: 1, panorama: 0, crops: 1, subtopics: 0 };
 const RETRYABLE = new Set(["timeout", "network", "rate", "server"]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const override = () => (typeof globalThis.__RRM_TIMEOUT_MS === "number" ? globalThis.__RRM_TIMEOUT_MS : null);
@@ -157,4 +168,12 @@ export function panorama(question, ids) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question, ids }),
   });
+}
+
+export function crops(id, pages = "0,1,2") {
+  return request("crops", `${READER}/crops?id=${encodeURIComponent(id)}&pages=${encodeURIComponent(pages)}`);
+}
+
+export function subtopics(q) {
+  return request("subtopics", `${BURST}/subtopics?q=${encodeURIComponent(q)}`);
 }

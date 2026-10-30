@@ -37,10 +37,25 @@ export function colorize(tex: string, syms: Sym[]): string {
   return out;
 }
 
+/** Alineaciones de LaTeX sin entorno: KaTeX solo acepta & dentro de aligned. El \\tag queda fuera. */
+function katexInput(tex: string, display: boolean) {
+  let s = katexSource(tex);
+  if (!display || /\\begin\{/.test(s)) return s;
+  const tag = s.match(/\\tag\{[^{}]*\}$/);
+  let body = s;
+  let suffix = "";
+  if (tag && tag.index != null) {
+    body = s.slice(0, tag.index);
+    suffix = tag[0];
+  }
+  if (body.includes("&") || body.includes("\\\\")) s = `\\begin{aligned}${body}\\end{aligned}${suffix}`;
+  return s;
+}
+
 export function Tex({ tex, display = false, syms = [] as Sym[], className = "" }: { tex: string; display?: boolean; syms?: Sym[]; className?: string }) {
   const html = useMemo(() => {
     try {
-      return { ok: true, h: katex.renderToString(colorize(katexSource(tex), syms), { displayMode: display, throwOnError: true, trust: true, strict: "ignore" }) };
+      return { ok: true, h: katex.renderToString(colorize(katexInput(tex, display), syms), { displayMode: display, throwOnError: true, trust: true, strict: "ignore" }) };
     } catch {
       return { ok: false, h: "" };
     }

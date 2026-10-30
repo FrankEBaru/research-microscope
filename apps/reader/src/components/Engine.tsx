@@ -8,7 +8,7 @@ import MapView from "./MapView";
 import Panorama, { LiveCoverage } from "./Panorama";
 import SimPanorama from "./SimPanorama";
 import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
-import { burst, explain, liveEnabled, paperKey, paper as fetchPaper, settled, status as fetchStatus } from "@/lib/backend.js";
+import { burst, explain, liveEnabled, paperKey, paper as fetchPaper, settled, status as fetchStatus, subtopics as fetchSubtopics } from "@/lib/backend.js";
 import { LiveCircle } from "./MapView";
 
 type Route = { q?: string; c?: string; p?: string; b?: string };
@@ -29,6 +29,7 @@ export default function Engine() {
   const live = liveEnabled();
   const [draft, setDraft] = useState("");
   const [liveQ, setLiveQ] = useState("");
+  const [topics, setTopics] = useState<string[] | null>(null);
   const [liveOn, setLiveOn] = useState(false);
   const [pending, setPending] = useState(false);
   const [warm, setWarm] = useState(false);
@@ -92,6 +93,16 @@ export default function Engine() {
     const patience = window.setTimeout(() => setImpatient(true), (window as any).__RRM_PATIENCE_MS ?? 90000);
     return () => { stop = true; window.clearTimeout(patience); };
   }, [liveOn, liveResult]);
+
+  useEffect(() => {
+    if (!liveOn || !liveQ) return;
+    let stop = false;
+    fetchSubtopics(liveQ).then(
+      (body: any) => { if (!stop) setTopics(Array.isArray(body?.subtopics) ? body.subtopics : []); },
+      () => { if (!stop) setTopics([]); },
+    );
+    return () => { stop = true; };
+  }, [liveOn, liveQ]);
 
   useEffect(() => {
     if (!liveId) { setOpened(null); return; }
@@ -165,7 +176,7 @@ export default function Engine() {
     e.preventDefault();
     const q = draft.trim();
     if (!q || pending) return;
-    setLiveQ(q); setLiveOn(true); setLiveErr(""); setImpatient(false); setForced(false); setLiveResult(null); setRowState({}); setPending(true); setWarm(false);
+    setLiveQ(q); setLiveOn(true); setLiveErr(""); setImpatient(false); setForced(false); setLiveResult(null); setRowState({}); setTopics(null); setPending(true); setWarm(false);
     const timer = window.setTimeout(() => setWarm(true), 2000);
     try {
       setLiveResult(await burst(q));
@@ -176,8 +187,8 @@ export default function Engine() {
       window.clearTimeout(timer); setPending(false); setWarm(false);
     }
   };
-  const backToCurated = () => {
-    setLiveOn(false); setLiveQ(""); setLiveResult(null); setRowState({}); setOpened(null); setPending(false); setWarm(false); setLiveErr(""); setImpatient(false); setForced(false);
+    const backToCurated = () => {
+    setLiveOn(false); setLiveQ(""); setLiveResult(null); setRowState({}); setTopics(null); setOpened(null); setPending(false); setWarm(false); setLiveErr(""); setImpatient(false); setForced(false);
     go({});
   };
   const questions = content?.map.questions || [];
@@ -242,6 +253,7 @@ export default function Engine() {
           <section className="lvl">
             <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>
             <h1 className="question">{liveQ}</h1>
+            {topics && <p className="sub" data-subtopics>{topics.length ? <>Subtemas: {topics.join(" · ")}</> : "Esta pregunta no separó subtemas."}</p>}
             {pending && warm && <p className="warm">calentando el motor…</p>}
             {liveErr && <p className="fail-reason">{liveErr}</p>}
             {liveResult && <LiveCoverage ids={(liveResult.papers || []).slice(0, 10).map((p: any) => paperKey(p))} states={rowState} />}

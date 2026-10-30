@@ -7,20 +7,20 @@ TAG=offline-fixtures-v1
 REPO=FrankEBaru/research-microscope
 PORT=8787
 
-if ! command -v gh >/dev/null 2>&1; then
-  echo "Falta gh. En WSL: instálalo y corre gh auth login." >&2
-  exit 1
-fi
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "Falta python3." >&2
+  echo "Falta python3. En Frank: source ~/projects/hackaton/activate.sh" >&2
   exit 1
 fi
-if ! command -v node >/dev/null 2>&1; then
-  echo "Falta Node ≥ 22." >&2
+if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+  echo "Falta Node. En Frank: source ~/projects/hackaton/activate.sh" >&2
   exit 1
 fi
 
 if [[ ! -f "$ROOT/offline-fixtures/manifest.json" ]]; then
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "Faltan las consultas grabadas y no está gh. Instala gh y corre gh auth login." >&2
+    exit 1
+  fi
   gh release download "$TAG" --repo "$REPO" --pattern "${TAG}.tar.gz" --clobber --dir "$ROOT"
   tar -xzf "$ROOT/${TAG}.tar.gz" -C "$ROOT"
   rm -f "$ROOT/${TAG}.tar.gz"
@@ -35,15 +35,23 @@ python3 -m rrm.offline --root "$ROOT/offline-fixtures" --host 127.0.0.1 --port "
 PID=$!
 cleanup() { kill "$PID" 2>/dev/null || true; }
 trap cleanup EXIT
+ready=0
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   if python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${PORT}/', timeout=1)" >/dev/null 2>&1; then
+    ready=1
     break
   fi
   sleep 0.2
 done
+if [[ "$ready" != 1 ]]; then
+  echo "El servidor offline no arrancó en el puerto ${PORT}." >&2
+  exit 1
+fi
 
-echo "API en http://127.0.0.1:${PORT}  ·  UI en http://localhost:3000"
-echo "Ctrl+C apaga las dos."
+echo ""
+echo "Ábrelo en el navegador de Windows: http://localhost:3000"
+echo "API local: http://127.0.0.1:${PORT}"
+echo "Ctrl+C apaga la UI y el servidor."
 cd "$ROOT/apps/reader"
 if [[ ! -d node_modules ]]; then
   npm ci

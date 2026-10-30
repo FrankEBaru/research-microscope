@@ -83,6 +83,7 @@ def for_katex(tex: str) -> str:
     tex = re.sub(r"\\num(?![A-Za-z])\s*\{([^{}]*)\}", r"\1", tex)
     tex = re.sub(r"\\SI(?![A-Za-z])\s*\{([^{}]*)\}\s*\{([^{}]*)\}", _si_repl, tex)
     tex = re.sub(r"\\partialm(?![A-Za-z])", r"\\partial m", tex)
+    tex = re.sub(r"\\mathds(?![A-Za-z])", r"\\mathbb", tex)
     return tex
 
 

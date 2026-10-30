@@ -5,7 +5,7 @@ import { Tex, Rich, Sym } from "@/lib/math";
 import { ProvChip } from "./Bits";
 import Instrument from "./Instrument";
 import { bibtex } from "@/lib/bibtex.js";
-import { eqTex, figureUrl, paperKey, refText } from "@/lib/backend.js";
+import { crops, eqTex, figureUrl, paperKey, refText } from "@/lib/backend.js";
 import { createTracker } from "@/lib/companion.js";
 import { analyze, bars } from "@/lib/tablechart.js";
 import Companion, { Offer } from "./Companion";
@@ -26,7 +26,7 @@ function Inlines({ inls, ctx }: { inls: Inline[]; ctx: Ctx }) {
 
 function One({ x, ctx }: { x: Inline; ctx: Ctx }) {
   switch (x.t) {
-    case "text": return <>{x.v}</>;
+    case "text": return <>{x.v.replaceAll("~", "\u00a0")}</>;
     case "math": return <Tex tex={x.v} display={false} syms={ctx.syms} />;
     case "em": return <em><Inlines inls={x.c} ctx={ctx} /></em>;
     case "strong": return <strong><Inlines inls={x.c} ctx={ctx} /></strong>;
@@ -225,12 +225,64 @@ function autoSentence(text: string) {
   return parts.find((s) => /we propose|we present|we show|we introduce/i.test(s)) || parts[0] || "";
 }
 
+const NAME_STOP = new Set(["equal", "contribution", "listing", "order", "random", "work", "performed", "while", "with", "and", "the", "for", "from"]);
+
+/** El LaTeX a veces pega las notas de autoría al nombre. En pantalla queda solo la persona. */
+function authorPeople(raw: string[]) {
+  const out: string[] = [];
+  for (const item of raw || []) {
+    let head = String(item || "").replace(/\s+/g, " ").trim();
+    if (!head || head.includes("@")) continue;
+    head = head.split(/\d/)[0].replace(/[.,;:]+$/, "").trim();
+    const words = head.split(" ").map((w) => w.replace(/,$/, "")).filter(Boolean);
+    const name: string[] = [];
+    for (const w of words) {
+      const bare = w.replace(/\./g, "");
+      if (!bare || NAME_STOP.has(bare.toLowerCase())) break;
+      if (!/^[\p{L}][\p{L}'’.-]*$/u.test(bare)) break;
+      const titled = bare[0] === bare[0].toUpperCase();
+      if (!titled && !(name.length === 0 && words.length <= 3)) break;
+      name.push(w);
+      if (name.length === 3) break;
+    }
+    const line = name.join(" ");
+    if (name.length >= 2 && !out.includes(line)) out.push(line);
+  }
+  return out;
+}
+
+function authorLine(raw: string[]) {
+  const people = authorPeople(raw);
+  const use = people.length ? people : (raw || []).map((s) => String(s || "").trim()).filter((s) => s && !s.includes("@")).slice(0, 3);
+  if (use.length > 4) return `${use.slice(0, 3).join(", ")} y ${use.length - 3} más`;
+  return use.join(", ");
+}
+
 export function mountKey(paper: Paper) {
   if (!paper.stage || paper.stage === "stub") return "stub";
   return paper.upgraded_from ? "body-up" : "body";
 }
 
 /* ---------- vista principal ---------- */
+function CropStrip({ id }: { id: string }) {
+  const [rows, setRows] = useState<{ page?: number; file?: string }[] | null>(null);
+  useEffect(() => {
+    let stop = false;
+    crops(id, "0,1,2").then(
+      (body: any) => { if (!stop) setRows(Array.isArray(body?.crops) ? body.crops : []); },
+      () => { if (!stop) setRows([]); },
+    );
+    return () => { stop = true; };
+  }, [id]);
+  if (!rows?.length) return null;
+  return (
+    <section className="crops" aria-label="Recortes de página" data-crops>
+      <p className="small">Recortes de las páginas grabadas</p>
+      <div className="fig-imgs">{rows.map((row) => row.file ? <img key={row.file} src={figureUrl(id, row.file)} alt={`recorte, página ${row.page ?? ""}`} /> : null)}</div>
+    </section>
+  );
+}
+
 export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string } | null }) {
   const art = useRef<HTMLElement>(null);
   const [pop, setPop] = useState<PopState>(null);
@@ -383,7 +435,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   }, [paper]);
 
   const instAfter = att?.instrument.claim.anchor.blockId;
-  const authors = paper.authors.length > 4 ? `${paper.authors.slice(0, 3).join(", ")} y ${paper.authors.length - 3} más` : paper.authors.join(", ");
+  const authors = authorLine(paper.authors || []);
 
   return (
     <div className="paper-layout">
@@ -413,6 +465,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           {paper.authorNotes?.length > 0 && (
             <details className="author-notes"><summary>Notas de autoría del paper</summary>{paper.authorNotes.map((n: string, i: number) => <p key={i}>{n}</p>)}</details>
           )}
+          {remote && paper.corpusid != null && /^\d+$/.test(String(paper.corpusid)) && <CropStrip id={String(paper.corpusid)} />}
         </header>
 
         {paper.blocks.map((b) => {
@@ -436,7 +489,6 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             el = (
               <div id={`blk-${b.id}`} className="eq blk">
                 <Tex tex={eqTex(b)} display syms={model.syms} />
-                {b.katex_ok === false && <span className="math-hint">no se pudo dibujar; TeX original</span>}
                 <button className="copy" data-copy={b.tex} aria-label="Copiar LaTeX">LaTeX</button>
               </div>
             );

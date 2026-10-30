@@ -94,7 +94,7 @@ if modal.is_local():
         "S2_API_KEY": os.environ.get("S2_API_KEY", ""),
         "RRM_DEMO_TOKEN": os.environ.get("RRM_DEMO_TOKEN", ""),
         "RRM_PANORAMA_MODE": os.environ.get("RRM_PANORAMA_MODE", "sim"),
-        # Empty keeps the 15s default in rrm.panorama (under the UI's 20s abort).
+        # Empty keeps the 40s default in rrm.panorama (under the UI's 45s abort).
         "RRM_PANORAMA_TIMEOUT": os.environ.get("RRM_PANORAMA_TIMEOUT", ""),
         # Empty unless this deploy sets it. Unset = no OCR cap.
         "RRM_OCR_MAX": os.environ.get("RRM_OCR_MAX", ""),

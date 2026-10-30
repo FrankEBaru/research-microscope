@@ -1232,6 +1232,7 @@ def test_nerf_and_instant_ngp_tex_is_rewritten_for_katex():
     assert for_katex(r"\SI{5}{\second}") == r"5\,\mathrm{s}"
     assert for_katex(r"\SI{5}{\minute}") == r"5\,\mathrm{min}"
     assert for_katex(r"\partialm(\mathrm{enc}(x))") == r"\partial m(\mathrm{enc}(x))"
+    assert for_katex(r"\mathds{R}") == r"\mathbb{R}"
     assert for_katex(r"\number{1}") == r"\number{1}"
 
 

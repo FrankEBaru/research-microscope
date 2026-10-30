@@ -93,7 +93,6 @@ test("en vivo: el Panorama usa POST /panorama del servidor (simulado) y la compu
   const claims = [{ id: "t0", statement: "Lo que dicen los papers sobre «attention»", selections: [{ paper: "1", quote: real }, { paper: "2", quote: "Esta frase no existe en ningún paper de la ráfaga y debe ser rechazada." }] }];
   const p = await live({ statuses: [DONE4], panorama: (r) => r.fulfill({ json: claims, headers: H }) });
   await p.waitForSelector(".sim .predict-banner", { timeout: 10000 });
-  await p.click('input[type=checkbox] >> nth=1'); // apagar «simular fallas»: solo cuenta lo que mandó el servidor
   await p.click(".predict-banner .link");
   assert.match(await p.$eval(".sim .chips", (e) => e.textContent), /Selección simulada en el servidor/);
   assert.equal(await p.$("[data-srv-fallback]"), null);

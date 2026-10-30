@@ -19,10 +19,10 @@ sets `fallback` true. Each claim then also carries `mode` (`sim` or `meta`)
 and `fallback` (bool). Those fields are how a caller tells the two apart.
 
 `sim` stays the default. A demo that flipped to `meta` would spend Meta tokens
-on every question, and the browser aborts `/panorama` at 20s
-(`apps/reader/src/lib/backend.js`). The server timeout
-(`RRM_PANORAMA_TIMEOUT`, default 15s) sits under that so a slow call still
-returns the sim fallback instead of a browser error.
+on every question. The browser waits `NEXT_PUBLIC_RRM_PANORAMA_TIMEOUT_MS`
+(default 45s, `apps/reader/src/lib/backend.js`). The server timeout
+(`RRM_PANORAMA_TIMEOUT`, default 40s, cap 45s) sits under that so a slow Muse
+call still returns the sim fallback instead of a browser error.
 """
 
 import json
@@ -40,8 +40,8 @@ MAX_CANDIDATES = 36
 MAX_CANDIDATE_CHARS = 12000
 # Developer text plus the candidate list. The HTTP body stays under this.
 MAX_PROMPT_CHARS = 14000
-# Under the UI's 20s /panorama timeout, so fallback still reaches the browser.
-DEFAULT_TIMEOUT_S = 15.0
+# Under the UI's 45s /panorama timeout, so fallback still reaches the browser.
+DEFAULT_TIMEOUT_S = 40.0
 MAX_TIMEOUT_S = 45.0
 MAX_THEMES = 4
 MAX_PICKS = 8

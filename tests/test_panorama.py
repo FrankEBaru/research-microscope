@@ -109,6 +109,15 @@ def _no_muse(monkeypatch):
     monkeypatch.setattr(pn, "_muse", boom)
 
 
+def test_muse_timeout_defaults_to_40s(monkeypatch):
+    monkeypatch.delenv("RRM_PANORAMA_TIMEOUT", raising=False)
+    assert pn._timeout_s() == 40.0
+    monkeypatch.setenv("RRM_PANORAMA_TIMEOUT", "12")
+    assert pn._timeout_s() == 12.0
+    monkeypatch.setenv("RRM_PANORAMA_TIMEOUT", "90")
+    assert pn._timeout_s() == 45.0
+
+
 def test_mode_default_is_sim_and_meta_falls_back_without_network(monkeypatch):
     monkeypatch.delenv("RRM_PANORAMA_MODE", raising=False)
     assert pn.mode() == "sim"

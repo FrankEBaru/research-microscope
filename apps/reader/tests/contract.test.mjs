@@ -82,6 +82,7 @@ test("missing is not settled and mbox is text", async () => {
   assert.equal(katexSource("\\num{2654435761}"), "2654435761");
   assert.equal(katexSource("\\SI{5}{\\second}"), "5\\,\\mathrm{s}");
   assert.equal(katexSource("\\partialm(x)"), "\\partial m(x)");
+  assert.equal(katexSource("\\mathds{R}"), "\\mathbb{R}");
 });
 
 test("eq tag comes from number", async () => {

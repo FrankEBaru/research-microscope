@@ -1,22 +1,15 @@
 # Research Reading Microscope
 
-A reading tool that turns a research question into a navigable burst of related papers, from field overview to single paper, with every sentence linked to its sources.
-
-Data attribution: Semantic Scholar, arXiv and OpenAlex
-
-## Modo offline (WSL)
-
-Tres consultas grabadas, para explorar la UI en una laptop sin Modal ni Meta. Hace falta Python 3, Node ≥ 22 y `gh` con sesión (`gh auth login`). Desde esta rama:
+En la máquina Frank (WSL), después de arrancar, con el venv y Node en el PATH:
 
 ```bash
-bash scripts/offline.sh
+source ~/projects/hackaton/activate.sh
+cd ~/projects/hackaton/research-microscope && git checkout main && git pull && ./scripts/offline.sh
 ```
 
-Ese comando baja el Release `offline-fixtures-v1`, abre la API en `http://127.0.0.1:8787` y la UI en `http://localhost:3000`. El token es opcional (el script manda `local`; el servidor también responde sin token).
+Eso baja el Release `offline-fixtures-v1` si falta, instala la UI si falta, y arranca sin Modal ni Meta. Ábrelo en el navegador de Windows: `http://localhost:3000`. Preguntas grabadas, tal cual: `how does self-attention replace recurrence in sequence translation`, `neural radiance fields view synthesis`, `scaling laws compute dataset size language model loss`. Otra pregunta responde `consulta no grabada`. El panorama de esas tres es el de Muse ya grabado. Ctrl+C apaga la UI y el servidor. Atribución: Semantic Scholar.
 
-Preguntas grabadas, cópialas tal cual: `how does self-attention replace recurrence in sequence translation`, `neural radiance fields view synthesis`, `scaling laws compute dataset size language model loss`.
-
-Cualquier otra pregunta responde `consulta no grabada`. En esas tres funcionan la ráfaga, el estado, el paper, las figuras guardadas, los recortes de las páginas grabadas, los subtemas y el panorama de esa misma pregunta. No hay búsqueda nueva, ni papers fuera de esas ráfagas, ni panorama si reescribes la pregunta, ni OCR. Ctrl+C apaga la UI y el servidor. Atribución: Semantic Scholar.
+A reading tool that turns a research question into a navigable burst of related papers, from field overview to single paper, with every sentence linked to its sources.
 
 ## Demo
 

@@ -18,7 +18,8 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
 }) {
   const [draft, setDraft] = useState(question);
   const [asked, setAsked] = useState<string | null>(autorun ? question : null);
-  const [faults, setFaults] = useState(true);
+  // En la ráfaga curada las fallas empiezan prendidas para ver la compuerta. En vivo quedan apagadas: si no, tapan el Panorama de Muse.
+  const [faults, setFaults] = useState(!liveEnabled());
   const [predictOn, setPredictOn] = useState(true);
   const [docs, setDocs] = useState<Record<string, any>>({});
   const [per, setPer] = useState<Record<string, any[]>>({});
@@ -68,9 +69,10 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
   return (
     <section className="pano sim" aria-label="Panorama con cualquier pregunta">
       <div className="chips">
-        <ProvChip kind="simulado" text={serverMeta ? "Muse Spark en el servidor: enunciados del modelo, citas literales" : serverFallback ? "El modelo no respondió: selección simulada en el servidor" : srv.state === "ok" ? "Selección simulada en el servidor: coincidencia de términos, no un modelo" : "Muse Spark simulado: coincidencia de términos, no un modelo"} />
+        <ProvChip kind="simulado" text={srv.state === "wait" ? "Pidiendo el Panorama al servidor…" : serverMeta ? "Muse Spark en el servidor: enunciados del modelo, citas literales" : serverFallback ? "El modelo no respondió: selección simulada en el servidor" : srv.state === "ok" ? "Selección simulada en el servidor: coincidencia de términos, no un modelo" : "Muse Spark simulado: coincidencia de términos, no un modelo"} />
         <ProvChip kind="curado" text={serverMeta ? "enunciados escritos por Muse Spark" : "enunciados = términos de tu pregunta"} />
       </div>
+      {srv.state === "wait" && <p className="warm" role="status" data-panorama-wait>Pidiendo el Panorama al servidor. Puede tardar hasta 45 s. Si Muse no responde, se muestra la selección simulada.</p>}
       {srv.note && <p className="muted small" role="status" data-srv-fallback>{srv.note}</p>}
       <form className="sim-ask" onSubmit={(e) => { e.preventDefault(); if (draft.trim()) setAsked(draft.trim()); }}>
         <input aria-label="Pregunta para el Panorama" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escribe una pregunta (español o inglés)" />
