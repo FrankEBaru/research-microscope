@@ -47,3 +47,5 @@ Rama de trabajo: `claude/magical-bohr-dzrmt1` (sale de `claude/ui-edge`; la esta
 | `cbdc768` | el compañero señala: se desliza al bloque del que habla |
 | `402dd03` | museSim más fiel: términos genéricos y compuestos, sin repetir la misma oración en todos los temas |
 | `b83b16c` | figura con zonas: 6 partes de la arquitectura del Transformer enlazan con su frase (`content/zones.json`) |
+| `b354445` | pruebas del modo en vivo (`tests/live.test.mjs`, `npm run test:live`) y arreglo con 0 papers leídos |
+| `0721a89` | zonas en la figura 1 de Kaplan + más pruebas e2e |
