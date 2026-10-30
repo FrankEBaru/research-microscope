@@ -8,7 +8,7 @@ HTTP is one ASGI app, `api` (not one host per route):
     GET  /crops?id=corpusid&pages=0,1         -> SAM for those pages, in the background
     GET  /status?ids=1,2,3                    -> status, stage, per-stage progress
     GET  /file?id=&name=&k=                   -> a figure or crop file, or 404
-    POST /panorama  {"question", "ids"}       -> SIMULATED selections [{id, statement, selections}]; reads only
+    POST /panorama  {"question", "ids"}       -> selections [{id, statement, selections}]; reads only
 
 `paper` does not call SAM. Crops run only for the pages named in `crops`.
 """
@@ -94,6 +94,8 @@ if modal.is_local():
         "S2_API_KEY": os.environ.get("S2_API_KEY", ""),
         "RRM_DEMO_TOKEN": os.environ.get("RRM_DEMO_TOKEN", ""),
         "RRM_PANORAMA_MODE": os.environ.get("RRM_PANORAMA_MODE", "sim"),
+        # Empty keeps the 15s default in rrm.panorama (under the UI's 20s abort).
+        "RRM_PANORAMA_TIMEOUT": os.environ.get("RRM_PANORAMA_TIMEOUT", ""),
         # Empty unless this deploy sets it. Unset = no OCR cap.
         "RRM_OCR_MAX": os.environ.get("RRM_OCR_MAX", ""),
     })
@@ -694,8 +696,6 @@ def api():
         docs = docs_for(PAPERS, ids, load_meta, load_paper)
         try:
             return run_panorama(question, docs)
-        except NotImplementedError as e:
-            return JSONResponse({"error": str(e)}, status_code=501)
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=500)
 

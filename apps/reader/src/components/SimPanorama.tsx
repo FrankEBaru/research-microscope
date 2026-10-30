@@ -53,7 +53,14 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
     () => srv.state === "ok" ? (faults ? addFaults(srv.claims, readable[0] || "") : srv.claims) : srv.state === "wait" ? [] : assemble(themes, per, faults, readable[0] || ""),
     [themes, per, faults, srv, readable.join(",")],
   );
-  const termOf = (c: any) => themes.find((t) => t.id === c.id)?.term ?? /«(.*)»/.exec(c.statement || "")?.[1] ?? c.id;
+  const termOf = (c: any) => {
+    const marked = /«([^»]*)»/.exec(c.statement || "")?.[1];
+    if (marked) return marked;
+    if (c.mode === "meta" && c.statement) return c.statement.slice(0, 48);
+    return themes.find((t) => t.id === c.id)?.term ?? c.id;
+  };
+  const serverMeta = srv.state === "ok" && srv.claims.some((c) => c.mode === "meta" && !c.fallback);
+  const serverFallback = srv.state === "ok" && srv.claims.some((c) => c.fallback);
   const built = useMemo(() => buildPanorama(claims, docs, states), [claims, docs, states]);
   const nRead = Object.values(docs).filter(Boolean).length;
   const notRead = ids.length - readable.length;
@@ -61,8 +68,8 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
   return (
     <section className="pano sim" aria-label="Panorama con cualquier pregunta">
       <div className="chips">
-        <ProvChip kind="simulado" text={srv.state === "ok" ? "Selección simulada en el servidor: coincidencia de términos, no un modelo" : "Muse Spark simulado: coincidencia de términos, no un modelo"} />
-        <ProvChip kind="curado" text="enunciados = términos de tu pregunta" />
+        <ProvChip kind="simulado" text={serverMeta ? "Muse Spark en el servidor: enunciados del modelo, citas literales" : serverFallback ? "El modelo no respondió: selección simulada en el servidor" : srv.state === "ok" ? "Selección simulada en el servidor: coincidencia de términos, no un modelo" : "Muse Spark simulado: coincidencia de términos, no un modelo"} />
+        <ProvChip kind="curado" text={serverMeta ? "enunciados escritos por Muse Spark" : "enunciados = términos de tu pregunta"} />
       </div>
       {srv.note && <p className="muted small" role="status" data-srv-fallback>{srv.note}</p>}
       <form className="sim-ask" onSubmit={(e) => { e.preventDefault(); if (draft.trim()) setAsked(draft.trim()); }}>

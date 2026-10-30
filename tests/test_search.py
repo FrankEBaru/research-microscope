@@ -12,7 +12,7 @@ from rrm.search.display import IdTable, PaperLookup, filter_papers, hydrate, mer
 from rrm.search.encode import use_proximity
 from rrm.search.faissutil import add_vectors, merge_indexes, search_vectors, train_ivfpq, vector_at, vectors_from_table
 from rrm.search.graph import Graph, csr_from_edges, edges_from_pairs, int_column, stack_edges
-from rrm.search.split import parse_subtopics, skip_split, split_query, usage_of
+from rrm.search.split import parse_subtopics, post_chat, skip_split, split_query, usage_of
 
 
 def test_split_parse_skip_and_cache():
@@ -46,6 +46,12 @@ def test_split_parse_skip_and_cache():
     }
     assert usage_of({}) is None
     assert usage_of({"usage": {"prompt_tokens": True}}) is None
+
+
+def test_post_chat_requires_the_env_key(monkeypatch):
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="MODEL_API_KEY is not set"):
+        post_chat({"model": "x"})
 
 
 def test_csr_from_shards_and_one_hop():

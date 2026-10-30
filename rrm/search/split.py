@@ -11,6 +11,7 @@ tokens, so the cap is above the ~200 visible tokens we ask for.
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 from collections import OrderedDict
 
@@ -74,11 +75,48 @@ def parse_subtopics(text):
     return [item.strip() for item in items if isinstance(item, str) and item.strip()][:6]
 
 
-def _complete(query):
+def message_text(payload):
+    """choices[0].message.content, or empty when the choice has no text."""
+    if not isinstance(payload, dict):
+        raise RuntimeError("muse response is not an object")
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        raise RuntimeError("muse response has no choices")
+    message = choices[0].get("message") or {}
+    if not isinstance(message, dict):
+        raise RuntimeError("muse response has no message")
+    return message.get("content") or ""
+
+
+def post_chat(body, timeout=90):
+    """One chat completion against the Meta Model API.
+
+    The key is MODEL_API_KEY from the environment. It is sent as a header and
+    is not logged here. Returns the decoded JSON body. Sets LAST_USAGE when
+    the body carries token counts.
+    """
     key = os.environ.get("MODEL_API_KEY")
     if not key:
         raise RuntimeError("MODEL_API_KEY is not set")
-    body = {
+    req = urllib.request.Request(
+        API_URL,
+        data=json.dumps(body).encode(),
+        headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:300]
+        raise RuntimeError(f"muse http {exc.code}: {detail}") from None
+    global LAST_USAGE
+    LAST_USAGE = usage_of(payload)
+    return payload
+
+
+def _complete(query):
+    payload = post_chat({
         "model": MODEL,
         "messages": [
             {"role": "developer", "content": _PROMPT},
@@ -99,18 +137,8 @@ def _complete(query):
                 },
             },
         },
-    }
-    req = urllib.request.Request(
-        API_URL,
-        data=json.dumps(body).encode(),
-        headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=90) as resp:
-        payload = json.loads(resp.read().decode())
-    global LAST_USAGE
-    LAST_USAGE = usage_of(payload)
-    return payload["choices"][0]["message"].get("content") or ""
+    })
+    return message_text(payload)
 
 
 def split_query(query, complete=None, cache=None):
