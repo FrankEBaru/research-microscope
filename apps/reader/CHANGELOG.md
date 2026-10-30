@@ -37,3 +37,11 @@ Cada fila es un commit atómico; se revierte uno solo con `git revert <hash>`.
 | `5fa8ea3` | cobertura del Panorama en modo en vivo (`LiveCoverage`) |
 
 Rama de trabajo: `claude/magical-bohr-dzrmt1` (sale de `claude/ui-edge`; la estable `claude/adoring-hypatia-hd4bvs` no se toca).
+
+### Ronda 2 (hipótesis, todo simulado donde interviene Meta)
+| Commit | Qué hace |
+|---|---|
+| `8bff716` / `8f4927c` | `musesim.js`: Muse Spark simulado por paper (temas de la pregunta, oraciones reales, fallas a propósito). El primero tenía una prueba rota; el segundo la corrige |
+| `899e7a0` | Panorama para cualquier pregunta: llegada progresiva, predecir antes de ver, compuerta con fallas visibles; en curado y en vivo |
+| `cd57ad1` | gráficas con «predecir antes de ver» (hipótesis) |
+| `cbdc768` | el compañero señala: se desliza al bloque del que habla |
