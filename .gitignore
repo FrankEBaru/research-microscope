@@ -60,3 +60,6 @@ data/
 *.faiss
 *.parquet
 *.npy
+
+# E2E benchmark reports (may contain timings of a private deploy)
+e2e-report*.json
