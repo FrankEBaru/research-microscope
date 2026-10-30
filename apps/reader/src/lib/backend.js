@@ -9,7 +9,7 @@ export function liveEnabled() {
   return Boolean(BURST) && Boolean(READER);
 }
 
-if (liveEnabled() && !TOKEN) {
+if (liveEnabled() && !TOKEN && process.env.NEXT_PUBLIC_RRM_OFFLINE !== "1") {
   throw new Error("NEXT_PUBLIC_RRM_DEMO_TOKEN is empty");
 }
 
@@ -79,6 +79,8 @@ function kindOf(status) {
 
 /** Texto para la persona. No lleva el token ni la URL. */
 export function explain(err) {
+  const msg = String(err?.message || "");
+  if (msg.includes("consulta no grabada")) return "consulta no grabada";
   const k = err?.kind;
   if (k === "auth") return "El servidor rechazó el token de la demo (401). Revisa NEXT_PUBLIC_RRM_DEMO_TOKEN.";
   if (k === "origin") return "El servidor no acepta este origen (403). Hay que agregarlo a la lista de orígenes permitidos.";
@@ -117,7 +119,14 @@ async function request(route, url, init = {}) {
     const timer = setTimeout(() => ctl.abort(), override() ?? TIMEOUT[route]);
     try {
       const res = await fetch(auth.url, { ...init, signal: ctl.signal, headers: { ...auth.headers, ...(init.headers || {}) } });
-      if (!res.ok) throw new BackendError(kindOf(res.status), res.status);
+      if (!res.ok) {
+        let detail = "";
+        try {
+          const body = await res.json();
+          if (body && typeof body.error === "string") detail = body.error;
+        } catch { /* cuerpo vacío o no JSON */ }
+        throw new BackendError(kindOf(res.status), res.status, detail);
+      }
       try { return await res.json(); } catch { throw new BackendError("http", res.status, "la respuesta no es JSON"); }
     } catch (e) {
       const err = e instanceof BackendError ? e : new BackendError(ctl.signal.aborted ? "timeout" : "network", 0);
