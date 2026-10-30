@@ -206,6 +206,46 @@ def apply_s2_fields(paper: dict, info: dict) -> dict:
     return paper
 
 
+def prefer_stub(current: dict | None, incoming: dict | None) -> dict | None:
+    """Keep authors and abstract already filled from Semantic Scholar on an uncached stub."""
+    if not incoming:
+        return current
+    if not current:
+        return incoming
+    out = dict(incoming)
+    if not out.get("authors") and current.get("authors"):
+        out["authors"] = list(current["authors"])
+    if not (out.get("abstract") or "").strip() and (current.get("abstract") or "").strip():
+        out["abstract"] = current["abstract"]
+        if not any(isinstance(b, dict) and b.get("abs") for b in out.get("blocks") or []):
+            out["blocks"] = list(current.get("blocks") or [])
+    if not out.get("title") and current.get("title"):
+        out["title"] = current["title"]
+    if not out.get("tldr") and current.get("tldr"):
+        out["tldr"] = current["tldr"]
+    return out
+
+
+def seed_stub_from_cache(folder: Path, corpusid: int):
+    """Write a stub from papers/{id}/s2.json when that cache already has authors or an abstract."""
+    current = load_paper(folder)
+    if current and (current.get("full") or (current.get("stage") not in (None, "stub") and current.get("blocks"))):
+        return current
+    try:
+        from rrm.reader.fetch import _s2_cache, s2_graph
+        path = _s2_cache(int(corpusid))
+        if path is None or not path.is_file():
+            return current
+        info = s2_graph(int(corpusid), tries=1)
+    except Exception:
+        return current
+    if not info.get("authors") and not (info.get("abstract") or "").strip():
+        return current
+    paper = make_stub(info)
+    save_paper(folder, paper)
+    return paper
+
+
 def make_stub(info: dict) -> dict:
     """Readable title, authors, abstract, and tldr before sections exist."""
     paper = abstract_paper(info)
@@ -647,6 +687,9 @@ def _ocr_route(folder, info, meta, pdf_path, ocr, why: str, publish=None, announ
         return "abstract", paper, pdf_path
     if announce and publish:
         publish(abstract_paper(info), "ocr")
+    # Set only when this process calls the GPU. A cache hit never reaches here,
+    # so a later run can ignore OCR papers from an earlier deploy.
+    meta["ocr_invoked_at"] = time.time()
     t = time.time()
     try:
         result = ocr(pdf_path, folder / "ocr")
@@ -662,6 +705,8 @@ def _ocr_route(folder, info, meta, pdf_path, ocr, why: str, publish=None, announ
     if result.get("chunks"):
         meta["ocr_chunks"] = result["chunks"]
     blocks = result.get("blocks") or []
+    from rrm.reader.ocr import place_ocr_figures
+    place_ocr_figures(blocks, folder / "ocr", folder / "figures")
     if not blocks:
         _note_reason(meta, f"{why}; ocr returned no blocks")
         return "abstract", abstract_paper(info), pdf_path

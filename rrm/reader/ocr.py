@@ -276,6 +276,146 @@ def _html_rows(html: str):
     return rows
 
 
+_FIGURE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+
+def _safe_figure_name(name: str) -> str:
+    """A basename `/file` will serve. Slashes and other characters are stripped."""
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(name).stem)[:120] or "fig"
+    ext = Path(name).suffix.lower()
+    if ext not in _FIGURE_EXT:
+        ext = ".png"
+    return stem + ext
+
+
+def _find_ocr_image(roots, raw) -> Path | None:
+    """Resolve a MinerU img_path. It is relative to the chunk output dir, not papers/{id}/figures."""
+    rel = str(raw or "").replace("\\", "/").strip()
+    if not rel:
+        return None
+    parts = Path(rel).parts
+    if ".." in parts:
+        return None
+    name = Path(rel).name
+    if not name or name in (".", ".."):
+        return None
+    for root in roots:
+        root = Path(root)
+        if not root.exists():
+            continue
+        base = root.resolve()
+        direct = (root / rel).resolve()
+        try:
+            direct.relative_to(base)
+        except ValueError:
+            direct = None
+        if direct is not None and direct.is_file():
+            return direct
+        matches = []
+        for hit in root.rglob(name):
+            if not hit.is_file():
+                continue
+            try:
+                hit.resolve().relative_to(base)
+            except ValueError:
+                continue
+            matches.append(hit)
+        tail = [hit for hit in matches if hit.as_posix().endswith(rel.lstrip("/"))]
+        if tail:
+            return tail[0]
+        if len(matches) == 1:
+            return matches[0]
+    return None
+
+
+def _alloc_figure_name(src: Path, dest: Path) -> str:
+    name = _safe_figure_name(src.name)
+    target = dest / name
+    data = src.read_bytes()
+    if not target.exists() or target.read_bytes() == data:
+        return name
+    stem, ext = Path(name).stem, Path(name).suffix
+    for i in range(2, 100):
+        cand = f"{stem}_{i}{ext}"
+        alt = dest / cand
+        if not alt.exists() or alt.read_bytes() == data:
+            return cand
+    return name
+
+
+def place_ocr_figures(blocks, roots, dest: Path) -> int:
+    """Copy MinerU images into papers/{id}/figures and store basenames `/file` can serve.
+
+    Content-list `img_path` values are relative to the chunk output directory.
+    `/file` only reads `papers/{id}/figures` and `papers/{id}/crops`.
+    """
+    if isinstance(roots, (str, Path)):
+        roots = [Path(roots)]
+    else:
+        roots = [Path(r) for r in (roots or [])]
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    for block in blocks or []:
+        if not isinstance(block, dict) or block.get("kind") != "fig":
+            continue
+        images = []
+        for raw in block.get("images") or []:
+            # A second pass must not re-bind a basename already copied into dest.
+            bare = Path(str(raw or "")).name
+            if (
+                bare
+                and "/" not in str(raw)
+                and "\\" not in str(raw)
+                and bare == _safe_figure_name(bare)
+                and (dest / bare).is_file()
+            ):
+                images.append(bare)
+                continue
+            src = _find_ocr_image(roots, raw)
+            if src is None:
+                images.append(raw)
+                continue
+            name = _alloc_figure_name(src, dest)
+            target = dest / name
+            data = src.read_bytes()
+            if not target.is_file() or target.read_bytes() != data:
+                target.write_bytes(data)
+            images.append(name)
+            copied += 1
+        block["images"] = images
+    return copied
+
+
+def heal_cached_ocr_figures(folder, paper) -> bool:
+    """Copy MinerU images for a paper cached before `figures/` was filled.
+
+    Pre-RRM-18 OCR left `img_path` values (with slashes) in `paper.json` and the
+    files under `ocr/`. `/file` only serves basenames in `figures/`. Returns
+    whether `paper.json` was rewritten.
+    """
+    if not isinstance(paper, dict):
+        return False
+    folder = Path(folder)
+    if paper.get("source") != "ocr" and not (folder / "ocr").is_dir():
+        return False
+    blocks = paper.get("blocks") or []
+    if not any(
+        isinstance(b, dict) and b.get("kind") == "fig"
+        and any("/" in str(n) or "\\" in str(n) for n in (b.get("images") or []))
+        for b in blocks
+    ):
+        return False
+    before = [list(b.get("images") or []) for b in blocks if isinstance(b, dict)]
+    place_ocr_figures(blocks, folder / "ocr", folder / "figures")
+    after = [list(b.get("images") or []) for b in blocks if isinstance(b, dict)]
+    if before == after:
+        return False
+    from rrm.reader.pipeline import save_paper
+    save_paper(folder, paper)
+    return True
+
+
 def blocks_from_content_list(items: list) -> list:
     blocks = []
     for item in items:

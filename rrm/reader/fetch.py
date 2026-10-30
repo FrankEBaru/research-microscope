@@ -404,7 +404,7 @@ def s2_graph(corpusid: int, tries: int = 1) -> dict:
     ext = data.get("externalIds") or {}
     oa = data.get("openAccessPdf") or {}
     tldr = data.get("tldr") or {}
-    authors = [a.get("name") for a in (data.get("authors") or []) if a.get("name")]
+    authors = _author_names(data.get("authors"))
     return {
         "corpusid": int(corpusid),
         "title": data.get("title") or "",

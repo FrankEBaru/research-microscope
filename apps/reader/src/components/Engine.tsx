@@ -8,7 +8,7 @@ import MapView from "./MapView";
 import Panorama, { LiveCoverage } from "./Panorama";
 import SimPanorama from "./SimPanorama";
 import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
-import { burst, liveEnabled, paperKey, paper as fetchPaper, status as fetchStatus } from "@/lib/backend.js";
+import { burst, liveEnabled, paperKey, paper as fetchPaper, settled, status as fetchStatus } from "@/lib/backend.js";
 import { LiveCircle } from "./MapView";
 
 type Route = { q?: string; c?: string; p?: string; b?: string };
@@ -80,7 +80,7 @@ export default function Engine() {
         const map: Record<string, any> = {};
         for (const row of body.papers || []) map[String(row.id)] = row;
         setRowState(map);
-        if (ids.every((id: number) => ["done", "abstract_only", "failed"].includes(map[String(id)]?.status))) return;
+        if (ids.every((id: number) => settled(map[String(id)]?.status))) return;
       } catch (e: any) {
         if (!stop) setLiveErr(String(e.message || e));
       }
@@ -137,7 +137,7 @@ export default function Engine() {
           sig = next;
           apply(await fetchPaper(liveId));
         }
-        if (["done", "abstract_only", "failed"].includes(row.status)) return;
+        if (settled(row.status)) return;
       } catch (e: any) {
         if (!stop) setLiveErr(String(e.message || e));
       }
@@ -149,7 +149,7 @@ export default function Engine() {
         if (stop) return;
         sig = signature(body);
         apply(body);
-        if (["done", "abstract_only", "failed"].includes(body.status)) return;
+        if (settled(body.status)) return;
       } catch (e: any) {
         if (!stop) setLiveErr(String(e.message || e));
       }
@@ -236,7 +236,7 @@ export default function Engine() {
             {pending && warm && <p className="warm">calentando el motor…</p>}
             {liveErr && <p className="fail-reason">{liveErr}</p>}
             {liveResult && <LiveCoverage ids={(liveResult.papers || []).slice(0, 10).map((p: any) => paperKey(p))} states={rowState} />}
-            {liveResult && liveIds.length > 0 && liveIds.every((id: string) => ["done", "abstract_only", "failed"].includes(rowState[id]?.status)) && (
+            {liveResult && liveIds.length > 0 && liveIds.every((id: string) => settled(rowState[id]?.status)) && (
               <SimPanorama key={liveQ} autorun question={liveQ} ids={liveIds} states={rowState} getDoc={async (id: string) => (await fetchPaper(id)).paper} nameOf={liveName} open={(id, b) => go({ p: id, b })} />
             )}
             {liveResult && <LiveCircle papers={liveResult.papers || []} edges={liveResult.edges || []} states={rowState} onOpen={(id) => go({ p: id })} />}

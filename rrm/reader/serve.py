@@ -21,14 +21,17 @@ from pathlib import Path
 import modal
 
 from rrm.demo_guard import check, cors_kwargs
+from rrm.demo_warm import scaledown_window
 from rrm.reader.files import resolve_figure
 
 import rrm.reader.fetch as _fetch
 from rrm.reader.fetch import ARXIV, arxiv_index_at, arxiv_pdf, arxiv_slot_start, reader_identity
 from rrm.reader.ocr import (
+    heal_cached_ocr_figures,
     merge_ocr_parts,
     page_spans,
     pdf_page_count,
+    place_ocr_figures,
     run_chunk,
     slice_pdf,
 )
@@ -37,6 +40,8 @@ from rrm.reader.pipeline import (
     load_paper,
     make_stub,
     mark_queued,
+    prefer_stub,
+    seed_stub_from_cache,
     parse_corpus,
     save_meta,
     save_paper,
@@ -44,6 +49,7 @@ from rrm.reader.pipeline import (
 )
 from rrm.reader.queue import forget as forget_job
 from rrm.reader.queue import note as note_job
+from rrm.search.prefetch import load_burst_top, missing_status
 from rrm.reader.queue import release as release_job
 from rrm.reader.sam import parse_pages, segment_pages
 
@@ -299,6 +305,11 @@ def _ocr(pdf, work):
         ))
         err.chunks = chunks
         raise err
+    # Chunk images land under the MinerU out dir. /file only serves papers/{id}/figures.
+    vol.reload()
+    figures = Path(work).parent / "figures"
+    for row, (_path, out, _start, _end) in zip(results, jobs):
+        place_ocr_figures(row.get("blocks") or [], [out], figures)
     blocks = merge_ocr_parts(results)
     gpu_s = sum(float(row.get("seconds") or 0) for row in results)
     pages = sum(int(row.get("page_count") or 0) for row in results) or n
@@ -366,7 +377,7 @@ def _write_stub(folder: Path, corpusid: int):
         info = reader_identity(int(corpusid), DISPLAY, remote=True, refs=False, shards=False)
     except Exception:
         info = {"corpusid": int(corpusid)}
-    paper = make_stub(info)
+    paper = prefer_stub(current, make_stub(info))
     if current and len(current.get("blocks") or []) > len(paper.get("blocks") or []):
         return current
     meta = load_meta(folder) or {}
@@ -403,6 +414,7 @@ def _prepare_ids(ids) -> dict:
         cid = int(raw)
         status = mark_queued(PAPERS / str(cid), cid)
         if status == "queued":
+            seed_stub_from_cache(PAPERS / str(cid), cid)
             parse_one.spawn(cid, False)
         rows.append({"id": cid, "status": status})
     vol.commit()
@@ -415,6 +427,15 @@ def prefetch(ids: list) -> dict:
     return _prepare_ids(ids)
 
 
+def _heal_figures(folder: Path, paper):
+    """One-time copy for OCR papers cached before figures lived in figures/."""
+    try:
+        if heal_cached_ocr_figures(folder, paper):
+            vol.commit()
+    except Exception:
+        return
+
+
 def read_paper(id: str):
     """Return whatever is already readable. Parsing continues in the background."""
     vol.reload()
@@ -424,7 +445,9 @@ def read_paper(id: str):
     folder.mkdir(parents=True, exist_ok=True)
     meta = load_meta(folder)
     if meta and meta.get("status") in ("done", "abstract_only", "failed"):
-        return {"status": meta["status"], "meta": meta, "paper": load_paper(folder), "cached": True}
+        paper = load_paper(folder)
+        _heal_figures(folder, paper)
+        return {"status": meta["status"], "meta": meta, "paper": paper, "cached": True}
     try:
         prioritize(cid)
     except Exception:
@@ -436,6 +459,8 @@ def read_paper(id: str):
     if paper_obj is None or paper_obj.get("stage") in (None, "stub"):
         paper_obj = _write_stub(folder, cid)
         vol.commit()
+    else:
+        _heal_figures(folder, paper_obj)
     meta = load_meta(folder) or {}
     return {"status": meta.get("status"), "meta": meta, "paper": paper_obj, "cached": False}
 
@@ -529,8 +554,10 @@ def read_crops(id: str, pages: str = ""):
     }
 
 
-def read_status(ids: str = ""):
+def read_status(ids: str = "", pending=None):
     vol.reload()
+    if pending is None:
+        pending = load_burst_top()
     rows = []
     for raw in ids.split(","):
         raw = raw.strip()
@@ -539,7 +566,9 @@ def read_status(ids: str = ""):
         cid = int(raw)
         meta = load_meta(PAPERS / str(cid))
         if not meta:
-            rows.append({"id": cid, "status": "missing"})
+            # Top-10 ids are noted before the volume commit lands. First poll
+            # still sees queued; anything else with no meta.json stays missing.
+            rows.append({"id": cid, "status": missing_status(cid, pending)})
         else:
             rows.append({
                 "id": cid,
@@ -552,6 +581,8 @@ def read_status(ids: str = ""):
                 "first_content_s": meta.get("first_content_s"),
                 "sections_s": meta.get("sections_s"),
                 "full_s": meta.get("full_s"),
+                "ocr_gpu_s": meta.get("ocr_gpu_s"),
+                "ocr_invoked_at": meta.get("ocr_invoked_at"),
             })
     return {"papers": rows}
 
@@ -566,7 +597,13 @@ _FILE_TYPES = {
 }
 
 
-@app.function(image=cpu_image, volumes={DATA: vol}, timeout=60, secrets=[secret])
+# Same demo flag as the burst class. GPU functions are not kept warm.
+_api_fn = dict(image=cpu_image, volumes={DATA: vol}, timeout=60, secrets=[secret])
+if scaledown_window() is not None:
+    _api_fn["scaledown_window"] = scaledown_window()
+
+
+@app.function(**_api_fn)
 @modal.asgi_app()
 def api():
     from fastapi import FastAPI, Request
@@ -621,6 +658,15 @@ def api():
         if denied:
             return denied
         path = resolve_figure(PAPERS, id, name)
+        if path is None and str(id).isdigit():
+            try:
+                vol.reload()
+                folder = PAPERS / str(int(id))
+                if heal_cached_ocr_figures(folder, load_paper(folder)):
+                    vol.commit()
+                path = resolve_figure(PAPERS, id, name)
+            except Exception:
+                path = None
         if path is None:
             return Response(status_code=404)
         return FileResponse(

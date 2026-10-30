@@ -893,3 +893,228 @@ def test_authors_drop_affiliation_lines_and_split_ampersand():
     assert extract_authors(r"\author{Jonathan Ho \\ UC Berkeley \And Ajay Jain \\ UC Berkeley}") == ["Jonathan Ho", "Ajay Jain"]
     assert extract_authors(r"\author{Jiaming Song, Chenlin Meng \& Stefano Ermon \\ Stanford University}") == [
         "Jiaming Song", "Chenlin Meng", "Stefano Ermon"]
+
+
+def test_ocr_figures_are_copied_for_file(tmp_path: Path):
+    from rrm.reader.files import resolve_figure
+    from rrm.reader.ocr import blocks_from_content_list, place_ocr_figures
+
+    root = tmp_path / "papers"
+    images = root / "7" / "ocr" / "part_0" / "out" / "demo" / "vlm" / "images"
+    images.mkdir(parents=True)
+    (images / "a.png").write_bytes(b"\x89PNG-ocr")
+    (tmp_path / "secret.png").write_bytes(b"nope")
+    blocks = blocks_from_content_list([
+        {"type": "image", "img_path": "images/a.png", "image_caption": ["Figure 1: a plot"]},
+        {"type": "image", "img_path": "../../secret.png", "image_caption": ["no"]},
+    ])
+    n = place_ocr_figures(blocks, root / "7" / "ocr", root / "7" / "figures")
+    figs = [b for b in blocks if b["kind"] == "fig"]
+    assert n == 1
+    assert figs[0]["images"] == ["a.png"]
+    assert figs[1]["images"] == ["../../secret.png"]
+    found = resolve_figure(root, "7", figs[0]["images"][0])
+    assert found is not None and found.read_bytes() == b"\x89PNG-ocr"
+    assert resolve_figure(root, "7", "secret.png") is None
+
+
+def test_ocr_figure_names_do_not_collide(tmp_path: Path):
+    from rrm.reader.ocr import blocks_from_content_list, place_ocr_figures
+
+    a = tmp_path / "c0"
+    b = tmp_path / "c1"
+    (a / "images").mkdir(parents=True)
+    (b / "images").mkdir(parents=True)
+    (a / "images" / "a.png").write_bytes(b"one")
+    (b / "images" / "a.png").write_bytes(b"two")
+    first = blocks_from_content_list([{"type": "image", "img_path": "images/a.png", "image_caption": ["A"]}])
+    second = blocks_from_content_list([{"type": "image", "img_path": "images/a.png", "image_caption": ["B"]}])
+    dest = tmp_path / "figures"
+    place_ocr_figures(first, [a], dest)
+    place_ocr_figures(second, [b], dest)
+    assert first[0]["images"] == ["a.png"]
+    assert second[0]["images"] == ["a_2.png"]
+    assert (dest / "a.png").read_bytes() == b"one"
+    assert (dest / "a_2.png").read_bytes() == b"two"
+
+
+def test_ocr_route_copies_figures_and_marks_this_run(tmp_path: Path):
+    import time
+
+    from rrm.reader import pipeline
+    from rrm.reader.ocr import blocks_from_content_list
+
+    folder = tmp_path / "7"
+    images = folder / "ocr" / "chunk" / "images"
+    images.mkdir(parents=True)
+    (images / "plot.png").write_bytes(b"\x89PNG")
+
+    def ocr(_pdf, _work):
+        blocks = blocks_from_content_list([
+            {"type": "image", "img_path": "images/plot.png", "image_caption": ["Fig"]},
+        ])
+        return {"blocks": blocks, "seconds": 2.0, "gpu_s": 2.0}
+
+    meta = {"timings": pipeline._blank_timings(), "reason": None, "corpusid": 7, "ocr_gpu_s": 0.0}
+    info = {"corpusid": 7, "title": "T", "authors": ["Ada"], "abstract": "Abs"}
+    before = time.time()
+    route, paper, _path = pipeline._ocr_route(folder, info, meta, folder / "x.pdf", ocr, "pdf", publish=None)
+    fig = next(b for b in paper["blocks"] if b["kind"] == "fig")
+    assert route == "ocr"
+    assert fig["images"] == ["plot.png"]
+    assert (folder / "figures" / "plot.png").read_bytes() == b"\x89PNG"
+    assert meta["ocr_gpu_s"] == 2.0
+    assert meta["ocr_invoked_at"] >= before
+
+
+def test_mbox_is_rewritten_only_for_katex():
+    from rrm.reader.katex import for_katex
+    assert for_katex(r"\mbox{a} + b") == r"\text{a} + b"
+    assert for_katex(r"\mboxx") == r"\mboxx"
+
+
+def test_cached_ocr_figures_are_placed_when_the_paper_is_read(tmp_path: Path):
+    import json
+
+    from rrm.reader.files import resolve_figure
+    from rrm.reader.ocr import heal_cached_ocr_figures
+    from rrm.reader.pipeline import load_paper
+
+    root = tmp_path / "papers"
+    images = root / "6628106" / "ocr" / "part_0" / "out" / "demo" / "vlm" / "images"
+    images.mkdir(parents=True)
+    (images / "a.png").write_bytes(b"\x89PNG-old")
+    folder = root / "6628106"
+    paper = {
+        "source": "ocr",
+        "blocks": [{"kind": "fig", "images": ["images/a.png"], "caption": []}],
+    }
+    (folder / "paper.json").write_text(json.dumps(paper), encoding="utf-8")
+    assert heal_cached_ocr_figures(folder, paper) is True
+    assert paper["blocks"][0]["images"] == ["a.png"]
+    assert (folder / "figures" / "a.png").read_bytes() == b"\x89PNG-old"
+    saved = load_paper(folder)
+    assert saved["blocks"][0]["images"] == ["a.png"]
+    found = resolve_figure(root, "6628106", "a.png")
+    assert found is not None and found.read_bytes() == b"\x89PNG-old"
+    assert heal_cached_ocr_figures(folder, saved) is False
+
+
+def test_nerf_and_instant_ngp_tex_is_rewritten_for_katex():
+    from rrm.reader.katex import for_katex
+
+    # The stored form of \renewcommand{\left}{\mathopen{}\mathclose\bgroup\originalleft}.
+    raw = (
+        r"\exp\mathopen{}\mathclose\bgroup\mathopen{}\mathclose\bgroup\originalleft"
+        r"(-\sigma_i \delta_i\aftergroup\egroup\aftergroup\egroup\originalright)"
+    )
+    assert for_katex(raw) == r"\exp\left(-\sigma_i \delta_i\right)"
+    assert for_katex(r"\mathopen\langle a \mathclose\rangle") == r"\langle a \rangle"
+    assert for_katex(r"\nicefrac{1}{8}") == r"\frac{1}{8}"
+    assert for_katex(r"\pi_2 = \num{2654435761}") == r"\pi_2 = 2654435761"
+    assert for_katex(r"\SI{5}{\second}") == r"5\,\mathrm{s}"
+    assert for_katex(r"\SI{5}{\minute}") == r"5\,\mathrm{min}"
+    assert for_katex(r"\partialm(\mathrm{enc}(x))") == r"\partial m(\mathrm{enc}(x))"
+    assert for_katex(r"\number{1}") == r"\number{1}"
+
+
+def test_seed_stub_keeps_s2_authors_and_abstract(tmp_path: Path, monkeypatch):
+    import json
+
+    from rrm.reader import fetch
+    from rrm.reader.pipeline import prefer_stub, seed_stub_from_cache
+
+    monkeypatch.setattr(fetch, "S2_CACHE_DIR", tmp_path)
+    folder = tmp_path / "9"
+    folder.mkdir()
+    (folder / "s2.json").write_text(json.dumps({
+        "title": "Cached",
+        "abstract": "From Semantic Scholar.",
+        "authors": [{"name": "Ada Lovelace"}],
+        "tldr": {"text": "short"},
+        "year": 2017,
+    }), encoding="utf-8")
+    paper = seed_stub_from_cache(folder, 9)
+    assert paper["authors"] == ["Ada Lovelace"]
+    assert paper["abstract"] == "From Semantic Scholar."
+    assert paper["stage"] == "stub" and paper["full"] is False
+    kept = prefer_stub(paper, {"authors": [], "abstract": "", "title": "", "tldr": "", "blocks": [], "stage": "stub"})
+    assert kept["authors"] == ["Ada Lovelace"]
+    assert kept["abstract"] == "From Semantic Scholar."
+    assert kept["blocks"][0]["abs"] is True
+
+
+def test_queue_top_writes_queued_before_spawn_and_survives_failure(tmp_path: Path):
+    import time
+
+    from rrm.reader.pipeline import load_meta, save_meta, worker_alive
+    from rrm.search.prefetch import queue_top
+
+    log = []
+
+    def commit():
+        log.append("commit")
+
+    def spawn(ids):
+        log.append("spawn")
+        assert log[0] == "commit"
+        assert [load_meta(tmp_path / str(i))["status"] for i in ids] == ["queued"] * len(ids)
+
+    got = queue_top(list(range(1, 12)) + ["nope"], tmp_path, spawn=spawn, commit=commit)
+    assert got == list(range(1, 11))
+    assert log == ["commit", "spawn"]
+
+    done = tmp_path / "3"
+    save_meta(done, {"corpusid": 3, "status": "done", "started": time.time(), "source": "ocr", "ocr_gpu_s": 9})
+
+    def see(ids):
+        assert ids == [3]
+
+    queue_top([3], tmp_path, spawn=see, commit=lambda: None)
+    assert load_meta(done)["status"] == "done"
+    assert load_meta(done)["ocr_gpu_s"] == 9
+
+    def boom(_ids):
+        raise RuntimeError("reader app missing")
+
+    queue_top([4], tmp_path / "fresh", spawn=boom, commit=lambda: None)
+    meta = load_meta(tmp_path / "fresh" / "4")
+    assert meta["status"] == "queued"
+    assert worker_alive(meta) is False
+
+
+def test_detach_queue_notes_top_ids_and_defers_the_volume_write(tmp_path: Path):
+    from rrm.reader.pipeline import load_meta
+    from rrm.search.prefetch import detach_queue, load_burst_top, missing_status, note_burst_top
+
+    store = {}
+    note_burst_top([1], store)
+    note_burst_top([1, 2, "nope"], store)
+    assert store["burst_top"] == [1, 2]
+    assert load_burst_top(store) == {1, 2}
+    assert missing_status(1, load_burst_top(store)) == "queued"
+    assert missing_status(9, load_burst_top(store)) == "missing"
+
+    log = []
+    held = []
+
+    def note(ids):
+        log.append(("note", list(ids)))
+
+    def commit():
+        log.append("commit")
+
+    def spawn(ids):
+        log.append(("spawn", list(ids)))
+
+    def start(work):
+        log.append("start")
+        held.append(work)
+
+    got = detach_queue(list(range(1, 12)), tmp_path / "papers", spawn=spawn, commit=commit, note=note, start=start)
+    assert got == list(range(1, 11))
+    assert log == [("note", list(range(1, 11))), "start"]
+    assert held
+    held[0]()
+    assert log == [("note", list(range(1, 11))), "start", "commit", ("spawn", list(range(1, 11)))]
+    assert load_meta(tmp_path / "papers" / "1")["status"] == "queued"

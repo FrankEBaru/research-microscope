@@ -63,6 +63,27 @@ test("ref text uses number", async () => {
   assert.match(paperSrc, /case "ref"/);
 });
 
+test("missing is not settled and mbox is text", async () => {
+  const { settled, katexSource } = await load();
+  assert.equal(settled("missing"), false);
+  assert.equal(settled(undefined), false);
+  assert.equal(settled("queued"), false);
+  assert.equal(settled("parsing"), false);
+  assert.equal(settled("done"), true);
+  assert.equal(settled("abstract_only"), true);
+  assert.equal(settled("failed"), true);
+  assert.equal(katexSource("\\mbox{a} + \\mboxx"), "\\text{a} + \\mboxx");
+  assert.equal(
+    katexSource("\\exp\\mathopen{}\\mathclose\\bgroup\\originalleft(-\\sigma\\aftergroup\\egroup\\originalright)"),
+    "\\exp\\left(-\\sigma\\right)",
+  );
+  assert.equal(katexSource("\\mathopen\\langle a\\mathclose\\rangle"), "\\langle a\\rangle");
+  assert.equal(katexSource("\\nicefrac{1}{8}"), "\\frac{1}{8}");
+  assert.equal(katexSource("\\num{2654435761}"), "2654435761");
+  assert.equal(katexSource("\\SI{5}{\\second}"), "5\\,\\mathrm{s}");
+  assert.equal(katexSource("\\partialm(x)"), "\\partial m(x)");
+});
+
 test("eq tag comes from number", async () => {
   const { eqTex } = await load();
   assert.equal(eqTex({ tex: "y = x", number: 1 }), "y = x\\tag{1}");

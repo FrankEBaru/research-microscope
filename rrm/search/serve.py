@@ -8,6 +8,7 @@ GET /subtopics?q= . Subtopics stays off the paper list, so the list never waits 
 
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -20,7 +21,9 @@ if len(_HERE.parents) > 2:  # local checkout; inside Modal, rrm is already impor
 import modal
 
 from rrm.demo_guard import check, cors_kwargs
+from rrm.demo_warm import scaledown_window
 from rrm.search.burst import burst_query
+from rrm.search.prefetch import detach_queue, note_burst_top
 from rrm.search.display import IdTable, PaperLookup
 from rrm.search.encode import QueryEncoder
 from rrm.search.faissutil import ensure_direct_map, search_vectors, vector_at
@@ -53,7 +56,14 @@ def _safe(name):
     return name
 
 
-@app.cls(image=image, volumes={MOUNT: vol}, cpu=2, memory=32768, timeout=900, secrets=[model_secret])
+# RRM_DEMO_KEEP_WARM=1 at deploy time sets scaledown_window to 20 min.
+# min_containers stays 0. See scripts/warm.sh.
+_burst_cls = dict(image=image, volumes={MOUNT: vol}, cpu=2, memory=32768, timeout=900, secrets=[model_secret])
+if scaledown_window() is not None:
+    _burst_cls["scaledown_window"] = scaledown_window()
+
+
+@app.cls(**_burst_cls)
 @modal.concurrent(max_inputs=8)  # /subtopics waits seconds on Muse; /burst must not queue behind it
 class BurstSearch:
     @modal.enter()
@@ -132,7 +142,6 @@ class BurstSearch:
             split=None,  # papers never wait on Muse; labels come from GET /subtopics
         )
         papers = result["papers"]
-        _prefetch_reader(papers["corpusids"][:10])
         first = None
         if result["first_id"] is not None:
             first = self._rows([result["first_id"]], [None])[0]
@@ -148,6 +157,10 @@ class BurstSearch:
             "seconds": result["seconds"],
         }
         out["seconds"]["hydrate"] = round(time.perf_counter() - t0, 4)
+        # After the payload exists: a spawn failure must not drop the papers.
+        # The top-10 ids are noted for /status here. The volume commit that
+        # used to run inside queue_top stays off this return.
+        _prefetch_reader(papers["corpusids"][:10])
         return out
 
     @modal.method()
@@ -197,17 +210,26 @@ class BurstSearch:
 
 
 def _prefetch_reader(corpusids):
-    """Fire-and-forget prepare of the top papers. A missing reader app must not fail the burst."""
-    ids = []
-    for raw in list(corpusids or [])[:10]:
-        try:
-            ids.append(int(raw))
-        except (TypeError, ValueError):
-            continue
-    if not ids:
-        return
-    try:
+    """Note the top ids, then write queued rows off the response path.
+
+    A missing reader app must not fail the burst. `/status` treats a noted id
+    with no meta.json as queued, so the first poll does not wait for the commit.
+    """
+    def spawn(ids):
         modal.Function.from_name("rrm-reader", "prefetch").spawn(ids)
+
+    def start(work):
+        threading.Thread(target=work, name="rrm-queue-top", daemon=True).start()
+
+    try:
+        detach_queue(
+            corpusids,
+            Path(MOUNT) / "papers",
+            spawn=spawn,
+            commit=vol.commit,
+            note=note_burst_top,
+            start=start,
+        )
     except Exception:
         return
 
