@@ -4,20 +4,34 @@ import { convergence } from "@/lib/convergence.js";
 import { proposeClaims, museMode } from "@/lib/muse.js";
 import { coverage } from "@/lib/panorama.js";
 import { ProvChip } from "./Bits";
+import { useState } from "react";
+import SimPanorama from "./SimPanorama";
 
 const pct = (x: number) => `${Math.round(100 * x)}%`;
 
 /** Panorama (revisión viva): frases literales de cada paper, matriz de evidencia y convergencia CONTADA. Sin veredicto. */
 export default function Panorama({ q, papers, content, go }: any) {
+  const [mode, setMode] = useState<"curada" | "libre">("curada");
+  const ids0: string[] = q.clusters.flatMap((c: any) => c.papers.map((p: any) => p.id));
+  const owner = (id: string) => q.clusters.find((c: any) => c.papers.some((p: any) => p.id === id));
+  const states = Object.fromEntries(ids0.map((i) => [i, { status: papers[i].full ? "done" : "abstract_only" }]));
+  const nm = (id: string) => `${papers[id].authors[0]?.split(" ").pop()} ${papers[id].date?.slice(0, 4)}`;
+  const modes = (
+    <div className="view-toggle" role="tablist" aria-label="Tipo de Panorama">
+      <button className={mode === "curada" ? "on" : ""} onClick={() => setMode("curada")}>Curada</button>
+      <button className={mode === "libre" ? "on" : ""} onClick={() => setMode("libre")}>Cualquier pregunta <span className="chip chip-simulado">simulado</span></button>
+    </div>
+  );
+  if (mode === "libre") return <>{modes}<SimPanorama question={q.text} ids={ids0} states={states} getDoc={async (id: string) => papers[id]} nameOf={nm} open={(id, b) => go({ q: q.id, c: owner(id).id, p: id, b })} /></>;
   const pan = proposeClaims(content, q.id);
   const ids: string[] = q.clusters.flatMap((c: any) => c.papers.map((p: any) => p.id));
   const clusterOf = (id: string) => q.clusters.find((c: any) => c.papers.some((p: any) => p.id === id));
-  if (!pan) return <p className="muted">Todavía no hay Panorama para esta pregunta.</p>;
+  if (!pan) return <>{modes}<p className="muted">Todavía no hay Panorama curado para esta pregunta.</p></>;
   const name = (id: string) => `${papers[id].authors[0]?.split(" ").pop()} ${papers[id].date?.slice(0, 4)}`;
   const full = ids.filter((i) => papers[i].full).length;
   const open = (id: string, blockId: string) => go({ q: q.id, c: clusterOf(id).id, p: id, b: blockId });
   return (
-    <section className="pano" aria-label="Panorama">
+    <>{modes}<section className="pano" aria-label="Panorama">
       <div className="chips">
         <ProvChip kind="curado" text="enunciados y agrupación curados" />
         <ProvChip kind="simulado" text={`paso de Muse Spark: ${museMode()}`} />
@@ -53,7 +67,7 @@ export default function Panorama({ q, papers, content, go }: any) {
           </tr>))}</tbody>
       </table></div>
       <p className="small">● con frase literal (clic para verla en el paper) · ○ sin frase en lo leído. En el motor real, <b>Muse Spark propondría las selecciones</b> (índices de frases, nunca texto nuevo) y esta misma compuerta las validaría; hoy el paso está simulado y no se llama a ningún modelo.</p>
-    </section>
+    </section></>
   );
 }
 

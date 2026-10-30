@@ -57,10 +57,11 @@ export function simulatePaper({ themes, id, doc, faults = false }) {
 /** Fallas típicas de un modelo, deterministas: una frase alterada, una inventada y un paper que no existe. */
 export function faultySelections(themes, firstId, perPaper) {
   if (!themes.length) return [];
-  const real = (perPaper[firstId] || [])[0];
+  const withSel = Object.keys(perPaper).filter((k) => perPaper[k].length).sort()[0];
+  const real = withSel ? perPaper[withSel][0] : null;
   const out = [{ theme: themes[0].id, paper: firstId, quote: "Este trabajo demuestra de forma concluyente que este enfoque resuelve el problema por completo." },
     { theme: themes[0].id, paper: "0000.00000", quote: "Frase de un paper que nunca se leyó." }];
-  if (real) out.push({ theme: real.theme, paper: firstId, quote: real.quote.replace(/\b(\w{4,})\b/, "$1 notably") });
+  if (real) out.push({ theme: real.theme, paper: withSel, quote: real.quote.replace(/\b(\w{4,})\b/, "$1 notably") });
   return out;
 }
 

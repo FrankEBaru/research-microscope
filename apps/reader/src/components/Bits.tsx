@@ -5,6 +5,7 @@ const LABEL: Record<Prov, string> = {
   curado: "curado a mano",
   simulado: "ejemplo simulado",
   calculo: "cálculo bajo los supuestos del paper",
+  hipotesis: "idea en prueba: aún sin evidencia de que ayude",
 };
 
 export function ProvChip({ kind, text }: { kind: Prov; text?: string }) {

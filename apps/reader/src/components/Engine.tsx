@@ -6,6 +6,7 @@ import { Coverage, ProvChip } from "./Bits";
 import PaperView, { plainOf } from "./Paper";
 import MapView from "./MapView";
 import Panorama, { LiveCoverage } from "./Panorama";
+import SimPanorama from "./SimPanorama";
 import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
 import { burst, liveEnabled, paperKey, paper as fetchPaper, status as fetchStatus } from "@/lib/backend.js";
 import { LiveCircle } from "./MapView";
@@ -63,6 +64,8 @@ export default function Engine() {
   }, []);
 
   const go = useCallback((r: Route) => { location.hash = fmt(r); window.scrollTo({ top: 0 }); }, []);
+  const liveIds: string[] = (liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p));
+  const liveName = (id: string) => { const p = (liveResult?.papers || []).find((x: any) => paperKey(x) === id); return p ? `${String(p.title || id).slice(0, 28)}${p.year ? ` ${p.year}` : ""}` : id; };
   const liveId = live && route.p && /^\d+$/.test(route.p) ? route.p : "";
 
   useEffect(() => {
@@ -222,7 +225,7 @@ export default function Engine() {
         {live && (liveOn || liveId) && liveId && opened && (
           <div className="lvl">
             <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>
-            <PaperView paper={opened.paper} content={content} companion={companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} />
+            <PaperView paper={opened.paper} content={content} focus={route.b} companion={companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} />
           </div>
         )}
         {live && (liveOn || liveId) && liveId && !opened && <p className="center-msg">Cargando…</p>}
@@ -233,6 +236,9 @@ export default function Engine() {
             {pending && warm && <p className="warm">calentando el motor…</p>}
             {liveErr && <p className="fail-reason">{liveErr}</p>}
             {liveResult && <LiveCoverage ids={(liveResult.papers || []).slice(0, 10).map((p: any) => paperKey(p))} states={rowState} />}
+            {liveResult && liveIds.length > 0 && liveIds.every((id: string) => ["done", "abstract_only", "failed"].includes(rowState[id]?.status)) && (
+              <SimPanorama key={liveQ} autorun question={liveQ} ids={liveIds} states={rowState} getDoc={async (id: string) => (await fetchPaper(id)).paper} nameOf={liveName} open={(id, b) => go({ p: id, b })} />
+            )}
             {liveResult && <LiveCircle papers={liveResult.papers || []} edges={liveResult.edges || []} states={rowState} onOpen={(id) => go({ p: id })} />}
           </section>
         )}

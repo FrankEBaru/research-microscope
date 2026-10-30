@@ -6,4 +6,4 @@ export interface Paper {
   corpusid?: number; tldr?: string; stage?: string; source?: string; upgraded_from?: string;
 }
 export interface Anchor { paper: string; quote: string; anchor: { blockId: string; where: string; quote: string } }
-export type Prov = "paper" | "curado" | "simulado" | "calculo";
+export type Prov = "paper" | "curado" | "simulado" | "calculo" | "hipotesis";

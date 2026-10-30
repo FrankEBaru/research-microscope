@@ -210,3 +210,22 @@ test("Panorama: frases literales, convergencia contada, matriz y apertura del pa
   assert.match(await p.$eval(".pano > .small", (e) => e.textContent), /simulado|simula/);
   await p.click(".pano-claim .evi .link >> nth=0"); await p.waitForSelector(".paper"); assert.deepEqual(p.errs, []); await p.close();
 });
+
+test("Panorama simulado: cualquier pregunta, llegada progresiva, predicción opcional y compuerta con fallas", async () => {
+  const p = await browser.newPage({ viewport: { width: 1280, height: 900 } }); p.errs = [];
+  p.on("pageerror", (e) => p.errs.push(e.message)); await p.addInitScript(() => { window.__RRM_SIM_MS = 60; });
+  await p.goto(base + "#/"); await p.waitForSelector(".view-toggle");
+  await p.click('.view-toggle button:has-text("Panorama")'); await p.click('button:has-text("Cualquier pregunta")');
+  assert.match(await p.$eval(".pano.sim .chips", (e) => e.textContent), /simulado/);
+  await p.fill('input[aria-label="Pregunta para el Panorama"]', "attention scaling laws"); await p.click('button:has-text("Armar Panorama")');
+  await p.waitForSelector(".predict", { timeout: 8000 });                                   // al terminar, pide predecir antes de ver
+  assert.equal(await p.$$eval(".pano-claim .evi", (n) => n.length), 0, "con la predicción pendiente no se ve el resultado");
+  await p.click(".predict .pills button >> nth=2"); await p.waitForSelector(".pano-claim .conv");
+  assert.match(await p.$eval(".pano-claim .conv span", (e) => e.textContent), /tu predicción: 2/);
+  await p.click(".predict button.link").catch(() => {});                                      // «ver sin predecir» en otro enunciado
+  assert.ok((await p.$$eval(".pano-claim .evi li blockquote", (n) => n.length)) >= 2, "hay frases literales");
+  const rej = Number(await p.$eval(".gate", (e) => e.dataset.rejected)); assert.equal(rej, 3, "las 3 fallas simuladas las rechaza la compuerta");
+  assert.match(await p.$eval(".gate", (e) => e.textContent), /Compuerta/);
+  assert.ok((await p.$$eval(".matrix .dot.yes", (n) => n.length)) >= 2);
+  await p.click(".pano-claim .evi .link >> nth=0"); await p.waitForSelector(".paper"); assert.deepEqual(p.errs, []); await p.close();
+});
