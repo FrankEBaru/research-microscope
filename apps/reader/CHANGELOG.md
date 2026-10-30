@@ -45,3 +45,5 @@ Rama de trabajo: `claude/magical-bohr-dzrmt1` (sale de `claude/ui-edge`; la esta
 | `899e7a0` | Panorama para cualquier pregunta: llegada progresiva, predecir antes de ver, compuerta con fallas visibles; en curado y en vivo |
 | `cd57ad1` | gráficas con «predecir antes de ver» (hipótesis) |
 | `cbdc768` | el compañero señala: se desliza al bloque del que habla |
+| `402dd03` | museSim más fiel: términos genéricos y compuestos, sin repetir la misma oración en todos los temas |
+| `b83b16c` | figura con zonas: 6 partes de la arquitectura del Transformer enlazan con su frase (`content/zones.json`) |
