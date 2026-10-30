@@ -50,3 +50,4 @@ Rama de trabajo: `claude/magical-bohr-dzrmt1` (sale de `claude/ui-edge`; la esta
 | `b354445` | pruebas del modo en vivo (`tests/live.test.mjs`, `npm run test:live`) y arreglo con 0 papers leídos |
 | `0721a89` | zonas en la figura 1 de Kaplan + más pruebas e2e |
 | `f8e6f66` | móvil: el Área arranca en tarjetas; miniatura del cluster más grande |
+| `1a76f4b` | móvil: número de ecuación sin encimarse y popovers por toque |
