@@ -10,10 +10,14 @@ Reader, app `rrm-reader`, function `api`:
 - `GET /status?ids=` (comma-separated corpus ids; unknown ids are `missing`, except a top-10 id just returned by `/burst`, which is `queued` until its `meta.json` commit lands)
 - `POST /prepare` with `{"ids": []}`
 - `GET /crops?id=&pages=`
-- `POST /panorama` with `{"question": str, "ids": [corpusid, ...]}` (at most 20 ids, question up to 500 characters). Returns `[{id, statement, selections: [{paper, quote}]}]`. **Simulated:** `rrm/panorama.py` ports `apps/reader/src/lib/musesim.js` and picks real sentences from each paper's `blocks[].sents` by term overlap. It only reads papers that are `done` or `abstract_only`, never spawns work, and never returns text that is not in a paper. It is not a gate: the UI's `validateSelections` still rejects any quote that does not occur exactly once in its paper. 400 for a bad body, 501 in `meta` mode.
+- `POST /panorama` with `{"question": str, "ids": [corpusid, ...]}` (at most 20 ids, question up to 500 characters). Returns `[{id, statement, selections: [{paper, quote}]}]`. It only reads papers that are `done` or `abstract_only` and never spawns work. 400 for a bad body. A quote is a sentence from that paper's `blocks[].sents`. The handler is not the UI gate: `validateSelections` still rejects a quote that does not occur exactly once in its paper.
 - `GET /file?id=&name=&k=` (a file under `papers/{id}/figures/` or `papers/{id}/crops/`, or 404)
 
-`RRM_PANORAMA_MODE` is `sim` (default) or `meta`. `meta` is the future model call: it raises `NotImplementedError` (501) until Franklin explicitly allows calling Meta; its contract is in `rrm/panorama.py::meta_panorama`.
+`RRM_PANORAMA_MODE` is `sim` (default) or `meta`.
+
+`sim` ports `apps/reader/src/lib/musesim.js` and picks sentences by term overlap. It does not call a model. `meta` calls Muse Spark (`muse-spark-1.3-contributor`, the same client as `rrm/search/split.py`). The model sees numbered candidate sentences (filtered with `_sentences` and `themes_of`, capped by count and characters) and returns indexes. The server rebuilds each quote from that index, then drops a pick that is out of range, repeated, or not found exactly once in its paper. The statement is the model's. Each claim also has `mode` (`sim` or `meta`) and `fallback` (bool). A timeout, transport error, or invalid JSON falls back to `sim` with `fallback` true and does not change the list shape. `RRM_PANORAMA_TIMEOUT` is the Muse call timeout in seconds (default 15, capped at 45), which sits under the browser's 20s abort so the fallback still arrives. Token counts are logged as `panorama_meta` (`prompt_tokens`, `completion_tokens`, `total_tokens`). The API key is not logged.
+
+`meta` is not the demo default. Every panorama request would spend Meta tokens, and a cold or slow call is the wrong default for a demo that already labels this step as simulated. Set `RRM_PANORAMA_MODE=meta` on the reader deploy to turn it on.
 
 `prefetch` stays a Modal function named `prefetch`. The UI does not call `/crops` or `/prepare`.
 
