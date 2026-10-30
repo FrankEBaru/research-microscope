@@ -54,7 +54,7 @@ from rrm.reader.queue import forget as forget_job
 from rrm.reader.queue import note as note_job
 from rrm.search.prefetch import load_burst_top, missing_status
 from rrm.reader.queue import release as release_job
-from rrm.reader.ocr_budget import claim_ocr_slot, ocr_limit_from_env
+from rrm.reader.ocr_budget import claim_ocr_slot, ocr_gpu_from_env, ocr_limit_from_env
 from rrm.reader.sam import parse_pages, segment_pages
 
 DATA = "/data"
@@ -352,7 +352,7 @@ def _run(corpusid: int) -> dict:
 # max_inputs=1 and max_containers=8: each chunk is its own container. No min_containers.
 # Function timeout bounds a hung container; run_chunk itself stops an attempt at 180s and retries once.
 @app.function(
-    image=gpu_image, gpu=["L4", "A10G"], volumes={DATA: vol},
+    image=gpu_image, gpu=ocr_gpu_from_env(), volumes={DATA: vol},
     timeout=400, memory=16384, cpu=2, max_containers=8,
 )
 @modal.concurrent(max_inputs=1)
@@ -640,14 +640,14 @@ def api():
 
     @web.get("/paper")
     def route_paper(request: Request, id: str):
-        denied = gate(request, False)
+        denied = gate(request, True)
         if denied:
             return denied
         return read_paper(id)
 
     @web.get("/status")
     def route_status(request: Request, ids: str = ""):
-        denied = gate(request, False)
+        denied = gate(request, True)
         if denied:
             return denied
         return read_status(ids)
@@ -680,7 +680,7 @@ def api():
 
     @web.get("/crops")
     def route_crops(request: Request, id: str, pages: str = ""):
-        denied = gate(request, False)
+        denied = gate(request, True)
         if denied:
             return denied
         return read_crops(id, pages)

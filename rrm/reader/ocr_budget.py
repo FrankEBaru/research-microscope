@@ -11,6 +11,18 @@ import os
 
 OWNERS = "ocr_owners"
 BLOCK = "ocr_block"
+OCR_GPUS = ("L4", "A10G")
+
+
+def ocr_gpu_from_env(environ=None):
+    """GPU for ocr_one. Unset keeps L4, then A10G. One name pins that GPU."""
+    env = os.environ if environ is None else environ
+    raw = str(env.get("RRM_OCR_GPU", "")).strip()
+    if raw == "":
+        return list(OCR_GPUS)
+    if raw not in OCR_GPUS:
+        raise ValueError(f"RRM_OCR_GPU must be one of {OCR_GPUS}, got {raw!r}")
+    return raw
 
 
 def ocr_limit_from_env(environ=None):

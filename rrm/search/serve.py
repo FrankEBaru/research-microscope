@@ -177,9 +177,10 @@ class BurstSearch:
         web.add_middleware(CORSMiddleware, **cors_kwargs())
 
         def gate(request: Request):
+            # `k` lets a GET stay a CORS simple request (no OPTIONS) while the container is cold.
             code = check(
                 request.headers.get("x-rrm-demo"),
-                None,
+                request.query_params.get("k"),
                 request.headers.get("origin"),
             )
             if code:
@@ -200,11 +201,19 @@ class BurstSearch:
             if denied:
                 return denied
             t0 = time.perf_counter()
+            import rrm.search.split as split_mod
+            split_mod.LAST_USAGE = None
             try:
                 topics = [str(t) for t in split_query(q)]
             except Exception:
                 topics = []
-            return {"query": q, "subtopics": topics, "seconds": round(time.perf_counter() - t0, 4)}
+            return {
+                "query": q,
+                "subtopics": topics,
+                "seconds": round(time.perf_counter() - t0, 4),
+                "skipped": split_mod.skip_split(q),
+                "usage": split_mod.LAST_USAGE,
+            }
 
         return web
 

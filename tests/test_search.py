@@ -12,7 +12,7 @@ from rrm.search.display import IdTable, PaperLookup, filter_papers, hydrate, mer
 from rrm.search.encode import use_proximity
 from rrm.search.faissutil import add_vectors, merge_indexes, search_vectors, train_ivfpq, vector_at, vectors_from_table
 from rrm.search.graph import Graph, csr_from_edges, edges_from_pairs, int_column, stack_edges
-from rrm.search.split import parse_subtopics, skip_split, split_query
+from rrm.search.split import parse_subtopics, skip_split, split_query, usage_of
 
 
 def test_split_parse_skip_and_cache():
@@ -22,6 +22,8 @@ def test_split_parse_skip_and_cache():
     assert skip_split("arXiv:1706.03762v1")
     assert skip_split("graph neural networks")
     assert not skip_split("How do graph neural networks use citation structure?")
+    assert not skip_split("how does self-attention replace recurrence in sequence translation")
+    assert skip_split("neural radiance fields view synthesis")
     text = '```json\n{"subtopics": ["attention", "positional encoding", "long context"]}\n```'
     assert parse_subtopics(text) == ["attention", "positional encoding", "long context"]
     wrapped = 'notes {"subtopics": ["a", "b", "c", "d", "e", "f", "g"]} tail'
@@ -39,6 +41,11 @@ def test_split_parse_skip_and_cache():
     assert calls == [query]
     assert split_query("1706.03762", complete=complete, cache=cache) == []
     assert calls == [query]
+    assert usage_of({"usage": {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7}}) == {
+        "prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7,
+    }
+    assert usage_of({}) is None
+    assert usage_of({"usage": {"prompt_tokens": True}}) is None
 
 
 def test_csr_from_shards_and_one_hop():

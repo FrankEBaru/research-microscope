@@ -996,6 +996,9 @@ def test_ocr_slot_caps_at_one_and_fails_closed():
                 raise KeyError(key)
             return dict.__getitem__(self, key)
 
+    from rrm.reader.ocr_budget import ocr_gpu_from_env
+    assert ocr_gpu_from_env({}) == ["L4", "A10G"]
+    assert ocr_gpu_from_env({"RRM_OCR_GPU": "A10G"}) == "A10G"
     assert ocr_limit_from_env({}) is None
     assert ocr_limit_from_env({"RRM_OCR_MAX": "1"}) == 1
     assert ocr_limit_from_env({"RRM_OCR_MAX": "0"}) == 0
