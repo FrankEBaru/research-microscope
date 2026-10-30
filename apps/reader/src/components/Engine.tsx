@@ -260,6 +260,7 @@ export default function Engine() {
 /* ---------- Nivel 1: área ---------- */
 function Area({ q, questions, papers, go, content }: any) {
   const [view, setView] = useState<"mapa" | "tarjetas" | "panorama">("mapa");
+  useEffect(() => { if (window.innerWidth < 700) setView("tarjetas"); }, []); // el mapa necesita ancho: en pantallas angostas se empieza por las tarjetas
   return (
     <section className="lvl lvl1">
       <p className="eyebrow">Nivel 1 · Área</p>

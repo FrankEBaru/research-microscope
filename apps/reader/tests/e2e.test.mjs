@@ -135,9 +135,12 @@ for (const id of PAPERS) {
   });
 }
 
-test("móvil: el mapa no desborda", async () => {
-  const p = await page("#/", 390, 800); await p.waitForSelector(".platina");
-  assert.ok((await p.evaluate(() => document.documentElement.scrollWidth)) <= 390); await p.close();
+test("móvil: empieza por las tarjetas (el mapa necesita ancho), nada desborda y el mapa sigue disponible", async () => {
+  const p = await page("#/", 390, 800); await p.waitForSelector(".view-toggle");
+  assert.equal(await p.$(".platina"), null, "en pantalla angosta no se arranca en el mapa");
+  assert.ok((await p.evaluate(() => document.documentElement.scrollWidth)) <= 390, "tarjetas sin desborde");
+  await p.click('.view-toggle button:has-text("Mapa")'); await p.waitForSelector(".platina");
+  assert.ok((await p.evaluate(() => document.documentElement.scrollWidth)) <= 390, "mapa sin desborde"); await p.close();
 });
 
 test("compañero: apagado por defecto, ofrece tras repeticiones, respeta el «no» y no guarda ni envía nada", async () => {
