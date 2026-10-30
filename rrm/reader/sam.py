@@ -29,8 +29,36 @@ MAX_CROP_INDEX = 30
 _TOK = re.compile(r"<\|(box|mask);(.*?)\|>", re.S)
 
 
+MISSING_KEY = "no MODEL_API_KEY"
+# PDF points. A header logo is about 30 pt; a panel or table is larger.
+_MIN_REGION = 36.0
+_MIN_AREA = 4000.0  # pt^2. Header logos survive the side check; a merged panel does not stay this small.
+_IMAGE_GAP = 8.0
+
+
 def api_key() -> str:
     return os.environ.get("MODEL_API_KEY") or ""
+
+
+def key_blocks_crops(index_error, key: str) -> bool:
+    """A stored missing-key error skips /crops only while the key is still absent."""
+    return index_error == MISSING_KEY and not key
+
+
+def segmented_pages(index: dict, key: str) -> set[int]:
+    """Pages that do not need another SAM call.
+
+    A stored `no MODEL_API_KEY` is not a finished page once the key exists.
+    Crop rows from an earlier success still count.
+    """
+    pages = set()
+    if index.get("error") != MISSING_KEY or not key:
+        for n in index.get("done_pages") or []:
+            pages.add(int(n))
+    for row in index.get("crops") or []:
+        if isinstance(row, dict) and row.get("page") is not None:
+            pages.add(int(row["page"]))
+    return pages
 
 
 def _fields(blob: str) -> dict:
@@ -185,6 +213,194 @@ def parse_pages(text: str, cap: int = MAX_CROP_PAGES, max_index: int = MAX_CROP_
     return out
 
 
+def _box4(raw):
+    if raw is None:
+        return None
+    if hasattr(raw, "x0"):
+        return [float(raw.x0), float(raw.y0), float(raw.x1), float(raw.y1)]
+    try:
+        if len(raw) < 4:
+            return None
+        return [float(raw[0]), float(raw[1]), float(raw[2]), float(raw[3])]
+    except (TypeError, ValueError):
+        return None
+
+
+def _clip_box(box, width, height):
+    box = _box4(box)
+    if box is None:
+        return None
+    x0, y0, x1, y1 = box
+    x0, y0 = max(0.0, x0), max(0.0, y0)
+    x1, y1 = min(float(width), x1), min(float(height), y1)
+    if x1 - x0 < 8 or y1 - y0 < 8:
+        return None
+    return [x0, y0, x1, y1]
+
+
+def _union_rects(rects, gap: float):
+    rects = [list(r) for r in rects]
+    changed = True
+    while changed and rects:
+        changed = False
+        nxt = []
+        used = [False] * len(rects)
+        for i, a in enumerate(rects):
+            if used[i]:
+                continue
+            used[i] = True
+            x0, y0, x1, y1 = a
+            grew = True
+            while grew:
+                grew = False
+                for j, b in enumerate(rects):
+                    if used[j]:
+                        continue
+                    if b[0] <= x1 + gap and b[2] >= x0 - gap and b[1] <= y1 + gap and b[3] >= y0 - gap:
+                        used[j] = True
+                        x0, y0 = min(x0, b[0]), min(y0, b[1])
+                        x1, y1 = max(x1, b[2]), max(y1, b[3])
+                        grew = True
+                        changed = True
+            nxt.append([x0, y0, x1, y1])
+        rects = nxt
+    return rects
+
+
+def _drop_contained(rects, frac: float = 0.85):
+    keep = []
+    for i, a in enumerate(rects):
+        area = (a[2] - a[0]) * (a[3] - a[1])
+        if area <= 0:
+            continue
+        inside = False
+        for j, b in enumerate(rects):
+            if i == j:
+                continue
+            iw = min(a[2], b[2]) - max(a[0], b[0])
+            ih = min(a[3], b[3]) - max(a[1], b[1])
+            inter = max(0.0, iw) * max(0.0, ih)
+            bigger = (b[2] - b[0]) * (b[3] - b[1]) > area
+            if bigger and inter >= frac * area:
+                inside = True
+                break
+        if not inside:
+            keep.append(a)
+    return keep
+
+
+def _big_enough(box) -> bool:
+    return box[2] - box[0] >= _MIN_REGION and box[3] - box[1] >= _MIN_REGION
+
+
+def _area(box) -> float:
+    return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
+
+
+def _overlap_frac(box, other) -> float:
+    area = _area(box)
+    if area <= 0:
+        return 0.0
+    iw = min(box[2], other[2]) - max(box[0], other[0])
+    ih = min(box[3], other[3]) - max(box[1], other[1])
+    return max(0.0, iw) * max(0.0, ih) / area
+
+
+def page_regions(page) -> list[dict]:
+    """Figure and table boxes in PDF points, from images, vector clusters, and tables.
+
+    SAM's noun phrases return an empty lane on line drawings, alignment plots,
+    and some tables. These boxes are the crop when that happens. Nearby image
+    tiles (a grid) become one panel.
+    """
+    width, height = float(page.rect.width), float(page.rect.height)
+    images = []
+    for info in page.get_image_info() or []:
+        box = _clip_box(info.get("bbox"), width, height)
+        if box is not None:
+            images.append(box)
+    figures = [b for b in _union_rects(images, _IMAGE_GAP) if _big_enough(b) and _area(b) >= _MIN_AREA]
+    tables = []
+    try:
+        found = page.find_tables()
+        raw_tables = list(getattr(found, "tables", None) or [])
+    except Exception:
+        raw_tables = []
+    for table in raw_tables:
+        box = _clip_box(getattr(table, "bbox", None), width, height)
+        if box is not None and _big_enough(box):
+            tables.append(box)
+    tables = _drop_contained(tables)
+    # Vector clusters add axis labels around a raster panel. Skip a cluster that
+    # is really the rules of a table, and skip header-sized leftovers.
+    for cluster in page.cluster_drawings() or []:
+        box = _clip_box(cluster, width, height)
+        if box is None or not _big_enough(box) or _area(box) < _MIN_AREA:
+            continue
+        if _area(box) > 0.85 * width * height:
+            continue
+        if any(_overlap_frac(box, table) >= 0.5 for table in tables):
+            continue
+        figures.append(box)
+    figures = [b for b in _drop_contained(_union_rects(figures, 4.0)) if _big_enough(b) and _area(b) >= _MIN_AREA]
+    # Image tiles inside a table (result thumbnails) are the table, not a second figure.
+    figures = [b for b in figures if not any(_overlap_frac(b, table) >= 0.5 for table in tables)]
+    # A table already covered by a figure box would be a second crop of the same ink.
+    kept_tables = []
+    for box in tables:
+        area = (box[2] - box[0]) * (box[3] - box[1])
+        covered = False
+        for fig in figures:
+            iw = min(box[2], fig[2]) - max(box[0], fig[0])
+            ih = min(box[3], fig[3]) - max(box[1], fig[1])
+            if max(0.0, iw) * max(0.0, ih) >= 0.6 * area:
+                covered = True
+                break
+        if not covered:
+            kept_tables.append(box)
+    rows = [{"phrase": "diagram", "bbox": b} for b in figures]
+    rows += [{"phrase": "table", "bbox": b} for b in kept_tables]
+    rows.sort(key=lambda r: (r["bbox"][1], r["bbox"][0]))
+    return rows
+
+
+def _pdf_hits(pdf: Path, page_index: int, png: bytes) -> list[dict]:
+    """PDF figure/table boxes in the rendered page's pixels. [] if the page has none."""
+    import pymupdf
+
+    try:
+        doc = pymupdf.open(pdf)
+    except Exception:
+        return []
+    try:
+        if page_index < 0 or page_index >= len(doc):
+            return []
+        page = doc[page_index]
+        pix = pymupdf.Pixmap(png)
+        if page.rect.width <= 0 or page.rect.height <= 0:
+            return []
+        sx = pix.width / float(page.rect.width)
+        sy = pix.height / float(page.rect.height)
+        hits = []
+        for region in page_regions(page):
+            x0, y0, x1, y1 = region["bbox"]
+            hit = {
+                "x1": max(0, int(x0 * sx)),
+                "y1": max(0, int(y0 * sy)),
+                "x2": min(pix.width - 1, max(0, int(round(x1 * sx)) - 1)),
+                "y2": min(pix.height - 1, max(0, int(round(y1 * sy)) - 1)),
+                "phrase": region["phrase"],
+                "source": "pdf",
+            }
+            if hit["x2"] > hit["x1"] and hit["y2"] > hit["y1"]:
+                hits.append(hit)
+        return hits
+    except Exception:
+        return []
+    finally:
+        doc.close()
+
+
 def render_pages(pdf: Path, max_pages: int = 30, dpi: int = 150):
     import pymupdf
     doc = pymupdf.open(pdf)
@@ -267,10 +483,13 @@ def segment_pages(pdf: Path, crops_dir: Path, pages: list[int], phrases=PHRASES,
     }
     kept = [row for row in (previous.get("crops") or []) if row.get("page") not in wanted]
     if not key:
-        result["error"] = "no MODEL_API_KEY"
+        result["error"] = MISSING_KEY
         result["crops"] = kept
         _write_index(crops_dir, kept, result)
         return result
+    # A previous run stored the missing key. The key is here now, so that error is stale.
+    if result.get("error") == MISSING_KEY:
+        result["error"] = None
     if not pdf.is_file():
         result["error"] = "no pdf"
         result["crops"] = kept
@@ -283,7 +502,15 @@ def segment_pages(pdf: Path, crops_dir: Path, pages: list[int], phrases=PHRASES,
         result["crops"] = kept
         _write_index(crops_dir, kept, result)
         return result
-    tasks = [(page, phrase) for page in pngs for phrase in phrases]
+    # PDF figure and table boxes are the crop when the page has them. Concept
+    # prompts come back empty on these papers, or as fragments of a chart.
+    # SAM runs only for a page the PDF does not already segment.
+    pdf_hits = {}
+    for page, png in pngs.items():
+        hits = _pdf_hits(pdf, page, png)
+        if hits:
+            pdf_hits[page] = (png, hits)
+    tasks = [(page, phrase) for page in pngs if page not in pdf_hits for phrase in phrases]
     fresh = []
 
     def _one(task):
@@ -328,10 +555,92 @@ def segment_pages(pdf: Path, crops_dir: Path, pages: list[int], phrases=PHRASES,
                     (crops_dir / mask_name).write_text(hit["mask"], encoding="utf-8")
                     row["mask"] = mask_name
                 fresh.append(row)
+    checked = set(int(p) for p in (previous.get("pdf_checked") or []))
+    for page, (png, hits) in pdf_hits.items():
+        checked.add(page)
+        counts = {}
+        for hit in hits:
+            phrase = hit["phrase"]
+            n = counts.get(phrase, 0)
+            counts[phrase] = n + 1
+            name = f"p{page}_{phrase}_{n}.png"
+            if _crop(png, hit, crops_dir / name):
+                fresh.append({
+                    "page": page,
+                    "phrase": phrase,
+                    "bbox": [hit["x1"], hit["y1"], hit["x2"], hit["y2"]],
+                    "file": name,
+                    "source": "pdf",
+                })
     result["crops"] = kept + fresh
+    result["pdf_checked"] = checked
     result["cost_usd"] = round(result["images"] * USD_PER_IMAGE, 6)
     _write_index(crops_dir, result["crops"], result)
     return result
+
+
+def fill_pdf_crops(pdf: Path, crops_dir: Path, pages: list[int]) -> tuple[dict, bool]:
+    """Crops from PDF boxes for pages SAM already finished with nothing.
+
+    Does not call SAM. A page with no figure and no table is remembered in
+    `pdf_checked` so the next read does not scan it again. The bool is whether
+    the index was rewritten.
+    """
+    crops_dir.mkdir(parents=True, exist_ok=True)
+    index = _load_index(crops_dir)
+    if not pdf.is_file():
+        return index, False
+    by_page = {}
+    for row in index.get("crops") or []:
+        if isinstance(row, dict) and row.get("page") is not None:
+            by_page.setdefault(int(row["page"]), []).append(row)
+    checked = set(int(p) for p in (index.get("pdf_checked") or []))
+    todo = []
+    for n in pages:
+        n = int(n)
+        rows = by_page.get(n) or []
+        if rows and all(r.get("source") == "pdf" for r in rows):
+            continue
+        if n in checked:
+            continue
+        # Empty, or SAM fragments. PDF boxes replace those when the page has any.
+        todo.append(n)
+    if not todo:
+        return index, False
+    try:
+        pngs = render_selected(pdf, todo)
+    except Exception:
+        return index, False
+    crops = list(index.get("crops") or [])
+    for page, png in pngs.items():
+        hits = _pdf_hits(pdf, page, png)
+        checked.add(page)
+        if not hits:
+            continue
+        crops = [row for row in crops if int(row.get("page", -1)) != page]
+        counts = {}
+        for hit in hits:
+            phrase = hit["phrase"]
+            n = counts.get(phrase, 0)
+            counts[phrase] = n + 1
+            name = f"p{page}_{phrase}_{n}.png"
+            if _crop(png, hit, crops_dir / name):
+                crops.append({
+                    "page": page,
+                    "phrase": phrase,
+                    "bbox": [hit["x1"], hit["y1"], hit["x2"], hit["y2"]],
+                    "file": name,
+                    "source": "pdf",
+                })
+    result = {
+        "images": int(index.get("images") or 0),
+        "error": index.get("error"),
+        "pages": index.get("pages") or 0,
+        "done_pages": index.get("done_pages") or [],
+        "pdf_checked": checked,
+    }
+    _write_index(crops_dir, crops, result)
+    return _load_index(crops_dir), True
 
 
 def segment_pdf(pdf: Path, crops_dir: Path, phrases=PHRASES, max_pages: int = 30) -> dict:
@@ -340,7 +649,7 @@ def segment_pdf(pdf: Path, crops_dir: Path, phrases=PHRASES, max_pages: int = 30
     crops_dir.mkdir(parents=True, exist_ok=True)
     result = {"crops": [], "images": 0, "cost_usd": 0.0, "error": None, "pages": 0}
     if not key:
-        result["error"] = "no MODEL_API_KEY"
+        result["error"] = MISSING_KEY
         _write_index(crops_dir, [], result)
         return result
     if not pdf.is_file():
@@ -356,36 +665,64 @@ def segment_pdf(pdf: Path, crops_dir: Path, phrases=PHRASES, max_pages: int = 30
     result["pages"] = len(pages)
     index = []
     for page_i, png, _w, _h in pages:
+        pdf_first = _pdf_hits(pdf, page_i, png)
+        if pdf_first:
+            page_hits = [(hit["phrase"], hit) for hit in pdf_first]
+            counts = {}
+            for phrase, hit in page_hits:
+                n = counts.get(phrase, 0)
+                counts[phrase] = n + 1
+                name = f"p{page_i}_{phrase}_{n}.png"
+                dest = crops_dir / name
+                if _crop(png, hit, dest):
+                    index.append({
+                        "page": page_i,
+                        "phrase": phrase,
+                        "bbox": [hit["x1"], hit["y1"], hit["x2"], hit["y2"]],
+                        "file": name,
+                        "source": "pdf",
+                    })
+            continue
+        page_hits = []
+        failed = False
         for phrase in phrases:
             try:
                 hits = segment_png(png, phrase, key)
             except urllib.error.HTTPError as err:
                 result["error"] = f"sam http {err.code}"
+                failed = True
                 if err.code in (401, 403):
                     _write_index(crops_dir, index, result)
                     return result
                 continue
             except Exception as err:
                 result["error"] = f"sam error: {err}"
+                failed = True
                 continue
             result["images"] += 1
-            for n, hit in enumerate(hits):
-                name = f"p{page_i}_{phrase}_{n}.png"
-                dest = crops_dir / name
-                if _crop(png, hit, dest):
-                    row = {
-                        "page": page_i,
-                        "phrase": phrase,
-                        "bbox": [hit["x1"], hit["y1"], hit["x2"], hit["y2"]],
-                        "file": name,
-                    }
-                    if hit.get("c") is not None:
-                        row["c"] = hit["c"]
-                    if hit.get("mask"):
-                        mask_name = f"p{page_i}_{phrase}_{n}.mask.txt"
-                        (crops_dir / mask_name).write_text(hit["mask"], encoding="utf-8")
-                        row["mask"] = mask_name
-                    index.append(row)
+            page_hits.extend((phrase, hit) for hit in hits)
+        counts = {}
+        for phrase, hit in page_hits:
+            n = counts.get(phrase, 0)
+            counts[phrase] = n + 1
+            name = f"p{page_i}_{phrase}_{n}.png"
+            dest = crops_dir / name
+            if _crop(png, hit, dest):
+                row = {
+                    "page": page_i,
+                    "phrase": phrase,
+                    "bbox": [hit["x1"], hit["y1"], hit["x2"], hit["y2"]],
+                    "file": name,
+                }
+                if hit.get("source"):
+                    row["source"] = hit["source"]
+                if hit.get("c") is not None:
+                    row["c"] = hit["c"]
+                if hit.get("mask"):
+                    mask_name = f"p{page_i}_{phrase}_{n}.mask.txt"
+                    (crops_dir / mask_name).write_text(hit["mask"], encoding="utf-8")
+                    row["mask"] = mask_name
+                index.append(row)
     result["crops"] = index
     result["cost_usd"] = round(result["images"] * USD_PER_IMAGE, 6)
     _write_index(crops_dir, index, result)
@@ -400,5 +737,6 @@ def _write_index(crops_dir: Path, index: list, result: dict):
         "error": result["error"],
         "pages": result["pages"],
         "done_pages": sorted(int(p) for p in (result.get("done_pages") or [])),
+        "pdf_checked": sorted(int(p) for p in (result.get("pdf_checked") or [])),
     }
     (crops_dir / "index.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
