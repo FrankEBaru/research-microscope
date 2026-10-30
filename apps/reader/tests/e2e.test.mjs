@@ -261,3 +261,56 @@ test("figura con zonas: cada parte de la arquitectura enlaza con la frase del pa
   assert.ok(await p.$eval("#blk-b20", (e) => e.classList.contains("flash")), "va al párrafo del decodificador");
   assert.deepEqual(p.errs, []); await p.close();
 });
+
+async function simPage(hash) {
+  const p = await browser.newPage({ viewport: { width: 1280, height: 900 } }); p.errs = [];
+  p.on("pageerror", (e) => p.errs.push(e.message)); await p.addInitScript(() => { window.__RRM_SIM_MS = 30; });
+  await p.goto(base + hash); await p.waitForSelector(".view-toggle");
+  await p.click('.view-toggle button:has-text("Panorama")'); await p.click('button:has-text("Cualquier pregunta")'); return p;
+}
+
+test("Panorama simulado: la pregunta de la segunda área (escalado, en español) trae frases de los papers de escalado", async () => {
+  const p = await simPage("#/q/escalado");
+  assert.equal(await p.inputValue('input[aria-label="Pregunta para el Panorama"]'), "¿Cuánto cómputo y cuántos datos necesita un modelo de lenguaje?");
+  await p.click('button:has-text("Armar Panorama")'); await p.waitForSelector(".predict", { timeout: 8000 });
+  await p.uncheck('.sim-opts input >> nth=0');                                                   // apagar «predecir antes de ver»
+  await p.waitForSelector(".pano-claim .evi li blockquote");
+  assert.match(await p.$$eval(".pano-claim h3", (n) => n.map((e) => e.textContent).join(" ")), /cómputo|datos/i);
+  const who = await p.$$eval(".pano-claim .who", (n) => n.map((e) => e.textContent.toLowerCase()));
+  assert.ok(who.some((w) => /kaplan|hoffmann|brown|brandfonbrener|porian/.test(w)), "autores de escalado: " + who.join(","));
+  assert.deepEqual(p.errs, []); await p.close();
+});
+
+test("Panorama simulado: sin fallas simuladas la compuerta no rechaza nada; con fallas rechaza 3; pregunta vacía no hace nada", async () => {
+  const p = await simPage("#/");
+  await p.fill('input[aria-label="Pregunta para el Panorama"]', "   "); await p.click('button:has-text("Armar Panorama")');
+  assert.equal(await p.$(".sim-progress"), null, "una pregunta vacía no arma nada");
+  await p.fill('input[aria-label="Pregunta para el Panorama"]', "self-attention recurrence"); await p.uncheck('.sim-opts input >> nth=1');
+  await p.click('button:has-text("Armar Panorama")'); await p.waitForSelector(".gate", { timeout: 8000 });
+  assert.equal(await p.$eval(".gate", (e) => e.dataset.rejected), "0"); assert.match(await p.$eval(".gate", (e) => e.textContent), /todas las selecciones existen literalmente/);
+  await p.check('.sim-opts input >> nth=1'); await p.click('button:has-text("Volver a armar")'); await p.waitForFunction(() => document.querySelector(".gate")?.dataset.rejected === "3", null, { timeout: 8000 });
+  await p.click(".gate summary"); assert.equal(await p.$$eval(".gate li", (n) => n.length), 3);
+  assert.deepEqual(p.errs, []); await p.close();
+});
+
+test("Panorama simulado: «ver sin predecir» muestra el resultado sin marca de predicción; los términos genéricos no inflan el conteo", async () => {
+  const p = await simPage("#/");
+  await p.fill('input[aria-label="Pregunta para el Panorama"]', "language models"); await p.click('button:has-text("Armar Panorama")');
+  await p.waitForSelector(".predict", { timeout: 8000 }); await p.click(".predict button.link >> nth=0"); await p.waitForSelector(".pano-claim .conv");
+  assert.doesNotMatch(await p.$eval(".pano-claim .conv span", (e) => e.textContent), /tu predicción/);
+  assert.equal(await p.$(".conv-track .guess"), null); await p.close();
+});
+
+test("figura con zonas en Kaplan: tres paneles (cómputo, dataset, parámetros) enlazan con la frase del paper", async () => {
+  const p = await page("#/q/escalado/c/leyes/p/2001.08361"); await p.waitForSelector(".zone", { timeout: 8000 });
+  assert.deepEqual(await p.$$eval(".zone", (n) => n.map((e) => e.dataset.zone)), ["compute", "dataset", "params"]);
+  await p.$eval('[data-zone="compute"]', (e) => e.scrollIntoView({ block: "center" })); await p.hover('[data-zone="compute"]');
+  assert.match(await p.$eval(".zone-card", (e) => e.textContent), /Cómputo[\s\S]*optimally allocated compute budget/); await p.close();
+});
+
+test("compañero: apagado por defecto, la tecla C lo prende y apaga, y sin él no hay panel ni rastro", async () => {
+  const p = await page("#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".paper");
+  assert.equal(await p.$(".companion"), null); assert.match(await p.$eval(".companion-toggle", (e) => e.textContent), /apagado/);
+  await p.keyboard.press("c"); await p.waitForSelector(".companion"); assert.equal(await p.$eval(".companion", (e) => e.getAttribute("data-pointing")), null, "quieto sin objetivo");
+  await p.keyboard.press("c"); await p.waitForFunction(() => !document.querySelector(".companion")); await p.close();
+});

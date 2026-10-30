@@ -78,6 +78,48 @@
      "quote": "to the input embeddings at the bottoms of the encoder and decoder stacks"
     }
    ]
+  },
+  {
+   "paper": "2001.08361",
+   "fig": "fig:BasicPowerLaws",
+   "zones": [
+    {
+     "paper": "2001.08361",
+     "id": "compute",
+     "label": "Cómputo (C_min): pérdida vs. PF-days",
+     "box": [
+      0.067,
+      0.203,
+      0.345,
+      0.558
+     ],
+     "quote": "or the optimally allocated compute budget"
+    },
+    {
+     "paper": "2001.08361",
+     "id": "dataset",
+     "label": "Tamaño del dataset (tokens)",
+     "box": [
+      0.355,
+      0.203,
+      0.636,
+      0.558
+     ],
+     "quote": "can be predicted using a power-law when performance is limited by only either"
+    },
+    {
+     "paper": "2001.08361",
+     "id": "params",
+     "label": "Parámetros (sin embeddings)",
+     "box": [
+      0.658,
+      0.203,
+      0.92,
+      0.558
+     ],
+     "quote": "limited by only either the number of non-embedding parameters"
+    }
+   ]
   }
  ]
 }
