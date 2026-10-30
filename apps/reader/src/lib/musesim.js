@@ -74,6 +74,15 @@ export function assemble(themes, perPaper, faults = false, firstId = "") {
   return themes.map((th) => ({ id: th.id, statement: `Lo que dicen los papers sobre «${th.term}»`, selections: all.filter((s) => s.theme === th.id).map(({ paper, quote }) => ({ paper, quote })) }));
 }
 
+/** Las mismas fallas simuladas, sobre enunciados que ya vienen armados (los del servidor). */
+export function addFaults(claims, firstId) {
+  if (!claims.length) return claims;
+  const perPaper = {};
+  for (const c of claims) for (const s of c.selections) (perPaper[s.paper] ||= []).push({ theme: c.id, ...s });
+  const bad = faultySelections([{ id: claims[0].id }], firstId, perPaper);
+  return claims.map((c) => ({ ...c, selections: [...c.selections, ...bad.filter((b) => b.theme === c.id).map(({ paper, quote }) => ({ paper, quote }))] }));
+}
+
 /** Procesa los papers en paralelo, escalonados (el real también tardaría distinto por paper); avisa cada vez que termina uno. */
 export async function runSimulated({ question, ids, getDoc, onPaper, latencyMs = 220, cancelled = () => false }) {
   const themes = themesOf(question);

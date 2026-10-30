@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Rich } from "@/lib/math";
 import { convergence } from "@/lib/convergence.js";
-import { runSimulated, assemble, themesOf } from "@/lib/musesim.js";
+import { runSimulated, assemble, themesOf, addFaults } from "@/lib/musesim.js";
+import { explain, liveEnabled, panorama as fetchPanorama } from "@/lib/backend.js";
 import { buildPanorama, readState } from "@/lib/panorama.js";
 import { ProvChip } from "./Bits";
 
@@ -24,12 +25,22 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
   const [done, setDone] = useState(0);
   const [pred, setPred] = useState<Record<string, number | "skip">>({});
   const [themes, setThemes] = useState<any[]>([]);
+  // Selecciones SIMULADAS del servidor (POST /panorama). wait: pedido en curso; ok: se usan; off: no aplica o cayó al simulador del navegador.
+  const [srv, setSrv] = useState<{ state: "off" | "wait" | "ok"; claims: any[]; note: string }>({ state: "off", claims: [], note: "" });
   const run = useRef(0);
   const readable = useMemo(() => ids.filter((i) => ["full", "abstract"].includes(readState(states[i]?.status))), [ids, states]);
 
   useEffect(() => {
     if (asked === null) return;
     const my = ++run.current; setDocs({}); setPer({}); setDone(0); setPred({});
+    const viaServer = liveEnabled() && readable.length > 0 && readable.every((i) => /^\d+$/.test(i));
+    setSrv({ state: viaServer ? "wait" : "off", claims: [], note: "" });
+    if (viaServer) {
+      fetchPanorama(asked, readable).then(
+        (claims: any[]) => run.current === my && setSrv({ state: "ok", claims: Array.isArray(claims) ? claims : [], note: "" }),
+        (err: any) => run.current === my && setSrv({ state: "off", claims: [], note: `No se pudo pedir el Panorama al servidor (${explain(err)}) Se usa el simulador del navegador; ambos son simulados.` }),
+      );
+    }
     runSimulated({
       question: asked, ids: readable, getDoc, latencyMs: (window as any).__RRM_SIM_MS ?? 220, cancelled: () => run.current !== my,
       onPaper: (id: string, doc: any, sel: any[] | null) => { setDocs((d) => ({ ...d, [id]: doc })); setPer((p) => ({ ...p, [id]: sel || [] })); setDone((n) => n + 1); },
@@ -37,8 +48,12 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
     setThemes(themesOf(asked));
   }, [asked, readable.join(",")]);
 
-  const finished = asked !== null && done >= readable.length;
-  const claims = useMemo(() => assemble(themes, per, faults, readable[0] || ""), [themes, per, faults, readable.join(",")]);
+  const finished = asked !== null && done >= readable.length && srv.state !== "wait";
+  const claims = useMemo(
+    () => srv.state === "ok" ? (faults ? addFaults(srv.claims, readable[0] || "") : srv.claims) : srv.state === "wait" ? [] : assemble(themes, per, faults, readable[0] || ""),
+    [themes, per, faults, srv, readable.join(",")],
+  );
+  const termOf = (c: any) => themes.find((t) => t.id === c.id)?.term ?? /«(.*)»/.exec(c.statement || "")?.[1] ?? c.id;
   const built = useMemo(() => buildPanorama(claims, docs, states), [claims, docs, states]);
   const nRead = Object.values(docs).filter(Boolean).length;
   const notRead = ids.length - readable.length;
@@ -46,9 +61,10 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
   return (
     <section className="pano sim" aria-label="Panorama con cualquier pregunta">
       <div className="chips">
-        <ProvChip kind="simulado" text="Muse Spark simulado: coincidencia de términos, no un modelo" />
+        <ProvChip kind="simulado" text={srv.state === "ok" ? "Selección simulada en el servidor: coincidencia de términos, no un modelo" : "Muse Spark simulado: coincidencia de términos, no un modelo"} />
         <ProvChip kind="curado" text="enunciados = términos de tu pregunta" />
       </div>
+      {srv.note && <p className="muted small" role="status" data-srv-fallback>{srv.note}</p>}
       <form className="sim-ask" onSubmit={(e) => { e.preventDefault(); if (draft.trim()) setAsked(draft.trim()); }}>
         <input aria-label="Pregunta para el Panorama" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escribe una pregunta (español o inglés)" />
         <button type="submit">{asked === null ? "Armar Panorama" : "Volver a armar"}</button>
@@ -111,7 +127,7 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
             <>
               <h3 className="pano-h">Matriz de evidencia</h3>
               <div className="matrix-wrap"><table className="matrix">
-                <thead><tr><th></th>{built.claims.map((c: any) => <th key={c.id} title={c.statement}>{themes.find((t) => t.id === c.id)?.term}</th>)}</tr></thead>
+                <thead><tr><th></th>{built.claims.map((c: any) => <th key={c.id} title={c.statement}>{termOf(c)}</th>)}</tr></thead>
                 <tbody>{ids.map((id) => {
                   const st = readState(states[id]?.status); const arrived = id in docs;
                   return (

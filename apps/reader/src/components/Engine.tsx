@@ -8,7 +8,7 @@ import MapView from "./MapView";
 import Panorama, { LiveCoverage } from "./Panorama";
 import SimPanorama from "./SimPanorama";
 import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
-import { burst, liveEnabled, paperKey, paper as fetchPaper, settled, status as fetchStatus } from "@/lib/backend.js";
+import { burst, explain, liveEnabled, paperKey, paper as fetchPaper, settled, status as fetchStatus } from "@/lib/backend.js";
 import { LiveCircle } from "./MapView";
 
 type Route = { q?: string; c?: string; p?: string; b?: string };
@@ -34,6 +34,8 @@ export default function Engine() {
   const [warm, setWarm] = useState(false);
   const [liveResult, setLiveResult] = useState<any>(null);
   const [liveErr, setLiveErr] = useState("");
+  const [impatient, setImpatient] = useState(false); // hay papers que no terminan: se puede armar con los ya leídos
+  const [forced, setForced] = useState(false);
   const [rowState, setRowState] = useState<Record<string, any>>({});
   const [opened, setOpened] = useState<any>(null);
 
@@ -79,15 +81,16 @@ export default function Engine() {
         if (stop) return;
         const map: Record<string, any> = {};
         for (const row of body.papers || []) map[String(row.id)] = row;
-        setRowState(map);
+        setRowState(map); setLiveErr("");
         if (ids.every((id: number) => settled(map[String(id)]?.status))) return;
       } catch (e: any) {
-        if (!stop) setLiveErr(String(e.message || e));
+        if (!stop) setLiveErr(explain(e));
       }
       if (!stop) window.setTimeout(tick, 1500);
     };
     tick();
-    return () => { stop = true; };
+    const patience = window.setTimeout(() => setImpatient(true), (window as any).__RRM_PATIENCE_MS ?? 90000);
+    return () => { stop = true; window.clearTimeout(patience); };
   }, [liveOn, liveResult]);
 
   useEffect(() => {
@@ -139,7 +142,7 @@ export default function Engine() {
         }
         if (settled(row.status)) return;
       } catch (e: any) {
-        if (!stop) setLiveErr(String(e.message || e));
+        if (!stop) setLiveErr(explain(e));
       }
       if (!stop) window.setTimeout(loop, 2000);
     };
@@ -151,7 +154,7 @@ export default function Engine() {
         apply(body);
         if (settled(body.status)) return;
       } catch (e: any) {
-        if (!stop) setLiveErr(String(e.message || e));
+        if (!stop) setLiveErr(explain(e));
       }
       if (!stop) window.setTimeout(loop, 2000);
     })();
@@ -162,19 +165,19 @@ export default function Engine() {
     e.preventDefault();
     const q = draft.trim();
     if (!q || pending) return;
-    setLiveQ(q); setLiveOn(true); setLiveErr(""); setLiveResult(null); setRowState({}); setPending(true); setWarm(false);
+    setLiveQ(q); setLiveOn(true); setLiveErr(""); setImpatient(false); setForced(false); setLiveResult(null); setRowState({}); setPending(true); setWarm(false);
     const timer = window.setTimeout(() => setWarm(true), 2000);
     try {
       setLiveResult(await burst(q));
       go({});
     } catch (err: any) {
-      setLiveErr(String(err.message || err));
+      setLiveErr(explain(err));
     } finally {
       window.clearTimeout(timer); setPending(false); setWarm(false);
     }
   };
   const backToCurated = () => {
-    setLiveOn(false); setLiveQ(""); setLiveResult(null); setRowState({}); setOpened(null); setPending(false); setWarm(false); setLiveErr("");
+    setLiveOn(false); setLiveQ(""); setLiveResult(null); setRowState({}); setOpened(null); setPending(false); setWarm(false); setLiveErr(""); setImpatient(false); setForced(false);
     go({});
   };
   const questions = content?.map.questions || [];
@@ -228,7 +231,13 @@ export default function Engine() {
             <PaperView paper={opened.paper} content={content} focus={route.b} companion={companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} />
           </div>
         )}
-        {live && (liveOn || liveId) && liveId && !opened && <p className="center-msg">Cargando…</p>}
+        {live && (liveOn || liveId) && liveId && !opened && (
+          <div className="lvl">
+            <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>
+            <p className="center-msg">{liveErr ? "No se pudo cargar el paper (se sigue intentando)." : "Cargando…"}</p>
+            {liveErr && <p className="fail-reason" role="alert">{liveErr}</p>}
+          </div>
+        )}
         {live && liveOn && !liveId && (
           <section className="lvl">
             <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>
@@ -236,8 +245,12 @@ export default function Engine() {
             {pending && warm && <p className="warm">calentando el motor…</p>}
             {liveErr && <p className="fail-reason">{liveErr}</p>}
             {liveResult && <LiveCoverage ids={(liveResult.papers || []).slice(0, 10).map((p: any) => paperKey(p))} states={rowState} />}
-            {liveResult && liveIds.length > 0 && liveIds.every((id: string) => settled(rowState[id]?.status)) && (
-              <SimPanorama key={liveQ} autorun question={liveQ} ids={liveIds} states={rowState} getDoc={async (id: string) => (await fetchPaper(id)).paper} nameOf={liveName} open={(id, b) => go({ p: id, b })} />
+            {liveResult && liveIds.length === 0 && <p className="muted" role="status">La ráfaga no encontró papers para esta pregunta. Prueba con otras palabras.</p>}
+            {liveResult && liveIds.length > 0 && !liveIds.every((id: string) => settled(rowState[id]?.status)) && impatient && !forced && (
+              <p className="muted small" role="status">Algunos papers siguen en cola o leyéndose. <button type="button" className="link" onClick={() => setForced(true)}>Armar el Panorama con los ya leídos</button> (los que faltan no cuentan como «no lo dice»).</p>
+            )}
+            {liveResult && liveIds.length > 0 && (forced || liveIds.every((id: string) => settled(rowState[id]?.status))) && (
+              <SimPanorama key={`${liveQ}|${forced}`} autorun question={liveQ} ids={liveIds} states={rowState} getDoc={async (id: string) => { try { return (await fetchPaper(id)).paper; } catch { return null; } }} nameOf={liveName} open={(id, b) => go({ p: id, b })} />
             )}
             {liveResult && <LiveCircle papers={liveResult.papers || []} edges={liveResult.edges || []} states={rowState} onOpen={(id) => go({ p: id })} />}
           </section>
