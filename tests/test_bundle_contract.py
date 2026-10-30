@@ -74,3 +74,15 @@ def test_abstract_only_paper_has_abs_block_with_sents():
     paper = abstract_paper({"arxiv": "1706.03762", "corpusid": 7, "abstract": "One. Two.", "title": "T"})
     b = paper["blocks"][0]
     assert b["abs"] is True and b["sents"] and paper["arxivId"] == "1706.03762"
+
+
+def test_failed_status_always_has_a_readable_reason():
+    from rrm.reader.pipeline import failure_reason, status_reason
+
+    assert failure_reason(TimeoutError()) == "TimeoutError"
+    assert failure_reason(KeyError("x"), "resolve failed: ") == "resolve failed: 'x'"
+    assert failure_reason(ValueError("a" * 900)) == "a" * 500
+    assert status_reason({"status": "failed"}) == "failed with no recorded reason"
+    assert status_reason({"status": "failed", "reason": "  "}) == "failed with no recorded reason"
+    assert status_reason({"status": "failed", "reason": "empty parse"}) == "empty parse"
+    assert status_reason({"status": "done", "reason": None}) is None

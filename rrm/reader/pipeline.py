@@ -95,6 +95,20 @@ def _stages_for(meta, stage: str) -> dict:
     return stages
 
 
+def failure_reason(err, prefix: str = "") -> str:
+    """A reason a person can read. An exception with no message still names its type."""
+    text = str(err).strip() or type(err).__name__
+    return f"{prefix}{text}"[:500]
+
+
+def status_reason(meta: dict) -> str | None:
+    """`reason` for /status. A failed row always has one, even for a meta.json written before reasons existed."""
+    reason = (meta.get("reason") or "").strip() or None
+    if reason is None and meta.get("status") == "failed":
+        return "failed with no recorded reason"
+    return reason
+
+
 def _publish(folder, meta, paper, commit, stage: str):
     """Write the snapshot a poll of paper?id= will read. Terminal snapshots record counts."""
     meta["stage"] = stage
@@ -397,7 +411,7 @@ def parse_corpus(
         meta["arxiv"] = info.get("arxiv") or ""
     except Exception as err:
         meta["status"] = "failed"
-        meta["reason"] = f"resolve failed: {err}"
+        meta["reason"] = failure_reason(err, "resolve failed: ")
         return _finish(folder, meta, None, commit)
 
     publish(make_stub(info), "stub")
@@ -415,7 +429,7 @@ def parse_corpus(
         route, paper, pdf_path = _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish)
     except Exception as err:
         meta["status"] = "failed"
-        meta["reason"] = str(err)[:500]
+        meta["reason"] = failure_reason(err)
         return _finish(folder, meta, load_paper(folder), commit)
 
     _fill_refs(info, display_path)
