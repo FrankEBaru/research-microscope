@@ -125,6 +125,11 @@ function TableChart({ model, n }: { model: any; n: number }) {
   const [sort, setSort] = useState<"original" | "desc" | "asc">("original");
   const [log, setLog] = useState(false);
   const data = useMemo(() => bars(model, col, { sort, log }), [model, col, sort, log]);
+  const [ask, setAsk] = useState(false);               // hipótesis: predecir antes de ver
+  const [guess, setGuess] = useState<string | null>(null);
+  const top = useMemo(() => bars(model, col, { sort: "desc" })[0], [model, col]);
+  const hide = ask && guess === null;
+  useEffect(() => setGuess(null), [col, ask]);
   return (
     <div className="tchart" role="group" aria-label={`Gráfica de la Tabla ${n}`}>
       <div className="chips"><ProvChip kind="paper" text={`gráfica de la Tabla ${n}: valores del paper, sin cambiar`} /></div>
@@ -133,12 +138,17 @@ function TableChart({ model, n }: { model: any; n: number }) {
         <label>orden <select value={sort} onChange={(e) => setSort(e.target.value as any)}><option value="original">como en la tabla</option><option value="desc">mayor a menor</option><option value="asc">menor a mayor</option></select></label>
         <label className="chk"><input type="checkbox" checked={log} onChange={(e) => setLog(e.target.checked)} /> escala logarítmica</label>
       </div>
+      <div className="tpredict">
+        <label className="chk"><input type="checkbox" checked={ask} onChange={(e) => setAsk(e.target.checked)} /> predecir antes de ver <ProvChip kind="hipotesis" text="hipótesis" /></label>
+        {hide && <span role="status">¿Cuál crees que tiene el valor más alto en «{model.headers[col]}»? Haz clic en una fila.</span>}
+        {ask && guess !== null && top && <span role="status" className="tp-result">{guess === top.label ? `Acertaste: ${top.label} (${top.raw}).` : `Elegiste ${guess}; el más alto es ${top.label} (${top.raw}).`}</span>}
+      </div>
       <div className="tbars">
         {data.map((d: any) => (
-          <div key={d.row} className="tbar-row" data-row-label={d.label} onMouseEnter={() => window.dispatchEvent(new CustomEvent("rrm-row", { detail: d.label }))} onMouseLeave={() => window.dispatchEvent(new CustomEvent("rrm-row", { detail: "" }))}>
+          <div key={d.row} className={`tbar-row ${hide ? "hid" : ""} ${ask && guess === d.label ? "guess" : ""} ${ask && guess !== null && top && d.label === top.label ? "truth" : ""}`} data-row-label={d.label} onClick={hide ? () => setGuess(d.label) : undefined} onMouseEnter={() => window.dispatchEvent(new CustomEvent("rrm-row", { detail: d.label }))} onMouseLeave={() => window.dispatchEvent(new CustomEvent("rrm-row", { detail: "" }))}>
             <span className="tb-label" title={d.label}>{d.label}</span>
-            <span className="tb-track"><i style={{ width: `${Math.max(1.5, d.frac * 100)}%` }} /></span>
-            <span className="tb-val"><Rich text={d.raw} /></span>
+            <span className="tb-track"><i style={{ width: hide ? 0 : `${Math.max(1.5, d.frac * 100)}%` }} /></span>
+            <span className="tb-val">{hide ? "?" : <Rich text={d.raw} />}</span>
           </div>
         ))}
       </div>

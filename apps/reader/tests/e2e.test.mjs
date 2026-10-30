@@ -229,3 +229,13 @@ test("Panorama simulado: cualquier pregunta, llegada progresiva, predicción opc
   assert.ok((await p.$$eval(".matrix .dot.yes", (n) => n.length)) >= 2);
   await p.click(".pano-claim .evi .link >> nth=0"); await p.waitForSelector(".paper"); assert.deepEqual(p.errs, []); await p.close();
 });
+
+test("gráfica: predecir antes de ver oculta las barras hasta elegir y luego revela el valor más alto", async () => {
+  const p = await page("#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".paper");
+  const fig = (await p.$$(".table-fig"))[1]; await fig.evaluate((e) => e.scrollIntoView({ block: "center" }));
+  await (await fig.$(".tchart-toggle")).click(); await p.waitForSelector(".tchart .tbar-row");
+  await p.check(".tpredict input"); assert.equal(await p.$$eval(".tbar-row.hid .tb-val", (n) => n.every((e) => e.textContent === "?")), true);
+  await p.click(".tbar-row.hid >> nth=0"); await p.waitForSelector(".tp-result");
+  assert.match(await p.$eval(".tp-result", (e) => e.textContent), /Acertaste|el más alto es/);
+  assert.equal(await p.$$eval(".tbar-row.hid", (n) => n.length), 0, "al elegir se revelan los valores"); assert.deepEqual(p.errs, []); await p.close();
+});

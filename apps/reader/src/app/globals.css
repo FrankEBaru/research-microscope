@@ -267,3 +267,5 @@ tr.row-on td { background: rgba(39,71,107,.14) !important; }
 .conv-track .guess { position: absolute; top: -4px; width: 3px; height: 18px; background: #b8741a; border-radius: 2px; transform: translateX(-1px); }
 .gate { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: .6rem .9rem; } .gate details { margin-top: .3rem; } .gate ul { margin: .3rem 0 0 1rem; padding: 0; }
 .dot.wait { color: var(--muted); animation: blink 1s infinite; } .dot.na { color: #a33; } @keyframes blink { 50% { opacity: .35; } }
+.tpredict { display: flex; flex-wrap: wrap; gap: .3rem 1rem; align-items: center; font: .82rem var(--sans); color: var(--muted); margin: .2rem 0 .5rem; } .tp-result { color: var(--ink); font-weight: 600; }
+.tbar-row.hid { cursor: pointer; } .tbar-row.hid:hover { background: var(--accent-soft); } .tbar-row.guess .tb-label { text-decoration: underline dotted; } .tbar-row.truth .tb-track i { background: #b8741a; }
