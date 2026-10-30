@@ -63,3 +63,7 @@ data/
 
 # E2E benchmark reports (may contain timings of a private deploy)
 e2e-report*.json
+
+# Grabación offline (GitHub Release offline-fixtures-v1, no va en git)
+offline-fixtures/
+offline-fixtures-v1.tar.gz

@@ -4,6 +4,20 @@ A reading tool that turns a research question into a navigable burst of related 
 
 Data attribution: Semantic Scholar, arXiv and OpenAlex
 
+## Modo offline (WSL)
+
+Tres consultas grabadas, para explorar la UI en una laptop sin Modal ni Meta. Hace falta Python 3, Node ≥ 22 y `gh` con sesión (`gh auth login`). Desde esta rama:
+
+```bash
+bash scripts/offline.sh
+```
+
+Ese comando baja el Release `offline-fixtures-v1`, abre la API en `http://127.0.0.1:8787` y la UI en `http://localhost:3000`. El token es opcional (el script manda `local`; el servidor también responde sin token).
+
+Preguntas grabadas, cópialas tal cual: `how does self-attention replace recurrence in sequence translation`, `neural radiance fields view synthesis`, `scaling laws compute dataset size language model loss`.
+
+Cualquier otra pregunta responde `consulta no grabada`. En esas tres funcionan la ráfaga, el estado, el paper, las figuras guardadas, los recortes de las páginas grabadas, los subtemas y el panorama de esa misma pregunta. No hay búsqueda nueva, ni papers fuera de esas ráfagas, ni panorama si reescribes la pregunta, ni OCR. Ctrl+C apaga la UI y el servidor. Atribución: Semantic Scholar.
+
 ## Demo
 
 The live demo is hybrid. The curated map, instrument, and papers stay static files (see [`apps/reader/README.md`](apps/reader/README.md)). A question typed in the demo calls the burst and the reader (see [`rrm/reader/README.md`](rrm/reader/README.md)). Empty `NEXT_PUBLIC_BURST_URL` and `NEXT_PUBLIC_READER_URL` keep today's curated mock.
