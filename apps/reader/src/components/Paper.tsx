@@ -329,9 +329,15 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       setOffer({ key: hit, text: "Estás recorriendo esta tabla. ¿Te llevo a su leyenda, que explica qué mide?", accept: "Sí, llévame", onAccept: () => document.querySelector(`[data-tab="${a}"] figcaption`)?.scrollIntoView({ behavior: "smooth", block: "center" }) });
     }
   };
-  const onOut = () => { clearTimeout(timer.current); setPop(null); };
+  const touched = useRef(0); // con el dedo no hay «salir del elemento»: el popover se abre al tocar y se cierra al tocar fuera
+  const onOut = () => { if (Date.now() - touched.current < 800) return; clearTimeout(timer.current); setPop(null); };
+  useEffect(() => {
+    const away = (e: TouchEvent) => { const t = e.target as HTMLElement; if (!t.closest?.("[data-pop],[data-sym],.popover")) setPop(null); };
+    document.addEventListener("touchstart", away, { passive: true }); return () => document.removeEventListener("touchstart", away);
+  }, []);
   const onClick = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement;
+    if (Date.now() - touched.current < 800 && !t.closest("[data-sym],[data-xref]")) { const el = t.closest("[data-pop]") as HTMLElement | null; if (el && !el.dataset.pop!.startsWith("s|")) setPop({ key: el.dataset.pop!, rect: el.getBoundingClientRect() }); }
     const sym = t.closest("[data-sym]") as HTMLElement | null;
     if (sym && att) { const s = att.symbols.find((y: any) => y.id === sym.dataset.sym); if (s) goTo(s.def.anchor.blockId); return; }
     const xr = t.closest("[data-xref]") as HTMLElement | null;
@@ -389,7 +395,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           ))}
         </nav>
       )}
-      <article key={mountKey(paper)} ref={art} className="paper" onMouseOver={onOver} onMouseOut={onOut} onFocus={onOver} onBlur={onOut} onClick={onClick}>
+      <article key={mountKey(paper)} ref={art} className="paper" onTouchStart={() => (touched.current = Date.now())} onMouseOver={onOver} onMouseOut={onOut} onFocus={onOver} onBlur={onOut} onClick={onClick}>
         <header className="paper-head">
           <div className="chips">
             <ProvChip kind="paper" text={paper.arxivId ? `arXiv:${paper.arxivId}` : `corpus:${paper.corpusid ?? ""}`} />

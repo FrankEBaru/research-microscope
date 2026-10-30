@@ -319,3 +319,16 @@ test("compañero: apagado por defecto, la tecla C lo prende y apaga, y sin él n
   await p.keyboard.press("c"); await p.waitForSelector(".companion"); assert.equal(await p.$eval(".companion", (e) => e.getAttribute("data-pointing")), null, "quieto sin objetivo");
   await p.keyboard.press("c"); await p.waitForFunction(() => !document.querySelector(".companion")); await p.close();
 });
+
+test("móvil, paper: el número de ecuación no se encima a la fórmula y el popover de una cita cabe en pantalla", async () => {
+  const p = await browser.newPage({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true }); p.errs = [];
+  p.on("pageerror", (e) => p.errs.push(e.message));
+  await p.goto(base + "#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".paper"); await p.addStyleTag({ content: "html{scroll-behavior:auto!important}" });
+  assert.ok((await p.evaluate(() => document.documentElement.scrollWidth)) <= 390, "sin desborde horizontal");
+  const bad = await p.evaluate(() => [...document.querySelectorAll(".eq.blk")].filter((e) => { const t = e.querySelector(".tag"); if (!t) return false; const a = t.getBoundingClientRect();
+    return [...e.querySelectorAll(".katex-html > .base")].some((x) => { const c = x.getBoundingClientRect(); return a.left < c.right && a.right > c.left && a.top < c.bottom && a.bottom > c.top; }); }).map((e) => e.id));
+  assert.deepEqual(bad, [], "números encimados: " + bad);
+  const cite = await p.$('[data-pop^="c|"]'); await cite.scrollIntoViewIfNeeded(); await cite.tap(); await p.waitForSelector(".popover");
+  const r = await p.$eval(".popover", (e) => { const b = e.getBoundingClientRect(); return [b.left, b.right, innerWidth]; });
+  assert.ok(r[0] >= 0 && r[1] <= r[2] + 1, `popover dentro de la pantalla: ${r}`); assert.deepEqual(p.errs, []); await p.close();
+});

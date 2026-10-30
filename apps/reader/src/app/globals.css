@@ -279,3 +279,5 @@ tr.row-on td { background: rgba(39,71,107,.14) !important; }
 .zone-card { min-height: 5.2rem; margin: .6rem 0 .3rem; padding: .6rem .9rem; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font: .9rem/1.45 var(--sans); } .zone-card blockquote { margin: .3rem 0; font-family: var(--serif); }
 
 @media (max-width: 640px) { .sim-ask { flex-direction: column; } .sim-ask button { width: 100%; } .predict .link { margin-left: 0; } .sim-progress { flex-wrap: wrap; } .sim-progress .coverage-bar { width: 100%; } }
+/* número de ecuación: en pantallas angostas va debajo, a la derecha, en vez de encimarse a la fórmula */
+@media (max-width: 760px) { .eq .katex-display > .katex > .katex-html > .tag { position: static; display: block; text-align: right; margin-top: .15rem; } .eq .katex-display > .katex { text-align: center; } }
