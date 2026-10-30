@@ -65,6 +65,10 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
             <span>{finished ? `${nRead} de ${ids.length} papers leídos` : `leyendo… ${done} de ${readable.length}`}{notRead ? ` · ${notRead} sin leer (no cuentan como «no lo dice»)` : ""}</span>
           </div>
           {finished && nRead === 0 && <p className="muted" role="alert">No se pudo leer ningún paper de la ráfaga: no hay nada que contar todavía.</p>}
+          {finished && predictOn && nRead > 0 && built.claims.some((c: any) => pred[c.id] === undefined) && (
+            <div className="predict-banner" role="note"><b>Antes de ver, predice.</b> Para cada tema, elige en cuántos de los {nRead} papers leídos crees que hay una frase. Luego se revela y se compara. <ProvChip kind="hipotesis" text="hipótesis: aún sin evidencia de que ayude" />
+              <button className="link" onClick={() => setPred(Object.fromEntries(built.claims.map((c: any) => [c.id, "skip"])))}>ver todo sin predecir</button></div>
+          )}
           {themes.length === 0 && finished && <p className="muted">No encontré términos de contenido en la pregunta. Prueba con palabras como «attention» o «escalado».</p>}
           {built.claims.map((c: any) => {
             const cv = convergence(c, Math.max(nRead, 1)); const p = pred[c.id];
@@ -74,8 +78,8 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
                 <h3>{c.statement}</h3>
                 {hidden ? (
                   <div className="predict" role="group" aria-label="Predice antes de ver">
-                    <p>¿Cuántos de los <b>{nRead}</b> papers leídos crees que tienen una frase sobre esto? <ProvChip kind="hipotesis" text="predecir antes de ver" /></p>
-                    <div className="pills">{Array.from({ length: nRead + 1 }, (_, k) => <button key={k} onClick={() => setPred((x) => ({ ...x, [c.id]: k }))}>{k}</button>)}</div>
+                    <span className="predict-q">¿En cuántos de los <b>{nRead}</b> papers crees que aparece?</span>
+                    <span className="pills">{Array.from({ length: nRead + 1 }, (_, k) => <button key={k} aria-label={`predigo ${k}`} onClick={() => setPred((x) => ({ ...x, [c.id]: k }))}>{k}</button>)}</span>
                     <button className="link" onClick={() => setPred((x) => ({ ...x, [c.id]: "skip" }))}>ver sin predecir</button>
                   </div>
                 ) : (

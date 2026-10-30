@@ -220,9 +220,11 @@ test("Panorama simulado: cualquier pregunta, llegada progresiva, predicción opc
   await p.fill('input[aria-label="Pregunta para el Panorama"]', "attention scaling laws"); await p.click('button:has-text("Armar Panorama")');
   await p.waitForSelector(".predict", { timeout: 8000 });                                   // al terminar, pide predecir antes de ver
   assert.equal(await p.$$eval(".pano-claim .evi", (n) => n.length), 0, "con la predicción pendiente no se ve el resultado");
+  assert.equal(await p.$eval(".sim-progress .coverage-bar div", (e) => e.style.width), "100%", "la barra termina llena");
+  assert.match(await p.$eval(".predict-banner", (e) => e.textContent), /Antes de ver, predice/);
   await p.click(".predict .pills button >> nth=2"); await p.waitForSelector(".pano-claim .conv");
   assert.match(await p.$eval(".pano-claim .conv span", (e) => e.textContent), /tu predicción: 2/);
-  await p.click(".predict button.link").catch(() => {});                                      // «ver sin predecir» en otro enunciado
+  await p.click(".predict-banner .link"); await p.waitForFunction(() => !document.querySelector(".predict"));   // «ver todo sin predecir»
   assert.ok((await p.$$eval(".pano-claim .evi li blockquote", (n) => n.length)) >= 2, "hay frases literales");
   const rej = Number(await p.$eval(".gate", (e) => e.dataset.rejected)); assert.equal(rej, 3, "las 3 fallas simuladas las rechaza la compuerta");
   assert.match(await p.$eval(".gate", (e) => e.textContent), /Compuerta/);
