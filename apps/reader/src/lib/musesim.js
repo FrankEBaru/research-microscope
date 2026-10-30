@@ -5,22 +5,24 @@
 import { blockText } from "./muse.js";
 
 const STOP = new Set("funciona funcionan sirve sirven afecta afectan significa como cual cuales cuando donde porque para pero esta este esto estos estas sobre entre desde hasta cada todo toda todos todas puede pueden hace hacen tiene tienen segun sino mucho muchos which what when where does that this with from their there about between into than then them they have been were will would could should also more most such only over other what how why the and for are but not you your can".split(" "));
+const DOMAIN = new Set("model models modelo modelos language lenguaje network networks learning training paper papers method methods using used show shows results data large work approach self long handle replace replaces does make makes better best new use handles transformers sequences sequence neural deep system systems task tasks performance improve improves improvement mejora mejores usar usan".trim().split(" "));
 const GLOSS = { atencion: "attention", escalado: "scaling", escala: "scaling", leyes: "laws", ley: "law", modelos: "models", modelo: "model", lenguaje: "language", entrenamiento: "training", datos: "data", computo: "compute", parametros: "parameters", traduccion: "translation", imagenes: "image", imagen: "image", vision: "vision", redes: "network", neuronales: "neural", transformadores: "transformer", perdida: "loss", rendimiento: "performance", memoria: "memory", recuperacion: "retrieval", razonamiento: "reasoning", preentrenamiento: "pretraining", aprendizaje: "learning", secuencia: "sequence", costo: "cost", eficiencia: "efficiency", secuencias: "sequence", mejora: "improve", mejores: "better", tamano: "size" };
 const plain = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 export const museSimMode = () => "simulado";
 
 /** Temas = términos de contenido de la pregunta (máx. 4). `stems` son prefijos para casar con el texto del paper. */
-export function themesOf(question) {
+export function themesOf(question, strict = true) {
   const seen = new Set(), out = [];
-  for (const w of plain(String(question || "")).split(/[^a-z0-9]+/)) {
-    if (w.length < 4 || STOP.has(w) || seen.has(w)) continue;
+  for (let w of plain(String(question || "")).split(/[^a-z0-9-]+/)) {
+    if (w.includes("-")) w = w.split("-").sort((a, b) => b.length - a.length)[0]; // «self-attention» → «attention»: la parte que distingue
+    if (w.length < 4 || STOP.has(w) || (strict && DOMAIN.has(w)) || seen.has(w)) continue;
     seen.add(w);
     const orig = (String(question).normalize("NFD").match(new RegExp(w.split("").join("[\\u0300-\\u036f]*"), "i")) || [w])[0].normalize("NFC");
     const stems = [...new Set([w, GLOSS[w]].filter(Boolean).map((x) => x.slice(0, Math.min(x.length, 6))))];
     out.push({ id: `t${out.length}`, term: orig, stems });
     if (out.length === 4) break;
   }
-  return out;
+  return out.length || !strict ? out : themesOf(question, false); // pregunta hecha solo de palabras genéricas: se usan igual
 }
 
 const sentencesOf = (doc) => {
@@ -38,18 +40,19 @@ const sentencesOf = (doc) => {
 };
 const hits = (t, th) => { const ws = plain(t).split(/[^a-z0-9]+/); return th.stems.some((st) => ws.some((w) => w.startsWith(st))); };
 
-/** @returns {{theme: string, paper: string, quote: string}[]} la mejor oración por tema (con ≥1 término), preferida si cubre varios temas. */
+/** @returns {{theme: string, paper: string, quote: string}[]} la mejor oración por tema; una oración no se reparte entre temas (cada enunciado aporta evidencia propia). */
 export function simulatePaper({ themes, id, doc, faults = false }) {
-  const sents = sentencesOf(doc), sel = [];
+  const sents = sentencesOf(doc), sel = [], used = new Set();
+  const tf = (t, th) => plain(t).split(/[^a-z0-9]+/).filter((w) => th.stems.some((st) => w.startsWith(st))).length;
   for (const th of themes) {
     let best = null, bs = 0;
     for (const s of sents) {
-      if (!hits(s.t, th)) continue;
-      const others = themes.filter((o) => o !== th && hits(s.t, o)).length;
-      const sc = 2 + others + (s.abs ? 0.6 : 0) + (s.t.length >= 70 && s.t.length <= 260 ? 0.3 : 0);
+      if (used.has(s.t)) continue;
+      const own = tf(s.t, th); if (!own) continue;
+      const sc = own + 0.4 * themes.filter((o) => o !== th && hits(s.t, o)).length + (s.abs ? 0.6 : 0) + (s.t.length >= 70 && s.t.length <= 260 ? 0.3 : 0);
       if (sc > bs) { bs = sc; best = s; }
     }
-    if (best) sel.push({ theme: th.id, paper: id, quote: best.t });
+    if (best) { used.add(best.t); sel.push({ theme: th.id, paper: id, quote: best.t }); }
   }
   return sel;
 }

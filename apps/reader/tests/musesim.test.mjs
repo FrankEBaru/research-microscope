@@ -13,7 +13,9 @@ const states = { a: { status: "done" }, b: { status: "abstract_only" } };
 
 test("temas: términos de contenido, glosario es→en y tope de 4", () => {
   const t = themesOf("¿Cómo funciona la atención y las leyes de escalado en modelos de lenguaje?");
-  assert.equal(t.length, 4); assert.deepEqual(t.map((x) => x.term), ["atención", "leyes", "escalado", "modelos"]);
+  assert.deepEqual(t.map((x) => x.term), ["atención", "leyes", "escalado"], "las palabras genéricas (modelos, lenguaje) no son temas");
+  assert.deepEqual(themesOf("Does self-attention replace recurrence?").map((x) => x.term), ["attention", "recurrence"]);
+  assert.ok(themesOf("how do transformers handle long sequences").length > 0, "si todo es genérico, se usan igual");
   assert.ok(themesOf("atención").some((x) => x.stems.includes("attent")));
   assert.deepEqual(themesOf("¿Y la de?"), []);
 });
@@ -34,4 +36,9 @@ test("con fallas a propósito la compuerta rechaza las tres", () => {
 test("runSimulated avisa paper por paper", async () => {
   const got = []; await runSimulated({ question: "attention", ids: ["a", "b"], getDoc: async (i) => docs[i], onPaper: (id, d, s) => got.push([id, s.length]), latencyMs: 0 });
   assert.deepEqual(got.sort(), [["a", 1], ["b", 0]]);
+});
+test("una oración no se reparte entre temas", () => {
+  const d = doc("Attention and scaling are both discussed in this very long single sentence of text.", "Scaling also appears in a different sentence that is long enough to qualify here.");
+  const sel = simulatePaper({ themes: themesOf("attention scaling"), id: "z", doc: d });
+  assert.equal(new Set(sel.map((x) => x.quote)).size, sel.length);
 });
