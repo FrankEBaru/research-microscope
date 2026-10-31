@@ -40,6 +40,15 @@ def api_key() -> str:
     return os.environ.get("MODEL_API_KEY") or ""
 
 
+def sam_enabled() -> bool:
+    """SAM runs unless RRM_SAM is off, 0, false, or no. Default is on.
+
+    The Modal secret copies this at deploy time (same moment as RRM_PANORAMA_MODE).
+    """
+    raw = (os.environ.get("RRM_SAM") or "on").strip().lower()
+    return raw not in ("0", "off", "false", "no")
+
+
 def key_blocks_crops(index_error, key: str) -> bool:
     """A stored missing-key error skips /crops only while the key is still absent."""
     return index_error == MISSING_KEY and not key

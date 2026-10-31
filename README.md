@@ -9,6 +9,29 @@ cd ~/projects/hackaton/research-microscope && git checkout main && git pull && .
 
 Eso baja el Release `offline-fixtures-v1` si falta, instala la UI si falta, y arranca sin Modal ni Meta. Ábrelo en el navegador de Windows: `http://localhost:3000`. Preguntas grabadas, tal cual: `how does self-attention replace recurrence in sequence translation`, `neural radiance fields view synthesis`, `scaling laws compute dataset size language model loss`. Otra pregunta responde `consulta no grabada`. El panorama de esas tres es el de Muse ya grabado. Ctrl+C apaga la UI y el servidor. Atribución: Semantic Scholar.
 
+## Modo en vivo: scripts/live.sh
+
+En la misma máquina, con las llaves ya cargadas. El script no imprime ni guarda el token.
+
+```bash
+source ~/projects/hackaton/activate.sh
+cd ~/projects/hackaton/research-microscope
+RRM_LIVE=off bash scripts/live.sh
+```
+
+`RRM_LIVE` elige el modo. Si no está, es `off`. `RRM_MAX_MINUTES` (default 30, entero ≥ 1) corta la sesión. Al salir por Ctrl+C, por un error o por ese tope, `modal`, `meta` y `full` corren `modal app stop rrm-burst`, `modal app stop rrm-reader` y `modal app list`. `off` no usa ese trap: es `scripts/offline.sh`. No se activa `RRM_DEMO_KEEP_WARM`.
+
+| Modo | Comando | Qué hace |
+|---|---|---|
+| off | `RRM_LIVE=off bash scripts/live.sh` | Igual que `scripts/offline.sh`. Sin Modal ni Meta. |
+| modal | `RRM_LIVE=modal bash scripts/live.sh` | `modal deploy rrm/search/serve.py` y `modal deploy rrm/reader/serve.py`. Ráfaga y lector reales. `RRM_PANORAMA_MODE=sim`. `RRM_SAM=off`: `/crops` no llama a SAM. |
+| meta | `RRM_LIVE=meta bash scripts/live.sh` | Sin deploy. Datos grabados. `RRM_OFFLINE_PANORAMA=meta`: `POST /panorama` llama a Muse. `/crops` sigue grabado. |
+| full | `RRM_LIVE=full bash scripts/live.sh` | Los dos deploy, con `RRM_PANORAMA_MODE=meta` y `RRM_SAM=on`. |
+
+En `modal` y `full` hace falta `RRM_DEMO_TOKEN` en el entorno. La UI toma `NEXT_PUBLIC_BURST_URL`, `NEXT_PUBLIC_READER_URL` y ese token de la salida del deploy. En `meta` el token público queda en `local`, como el offline. Al terminar imprime el modo, los segundos y qué servicio pudo haber cobrado. No calcula dólares.
+
+Límite de `meta`: no hay PDF en la grabación, así que los recortes no llaman a SAM. El panorama en vivo usa los `blocks` ya guardados en `papers/`. Una pregunta que no esté grabada sigue sin ráfaga (`consulta no grabada`).
+
 A reading tool that turns a research question into a navigable burst of related papers, from field overview to single paper, with every sentence linked to its sources.
 
 ## Demo
