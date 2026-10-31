@@ -74,7 +74,8 @@ def _post(port, path, body):
         return err.code, json.loads(err.read().decode())
 
 
-def test_grabada_y_no_grabada(tmp_path):
+def test_grabada_y_no_grabada(tmp_path, monkeypatch):
+    monkeypatch.delenv("RRM_OFFLINE_PANORAMA", raising=False)
     httpd = _server(_tree(tmp_path))
     port = httpd.server_address[1]
     try:
@@ -119,5 +120,71 @@ def test_grabada_y_no_grabada(tmp_path):
         assert code == 200 and body[0]["fallback"] is True and body[0]["mode"] == "sim"
         code, body = _post(port, "/panorama", {"question": "no esta", "ids": ["7"]})
         assert code == 404 and body["error"] == MISS
+    finally:
+        httpd.shutdown()
+
+
+_SENT = "The Transformer relies entirely on attention and dispenses with recurrence and convolution."
+
+
+def _paper_with_sentence(root):
+    paper = {
+        "status": "done",
+        "paper": {
+            "corpusid": 7,
+            "blocks": [{
+                "kind": "p",
+                "abs": True,
+                "sents": [[{"t": "text", "v": _SENT}]],
+                "inlines": [{"t": "text", "v": _SENT}],
+            }],
+        },
+    }
+    (root / "papers" / "7.json").write_text(json.dumps(paper), encoding="utf-8")
+
+
+def test_panorama_meta_usa_los_papers_grabados(tmp_path, monkeypatch):
+    """RRM_OFFLINE_PANORAMA=meta llama a Muse. El doble no toca la red."""
+    root = _tree(tmp_path)
+    _paper_with_sentence(root)
+    calls = []
+
+    def fake_muse(prompt, timeout):
+        calls.append(prompt)
+        return json.dumps({
+            "themes": [{"statement": "Attention replaces recurrence.", "picks": ["0"]}],
+        }), {"total_tokens": 3}
+
+    monkeypatch.setenv("RRM_OFFLINE_PANORAMA", "meta")
+    monkeypatch.setattr("rrm.panorama._muse", fake_muse)
+    httpd = _server(root)
+    port = httpd.server_address[1]
+    try:
+        code, body = _post(port, "/panorama", {"question": "how does attention replace recurrence", "ids": ["7"]})
+        assert code == 200
+        assert calls
+        assert body[0]["mode"] == "meta" and body[0]["fallback"] is False
+        assert body[0]["selections"][0]["quote"] == _SENT
+        code, raw, _ = _get(port, "/crops?id=7&pages=0,1")
+        assert json.loads(raw)["crops"][0]["file"] == "p0.png"
+        code, body = _post(port, "/panorama", {"question": "", "ids": ["7"]})
+        assert code == 400
+    finally:
+        httpd.shutdown()
+
+
+def test_sin_flag_el_panorama_sigue_grabado(tmp_path, monkeypatch):
+    monkeypatch.delenv("RRM_OFFLINE_PANORAMA", raising=False)
+    monkeypatch.setenv("RRM_PANORAMA_MODE", "meta")
+
+    def boom(*_a, **_k):
+        raise AssertionError("no debe llamar a Muse")
+
+    monkeypatch.setattr("rrm.panorama._muse", boom)
+    httpd = _server(_tree(tmp_path))
+    port = httpd.server_address[1]
+    try:
+        code, body = _post(port, "/panorama", {"question": "hello world", "ids": ["7"]})
+        assert code == 200 and body[0]["mode"] == "sim" and body[0]["fallback_reason"] == "timeout"
     finally:
         httpd.shutdown()

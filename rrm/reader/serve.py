@@ -55,7 +55,7 @@ from rrm.reader.queue import note as note_job
 from rrm.search.prefetch import load_burst_top, missing_status
 from rrm.reader.queue import release as release_job
 from rrm.reader.ocr_budget import claim_ocr_slot, ocr_gpu_from_env, ocr_limit_from_env
-from rrm.reader.sam import api_key, fill_pdf_crops, key_blocks_crops, parse_pages, segment_pages, segmented_pages
+from rrm.reader.sam import api_key, fill_pdf_crops, key_blocks_crops, parse_pages, sam_enabled, segment_pages, segmented_pages
 
 DATA = "/data"
 PAPERS = Path(DATA) / "papers"
@@ -94,6 +94,8 @@ if modal.is_local():
         "S2_API_KEY": os.environ.get("S2_API_KEY", ""),
         "RRM_DEMO_TOKEN": os.environ.get("RRM_DEMO_TOKEN", ""),
         "RRM_PANORAMA_MODE": os.environ.get("RRM_PANORAMA_MODE", "sim"),
+        # off/0/false/no: /crops does not call SAM. Default on. Read at deploy.
+        "RRM_SAM": os.environ.get("RRM_SAM", "on"),
         # Empty keeps the 40s default in rrm.panorama (under the UI's 45s abort).
         "RRM_PANORAMA_TIMEOUT": os.environ.get("RRM_PANORAMA_TIMEOUT", ""),
         # Empty unless this deploy sets it. Unset = no OCR cap.
@@ -484,6 +486,8 @@ def read_paper(id: str):
 
 @app.function(image=cpu_image, volumes={DATA: vol}, cpu=2, memory=4096, timeout=600, secrets=[secret])
 def crops_for(corpusid: int, pages: list):
+    if not sam_enabled():
+        return {"crops": [], "error": "RRM_SAM=off", "images": 0}
     token = _JOB.set(int(corpusid))
     try:
         vol.reload()
@@ -539,6 +543,18 @@ def read_crops(id: str, pages: str = ""):
             index = json.loads(index_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             index = {"crops": [], "error": None, "images": 0}
+    if not sam_enabled():
+        rows = index.get("crops") or []
+        if wanted:
+            rows = [row for row in rows if row.get("page") in set(wanted)]
+        return {
+            "id": cid,
+            "status": "skipped",
+            "pages": wanted,
+            "crops": rows,
+            "error": None,
+            "images": index.get("images") or 0,
+        }
     meta = load_meta(folder) or {}
     inflight = {int(p) for p in (meta.get("crops_inflight") or [])}
     status = "done"

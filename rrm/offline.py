@@ -1,13 +1,19 @@
-"""Servidor local de las consultas grabadas. Misma API, sin Modal ni Meta.
+"""Servidor local de las consultas grabadas. Misma API, sin Modal.
 
 Lee un directorio (el Release ``offline-fixtures-v1``) y responde
 ``/burst``, ``/status``, ``/paper``, ``/file``, ``/crops``, ``/subtopics``
 y ``POST /panorama``. Si la consulta no está en la grabación, responde
 ``consulta no grabada``. La autenticación es opcional: no hace falta token.
+
+Por defecto ``/panorama`` y ``/crops`` reproducen el JSON grabado y no llaman
+a Meta. ``RRM_OFFLINE_PANORAMA=meta`` hace que ``POST /panorama`` llame a Muse
+(``rrm.panorama.meta_panorama``) con los papers grabados. ``/crops`` sigue
+grabado: no hay PDF local para SAM.
 """
 
 import argparse
 import json
+import os
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -90,6 +96,36 @@ class Store:
 
 def _miss():
     return 404, {"error": MISS}
+
+
+def panorama_is_live() -> bool:
+    return (os.environ.get("RRM_OFFLINE_PANORAMA") or "").strip().lower() == "meta"
+
+
+def _paper_doc(raw):
+    """The bundle ``meta_panorama`` reads. The fixture stores the ``/paper`` response."""
+    if not isinstance(raw, dict):
+        return None
+    status = raw.get("status")
+    if status is None and isinstance(raw.get("meta"), dict):
+        status = raw["meta"].get("status")
+    if status not in (None, "done", "abstract_only"):
+        return None
+    inner = raw.get("paper")
+    if isinstance(inner, dict):
+        return inner
+    if isinstance(raw.get("blocks"), list):
+        return raw
+    return None
+
+
+def live_panorama(store: Store, item):
+    """Muse over the recorded papers. Raises ValueError on a bad body."""
+    from rrm.panorama import meta_panorama, parse_request
+
+    question, ids = parse_request(item)
+    docs = {pid: _paper_doc(store.papers.get(pid)) for pid in ids}
+    return meta_panorama(question, docs)
 
 
 def build_handler(store: Store):
@@ -239,6 +275,12 @@ def build_handler(store: Store):
             except (UnicodeError, json.JSONDecodeError):
                 self._json(400, {"error": "body must be a JSON object"})
                 return
+            if panorama_is_live():
+                try:
+                    self._json(200, live_panorama(store, item))
+                except ValueError as exc:
+                    self._json(400, {"error": str(exc)})
+                return
             question = item.get("question") if isinstance(item, dict) else None
             if not isinstance(question, str) or not question.strip():
                 self._json(400, {"error": "question must be a non-empty string"})
@@ -260,7 +302,7 @@ def make_server(root, host="127.0.0.1", port=8787):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="API local con las consultas grabadas. Sin Modal ni Meta.")
+    parser = argparse.ArgumentParser(description="API local con las consultas grabadas. Sin Modal. Meta solo si RRM_OFFLINE_PANORAMA=meta.")
     parser.add_argument("--root", default="offline-fixtures")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8787)
