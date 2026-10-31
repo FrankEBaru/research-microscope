@@ -19,7 +19,7 @@ cd ~/projects/hackaton/research-microscope
 RRM_LIVE=off bash scripts/live.sh
 ```
 
-`RRM_LIVE` elige el modo. Si no está, es `off`. `RRM_MAX_MINUTES` (default 30, entero ≥ 1) corta la sesión. Al salir por Ctrl+C, por un error o por ese tope, `modal`, `meta` y `full` corren `modal app stop rrm-burst`, `modal app stop rrm-reader` y `modal app list`. `off` no usa ese trap: es `scripts/offline.sh`. No se activa `RRM_DEMO_KEEP_WARM`.
+`RRM_LIVE` elige el modo. Si no está, es `off`. `RRM_FEATURES` es `core` (default de `off` y `modal`) o `all` (`meta` y `full` lo ponen si no viene definido). `core` apaga Panorama, subtemas de Muse y SAM, y no llama a Meta. `all` es la superficie anterior. `RRM_MAX_MINUTES` (default 30, entero ≥ 1) corta la sesión. Al salir por Ctrl+C, por un error o por ese tope, `modal`, `meta` y `full` corren `modal app stop rrm-burst`, `modal app stop rrm-reader` y `modal app list`. `off` no usa ese trap: es `scripts/offline.sh`. No se activa `RRM_DEMO_KEEP_WARM`. `min_containers` no se pone.
 
 | Modo | Comando | Qué hace |
 |---|---|---|

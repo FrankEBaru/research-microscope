@@ -180,7 +180,11 @@ def test_display_join_and_hydrate():
         "citationcount": pa.array([12], type=pa.int64()),
     }))
     assert ext.row(8)["title"] == "Quantum"
+    assert ext.row(8)["tldr"] is None and ext.row(8)["abstract"] is None
     assert ext.row(2) is None
+    with_tldr = IdTable(table)
+    assert with_tldr.rows([1])[0]["tldr"] == "short"
+    assert with_tldr.rows([2])[0]["tldr"] is None
 
 
 def test_eval_recall_uses_graph_references():

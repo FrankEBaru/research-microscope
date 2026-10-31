@@ -42,6 +42,7 @@ def _fakes(tmp_path: Path, *, hold_deploy=False, fail_reader=False, sleep_immedi
     _exe(bindir / "modal", f"""#!/bin/bash
 echo "modal $*" >> "$RRM_FAKE_LOG"
 echo "PANORAMA=${{RRM_PANORAMA_MODE-}} SAM=${{RRM_SAM-}}" >> "$RRM_FAKE_LOG"
+echo "FEATURES=${{RRM_FEATURES-}}" >> "$RRM_FAKE_LOG"
 if [[ "$1" == "deploy" ]]; then
   if [[ "$2" == *reader* && "{fail}" == "1" ]]; then
     echo "boom {TOKEN}" >&2
@@ -75,6 +76,7 @@ echo "token_len=${#NEXT_PUBLIC_RRM_DEMO_TOKEN}" >> "$RRM_FAKE_LOG"
 echo "burst=${NEXT_PUBLIC_BURST_URL-}" >> "$RRM_FAKE_LOG"
 echo "reader=${NEXT_PUBLIC_READER_URL-}" >> "$RRM_FAKE_LOG"
 echo "offline=${NEXT_PUBLIC_RRM_OFFLINE-}" >> "$RRM_FAKE_LOG"
+echo "features=${NEXT_PUBLIC_RRM_FEATURES-}" >> "$RRM_FAKE_LOG"
 while true; do /bin/sleep 0.2; done
 """)
     _exe(bindir / "node", "#!/bin/bash\nexit 0\n")
@@ -85,6 +87,7 @@ if [[ "$1" == "-c" ]]; then
 fi
 echo "OFFLINE_PAN=${RRM_OFFLINE_PANORAMA-}" >> "$RRM_FAKE_LOG"
 echo "PAN_MODE=${RRM_PANORAMA_MODE-}" >> "$RRM_FAKE_LOG"
+echo "FEATURES=${RRM_FEATURES-}" >> "$RRM_FAKE_LOG"
 while true; do /bin/sleep 0.2; done
 """)
     _exe(bindir / "gh", """#!/bin/bash
@@ -201,6 +204,7 @@ def test_modal_despliega_sim_sin_sam_y_ctrl_c_para(tmp_path):
     assert "modal deploy rrm/reader/serve.py" not in text or "modal app stop rrm-burst" in text
     _stops(text)
     assert "PANORAMA=sim SAM=off" in text
+    assert "FEATURES=core" in text
     assert "curl " not in text
     assert TOKEN not in out
     assert TOKEN not in text
@@ -226,6 +230,7 @@ def test_modal_llega_a_la_ui_con_urls_y_sin_imprimir_el_token(tmp_path):
     assert f"reader={READER}" in text
     assert "offline=" in text
     assert "offline=1" not in text
+    assert "features=core" in text
     _stops(text)
     assert BURST in out and READER in out
     assert TOKEN not in out and TOKEN not in text
@@ -282,6 +287,8 @@ def test_meta_no_despliega_y_panorama_queda_en_vivo(tmp_path):
     assert "python3 -m rrm.offline" in text
     assert "OFFLINE_PAN=meta" in text
     assert "PAN_MODE=meta" in text
+    assert "FEATURES=all" in text
+    assert "features=all" in text
     assert "burst=http://127.0.0.1:8787" in text
     assert "reader=http://127.0.0.1:8787" in text
     assert "offline=1" in text
@@ -304,6 +311,7 @@ def test_full_pasa_meta_y_sam(tmp_path):
             proc.wait(timeout=5)
     text = log.read_text(encoding="utf-8")
     assert "PANORAMA=meta SAM=on" in text
+    assert "FEATURES=all" in text
     assert "modal deploy rrm/search/serve.py" in text
     assert "modal deploy rrm/reader/serve.py" in text
     assert f"token_len={len(TOKEN)}" in text

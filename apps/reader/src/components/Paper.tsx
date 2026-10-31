@@ -6,6 +6,7 @@ import { ProvChip } from "./Bits";
 import Instrument from "./Instrument";
 import { bibtex } from "@/lib/bibtex.js";
 import { crops, eqTex, figureUrl, paperKey, refText } from "@/lib/backend.js";
+import { devBegin, devFinish } from "@/lib/devlog.js";
 import { createTracker } from "@/lib/companion.js";
 import { analyze, bars } from "@/lib/tablechart.js";
 import Companion, { Offer } from "./Companion";
@@ -211,13 +212,33 @@ function ZoneFig({ paper, name, alt, zones, onGo }: { paper: Paper; name: string
   );
 }
 
-function FigImg({ paper, name, alt }: { paper: Paper; name: string; alt: string }) {
+function FigImg({ paper, name, alt, eager }: { paper: Paper; name: string; alt: string; eager?: boolean }) {
   const [broken, setBroken] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const step = useRef(0);
   const bare = FILE_NAME.test(name) && !name.includes("..");
+  const src = figureUrl(paperKey(paper), name);
+  useEffect(() => {
+    if (paper.stage === "sections" || broken || (!name.startsWith("/") && !bare)) return;
+    step.current = devBegin("figura", name);
+  }, [name, paper.stage, broken, bare, src]);
   if (paper.stage === "sections" || broken || (!name.startsWith("/") && !bare)) {
     return <div className="fig-loading">cargando figura</div>;
   }
-  return <img src={figureUrl(paperKey(paper), name)} alt={alt} loading="lazy" onError={() => setBroken(true)} />;
+  return (
+    <span className={`fig-slot ${loaded ? "in" : ""}`}>
+      {!loaded && <span className="fig-ph">figura</span>}
+      <img
+        src={src}
+        alt={alt}
+        loading={eager ? "eager" : "lazy"}
+        decoding="async"
+        fetchPriority={eager ? "high" : "low"}
+        onLoad={() => { setLoaded(true); devFinish(step.current, "ok"); }}
+        onError={() => { setBroken(true); devFinish(step.current, "error", "no cargó"); }}
+      />
+    </span>
+  );
 }
 
 function autoSentence(text: string) {
@@ -278,12 +299,12 @@ function CropStrip({ id }: { id: string }) {
   return (
     <section className="crops" aria-label="Recortes de página" data-crops>
       <p className="small">Recortes de las páginas grabadas</p>
-      <div className="fig-imgs">{rows.map((row) => row.file ? <img key={row.file} src={figureUrl(id, row.file)} alt={`recorte, página ${row.page ?? ""}`} /> : null)}</div>
+      <div className="fig-imgs">{rows.map((row) => row.file ? <img key={row.file} src={figureUrl(id, row.file)} alt={`recorte, página ${row.page ?? ""}`} loading="lazy" decoding="async" /> : null)}</div>
     </section>
   );
 }
 
-export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string } | null }) {
+export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote, showInstrument = true, showCrops = true }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string } | null; showInstrument?: boolean; showCrops?: boolean }) {
   const art = useRef<HTMLElement>(null);
   const [pop, setPop] = useState<PopState>(null);
   const timer = useRef<any>(null);
@@ -465,7 +486,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           {paper.authorNotes?.length > 0 && (
             <details className="author-notes"><summary>Notas de autoría del paper</summary>{paper.authorNotes.map((n: string, i: number) => <p key={i}>{n}</p>)}</details>
           )}
-          {remote && paper.corpusid != null && /^\d+$/.test(String(paper.corpusid)) && <CropStrip id={String(paper.corpusid)} />}
+          {showCrops && remote && paper.corpusid != null && /^\d+$/.test(String(paper.corpusid)) && <CropStrip id={String(paper.corpusid)} />}
         </header>
 
         {paper.blocks.map((b) => {
@@ -498,7 +519,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             el = (
               <figure id={b.label || `blk-${b.id}`} className="fig blk">
                 <div className="fig-imgs">{b.images.map((src: string, i: number) => { const zs = i === 0 && b.label ? (content.zones?.figures || []).find((f: any) => f.paper === paper.arxivId && f.fig === b.label)?.zones : null;
-                  return zs ? <ZoneFig key={src} paper={paper} name={src} alt={plainOf(b.caption)} zones={zs} onGo={goTo} /> : <FigImg key={src} paper={paper} name={src} alt={plainOf(b.caption)} />; })}</div>
+                  return zs ? <ZoneFig key={src} paper={paper} name={src} alt={plainOf(b.caption)} zones={zs} onGo={goTo} /> : <FigImg key={src} paper={paper} name={src} alt={plainOf(b.caption)} eager={i === 0} />; })}</div>
                 <figcaption><b>Figura {model.figN[b.id]}.</b> <Inlines inls={b.caption} ctx={ctx} /> <ProvChip kind="paper" text="figura original, sin redibujar" /></figcaption>
               </figure>
             );
@@ -514,11 +535,11 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
                   <ul>{symsInTex(b.tex).map((y: Sym) => (
                     <li key={y.id}><span className="sym-pill" style={{ color: y.color }}><Tex tex={y.latex} /></span> <b>{y.name}</b> · <em>«<Rich text={att.symbols.find((q: any) => q.id === y.id).def.quote} />»</em> <button className="link" onClick={() => goTo(att.symbols.find((q: any) => q.id === y.id).def.anchor.blockId)}>ver dónde se define</button></li>
                   ))}</ul>
-                  {/sqrt\{d_k\}/.test(b.tex) && <p className="small">Esta ecuación divide por √d_k: <button className="link" onClick={() => document.querySelector(".instrument")?.scrollIntoView({ behavior: "smooth", block: "start" })}>ábrelo en el instrumento</button> y compruébalo.</p>}
+                  {showInstrument && /sqrt\{d_k\}/.test(b.tex) && <p className="small">Esta ecuación divide por √d_k: <button className="link" onClick={() => document.querySelector(".instrument")?.scrollIntoView({ behavior: "smooth", block: "start" })}>ábrelo en el instrumento</button> y compruébalo.</p>}
                   <button className="link" onClick={() => setBreakdown(null)}>cerrar</button>
                 </aside>
               )}
-              {att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
+              {showInstrument && att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
             </div>
           );
         })}
