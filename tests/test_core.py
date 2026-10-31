@@ -121,7 +121,11 @@ def test_reader_serves_figures_in_parallel_and_core_skips_meta():
     assert 'reason": "core"' in burst
     assert "if core_mode():" in reader
     ui = (root / "apps/reader/src/components/Engine.tsx").read_text(encoding="utf-8")
+    live_map = (root / "apps/reader/src/components/LiveMap.tsx").read_text(encoding="utf-8")
+    ui = ui + live_map
     assert "preparando el motor…" in ui
     assert "calentando el motor" not in ui
     assert "quiero leer este" in ui
+    assert "data-live-map" in ui
+    assert "volver al mapa" in ui
     assert "data-devlog" in ui

@@ -20,6 +20,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from rrm.features import core_mode, features_mode
+from rrm.search.layout import place_papers
 
 MISS = "consulta no grabada"
 _NAME = re.compile(r"^[A-Za-z0-9._-]{1,180}$")
@@ -192,6 +193,11 @@ def build_handler(store: Store):
                 out = dict(body)
                 if isinstance(out.get("papers"), list):
                     out["papers"] = out["papers"][:n]
+                # Fixtures have citations and years, not SPECTER2 vectors.
+                # A stored specter layout (if a future recording has one) is kept.
+                stored = out.get("layout") if isinstance(out.get("layout"), dict) else None
+                if not stored or stored.get("method") != "specter2-pca":
+                    out["layout"] = place_papers(out.get("papers") or [], out.get("edges") or [])
                 self._json(200, out)
                 return
             if path == "/subtopics":
