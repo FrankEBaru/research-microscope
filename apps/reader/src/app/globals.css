@@ -119,6 +119,20 @@ blockquote .link { display: block; margin-top: .45rem; font: 500 .84rem var(--sa
 .math-hint { display: block; font: .78rem var(--sans); color: var(--muted); margin-top: .3rem; }
 .raw { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); font-size: .92em; }
 .fig-loading { min-height: 8rem; display: grid; place-items: center; background: var(--bg); color: var(--muted); border: 1px dashed var(--line-2); border-radius: 8px; font: .85rem var(--sans); }
+.fig-slot { position: relative; display: inline-block; max-width: 100%; min-width: 8rem; min-height: 6rem; background: var(--bg); }
+.fig-slot .fig-ph { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font: .8rem var(--sans); border: 1px dashed var(--line-2); border-radius: 8px; }
+.fig-slot.in { min-height: 0; min-width: 0; background: transparent; }
+.fig-slot img { display: block; max-width: 100%; height: auto; }
+.phase { font: 600 .75rem var(--sans); letter-spacing: .02em; }
+.phase-listo { color: var(--good, #1b6b3a); } .phase-fallo { color: var(--bad, #8d2a2a); } .phase-preparando { color: var(--muted); } .phase-encontrado { color: var(--ink); }
+.core-list { list-style: none; padding: 0; margin: 1rem 0 0; display: grid; gap: .8rem; }
+.core-list li { border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1rem; background: #fff; }
+.core-list h2 { margin: .2rem 0; font-size: 1.05rem; }
+.core-blurb { margin: .35rem 0 .5rem; color: var(--ink); }
+.devlog { position: fixed; right: .8rem; bottom: .8rem; width: min(28rem, calc(100vw - 1.6rem)); max-height: 40vh; overflow: auto; background: #16181d; color: #e8e6e1; border-radius: 12px; padding: .8rem 1rem; z-index: 40; box-shadow: 0 8px 28px rgba(0,0,0,.25); }
+.devlog h2 { margin: 0 0 .4rem; font: 600 .85rem var(--sans); color: #fff; }
+.devlog ol { margin: 0; padding-left: 1.1rem; font: .78rem/1.45 ui-monospace, monospace; }
+.devlog .ok { color: #9ddeaf; } .devlog .error { color: #f0a8a8; } .devlog .waiting { color: #f0d59a; }
 .ocr-band { font: .85rem var(--sans); background: var(--c-curado-bg); border-radius: 8px; padding: .5rem .7rem; }
 .fail-reason { color: #a11; font: .9rem var(--sans); }
 .warm { font-family: var(--serif); font-size: 1.2rem; margin: .4rem 0 1rem; }

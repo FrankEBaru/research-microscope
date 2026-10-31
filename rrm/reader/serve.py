@@ -16,6 +16,7 @@ HTTP is one ASGI app, `api` (not one host per route):
 import contextvars
 import json
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -23,7 +24,9 @@ import modal
 
 from rrm.demo_guard import check, cors_kwargs
 from rrm.demo_warm import scaledown_window
+from rrm.features import core_mode, features_mode
 from rrm.panorama import docs_for, parse_request, run as run_panorama
+from rrm.search.qcache import CACHE_DIR, apply_status_cache, load_entry, save_entry, status_map
 from rrm.reader.files import resolve_figure
 
 import rrm.reader.fetch as _fetch
@@ -93,6 +96,7 @@ if modal.is_local():
         "MODEL_API_KEY": os.environ.get("MODEL_API_KEY", ""),
         "S2_API_KEY": os.environ.get("S2_API_KEY", ""),
         "RRM_DEMO_TOKEN": os.environ.get("RRM_DEMO_TOKEN", ""),
+        "RRM_FEATURES": os.environ.get("RRM_FEATURES", "core"),
         "RRM_PANORAMA_MODE": os.environ.get("RRM_PANORAMA_MODE", "sim"),
         # off/0/false/no: /crops does not call SAM. Default on. Read at deploy.
         "RRM_SAM": os.environ.get("RRM_SAM", "on"),
@@ -420,7 +424,7 @@ def _write_stub(folder: Path, corpusid: int):
     return paper
 
 
-def _prepare_ids(ids) -> dict:
+def _prepare_ids(ids, front=False) -> dict:
     vol.reload()
     _shared_arxiv_wait()
     try:
@@ -431,6 +435,11 @@ def _prepare_ids(ids) -> dict:
     rows = []
     for raw in ids or []:
         cid = int(raw)
+        if front:
+            try:
+                prioritize(cid)
+            except Exception:
+                pass
         status = mark_queued(PAPERS / str(cid), cid)
         if status == "queued":
             seed_stub_from_cache(PAPERS / str(cid), cid)
@@ -532,6 +541,9 @@ def crops_for(corpusid: int, pages: list):
 
 def read_crops(id: str, pages: str = ""):
     """SAM for the pages in view. Returns the crops already on disk and keeps working in the background."""
+    if core_mode():
+        cid = int(id) if str(id).isdigit() else id
+        return {"id": cid, "status": "skipped", "pages": [], "crops": [], "error": "core", "images": 0, "skipped": True}
     vol.reload()
     cid = int(id)
     wanted = parse_pages(pages)
@@ -608,7 +620,11 @@ def read_crops(id: str, pages: str = ""):
     }
 
 
-def read_status(ids: str = "", pending=None):
+def _cache_root() -> Path:
+    return Path(DATA) / CACHE_DIR
+
+
+def read_status(ids: str = "", pending=None, question: str = ""):
     vol.reload()
     if pending is None:
         pending = load_burst_top()
@@ -638,6 +654,24 @@ def read_status(ids: str = "", pending=None):
                 "ocr_gpu_s": meta.get("ocr_gpu_s"),
                 "ocr_invoked_at": meta.get("ocr_invoked_at"),
             })
+    saved = {}
+    if question:
+        try:
+            entry = load_entry(_cache_root(), question) or {}
+            saved = entry.get("papers") or {}
+        except Exception:
+            saved = {}
+        rows = apply_status_cache(rows, saved)
+        fresh = status_map(rows)
+        if fresh:
+            def persist():
+                try:
+                    save_entry(_cache_root(), question, papers=fresh)
+                    vol.commit()
+                except Exception:
+                    return
+
+            threading.Thread(target=persist, name="rrm-status-cache", daemon=True).start()
     return {"papers": rows}
 
 
@@ -657,7 +691,10 @@ if scaledown_window() is not None:
     _api_fn["scaledown_window"] = scaledown_window()
 
 
+# One HTTP input at a time made each figure wait behind /status and /paper.
+# max_inputs stays small: these handlers share the volume.
 @app.function(**_api_fn)
+@modal.concurrent(max_inputs=8)
 @modal.asgi_app()
 def api():
     from fastapi import FastAPI, Request
@@ -684,12 +721,19 @@ def api():
             return denied
         return read_paper(id)
 
-    @web.get("/status")
-    def route_status(request: Request, ids: str = ""):
+    @web.get("/warm")
+    def route_warm(request: Request):
         denied = gate(request, True)
         if denied:
             return denied
-        return read_status(ids)
+        return {"ready": True, "features": features_mode()}
+
+    @web.get("/status")
+    def route_status(request: Request, ids: str = "", q: str = ""):
+        denied = gate(request, True)
+        if denied:
+            return denied
+        return read_status(ids, question=q)
 
     @web.post("/prepare")
     async def route_prepare(request: Request):
@@ -697,13 +741,16 @@ def api():
         if denied:
             return denied
         item = await request.json()
-        return _prepare_ids((item or {}).get("ids") or [])
+        item = item or {}
+        return _prepare_ids(item.get("ids") or [], front=bool(item.get("front")))
 
     @web.post("/panorama")
     async def route_panorama(request: Request):
         denied = gate(request, False)
         if denied:
             return denied
+        if core_mode():
+            return {"skipped": True, "reason": "core", "claims": []}
         try:
             question, ids = parse_request(await request.json())
         except ValueError as e:
@@ -742,7 +789,10 @@ def api():
         return FileResponse(
             path,
             media_type=_FILE_TYPES[path.suffix.lower()],
-            headers={"Cache-Control": "public, max-age=86400"},
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     return web

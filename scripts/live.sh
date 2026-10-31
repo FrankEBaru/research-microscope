@@ -5,10 +5,14 @@
 #
 #   RRM_LIVE=off|modal|meta|full bash scripts/live.sh
 #
-# off   — scripts/offline.sh (sin Modal ni Meta).
-# modal — deploy de ráfaga y lector, panorama sim, SAM apagado.
-# meta  — datos grabados; POST /panorama llama a Muse. Sin deploy. /crops grabado.
-# full  — deploy con panorama meta y SAM.
+# off   — scripts/offline.sh (sin Modal ni Meta). RRM_FEATURES=core.
+# modal — deploy de ráfaga y lector, panorama sim, SAM apagado. RRM_FEATURES=core.
+# meta  — datos grabados; POST /panorama llama a Muse. Sin deploy. RRM_FEATURES=all.
+# full  — deploy con panorama meta y SAM. RRM_FEATURES=all.
+#
+# RRM_FEATURES=core (default de off y modal) apaga Panorama, subtemas Muse y SAM.
+# meta y full ponen all si la variable no viene puesta, para conservar ese comportamiento.
+# core no llama a Meta aunque el modo pida panorama meta.
 #
 # Al salir (Ctrl+C, error o RRM_MAX_MINUTES, default 30) para rrm-burst y
 # rrm-reader y muestra modal app list. off no llega a ese trap: lo apaga
@@ -21,8 +25,21 @@ MAX_MIN="${RRM_MAX_MINUTES:-30}"
 PORT=8787
 FIX_DIR="${RRM_OFFLINE_DIR:-$ROOT/offline-fixtures}"
 
+if [[ -z "${RRM_FEATURES:-}" ]]; then
+  case "$MODE" in
+    meta|full) RRM_FEATURES=all ;;
+    *) RRM_FEATURES=core ;;
+  esac
+fi
+if [[ "$RRM_FEATURES" != "core" && "$RRM_FEATURES" != "all" ]]; then
+  echo "RRM_FEATURES debe ser core o all." >&2
+  exit 2
+fi
+export RRM_FEATURES
+export NEXT_PUBLIC_RRM_FEATURES="$RRM_FEATURES"
+
 if [[ "$MODE" == "off" ]]; then
-  echo "Modo: off. Igual que scripts/offline.sh. Sin Modal ni Meta."
+  echo "Modo: off. Features: ${RRM_FEATURES}. Igual que scripts/offline.sh. Sin Modal ni Meta."
   exec bash "$ROOT/scripts/offline.sh"
 fi
 
@@ -137,7 +154,7 @@ trap cleanup EXIT INT TERM
 ) >/dev/null 2>&1 &
 WATCH_PID=$!
 
-echo "Modo: ${MODE}. Tope: ${MAX_MIN} min."
+echo "Modo: ${MODE}. Tope: ${MAX_MIN} min. Features: ${RRM_FEATURES}."
 echo "Panorama: ${RRM_PANORAMA_MODE}. SAM: ${RRM_SAM:-grabado}."
 
 ensure_fixtures() {

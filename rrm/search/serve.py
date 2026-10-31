@@ -22,7 +22,9 @@ import modal
 
 from rrm.demo_guard import check, cors_kwargs
 from rrm.demo_warm import scaledown_window
+from rrm.features import core_mode, features_mode
 from rrm.search.burst import burst_query
+from rrm.search.qcache import CACHE_DIR, cached_burst, load_entry, save_entry
 from rrm.search.prefetch import detach_queue, note_burst_top
 from rrm.search.display import IdTable, PaperLookup
 from rrm.search.encode import QueryEncoder
@@ -45,6 +47,7 @@ if modal.is_local():
     model_secret = modal.Secret.from_dict({
         "MODEL_API_KEY": os.environ.get("MODEL_API_KEY", ""),
         "RRM_DEMO_TOKEN": os.environ.get("RRM_DEMO_TOKEN", ""),
+        "RRM_FEATURES": os.environ.get("RRM_FEATURES", "core"),
     })
 else:
     model_secret = modal.Secret.from_dict({})
@@ -58,7 +61,18 @@ def _safe(name):
 
 # RRM_DEMO_KEEP_WARM=1 at deploy time sets scaledown_window to 20 min.
 # min_containers stays 0. See scripts/warm.sh.
-_burst_cls = dict(image=image, volumes={MOUNT: vol}, cpu=2, memory=32768, timeout=900, secrets=[model_secret])
+# enable_memory_snapshot captures FAISS, the graph, both display tables, and
+# the SPECTER encoder after the first deployed boot. Later cold starts restore
+# that RAM instead of reading the artifacts again. The first boot still loads them.
+_burst_cls = dict(
+    image=image,
+    volumes={MOUNT: vol},
+    cpu=2,
+    memory=32768,
+    timeout=900,
+    secrets=[model_secret],
+    enable_memory_snapshot=True,
+)
 if scaledown_window() is not None:
     _burst_cls["scaledown_window"] = scaledown_window()
 
@@ -66,8 +80,17 @@ if scaledown_window() is not None:
 @app.cls(**_burst_cls)
 @modal.concurrent(max_inputs=8)  # /subtopics waits seconds on Muse; /burst must not queue behind it
 class BurstSearch:
-    @modal.enter()
-    def start(self):
+    @modal.enter(snap=True)
+    def load(self):
+        """Read the index into RAM before Modal snapshots the container.
+
+        What this loads, from the volume (sizes from the RRM-3 build): FAISS
+        index (~999 MB) plus faiss_ids, the citation graph (~2.13 GB of npy),
+        node_meta, display.parquet (~2.66 GB), display_ext.parquet, and the
+        SPECTER2 query encoder (torch + two adapters). Abstracts are a separate
+        dataset and are not loaded here. One short encode warms the tokenizer
+        so the first real question does not pay that setup.
+        """
         import numpy as np
         import pyarrow.parquet as pq
 
@@ -94,6 +117,19 @@ class BurstSearch:
         self.lookup = PaperLookup(display)
         self.encoder = QueryEncoder()
         self.encoder.load()
+        try:
+            self.encoder.encode(["warm"])
+        except Exception:
+            pass
+        self.loaded = ["faiss", "faiss_ids", "graph", "node_meta", "display", "display_ext", "encoder"]
+
+    @modal.enter(snap=False)
+    def resume(self):
+        """The volume mount does not survive the snapshot. Reopen it for cache writes."""
+        try:
+            vol.reload()
+        except Exception:
+            return
 
     def _rows(self, corpusids, scores):
         corpusids = [int(c) for c in corpusids]
@@ -108,7 +144,7 @@ class BurstSearch:
             if row is None:
                 row = ext.get(cid)
             if row is None:
-                row = {"corpusid": cid, "title": None, "year": None, "venue": None, "citationcount": None}
+                row = {"corpusid": cid, "title": None, "year": None, "venue": None, "citationcount": None, "tldr": None, "abstract": None}
             if bool(hit[i]):
                 local = int(pos[i])
                 row["is_cs"] = bool(self.is_cs[local])
@@ -123,7 +159,34 @@ class BurstSearch:
 
     def _answer(self, query, n):
         n = max(0, min(100, int(n)))
+        root = Path(MOUNT) / CACHE_DIR
+        try:
+            hit = cached_burst(load_entry(root, query), n)
+        except Exception:
+            hit = None
+        if hit is not None:
+            papers = hit.get("papers") or []
+            saved = {}
+            try:
+                entry = load_entry(root, query) or {}
+                saved = entry.get("papers") or {}
+            except Exception:
+                saved = {}
+            settled = True
+            for row in papers[:10]:
+                cid = row.get("corpusid") if isinstance(row, dict) else None
+                status = (saved.get(str(cid)) or {}).get("status")
+                if status not in ("done", "abstract_only", "failed"):
+                    settled = False
+                    break
+            if papers and not settled:
+                _prefetch_reader([row.get("corpusid") for row in papers[:10]])
+            return hit
+        out = self._compute(query, n)
+        _store_burst(query, out)
+        return out
 
+    def _compute(self, query, n):
         def search(vector, k):
             return search_vectors(self.index, self.faiss_ids, vector, k)
 
@@ -157,6 +220,8 @@ class BurstSearch:
             "seconds": result["seconds"],
         }
         out["seconds"]["hydrate"] = round(time.perf_counter() - t0, 4)
+        out["n"] = int(n)
+        out["cached"] = False
         # After the payload exists: a spawn failure must not drop the papers.
         # The top-10 ids are noted for /status here. The volume commit that
         # used to run inside queue_top stays off this return.
@@ -187,6 +252,14 @@ class BurstSearch:
                 return Response(status_code=code)
             return None
 
+        @web.get("/warm")
+        def route_warm(request: Request):
+            """Returns only after load() has finished, so the UI can wait once."""
+            denied = gate(request)
+            if denied:
+                return denied
+            return {"ready": True, "features": features_mode(), "loaded": list(getattr(self, "loaded", []))}
+
         @web.get("/burst")
         def route_burst(request: Request, q: str, n: int = 50):
             denied = gate(request)
@@ -196,10 +269,12 @@ class BurstSearch:
 
         @web.get("/subtopics")
         def route_subtopics(request: Request, q: str):
-            """Muse labels for the same query. The UI does not call this."""
+            """Muse labels for the same query. The UI does not call this in core."""
             denied = gate(request)
             if denied:
                 return denied
+            if core_mode():
+                return {"query": q, "subtopics": [], "seconds": 0, "skipped": True, "reason": "core", "usage": None}
             t0 = time.perf_counter()
             import rrm.search.split as split_mod
             split_mod.LAST_USAGE = None
@@ -216,6 +291,21 @@ class BurstSearch:
             }
 
         return web
+
+
+def _store_burst(query, payload):
+    """Write the question cache off the response path. A commit must not slow /burst."""
+    body = dict(payload)
+    body.pop("cached", None)
+
+    def work():
+        try:
+            save_entry(Path(MOUNT) / CACHE_DIR, query, burst=body)
+            vol.commit()
+        except Exception:
+            return
+
+    threading.Thread(target=work, name="rrm-qcache", daemon=True).start()
 
 
 def _prefetch_reader(corpusids):

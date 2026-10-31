@@ -104,8 +104,8 @@ function panoramaTimeout() {
 export const PANORAMA_TIMEOUT_MS = panoramaTimeout();
 
 // Tiempos de espera por ruta (ms). /burst puede tardar 100–131 s si el contenedor estaba dormido.
-const TIMEOUT = { burst: 150000, status: 20000, paper: 40000, panorama: PANORAMA_TIMEOUT_MS, crops: 20000, subtopics: 20000 };
-const RETRIES = { burst: 0, status: 2, paper: 1, panorama: 0, crops: 1, subtopics: 0 };
+const TIMEOUT = { warm: 150000, burst: 150000, status: 20000, paper: 40000, panorama: PANORAMA_TIMEOUT_MS, crops: 20000, subtopics: 20000, prepare: 20000 };
+const RETRIES = { warm: 0, burst: 0, status: 2, paper: 1, panorama: 0, crops: 1, subtopics: 0, prepare: 0 };
 const RETRYABLE = new Set(["timeout", "network", "rate", "server"]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const override = () => (typeof globalThis.__RRM_TIMEOUT_MS === "number" ? globalThis.__RRM_TIMEOUT_MS : null);
@@ -149,12 +149,27 @@ async function request(route, url, init = {}) {
   }
 }
 
+export function warm(which = "burst") {
+  const base = which === "reader" ? READER : BURST;
+  return request("warm", `${base}/warm`);
+}
+
 export function burst(q) {
   return request("burst", `${BURST}/burst?q=${encodeURIComponent(q)}&n=10`);
 }
 
-export function status(ids) {
-  return request("status", `${READER}/status?ids=${ids.join(",")}`);
+export function status(ids, q) {
+  const extra = q ? `&q=${encodeURIComponent(q)}` : "";
+  return request("status", `${READER}/status?ids=${ids.join(",")}${extra}`);
+}
+
+/** front=true moves those ids ahead of the background top-10. The UI does not wait on the parse. */
+export function prepare(ids, front = false) {
+  return request("prepare", `${READER}/prepare`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, front: Boolean(front) }),
+  });
 }
 
 export function paper(id) {
