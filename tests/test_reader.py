@@ -1336,3 +1336,40 @@ def test_detach_queue_notes_top_ids_and_defers_the_volume_write(tmp_path: Path):
     held[0]()
     assert log == [("note", list(range(1, 11))), "start", "commit", ("spawn", list(range(1, 11)))]
     assert load_meta(tmp_path / "papers" / "1")["status"] == "queued"
+
+
+def test_parser_unwraps_font_switches_rules_and_multirow():
+    """Commands left in prose or table cells are expanded, not shown raw."""
+    from rrm.reader.katex import for_katex
+    from rrm.reader.latex import parse_tex, plain
+
+    doc = parse_tex(r"""
+\documentclass{article}
+\begin{document}
+A {\it global} approach and \rule{0pt}{2.0ex}Self-Attention.
+\bf{System} \hdashline \edit{note here}.
+\begin{tabular}{ll}
+\multirow{2}{*}{Model} & \multicolumn{1}{c}{BLEU} \\
+baseline & 1 \\
+\end{tabular}
+\definecolor{yellow}{rgb}{1,1,0.6}
+\end{document}
+""")
+    prose = " ".join(plain(b.get("inlines") or []) for b in doc["blocks"] if b["kind"] == "p")
+    assert "global" in prose
+    assert "\\it" not in prose
+    assert "Self-Attention" in prose
+    assert "System" in prose and "note here" in prose
+    assert "\\bf" not in prose and "\\edit" not in prose and "hdashline" not in prose
+    assert "\\rule" not in prose
+    assert "definecolor" not in prose
+    tables = [b for b in doc["blocks"] if b["kind"] == "table"]
+    assert tables
+    head = "".join(plain(c) for c in tables[0]["head"][0])
+    assert "Model" in head and "multirow" not in head
+    assert for_katex(r"\ensuremath{\mathcal{O}}") == r"\mathcal{O}"
+    assert for_katex(r"\resizebox{0.9\linewidth}{!}{$x$}") == "x"
+    assert for_katex(r"\mbox{\boldmath{$\mbox{\boldmath{$a$}}_{t}$}}") == r"\mathbf{\mathbf{a}_{t}}"
+    assert for_katex(r"\mbox{\boldmath{$\tilde{h}$}}") == r"\mathbf{\tilde{h}}"
+    assert for_katex(r"\begin{split} {i\choose{k}} \end{split}") == r"\begin{split} \binom{i}{k} \end{split}"
+    assert for_katex(r"i~$odd$") == r"i~\text{odd}"
