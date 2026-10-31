@@ -1,82 +1,23 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { Rich } from "@/lib/math";
 import { ProvChip } from "./Bits";
 import { plainOf } from "./Paper";
 import { paperKey } from "@/lib/backend.js";
+import { LENSES, WORLD_H as H, WORLD_W as W, usePlatina } from "./usePlatina";
 
-const W = 1600, H = 1000;
-const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
 const short = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s);
 const wrap2 = (s: string, n: number): [string, string] => {
   const w = s.split(" "); let a = "", i = 0;
   while (i < w.length && (a + " " + w[i]).trim().length <= n) a = (a + " " + w[i++]).trim();
   return [a, short(w.slice(i).join(" "), n)];
 };
-const LENSES = [1, 2, 4, 8];
 
 export default function MapView({ q, papers, go }: any) {
-  const box = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ w: 1000, h: 600 });
   const L = q.layout;
-  const kFit = Math.min(size.w / W, size.h / H) * 0.96;
-  const [view, setView] = useState({ k: 0.6, cx: W / 2, cy: H / 2 });
-  const raf = useRef<number>(0);
-  const viewRef = useRef(view); viewRef.current = view;
-  const z = view.k / kFit;
+  const plat = usePlatina(String(q.id));
+  const { box, size, view, kFit, z, sx, sy, animateTo, lensZ, drag, onDown, onMove, onUp, onKey } = plat;
   const level = z < 1.7 ? 1 : z < 3.6 ? 2 : 3;
-
-  useEffect(() => {
-    const el = box.current!; const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }));
-    ro.observe(el); setSize({ w: el.clientWidth, h: el.clientHeight }); return () => ro.disconnect();
-  }, []);
-  useEffect(() => { setView({ k: kFit, cx: W / 2, cy: H / 2 }); }, [q.id, kFit]);
-
-  const animateTo = useCallback((t: { k?: number; cx?: number; cy?: number }) => {
-    cancelAnimationFrame(raf.current);
-    const a = viewRef.current, k1 = clamp(t.k ?? a.k, kFit * 0.9, kFit * 12), cx1 = clamp(t.cx ?? a.cx, 0, W), cy1 = clamp(t.cy ?? a.cy, 0, H);
-    const t0 = performance.now(), D = 460;
-    const step = (now: number) => {
-      const p = Math.min(1, (now - t0) / D), e = 1 - Math.pow(1 - p, 3);
-      setView({ k: Math.exp(Math.log(a.k) + (Math.log(k1) - Math.log(a.k)) * e), cx: a.cx + (cx1 - a.cx) * e, cy: a.cy + (cy1 - a.cy) * e });
-      if (p < 1) raf.current = requestAnimationFrame(step);
-    };
-    raf.current = requestAnimationFrame(step);
-  }, [kFit]);
-
-  // rueda: zoom hacia el cursor (listener nativo no pasivo)
-  useEffect(() => {
-    const el = box.current!;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault(); cancelAnimationFrame(raf.current);
-      const v = viewRef.current, r = el.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
-      const k = clamp(v.k * Math.exp(-e.deltaY * 0.0016), kFit * 0.9, kFit * 12);
-      const wx = (sx - size.w / 2) / v.k + v.cx, wy = (sy - size.h / 2) / v.k + v.cy;
-      setView({ k, cx: clamp(wx - (sx - size.w / 2) / k, 0, W), cy: clamp(wy - (sy - size.h / 2) / k, 0, H) });
-    };
-    el.addEventListener("wheel", onWheel, { passive: false }); return () => el.removeEventListener("wheel", onWheel);
-  }, [size, kFit]);
-
-  const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
-  const onDown = (e: React.PointerEvent) => { if ((e.target as HTMLElement).closest("button,.ov,.minimap")) return; cancelAnimationFrame(raf.current); drag.current = { x: e.clientX, y: e.clientY, moved: false }; };
-  const onMove = (e: React.PointerEvent) => {
-    const d = drag.current; if (!d) return;
-    const dx = e.clientX - d.x, dy = e.clientY - d.y; if (!d.moved && Math.abs(dx) + Math.abs(dy) > 3) { d.moved = true; box.current!.setPointerCapture(e.pointerId); }
-    if (!d.moved) return;
-    d.x = e.clientX; d.y = e.clientY; const v = viewRef.current;
-    setView({ k: v.k, cx: clamp(v.cx - dx / v.k, 0, W), cy: clamp(v.cy - dy / v.k, 0, H) });
-  };
-  const onUp = () => { setTimeout(() => { drag.current = null; }, 0); };
-  const onKey = (e: React.KeyboardEvent) => {
-    const v = viewRef.current, s = 90 / v.k;
-    if (e.key === "+" || e.key === "=") animateTo({ k: v.k * 1.6 }); else if (e.key === "-") animateTo({ k: v.k / 1.6 });
-    else if (e.key === "0") animateTo({ k: kFit, cx: W / 2, cy: H / 2 });
-    else if (e.key === "ArrowLeft") animateTo({ cx: v.cx - s }); else if (e.key === "ArrowRight") animateTo({ cx: v.cx + s });
-    else if (e.key === "ArrowUp") animateTo({ cy: v.cy - s }); else if (e.key === "ArrowDown") animateTo({ cy: v.cy + s });
-    else return; e.preventDefault();
-  };
-
-  const sx = (x: number) => (x - view.cx) * view.k + size.w / 2, sy = (y: number) => (y - view.cy) * view.k + size.h / 2;
   const entries = useMemo(() => q.clusters.flatMap((c: any) => c.papers.map((p: any) => ({ ...p, cl: c }))), [q]);
   const near = useMemo(() => {
     let best: any = null, bd = 1e9;
@@ -85,14 +26,13 @@ export default function MapView({ q, papers, go }: any) {
   }, [entries, view.cx, view.cy, L]);
   const active = z >= 2.4 && near.d * view.k < 200 ? near.e : null;
   const cardFor = (id: string) => entries.find((e: any) => e.id === id);
-  const lensZ = LENSES.reduce((a, b) => (Math.abs(Math.log(z / b)) < Math.abs(Math.log(z / a)) ? b : a));
   const focus = (id: string) => { const [x, y] = L.pos[id]; animateTo({ k: kFit * 4.2, cx: x, cy: y }); };
 
   return (
     <div className="platina-wrap">
       <div className="platina" ref={box} tabIndex={0} role="application" aria-label="Mapa explorable: arrastra para mover, rueda o + y − para acercar" onKeyDown={onKey}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
-        onDoubleClick={(e) => { const r = box.current!.getBoundingClientRect(); const v = viewRef.current; animateTo({ k: v.k * 2, cx: (e.clientX - r.left - size.w / 2) / v.k + v.cx, cy: (e.clientY - r.top - size.h / 2) / v.k + v.cy }); }}>
+        onDoubleClick={(e) => { const r = box.current!.getBoundingClientRect(); animateTo({ k: view.k * 2, cx: (e.clientX - r.left - size.w / 2) / view.k + view.cx, cy: (e.clientY - r.top - size.h / 2) / view.k + view.cy }); }}>
         <svg width={size.w} height={size.h} aria-hidden="true">
           <defs>
             <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#6d675d" /></marker>

@@ -8,8 +8,8 @@ const LABEL: Record<Prov, string> = {
   hipotesis: "idea en prueba: aún sin evidencia de que ayude",
 };
 
-export function ProvChip({ kind, text }: { kind: Prov; text?: string }) {
-  return <span className={`chip chip-${kind}`} title={LABEL[kind]}>{text ?? LABEL[kind]}</span>;
+export function ProvChip({ kind, text, title }: { kind: Prov; text?: string; title?: string }) {
+  return <span className={`chip chip-${kind}`} title={title ?? LABEL[kind]}>{text ?? LABEL[kind]}</span>;
 }
 
 export function Coverage({ have, total }: { have: number; total: number }) {
