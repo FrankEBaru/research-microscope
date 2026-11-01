@@ -814,7 +814,7 @@ def _ensure_phrase_vectors(ids):
 def _ask_body(ids, text, stage, focus=None):
     from rrm.search.querylang import PREPARING
     from rrm.reader.phrases import store_progress
-    from rrm.reader.similar import load_aligned
+    from rrm.reader.similar import load_aligned, phrase_ids
     from rrm.reader.verify import answer
 
     # Con focus el paper abierto ya se preparó y se commiteó. No encodar los otros diez aquí.
@@ -823,7 +823,7 @@ def _ask_body(ids, text, stage, focus=None):
     store = store_progress(PAPERS, ids)
     if not str(text or "").strip():
         return {"extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {}, "note": "", "store": store}
-    rows, vectors, missing = load_aligned(PAPERS, ids)
+    rows, vectors, missing = load_aligned(PAPERS, phrase_ids(ids, focus))
     if vectors is None:
         note = PREPARING if missing else "No hay frases guardadas de estos papers."
         return {"extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {}, "note": note, "store": store}
@@ -832,13 +832,7 @@ def _ask_body(ids, text, stage, focus=None):
     def encode(texts):
         return specter_encode(texts)
 
-    try:
-        return answer(rows, text, ids=ids, root=PAPERS, encode=encode, vectors=vectors, stage=stage or "todo")
-    except Exception:
-        return {
-            "extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {},
-            "note": PREPARING, "store": store,
-        }
+    return answer(rows, text, ids=ids, root=PAPERS, encode=encode, vectors=vectors, stage=stage or "todo")
 
 
 def read_status(ids: str = "", pending=None, question: str = ""):
@@ -1003,17 +997,16 @@ def api():
                     pass
         try:
             body = _ask_body(item.get("ids") or [], item.get("text") or "", item.get("stage") or "todo", focus=focus or None)
-        except Exception:
-            from rrm.reader.phrases import store_progress
-            ids = item.get("ids") or []
-            body = {
-                "extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {},
-                "note": "Preparando los vectores de las frases…",
-                "store": store_progress(PAPERS, ids),
-            }
+        except Exception as err:
+            from rrm.reader.verify import ask_error_text
+            return JSONResponse({"error": ask_error_text(err)}, status_code=500)
+        from rrm.reader.verify import ask_http
+        code, payload = ask_http(body, item.get("stage") or "")
+        if code != 200:
+            return JSONResponse(payload, status_code=code)
         if prep is not None:
-            body["phrase_prep"] = prep
-        return body
+            payload["phrase_prep"] = prep
+        return payload
 
     @web.post("/phrases")
     async def route_phrases(request: Request):
