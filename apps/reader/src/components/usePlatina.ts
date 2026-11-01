@@ -77,7 +77,7 @@ export function usePlatina(resetKey: string) {
 
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const onDown = (e: PointerEvent) => {
-    if ((e.target as HTMLElement).closest("button,.ov,.minimap,.map-tip")) return;
+    if ((e.target as HTMLElement).closest("button,.ov,.minimap,.map-tip,.node-dot,.node-card")) return;
     cancelAnimationFrame(raf.current);
     drag.current = { x: e.clientX, y: e.clientY, moved: false };
   };

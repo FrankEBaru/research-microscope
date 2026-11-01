@@ -52,11 +52,11 @@ def test_missing_vector_does_not_invent_a_projection():
     assert "variance" not in layout
 
 
-def test_specter_pca_groups_by_cosine_and_keeps_citations():
+def test_specter_knn_groups_by_cosine_and_keeps_citations():
     papers = [
-        {"corpusid": 1, "year": 2000},
-        {"corpusid": 2, "year": 2001},
-        {"corpusid": 3, "year": 2002},
+        {"corpusid": 1, "year": 2000, "title": "in-context learning"},
+        {"corpusid": 2, "year": 2001, "title": "in-context learning prompts"},
+        {"corpusid": 3, "year": 2002, "title": "neural radiance field"},
     ]
     vectors = np.asarray([
         [1.0, 0.0, 0.0, 0.0],
@@ -64,7 +64,7 @@ def test_specter_pca_groups_by_cosine_and_keeps_citations():
         [0.0, 1.0, 0.0, 0.0],
     ], dtype=np.float64)
     layout = place_papers(papers, [{"citing": 2, "cited": 1}, {"citing": 2, "cited": 99}], vectors)
-    assert layout["method"] == "specter2-pca"
+    assert layout["method"] == "specter2-knn"
     clusters = [point["cluster"] for point in layout["points"]]
     assert clusters[0] == clusters[1]
     assert clusters[2] != clusters[0]
@@ -72,18 +72,71 @@ def test_specter_pca_groups_by_cosine_and_keeps_citations():
     assert (1, 2) in pairs
     assert (1, 3) not in pairs
     assert layout["links"] == [{"citing": 2, "cited": 1, "kind": "citation"}]
-    share = sum(layout["variance"])
-    assert 0 < share <= 1
-    assert layout["points"][0]["x"] >= WORLD_W / 2 - 0.1
+    assert layout["points"][0]["focus"] is True
+    assert layout["neighbors"]["k"] >= 1
+    names = " ".join(group["name"] for group in layout["groups"])
+    assert "context" in names
+    assert "?" not in names
 
 
-def test_identical_vectors_are_nudged_and_labeled():
+def test_knn_preserves_neighbors_of_two_blobs():
+    rng = np.random.default_rng(0)
+    left = rng.normal(size=(12, 32)) + np.array([8.0] + [0.0] * 31)
+    right = rng.normal(size=(12, 32)) + np.array([-8.0] + [0.0] * 31)
+    vectors = np.vstack([left, right])
+    papers = []
+    for i in range(24):
+        title = "in-context learning prompts" if i < 12 else "neural radiance anti aliasing"
+        papers.append({"corpusid": i + 1, "year": 2020, "title": title, "abstract": title})
+    layout = place_papers(papers, [], vectors)
+    assert layout["method"] == "specter2-knn"
+    assert len(layout["groups"]) >= 2
+    assert layout["neighbors"]["preserved"] >= 0.75
+    assert layout["neighbors"]["trustworthiness"] >= 0.8
+    assert sum(1 for point in layout["points"] if point.get("focus")) == 10
+    # Circles stay apart: each group center is outside the other radius.
+    groups = layout["groups"]
+    for i, a in enumerate(groups):
+        for b in groups[i + 1 :]:
+            dist = ((a["cx"] - b["cx"]) ** 2 + (a["cy"] - b["cy"]) ** 2) ** 0.5
+            assert dist > a["r"] * 0.9 + b["r"] * 0.9
+
+
+def test_knn_keeps_neighbors_along_a_line():
+    rng = np.random.default_rng(1)
+    xs = np.linspace(-3, 3, 30)
+    vectors = np.zeros((30, 8))
+    vectors[:, 0] = xs
+    vectors += rng.normal(scale=0.05, size=vectors.shape)
+    papers = [
+        {"corpusid": i + 1, "year": 2020, "title": "in-context learning", "abstract": "prompts"}
+        for i in range(30)
+    ]
+    layout = place_papers(papers, [], vectors)
+    assert layout["neighbors"]["preserved"] >= 0.55
+    assert layout["neighbors"]["trustworthiness"] >= 0.85
+
+
+def test_identical_vectors_stay_apart():
     vector = np.asarray([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64)
-    layout = place_papers([{"corpusid": 1}, {"corpusid": 2}], [], vector)
-    assert layout["method"] == "specter2-pca"
-    assert any(point.get("nudged") for point in layout["points"])
+    layout = place_papers(
+        [{"corpusid": 1, "title": "alpha"}, {"corpusid": 2, "title": "beta"}],
+        [],
+        vector,
+    )
+    assert layout["method"] == "specter2-knn"
     dist = abs(layout["points"][0]["y"] - layout["points"][1]["y"]) + abs(layout["points"][0]["x"] - layout["points"][1]["x"])
     assert dist >= 28
+
+
+def test_map_rows_keeps_ranked_papers_ahead_of_faiss_hits():
+    from rrm.search.layout import map_rows
+
+    rows = map_rows({
+        "papers": [{"corpusid": 2, "title": "ranked"}],
+        "similar": [{"corpusid": 2, "title": "dup"}, {"corpusid": 9, "title": "faiss"}],
+    })
+    assert [row["corpusid"] for row in rows] == [2, 9]
 
 
 def test_offline_burst_uses_citations_not_specter(tmp_path):

@@ -24,8 +24,9 @@ from rrm.demo_guard import check, cors_kwargs
 from rrm.demo_warm import scaledown_window
 from rrm.features import core_mode, features_mode
 from rrm.search.burst import burst_query
-from rrm.search.layout import place_papers
-from rrm.search.qcache import CACHE_DIR, cached_burst, load_entry, save_entry
+from rrm.search.layout import map_rows, place_papers
+from rrm.search.qcache import CACHE_DIR, cached_burst, load_entry, normalize_question, save_entry
+from rrm.search.vecfill import fill_encoded, read_cache
 from rrm.search.prefetch import detach_queue, note_burst_top
 from rrm.search.display import IdTable, PaperLookup
 from rrm.search.encode import QueryEncoder
@@ -187,33 +188,93 @@ class BurstSearch:
         _store_burst(query, out)
         return self._with_layout(out)
 
-    def _vectors_for(self, papers):
-        """Stored SPECTER2 rows, or (None, missing ids) when the index is cold or a paper has no vector."""
+    def _vector_cache(self):
+        return Path(MOUNT) / CACHE_DIR / "vectors"
+
+    def _stored_slots(self, rows):
+        """Index vector, else the encode cache. Does not run the encoder."""
         index = getattr(self, "index", None)
         faiss_ids = getattr(self, "faiss_ids", None)
-        if index is None or faiss_ids is None:
-            return None, []
-        vecs = []
+        cache = self._vector_cache()
+        slots = []
         missing = []
-        for row in papers or []:
-            if not isinstance(row, dict) or isinstance(row.get("corpusid"), bool) or not isinstance(row.get("corpusid"), int):
-                continue
-            vec = vector_at(index, faiss_ids, int(row["corpusid"]))
+        for row in rows:
+            vec = None
+            if index is not None and faiss_ids is not None:
+                vec = vector_at(index, faiss_ids, int(row["corpusid"]))
+            if vec is None:
+                vec = read_cache(cache, row["corpusid"])
             if vec is None:
                 missing.append(int(row["corpusid"]))
-            else:
-                vecs.append(vec)
-        if missing or not vecs:
-            return None, missing
-        import numpy as np
+            slots.append(vec)
+        return slots, missing
 
-        return np.stack(vecs), []
+    def _remember_layout(self, key, layout):
+        if not key:
+            return
+        if not hasattr(self, "_layouts"):
+            self._layouts = {}
+        self._layouts[key] = layout
+
+    def _refine_layout(self, key, rows, edges, slots):
+        """Encode the holes off the response path, then swap in the kNN map."""
+        encode = getattr(getattr(self, "encoder", None), "encode", None)
+        if not key or encode is None or not rows:
+            return
+        if not hasattr(self, "_refining"):
+            self._refining = set()
+        if key in self._refining:
+            return
+        self._refining.add(key)
+        cache = self._vector_cache()
+        if not hasattr(self, "_encode_lock"):
+            self._encode_lock = threading.Lock()
+        lock = self._encode_lock
+
+        def work():
+            try:
+                with lock:
+                    matrix, still = fill_encoded(rows, slots, encode, cache)
+                if matrix is not None:
+                    layout = place_papers(rows, edges, matrix)
+                else:
+                    layout = dict(place_papers(rows, edges, missing_vectors=still))
+                    layout["pending_vectors"] = []
+                self._remember_layout(key, layout)
+                try:
+                    vol.commit()
+                except Exception:
+                    return
+            finally:
+                self._refining.discard(key)
+
+        threading.Thread(target=work, name="rrm-map-refine", daemon=True).start()
 
     def _with_layout(self, payload):
+        """Map of the ranked list plus every FAISS hit. Encoding holes does not block the first paint."""
         out = dict(payload)
-        papers = out.get("papers") or []
-        vectors, missing = self._vectors_for(papers)
-        out["layout"] = place_papers(papers, out.get("edges") or [], vectors, missing_vectors=missing)
+        rows = map_rows(out)
+        edges = out.get("edges") or []
+        key = normalize_question(out.get("query") or payload.get("query") or "")
+        ready = getattr(self, "_layouts", {}).get(key) if key else None
+        if isinstance(ready, dict):
+            ids = {int(row["corpusid"]) for row in rows}
+            have = {int(point.get("corpusid")) for point in ready.get("points") or [] if isinstance(point, dict)}
+            if ids and ids <= have:
+                out["layout"] = ready
+                return out
+        slots, missing = self._stored_slots(rows)
+        if rows and not missing:
+            import numpy as np
+
+            out["layout"] = place_papers(rows, edges, np.stack(slots))
+            self._remember_layout(key, out["layout"])
+            return out
+        out["layout"] = place_papers(rows, edges, missing_vectors=missing or None)
+        if missing:
+            out["layout"] = dict(out["layout"])
+            out["layout"]["pending_vectors"] = missing
+            self._refine_layout(key, rows, edges, slots)
         return out
 
     def _compute(self, query, n):
@@ -288,6 +349,60 @@ class BurstSearch:
     def run_burst(self, q: str, n: int = 50):
         return self._answer(q, n)
 
+    def _measure_one(self, q: str):
+        """One question: first paint, then the kNN map once missing vectors are filled."""
+        t0 = time.perf_counter()
+        first = self._answer(q, 10)
+        t_first = round(time.perf_counter() - t0, 3)
+        key = normalize_question(q)
+        ready = first.get("layout") if isinstance(first, dict) else None
+        waited = 0.0
+        if isinstance(ready, dict) and ready.get("pending_vectors"):
+            t1 = time.perf_counter()
+            while time.perf_counter() - t1 < 40:
+                nxt = getattr(self, "_layouts", {}).get(key)
+                if isinstance(nxt, dict) and not nxt.get("pending_vectors"):
+                    ready = nxt
+                    break
+                time.sleep(0.25)
+            else:
+                nxt = getattr(self, "_layouts", {}).get(key)
+                if isinstance(nxt, dict):
+                    ready = nxt
+            waited = round(time.perf_counter() - t1, 3)
+        rows = map_rows(first if isinstance(first, dict) else {})
+        groups = []
+        for group in (ready or {}).get("groups") or []:
+            if isinstance(group, dict):
+                groups.append({"name": group.get("name"), "n": group.get("n")})
+        layout = ready if isinstance(ready, dict) else {}
+        return {
+            "query": q,
+            "t_first_s": t_first,
+            "t_refine_s": waited,
+            "ranked": len((first or {}).get("papers") or []),
+            "faiss": len((first or {}).get("similar") or []),
+            "map": len(rows),
+            "method": layout.get("method"),
+            "pending": layout.get("pending_vectors") or [],
+            "neighbors": layout.get("neighbors"),
+            "groups": groups,
+            "seconds": (first or {}).get("seconds"),
+            "cached": (first or {}).get("cached"),
+            "layout": {key: layout.get(key) for key in ("method", "points", "groups", "links", "neighbors", "width", "height")},
+            "rows": [_slim_row(row) for row in rows],
+            "edges": (first or {}).get("edges") or [],
+        }
+
+    @modal.method()
+    def measure_query(self, q: str):
+        return self._measure_one(q)
+
+    @modal.method()
+    def measure_queries(self, queries: list[str]):
+        """All questions in one container so the index loads once."""
+        return [self._measure_one(q) for q in queries]
+
     @modal.asgi_app()
     def api(self):
         from fastapi import FastAPI, Request
@@ -323,6 +438,19 @@ class BurstSearch:
             if denied:
                 return denied
             return self._labels(q)
+
+        @web.get("/map")
+        def route_map(request: Request, q: str):
+            """Layout after missing SPECTER2 vectors are filled. The first /burst does not wait for that."""
+            denied = gate(request)
+            if denied:
+                return denied
+            key = normalize_question(q)
+            layout = getattr(self, "_layouts", {}).get(key) if key else None
+            pending = bool(key and key in getattr(self, "_refining", set()))
+            if isinstance(layout, dict) and layout.get("pending_vectors"):
+                pending = True
+            return {"layout": layout, "pending": pending or layout is None}
 
         @web.get("/burst")
         def route_burst(request: Request, q: str, n: int = 50):
@@ -407,3 +535,32 @@ def main(query: str, n: int = 50, release: str = "2026-10-20", dest: str = "inde
         raise SystemExit("burst reads /s2/2026-10-20/index and /s2/2026-10-20/index_ext")
     out = BurstSearch().run_burst.remote(q=query, n=int(n))
     print(json.dumps(out, ensure_ascii=False))
+
+
+def _slim_row(row):
+    if not isinstance(row, dict):
+        return {}
+    out = {}
+    for key in ("corpusid", "title", "year", "venue", "citationcount", "abstract", "authors", "tldr"):
+        val = row.get(key)
+        if val is None or val == "":
+            continue
+        if key == "abstract":
+            val = str(val)[:500]
+        out[key] = val
+    return out
+
+
+@app.local_entrypoint()
+def measure():
+    """Three real questions, one container. Prints JSON lines with the map, not full papers."""
+    import json
+
+    questions = [
+        "what learning algorithm is in-context learning",
+        "neural radiance field anti-aliasing",
+        "survey of graph neural networks",
+    ]
+    rows = BurstSearch().measure_queries.remote(questions)
+    for summary in rows:
+        print(json.dumps(summary, ensure_ascii=False), flush=True)

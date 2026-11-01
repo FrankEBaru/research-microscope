@@ -25,22 +25,21 @@ export default function ReadMinimap({ papers, edges, layout, onOpen }: {
       aria-label="Minimapa de la ráfaga"
     >
       <svg viewBox="0 0 1600 1000">
-        {(model.links || []).map((edge: any, index: number) => {
-          const a = points.find((point: any) => point.corpusid === edge.citing);
-          const b = points.find((point: any) => point.corpusid === edge.cited);
-          if (!a || !b) return null;
-          return <line key={index} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#6d675d" strokeWidth="8" />;
-        })}
+        {(model.groups || []).filter((group: any) => Number.isFinite(group.cx) && Number.isFinite(group.r)).map((group: any) => (
+          <circle key={`g${group.id}`} cx={group.cx} cy={group.cy} r={group.r} fill="#27476b" fillOpacity={0.06} stroke="#27476b" strokeWidth={6} />
+        ))}
         {points.map((point: any) => {
           const paper = byId.get(String(point.corpusid));
           const sunk = Boolean(paper?.retracted);
+          const focus = Boolean(point.focus) || point.rank < 10;
           return (
             <circle
               key={point.corpusid}
               cx={point.x}
-              cy={sunk ? Math.min(960, point.y + 70) : point.y}
-              r={point.rank === 0 ? 26 : 16}
-              fill={paper?.survey ? "#27476b" : "#8a8175"}
+              cy={sunk ? Math.min(960, point.y + 40) : point.y}
+              r={focus ? 14 : 7}
+              fill={paper?.survey ? "#27476b" : paper?.retracted ? "#8d2a2a" : "#3d5a47"}
+              opacity={focus ? 1 : 0.45}
               style={{ cursor: "pointer" }}
               onClick={(event) => { event.stopPropagation(); onOpen(String(point.corpusid)); }}
             />
