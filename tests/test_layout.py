@@ -177,3 +177,57 @@ def test_point_i_is_paper_i_on_every_layout_path():
     for layout in (place_papers(papers, edges), place_papers(papers, edges, vectors)):
         by_rank = {p["rank"]: p["corpusid"] for p in layout["points"]}
         assert by_rank == {i: row["corpusid"] for i, row in enumerate(papers)}, layout["method"]
+
+
+def _tight_ball(rng, sizes, spread=0.25):
+    """A FAISS-like ball: one shared direction, sub-topics as small offsets."""
+    base = np.zeros(768)
+    base[0] = 10.0
+    blocks = []
+    for t, size in enumerate(sizes):
+        center = base.copy()
+        center[t + 1] = 3.0
+        blocks.append(center + rng.normal(scale=spread, size=(size, 768)))
+    return np.vstack(blocks)
+
+
+def _papers(n):
+    return [{"corpusid": i + 1, "year": 2020, "title": f"paper {i}"} for i in range(n)]
+
+
+def test_groups_follow_proximity_not_equal_halves(monkeypatch):
+    monkeypatch.delenv("RRM_GROUPS", raising=False)
+    rng = np.random.default_rng(7)
+    vectors = _tight_ball(rng, [60, 40])
+    layout = place_papers(_papers(100), [], vectors)
+    sizes = sorted(group["n"] for group in layout["groups"])
+    assert sizes == [40, 60]
+
+
+def test_a_ball_without_structure_stays_one_group(monkeypatch):
+    monkeypatch.delenv("RRM_GROUPS", raising=False)
+    rng = np.random.default_rng(11)
+    vectors = np.zeros((90, 768))
+    vectors[:, 0] = 10.0
+    vectors += rng.normal(scale=0.3, size=vectors.shape)
+    layout = place_papers(_papers(90), [], vectors)
+    assert len(layout["groups"]) == 1
+    monkeypatch.setenv("RRM_GROUPS", "median")
+    old = place_papers(_papers(90), [], vectors)
+    assert len(old["groups"]) >= 3
+
+
+def test_an_off_topic_group_is_marked_far(monkeypatch):
+    monkeypatch.delenv("RRM_GROUPS", raising=False)
+    rng = np.random.default_rng(5)
+    near = _tight_ball(rng, [50, 30])
+    off = np.zeros((25, 768))
+    off[:, 0] = 10.0
+    off[:, 20] = 6.0
+    off += rng.normal(scale=0.25, size=off.shape)
+    order = np.vstack([near[:5], near[50:55], near[5:50], near[55:], off])
+    layout = place_papers(_papers(len(order)), [], order)
+    far = [group for group in layout["groups"] if group.get("far")]
+    assert [group["n"] for group in far] == [25]
+    top = {point["cluster"] for point in layout["points"][:10]}
+    assert len(top) == 2 and far[0]["id"] not in top

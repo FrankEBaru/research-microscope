@@ -394,3 +394,43 @@ def test_split_nerf_stub_becomes_the_real_record_in_place():
     assert [row["corpusid"] for row in out["similar"]] == [213175590]
     assert out["edges"] == [{"citing": 246016186, "cited": 213175590}]
     assert has_stub({"papers": [{"corpusid": 282134003}]}) and not has_stub({"papers": [{"corpusid": 213175590}]})
+
+
+def test_a_title_match_goes_first_in_the_semantic_list():
+    from rrm.search.burst import burst_query
+    from rrm.search.graph import Graph
+
+    ids = np.arange(1, 31, dtype=np.int64)
+    graph = Graph.from_edges(ids, np.array([1, 2]), np.array([3, 4]))
+    cc = np.arange(30, dtype=np.int64)
+
+    def encode(texts):
+        return np.ones((len(texts), 4), dtype=np.float32)
+
+    def search(vector, k):
+        return [(int(c), 0.01 * i) for i, c in enumerate(range(1, 21))]
+
+    plain = burst_query("graph neural networks for molecules", encode, search, graph, cc, n=10)
+    boosted = burst_query(
+        "graph neural networks for molecules", encode, search, graph, cc, n=10, boost=lambda query: 25
+    )
+    assert boosted["mode"] == plain["mode"] != "paper"
+    assert boosted["first_id"] is None
+    got = boosted["papers"]["corpusids"]
+    assert got[0] == 25 and len(got) == 10
+    assert got[1:] == [c for c in plain["papers"]["corpusids"] if c != 25][:9]
+    again = burst_query("x", encode, search, graph, cc, n=10, boost=lambda query: plain["papers"]["corpusids"][4])
+    assert again["papers"]["corpusids"][0] == plain["papers"]["corpusids"][4]
+    assert sorted(again["papers"]["corpusids"]) == sorted(plain["papers"]["corpusids"])
+    none = burst_query("x", encode, search, graph, cc, n=10, boost=lambda query: None)
+    assert none["papers"]["corpusids"] == plain["papers"]["corpusids"]
+
+
+def test_titles_hijack_only_behind_the_flag(monkeypatch):
+    from rrm.search.display import title_hijack
+
+    monkeypatch.delenv("RRM_TITLE", raising=False)
+    assert title_hijack("arXiv:1706.03762")
+    assert not title_hijack("Attention is all you need")
+    monkeypatch.setenv("RRM_TITLE", "hijack")
+    assert title_hijack("Attention is all you need")

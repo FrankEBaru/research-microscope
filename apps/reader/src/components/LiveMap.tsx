@@ -279,6 +279,17 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
     tipStyle = { left, top };
   }
 
+  // RRM-49: hover shows the full title. Never with the click card open, never catching the pointer.
+  const hoverMeta = hover && !cardId ? byId.get(hover) : null;
+  const hoverShown = hoverMeta ? shown[hover!] : null;
+  let hoverStyle: { left: number; top: number; transform: string } | null = null;
+  if (hoverMeta && hoverShown && hoverShown.s > 0.55) {
+    const hx = sx(hoverShown.x);
+    const hy = sy(hoverShown.y);
+    const left = Math.min(Math.max(8, hx - 130), Math.max(8, size.w - 268));
+    hoverStyle = hy > 70 ? { left, top: hy - 12, transform: "translateY(-100%)" } : { left, top: hy + 12, transform: "none" };
+  }
+
   const members = (cluster: number) => targets.filter((point: any) => point.cluster === cluster);
   const taken: { x: number; y: number; w: number; h: number }[] = [];
   const claimLabel = (here: { x: number; y: number }, r: number, text: string, cluster?: number) => {
@@ -339,7 +350,7 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
             const idsIn = inside.map((point: any) => String(point.corpusid));
             const known = idsIn.some((id) => states[id]?.status || states[id]?.stage);
             const have = idsIn.filter((id) => fullText(byId.get(id)?.paper, states[id])).length;
-            const far = farGroups.has(String(group.id));
+            const far = farGroups.has(String(group.id)) || group.far === true;
             const title = String(group.name || "grupo");
             const tx = sx(group.cx);
             const ty = sy(group.cy);
@@ -433,6 +444,12 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
         {showLenses && (
           <div className="lenses" role="group" aria-label="Aumento">
             {LENSES.map((l) => <button key={l} type="button" className={lensZ === l ? "on" : ""} onClick={() => animateTo({ k: kFit * l })}>×{l}</button>)}
+          </div>
+        )}
+        {hoverStyle && hoverMeta && (
+          <div className="dot-hover" style={hoverStyle} aria-hidden="true">
+            <b>{hoverMeta.paper.title || hover}</b>
+            {shortName(hoverMeta.paper) && <span>{shortName(hoverMeta.paper)}</span>}
           </div>
         )}
         {cardPaper && (
