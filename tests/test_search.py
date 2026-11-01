@@ -416,6 +416,7 @@ def test_a_title_match_goes_first_in_the_semantic_list():
     )
     assert boosted["mode"] == plain["mode"] != "paper"
     assert boosted["first_id"] is None
+    assert boosted["title_first"] == 25 and "title_first" not in plain
     got = boosted["papers"]["corpusids"]
     assert got[0] == 25 and len(got) == 10
     assert got[1:] == [c for c in plain["papers"]["corpusids"] if c != 25][:9]
@@ -435,28 +436,3 @@ def test_titles_hijack_only_behind_the_flag(monkeypatch):
     monkeypatch.setenv("RRM_TITLE", "hijack")
     assert title_hijack("Attention is all you need")
 
-
-def test_a_title_match_pulls_faiss_toward_its_own_vector():
-    from rrm.search.burst import burst_query
-    from rrm.search.graph import Graph
-
-    graph = Graph.from_edges(np.array([1, 2, 3], dtype=np.int64), np.array([0]), np.array([1]))
-    seen = []
-
-    def search(vector, k):
-        seen.append(np.asarray(vector, dtype=np.float32))
-        return [(1, 0.1), (2, 0.2)]
-
-    out = burst_query(
-        "attention is all you need",
-        lambda texts: np.array([[1.0, 0.0, 0.0, 0.0]] * len(texts), dtype=np.float32),
-        search,
-        graph,
-        np.array([3, 2, 1], dtype=np.int64),
-        n=3,
-        boost=lambda query: 3,
-        vector_of=lambda corpusid: np.array([0.0, 2.0, 0.0, 0.0], dtype=np.float32),
-    )
-    assert np.allclose(seen[0], [2 ** -0.5, 2 ** -0.5, 0, 0], atol=1e-6)
-    assert out["title_seed"] == 3 and out["papers"]["corpusids"][0] == 3
-    assert out["qvec"][:2] == [1.0, 0.0]

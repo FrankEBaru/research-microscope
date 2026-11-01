@@ -221,7 +221,7 @@ class BurstSearch:
             hit = None
         if hit is not None and has_stub(hit):
             hit = None  # RRM-48: stored before the NeRF twin fix; recompute once
-        if hit is not None and not title_hijack(query) and "title_seed" not in hit and (
+        if hit is not None and not title_hijack(query) and "title_first" not in hit and (
             hit.get("mode") == "paper" or self._resolve(query) is not None
         ):
             hit = None  # RRM-49: stored by the old title hijack or before the title boost; recompute once
@@ -424,8 +424,8 @@ class BurstSearch:
         }
         if result.get("qvec"):
             out["qvec"] = result["qvec"]
-        if result.get("title_seed") is not None:
-            out["title_seed"] = int(result["title_seed"])
+        if result.get("title_first") is not None:
+            out["title_first"] = int(result["title_first"])
         out.update(topic_fields(result.get("qvec"), list(papers["corpusids"]) + [row["corpusid"] for row in result["similar"]], vector_of, cosine))
         _stamp_cosines(out)
         out["seconds"]["hydrate"] = round(time.perf_counter() - t0, 4)

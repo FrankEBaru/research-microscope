@@ -314,19 +314,6 @@ def _from_paper(seed, search, graph, cc, vector_of, n):
     return _with_qvec(_result("paper", int(seed), papers, scores, similar, edges, [], seconds), vec)
 
 
-def _toward(qvec, seed, vector_of):
-    """FAISS halfway between the question and the matched paper's own vector."""
-    vec = vector_of(int(seed)) if seed is not None and vector_of is not None else None
-    if vec is None:
-        return qvec
-    a = np.asarray(qvec, dtype=np.float32).reshape(-1)
-    b = np.asarray(vec, dtype=np.float32).reshape(-1)
-    if a.shape != b.shape:
-        return qvec
-    mid = a / (float(np.linalg.norm(a)) or 1.0) + b / (float(np.linalg.norm(b)) or 1.0)
-    return (mid / (float(np.linalg.norm(mid)) or 1.0)).astype(np.float32)
-
-
 def _boosted(graph, chosen, scores, seed, n):
     """The title match first, then the semantic list without it, still n long."""
     local = _locate_one(graph, seed)
@@ -379,7 +366,7 @@ def burst_query(
     seconds["encode"] = time.perf_counter() - t0
     k = seed_count(proximity)
     t0 = time.perf_counter()
-    hits = list(search(_toward(qvec, seed, vector_of), k))
+    hits = list(search(qvec, k))
     seconds["search"] = time.perf_counter() - t0
     similar = _trim(hits, k, None)
     t0 = time.perf_counter()
@@ -404,5 +391,5 @@ def burst_query(
         seconds,
     ), qvec)
     if seed is not None:
-        out["title_seed"] = int(seed)
+        out["title_first"] = int(seed)
     return out
