@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Rich } from "@/lib/math";
 import { ask, explain, preparePhrases } from "@/lib/backend.js";
+import { cleanExtract, storeLine } from "@/lib/extract.js";
 
 const PARTS = [
   ["coincide", "Coincide"],
@@ -61,6 +62,9 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
   const [progress, setProgress] = useState("");
   const [phraseLine, setPhraseLine] = useState("");
   const phrases = useRef<Promise<unknown> | null>(null);
+  const answer = useRef<HTMLDivElement | null>(null);
+  const [shown, setShown] = useState(0);
+  const [storeDone, setStoreDone] = useState(false);
   const key = (ids || []).join(",");
   useEffect(() => {
     if (!focusId) return;
@@ -102,12 +106,23 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
     if (!key) return;
     let stop = false;
     let timer = 0;
+    let same = 0;
+    let last = -1;
+    let tries = 0;
+    setStoreDone(false);
+    // RRM-47: antes seguía cada 2 s para siempre si un paper nunca tenía frases (8 de 10).
+    // Se para tras 3 lecturas sin cambio o 30 intentos (~1 min).
     const tick = async () => {
       try {
         const body = await ask(ids || [], "", "", focusId);
         if (stop) return;
         keepStore(body);
-        if (body?.store && body.store.ready < body.store.total) timer = window.setTimeout(tick, 2000);
+        const ready = Number(body?.store?.ready || 0);
+        same = ready === last ? same + 1 : 0;
+        last = ready;
+        tries += 1;
+        if (body?.store && ready < body.store.total && same < 3 && tries < 30) timer = window.setTimeout(tick, 2000);
+        else setStoreDone(true);
       } catch { /* el envío dice si no hubo almacén */ }
     };
     tick();
@@ -137,7 +152,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
       setProgress("revisando cada cita…");
       const body = await ask(ids || [], text, "revisar", focusId);
       if (body?.empty) setErr(body.note || "La revisión volvió vacía.");
-      else { setResult(body); keepStore(body); }
+      else { setResult(body); keepStore(body); setShown((n) => n + 1); }
     } catch (err: any) {
       const timed = err?.kind === "timeout" || err?.name === "AbortError";
       if (timed) held = "Sigue la revisión de las citas. Vuelve a enviar si no aparece.";
@@ -147,10 +162,14 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
       setProgress(held);
     }
   };
+  useEffect(() => {
+    // RRM-47: la caja tiene scroll propio; sin esto la respuesta quedaba abajo, sin verse.
+    if (shown) answer.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [shown]);
   const groups = group(result?.extracts || []);
   const parts = result?.parts || {};
   const hasParts = PARTS.some(([id]) => (parts[id] || []).length);
-  const shown = (result?.extracts || []).length;
+  const listed = (result?.extracts || []).length;
   const citeOf = (id: string, section?: string) => onName?.(String(id), section) || "paper";
   return (
     <form className="ask-card" onSubmit={send}>
@@ -160,27 +179,27 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
         </p>
       )}
       <p className="small">Sección: {sectionLabel}. Se puede seguir sin llenar la caja.</p>
-      {store && store.total > 0 && <p className="small" role="status">En el almacén: {store.ready} de {store.total}.</p>}
+      {store && store.total > 0 && <p className="small" role="status">{storeLine(store, storeDone)}</p>}
       <textarea aria-label="Qué entendiste" value={text} onChange={(event) => setText(event.target.value)} placeholder="En tus palabras. El LaTeX va entre $." />
-      {text.trim() && <div className="ask-preview" aria-hidden="true"><Rich text={text} /></div>}
-      <button type="submit" disabled={busy || !text.trim()}>Enviar</button>
+      {text.includes("$") && <div className="ask-preview" aria-hidden="true"><Rich text={text} /></div>}
+      <button type="submit" className="primary" disabled={busy || !text.trim()}>Enviar</button>
       {(phraseLine || progress) && <p className="small" role="status">{phraseLine || progress}</p>}
       {err && <p className="fail-reason">{err}</p>}
       {result?.empty && <p role="status">{result.note || "No hay frases guardadas de estos papers."}</p>}
       {result && !result.empty && (
         <div className="extracts">
-          <p className="ask-label">estos papers dicen ({result.papers})</p>
-          {result.matched > shown && <p className="small">Encontré {result.matched} frases cercanas. Aquí van las {shown} más próximas a lo que escribiste.</p>}
+          <p className="ask-label">{result.papers === 1 ? "el paper dice" : `estos papers dicen (${result.papers})`}</p>
+          {result.matched > listed && <p className="small">Encontré {result.matched} frases cercanas. Aquí van las {listed} más próximas a lo que escribiste.</p>}
           {groups.map(([id, rows]) => (
             <section key={id} className="extract">
               <button type="button" className="link" onClick={() => onOpen?.(id, "cita en la caja")}>{citeOf(id, rows[0]?.section)}</button>
-              {rows.map((row: any, index: number) => <blockquote key={index}>{row.text}</blockquote>)}
+              {rows.map((row: any, index: number) => <blockquote key={index}><Rich text={cleanExtract(row.text)} /></blockquote>)}
             </section>
           ))}
         </div>
       )}
       {!result?.empty && (result?.note || hasParts) && (
-        <div className="feedback generated">
+        <div className="feedback generated" ref={answer}>
           <p><span className="chip chip-simulado">generado</span></p>
           {result?.note && <p>{result.note}</p>}
           {PARTS.map(([id, label]) => (parts[id] || []).length ? (
@@ -191,8 +210,8 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
                   {item.text}
                   {item.cite && <> <q>{item.cite}</q></>}
                   {item.paper_id && <button type="button" className="link" onClick={() => onOpen?.(String(item.paper_id), "cita en la caja")}>{citeOf(String(item.paper_id), item.section)}</button>}
-                  {item.verified && <span className="chip chip-simulado">verificado contra la cita</span>}
-                  {id === "sin_respaldo" && <span className="small"> Ningún paper analizado lo menciona.</span>}
+                  {item.verified && item.cite && <span className="chip chip-simulado">verificado contra la cita</span>}
+                  {id === "sin_respaldo" && <span className="small"> El paper abierto no lo dice.</span>}
                 </p>
               ))}
             </section>
