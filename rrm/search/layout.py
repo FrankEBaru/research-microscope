@@ -16,6 +16,7 @@ Coordinates are in the same 1600×1000 field as the curated platina.
 from __future__ import annotations
 
 import math
+import re
 
 WORLD_W = 1600.0
 WORLD_H = 1000.0
@@ -35,7 +36,8 @@ def place_papers(papers, edges, vectors=None, missing_vectors=None):
     """
     rows = _rows(papers)
     if vectors is not None and len(rows) > 0 and _vector_count(vectors) == len(rows) and not missing_vectors:
-        return _specter(rows, edges, vectors)
+        # kNN keeps who is close. `_specter` (PCA) stays in this file and is not the live path.
+        return _knn_map(rows, edges, vectors)
     layout = _citation(rows, edges)
     if missing_vectors:
         layout["missing_vectors"] = [int(cid) for cid in missing_vectors]
@@ -481,6 +483,439 @@ def _cosine_groups(sim):
             roots[root] = len(roots)
         clusters.append(roots[root])
     return clusters
+
+
+def map_rows(payload):
+    """Ranked papers first, then FAISS hits that are not already in that list."""
+    rows = []
+    seen = set()
+    for key in ("papers", "similar"):
+        for row in (payload or {}).get(key) or []:
+            if not isinstance(row, dict):
+                continue
+            cid = row.get("corpusid")
+            if isinstance(cid, bool) or not isinstance(cid, int) or cid in seen:
+                continue
+            seen.add(cid)
+            rows.append(row)
+    return rows
+
+
+_STOP = frozenset(
+    """
+    a an the of and or to for in on with from by as at is are was were be been being
+    this that these those into over under between among its their our we you
+    using use used via based paper papers approach approaches method methods
+    study studies result results task tasks toward towards new show shown propose
+    proposed model models data dataset datasets algorithm algorithms which where
+    when while than then also can may such not only more most other into within
+    between without across per each both all any few many one two three
+    retraction retracted phys conf ser proceedings preprint copyright doi figure
+    table university department page pages vol volume issue springer elsevier
+    """.split()
+)
+
+
+def _keep(word):
+    return word not in _STOP and not word.isdigit() and len(word) > 2
+
+
+def _terms(text):
+    raw = re.findall(r"[a-z][a-z0-9]+(?:-[a-z0-9]+)*", str(text or "").lower())
+    words = [word for word in raw if _keep(word)]
+    # Bigrams only when the two words were next to each other. Dropping a
+    # stopword must not glue "relationship" to "architecture".
+    bigrams = [
+        f"{a} {b}" for a, b in zip(raw, raw[1:])
+        if _keep(a) and _keep(b) and a not in b and b not in a
+    ]
+    return words + bigrams
+
+
+def _stem(term):
+    parts = []
+    for word in term.split():
+        if len(word) > 4 and word.endswith("s"):
+            word = word[:-1]
+        parts.append(word)
+    return " ".join(parts)
+
+
+def _cluster_names(rows, clusters):
+    """c-TF-IDF keywords. No model, no question phrasing."""
+    from collections import Counter
+
+    ids = sorted(set(clusters))
+    counts = {cid: Counter() for cid in ids}
+    docs = {cid: Counter() for cid in ids}
+    titles = {cid: Counter() for cid in ids}
+    for row, cid in zip(rows, clusters):
+        title = _terms(row.get("title"))
+        abstract = _terms(row.get("abstract"))
+        counts[cid].update(title)
+        counts[cid].update(title)
+        counts[cid].update(title)
+        counts[cid].update(abstract)
+        docs[cid].update(set(title) | set(abstract))
+        titles[cid].update(set(title))
+    total = Counter()
+    for ctr in counts.values():
+        total.update(ctr)
+    sizes = [sum(ctr.values()) for ctr in counts.values() if ctr]
+    avg = (sum(sizes) / len(sizes)) if sizes else 1.0
+    pool = []
+    for cid in ids:
+        for term, tf in counts[cid].items():
+            if titles[cid][term] < 2:
+                continue
+            if " " not in term or not 2 <= len(term.split()) <= 4:
+                continue
+            everywhere = float(total[term] or tf)
+            pool.append((tf * math.log1p(avg / everywhere), cid, term))
+    pool.sort(key=lambda item: (-item[0], -len(item[2]), item[2]))
+    names = {}
+    used = set()
+    used_words = set()
+    for _score, cid, term in pool:
+        if cid in names:
+            continue
+        stem = _stem(term)
+        if stem in used or all(word in used_words for word in stem.split()):
+            continue
+        names[cid] = term[:48]
+        used.add(stem)
+        used_words.update(stem.split())
+    for cid in ids:
+        if cid in names:
+            continue
+        words = [
+            term for term, _tf in counts[cid].most_common()
+            if " " not in term and titles[cid][term] >= 3 and _stem(term) not in used_words
+        ]
+        names[cid] = (words[0] if words else "grupo")[:48]
+        used_words.update(_stem(names[cid]).split())
+    return names
+
+
+def _neighbor_stats(unit, pos, k):
+    import numpy as np
+
+    n = int(unit.shape[0])
+    k = int(min(max(k, 0), max(n - 1, 0)))
+    if n < 2 or k < 1:
+        return {"k": 0, "preserved": 1.0, "trustworthiness": 1.0}
+    sim = unit @ unit.T
+    np.fill_diagonal(sim, -np.inf)
+    high = np.argsort(-sim, axis=1)[:, :k]
+    xy = np.asarray(pos, dtype=np.float64)
+    dist = np.sum((xy[:, None, :] - xy[None, :, :]) ** 2, axis=2)
+    np.fill_diagonal(dist, np.inf)
+    low = np.argsort(dist, axis=1)[:, :k]
+    hit = 0
+    for i in range(n):
+        hit += len(set(high[i].tolist()) & set(low[i].tolist()))
+    preserved = hit / float(n * k)
+    order = np.argsort(-sim, axis=1)
+    rank = np.empty((n, n), dtype=np.int32)
+    rank[np.arange(n)[:, None], order] = np.arange(1, n + 1)
+    penalty = 0.0
+    for i in range(n):
+        extra = set(low[i].tolist()) - set(high[i].tolist())
+        for j in extra:
+            penalty += float(rank[i, j] - k)
+    denom = n * k * (2 * n - 3 * k - 1)
+    trust = 1.0 if denom <= 0 else 1.0 - (2.0 / denom) * penalty
+    return {
+        "k": k,
+        "preserved": round(max(0.0, min(1.0, preserved)), 4),
+        "trustworthiness": round(max(0.0, min(1.0, trust)), 4),
+    }
+
+
+def _renumber(clusters):
+    seen = {}
+    out = []
+    for cid in clusters:
+        if cid not in seen:
+            seen[cid] = len(seen)
+        out.append(seen[cid])
+    return out
+
+
+def _agglomerate(sim):
+    n = int(sim.shape[0])
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    edges = sorted(
+        ((float(sim[i, j]), i, j) for i in range(n) for j in range(i + 1, n)),
+        reverse=True,
+    )
+    for cos, i, j in edges:
+        if cos < 0.72:
+            break
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[rj] = ri
+    return _renumber([find(i) for i in range(n)])
+
+
+def _kmeans(unit, k):
+    import numpy as np
+
+    n = int(unit.shape[0])
+    k = int(min(max(k, 1), n))
+    chosen = [int(np.argmax(np.linalg.norm(unit - unit.mean(axis=0), axis=1)))]
+    for _ in range(k - 1):
+        nearest = np.max(unit @ unit[chosen].T, axis=1)
+        chosen.append(int(np.argmin(nearest)))
+    cents = unit[np.asarray(chosen)].copy()
+    labels = np.zeros(n, dtype=np.int64)
+    for _ in range(18):
+        labels = np.argmax(unit @ cents.T, axis=1)
+        for j in range(k):
+            block = unit[labels == j]
+            if len(block) == 0:
+                cents[j] = unit[(chosen[0] + j) % n]
+                continue
+            mean = block.mean(axis=0)
+            cents[j] = mean / (float(np.linalg.norm(mean)) or 1e-9)
+    return labels
+
+
+def _silhouette(unit, labels):
+    import numpy as np
+
+    dist = np.clip(1.0 - (unit @ unit.T), 0.0, 2.0)
+    np.fill_diagonal(dist, 0.0)
+    labels = np.asarray(labels)
+    kinds = sorted(set(int(c) for c in labels.tolist()))
+    if len(kinds) < 2:
+        return -1.0
+    total = 0.0
+    n = len(labels)
+    for i in range(n):
+        mine = labels == labels[i]
+        mine[i] = False
+        if not bool(mine.any()):
+            continue
+        a = float(dist[i, mine].mean())
+        b = min(float(dist[i, labels == c].mean()) for c in kinds if c != int(labels[i]))
+        total += (b - a) / max(a, b, 1e-9)
+    return total / float(n)
+
+
+def _median_groups(unit, target):
+    """Split the biggest group on its first axis until there are `target` groups.
+
+    k-means on a tight FAISS ball isolates one outlier. A median cut keeps
+    every group large enough to read.
+    """
+    import numpy as np
+
+    groups = [list(range(int(unit.shape[0])))]
+    while len(groups) < target:
+        groups.sort(key=len)
+        big = groups.pop()
+        if len(big) < 10:
+            groups.append(big)
+            break
+        block = unit[np.asarray(big)]
+        centered = block - block.mean(axis=0)
+        vec = centered[int(np.argmax(np.linalg.norm(centered, axis=1)))]
+        for _ in range(8):
+            vec = centered.T @ (centered @ vec)
+            norm = float(np.linalg.norm(vec))
+            if norm < 1e-9:
+                break
+            vec /= norm
+        order = np.argsort(centered @ vec)
+        mid = len(big) // 2
+        groups.append([big[int(i)] for i in order[:mid]])
+        groups.append([big[int(i)] for i in order[mid:]])
+    labels = [0] * int(unit.shape[0])
+    for cid, members in enumerate(groups):
+        for i in members:
+            labels[i] = cid
+    return labels
+
+
+def _groups_of(unit):
+    """3 to 6 groups. k by silhouette when every group has enough papers."""
+    n = int(unit.shape[0])
+    if n < 12:
+        return _agglomerate(unit @ unit.T)
+    floor = 5 if n >= 25 else 3
+    hi = min(6, max(3, n // floor))
+    best, score = None, -2.0
+    for k in range(3, hi + 1):
+        labels = _kmeans(unit, k)
+        counts = {}
+        for cid in labels.tolist():
+            counts[int(cid)] = counts.get(int(cid), 0) + 1
+        if len(counts) < 3 or min(counts.values()) < floor:
+            continue
+        got = _silhouette(unit, labels)
+        if got > score:
+            best, score = labels.tolist(), got
+    if best is None:
+        best = _median_groups(unit, min(4, hi))
+    return _renumber(best)
+
+
+def _local_pack(m):
+    """Even dots inside the circle. A collapsed PCA left them stacked."""
+    gap = 30.0
+    if m <= 1:
+        return [[0.0, 0.0]], 40.0
+    pos = []
+    for i in range(m):
+        rad = gap * 0.5 * math.sqrt(i)
+        ang = i * 2.39996323
+        pos.append([rad * math.cos(ang), rad * math.sin(ang)])
+    for _ in range(10):
+        moved = False
+        for i in range(m):
+            for j in range(i + 1, m):
+                dx = pos[j][0] - pos[i][0]
+                dy = pos[j][1] - pos[i][1]
+                dist = math.hypot(dx, dy)
+                if dist >= gap:
+                    continue
+                moved = True
+                if dist < 0.01:
+                    dx, dy, dist = 1.0, 0.0, 1.0
+                push = (gap - dist) / 2
+                pos[i][0] -= dx / dist * push
+                pos[i][1] -= dy / dist * push
+                pos[j][0] += dx / dist * push
+                pos[j][1] += dy / dist * push
+        if not moved:
+            break
+    span = max(math.hypot(p[0], p[1]) for p in pos)
+    return pos, span + gap * 0.75
+
+
+
+
+def _pack(radii, gap=88.0):
+    """Rows, not a ring: the platina is wide, and a ring leaves the groups small."""
+    g = len(radii)
+    if g == 0:
+        return []
+    if g == 1:
+        return [(0.0, 0.0)]
+    cols = g
+    centers = []
+    rows = [radii[i : i + cols] for i in range(0, g, cols)]
+    row_gap = gap + 36.0
+    height = sum(2 * max(row) for row in rows) + row_gap * (len(rows) - 1)
+    y = -height / 2
+    for row in rows:
+        y += max(row)
+        width = sum(2 * radius for radius in row) + gap * (len(row) - 1)
+        x = -width / 2
+        for radius in row:
+            x += radius
+            centers.append((x, y))
+            x += radius + gap
+        y += max(row) + row_gap
+    return centers
+
+
+def _fit_groups(centers, radii):
+    if not centers:
+        return centers, radii
+    minx = min(x - r for (x, _y), r in zip(centers, radii))
+    maxx = max(x + r for (x, _y), r in zip(centers, radii))
+    miny = min(y - r for (_x, y), r in zip(centers, radii))
+    maxy = max(y + r for (_x, y), r in zip(centers, radii))
+    spanx = max(maxx - minx, 1.0)
+    spany = max(maxy - miny, 1.0)
+    left, right = 120.0, WORLD_W - 120.0
+    top, bot = 150.0, WORLD_H - 110.0
+    scale = min((right - left) / spanx, (bot - top) / spany)
+    # Use the width. A second shrink left the groups as a small knot in the middle.
+    cx = (minx + maxx) / 2
+    cy = (miny + maxy) / 2
+    ox = (left + right) / 2
+    oy = (top + bot) / 2
+    fitted = [((x - cx) * scale + ox, (y - cy) * scale + oy) for x, y in centers]
+    return fitted, [r * scale for r in radii]
+
+
+def _knn_map(rows, edges, vectors):
+    import numpy as np
+
+    n = len(rows)
+    directed, _undirected = _links(rows, edges)
+    raw = np.asarray(vectors, dtype=np.float64)
+    if raw.ndim != 2 or raw.shape[0] != n:
+        return _citation(rows, edges)
+    norms = np.clip(np.linalg.norm(raw, axis=1, keepdims=True), 1e-9, None)
+    unit = raw / norms
+    sim = unit @ unit.T
+    clusters = _groups_of(unit)
+    names = _cluster_names(rows, clusters)
+    members = {}
+    for i, cid in enumerate(clusters):
+        members.setdefault(cid, []).append(i)
+    axis = _pca(unit)[:, 0]
+    order = sorted(members, key=lambda cid: float(sum(axis[i] for i in members[cid]) / len(members[cid])))
+    local = {}
+    radii = []
+    for cid in order:
+        pos, radius = _local_pack(len(members[cid]))
+        local[cid] = pos
+        radii.append(radius)
+    raw_radii = list(radii)
+    centers, radii = _fit_groups(_pack(radii), radii)
+    world = [[0.0, 0.0] for _ in range(n)]
+    groups = []
+    for cid, center, radius, raw in zip(order, centers, radii, raw_radii):
+        sx, sy = center
+        grown = radius / max(raw, 1.0)
+        for slot, i in enumerate(members[cid]):
+            world[i][0] = sx + local[cid][slot][0] * grown
+            world[i][1] = sy + local[cid][slot][1] * grown
+        groups.append({
+            "id": int(cid),
+            "n": len(members[cid]),
+            "kind": "knn",
+            "name": names.get(cid) or "grupo",
+            "cx": round(sx, 2),
+            "cy": round(sy, 2),
+            "r": round(radius, 2),
+        })
+    for p in world:
+        p[0] = min(WORLD_W - 36, max(36, p[0]))
+        p[1] = min(WORLD_H - 36, max(36, p[1]))
+    k = min(8, n - 1)
+    stats = _neighbor_stats(unit, world, k)
+    points = []
+    for i, row in enumerate(rows):
+        item = _point(row, i, world[i][0], world[i][1], clusters[i])
+        if i < 10:
+            item["focus"] = True
+        points.append(item)
+    return {
+        "method": "specter2-knn",
+        "width": WORLD_W,
+        "height": WORLD_H,
+        "points": points,
+        "links": [{"citing": a, "cited": b, "kind": "citation"} for a, b in directed],
+        "similarity": _neighbors(rows, sim),
+        "groups": groups,
+        "grouping": "knn",
+        "neighbors": stats,
+        "cosine_min": 0.72,
+        "variance": _variance(unit),
+    }
 
 
 def _neighbors(rows, sim):

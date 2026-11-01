@@ -187,7 +187,7 @@ class IdTable:
                 out.append(None)
                 continue
             count = self._cell("citationcount", at)
-            out.append({
+            item = {
                 "corpusid": cid,
                 "title": self._cell("title", at),
                 "year": self._cell("year", at),
@@ -195,7 +195,12 @@ class IdTable:
                 "citationcount": None if count is None else int(count),
                 "tldr": self._cell("tldr", at),
                 "abstract": self._cell("abstract", at),
-            })
+            }
+            if "authors" in self.table.column_names:
+                names = self._cell("authors", at)
+                if names:
+                    item["authors"] = names
+            out.append(item)
         return out
 
     def _cell(self, name, at):

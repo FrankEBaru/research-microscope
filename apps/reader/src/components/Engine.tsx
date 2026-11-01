@@ -10,7 +10,7 @@ import SimPanorama from "./SimPanorama";
 import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
 import { burst, explain, labels as fetchLabels, liveEnabled, paperKey, paper as fetchPaper, prepare, settled, status as fetchStatus, subtopics as fetchSubtopics, warm } from "@/lib/backend.js";
 import { coreMode } from "@/lib/features.js";
-import { pinPoint } from "@/lib/layout.js";
+import { mapPapers, pinPoint } from "@/lib/layout.js";
 import { mergeLabels, popVisit, pushVisit } from "@/lib/path.js";
 import { normalizeQuestion, phaseOf, readOverflow, readQuestions, recallQuestion, rememberQuestion, writeOverflow } from "@/lib/qcache.js";
 import { bindDevLog, createDevLog } from "@/lib/devlog.js";
@@ -298,8 +298,19 @@ export default function Engine() {
           setLiveResult((prev) => {
             if (!prev) return prev;
             const papers = mergeLabels(prev.papers || [], body);
+            const by = body?.by_id || {};
+            const similar = (prev.similar || []).map((paper: any) => {
+              const extra = by[String(paper.corpusid)] || {};
+              return {
+                ...paper,
+                abstract: extra.abstract || paper.abstract || "",
+                survey: Boolean(extra.survey),
+                retracted: extra.retracted === true,
+                retraction: extra.retraction || "",
+              };
+            });
             const layout = body?.survey_paper ? pinPoint(prev.layout, body.survey_paper) : prev.layout;
-            return { ...prev, papers, layout };
+            return { ...prev, papers, similar, layout };
           });
           const sid = body?.survey_paper?.corpusid;
           if (sid) prepare([sid], false).catch(() => {});
@@ -389,13 +400,15 @@ export default function Engine() {
     <>
       <header className="topbar">
         <a className="brand" href="#/" onClick={() => window.scrollTo({ top: 0 })}><span className="lens" aria-hidden="true" />Microscopio de lectura</a>
-        <nav className="scope" aria-label="Nivel de zoom">
-          {steps.map((s, i) => (
-            <button key={s.n} className={`step ${level === s.n ? "on" : ""} ${level > s.n ? "past" : ""}`} disabled={!s.on || level === s.n} onClick={s.on} title={s.sub || ""}>
-              <span className="dot">{s.n}</span><span className="lbl">{s.label}</span>
-            </button>
-          ))}
-        </nav>
+        {!(core && (liveOn || liveId)) && (
+          <nav className="scope" aria-label="Nivel de zoom">
+            {steps.map((s) => (
+              <button key={s.n} className={`step ${level === s.n ? "on" : ""} ${level > s.n ? "past" : ""}`} disabled={!s.on || level === s.n} onClick={s.on} title={s.sub || ""}>
+                <span className="dot">{s.n}</span><span className="lbl">{s.label}</span>
+              </button>
+            ))}
+          </nav>
+        )}
         {live && !(core && !liveOn && !liveId) && (
           <form className="live-search" onSubmit={onSearch}>
             <input aria-label="Pregunta" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Pregunta" />
@@ -412,7 +425,7 @@ export default function Engine() {
             {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
             {core && <button type="button" className="link" onClick={volver}>volver</button>}
             {core && camino[camino.length - 1]?.porQue && <p className="jump-why">Salto: {camino[camino.length - 1].porQue}</p>}
-            <PaperView paper={opened.paper} content={content || {}} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} showInstrument={!core} showCrops={!core} core={core} burstIds={(liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p))} map={liveResult ? { papers: liveResult.papers || [], edges: liveResult.edges || [], layout: liveResult.layout } : null} onOpenPaper={abrir} onPromote={() => promoteBurst(liveId)} />
+            <PaperView paper={opened.paper} content={content || {}} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} showInstrument={!core} showCrops={!core} core={core} burstIds={(liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p))} map={liveResult ? { papers: mapPapers(liveResult), edges: liveResult.edges || [], layout: liveResult.layout } : null} onOpenPaper={abrir} onPromote={() => promoteBurst(liveId)} />
           </div>
         )}
         {live && (liveOn || liveId) && liveId && !opened && (
@@ -454,7 +467,7 @@ export default function Engine() {
                 {labelNote && <p className="muted" role="status">{labelNote}</p>}
                 {asList
                   ? <CoreList papers={liveResult.papers || []} states={rowState} onOpen={(id: string) => abrir(id, "nodo del mapa")} onWant={wantThis} />
-                  : <LiveMap papers={liveResult.papers || []} edges={liveResult.edges || []} layout={liveResult.layout} states={rowState} onOpen={(id: string) => abrir(id, "nodo del mapa")} onWant={wantThis} />}
+                  : <LiveMap papers={mapPapers(liveResult)} edges={liveResult.edges || []} layout={liveResult.layout} states={rowState} query={liveQ} onLayout={(next) => setLiveResult((prev) => (prev ? { ...prev, layout: next } : prev))} onOpen={(id: string) => abrir(id, "nodo del mapa")} onWant={wantThis} />}
                 <p className="muted small">Datos de papers y citas: Semantic Scholar. LaTeX primero; OCR solo si el paper no tiene LaTeX.</p>
               </>
             )}

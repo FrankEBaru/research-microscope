@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { layoutOf, mapCaption, placePapers, statusLine } from "../src/lib/layout.js";
+import { layoutOf, mapCaption, mapPapers, placePapers, statusLine } from "../src/lib/layout.js";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -65,6 +65,26 @@ test("sin citas el rótulo no dice que sea SPECTER2", () => {
   const caption = mapCaption(layout);
   assert.match(caption.positionTitle, /no una similitud/i);
   assert.doesNotMatch(caption.position, /SPECTER/);
+});
+
+test("el mapa junta la lista rankeada con los hits de FAISS", () => {
+  const rows = mapPapers({
+    papers: [{ corpusid: 1, title: "primero" }],
+    similar: [{ corpusid: 1, title: "dup" }, { corpusid: 8, title: "faiss" }],
+  });
+  assert.deepEqual(rows.map((row) => row.corpusid), [1, 8]);
+});
+
+test("el rótulo del kNN no promete una pregunta de modelo", () => {
+  const caption = mapCaption({
+    method: "specter2-knn",
+    neighbors: { k: 8, preserved: 0.81, trustworthiness: 0.9 },
+    groups: [{ id: 0, name: "in-context learning" }],
+    points: [],
+  });
+  assert.match(caption.position, /vecinos de SPECTER2/);
+  assert.match(caption.positionTitle, /sin un modelo/);
+  assert.match(caption.note, /10 primeros/);
 });
 
 test("la línea de estado no bloquea y cuenta las fases", () => {

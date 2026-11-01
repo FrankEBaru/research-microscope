@@ -11,6 +11,15 @@ const STEPS = 220;
 const MARGIN = 96;
 const MIN_GAP = 28;
 
+export function mapPapers(result) {
+  const ranked = Array.isArray(result?.papers) ? result.papers : [];
+  const seen = new Set(ranked.map((paper) => paper?.corpusid));
+  const extra = (Array.isArray(result?.similar) ? result.similar : []).filter(
+    (paper) => paper && Number.isInteger(paper.corpusid) && !seen.has(paper.corpusid),
+  );
+  return ranked.concat(extra);
+}
+
 export function layoutOf(payload) {
   const papers = Array.isArray(payload?.papers) ? payload.papers : [];
   const layout = payload?.layout;
@@ -316,6 +325,19 @@ export function mapCaption(layout) {
   const method = layout?.method;
   const nudged = (layout?.points || []).some((p) => p.nudged);
   const nudge = nudged ? " Algunos puntos se separaron para no quedar encima; esa separación no es una distancia." : "";
+  if (method === "specter2-knn") {
+    const kept = layout?.neighbors?.preserved;
+    const pct = typeof kept === "number" ? ` Se conservan ${Math.round(kept * 100)}% de los vecinos.` : "";
+    return {
+      position: "posición: vecinos de SPECTER2",
+      positionKind: "calculo",
+      positionTitle: `Cada paper queda junto a los que SPECTER2 ve cerca. El círculo es un grupo; el nombre son palabras del título y el abstract, sin un modelo.${pct}`,
+      grouping: "color del círculo: grupo",
+      edges: "línea tenue al pasar el mouse: cita (Semantic Scholar)",
+      similar: "",
+      note: "Los 10 primeros son más grandes. El resto de lo que FAISS revisó se queda en su grupo, más tenue.",
+    };
+  }
   if (method === "specter2-pca") {
     const share = (layout.variance || []).reduce((a, b) => a + (Number(b) || 0), 0);
     const pct = share > 0 ? ` (${Math.round(share * 100)}% de la varianza)` : "";

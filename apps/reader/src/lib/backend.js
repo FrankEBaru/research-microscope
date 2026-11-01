@@ -311,6 +311,10 @@ export function burst(q) {
   return request("burst", `${BURST}/burst?q=${encodeURIComponent(q)}&n=10`);
 }
 
+export function mapLayout(q) {
+  return request("burst", `${BURST}/map?q=${encodeURIComponent(q)}`);
+}
+
 export function status(ids, q) {
   const extra = q ? `&q=${encodeURIComponent(q)}` : "";
   return request("status", `${READER}/status?ids=${ids.join(",")}${extra}`);
