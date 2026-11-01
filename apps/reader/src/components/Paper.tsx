@@ -8,6 +8,7 @@ import { bibtex } from "@/lib/bibtex.js";
 import { crops, eqTex, figureCandidates, figureUrl, paperKey, refText, sourcePdfUrl } from "@/lib/backend.js";
 import { pdfPagesOnly, polishText, presentInlines, visibleInlines } from "@/lib/prose.js";
 import { equationHover, symbolHover, tableHover } from "@/lib/hover.js";
+import { faltaText } from "@/lib/falta.js";
 import { hasConclusion, scanIds } from "@/lib/scan.js";
 import { resolveCite } from "@/lib/path.js";
 import AskBox from "./AskBox";
@@ -540,12 +541,12 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           {core && left && !hold && <p className="ask-offer">Cerraste una sección. <button type="button" className="link" onClick={() => setHold(left)}>Escribir</button> <button type="button" className="link" onClick={() => setLeft("")}>Seguir</button></p>}
           {core && hold && <AskBox sectionLabel="la sección que cerraste" ids={burstIds} onOpen={onOpenPaper} onPromote={onPromote} closed onSkip={() => { setHold(""); setLeft(""); }} />}
           {core && !hold && <AskBox sectionLabel={sectionLabel} ids={burstIds} onOpen={onOpenPaper} onPromote={onPromote} />}
-          {undrawn && <p className="fail-reason">Falta: {remote?.reason || "no se pudo dibujar el paper"}</p>}
+          {undrawn && <p className="fail-reason">Falta: {faltaText(remote?.reason)}</p>}
           {undrawn && pdfHref && <iframe className="source-pdf" title="PDF del paper" src={pdfHref} />}
           {undrawn && !pdfHref && honest && <p className="fail-reason"><a href={honest} target="_blank" rel="noreferrer">No hay PDF en el lector, ni en arXiv, ni un openAccessPdf. La ficha está aquí.</a></p>}
           <p className="authors">{authors}</p>
           <p className="meta">{paper.date?.slice(0, 4)}{paper.arxivId && <> · <a href={`https://arxiv.org/abs/${paper.arxivId}`} target="_blank" rel="noreferrer">ver original en arXiv</a></>}{paper.full && paper.arxivId && <> · <a href={`https://arxiv.org/pdf/${paper.arxivId}`} target="_blank" rel="noreferrer">PDF</a></>}{(remote?.status === "abstract_only" || remote?.status === "failed" || remote?.stage === "abstract_only") && !paper.arxivId && paper.corpusid != null && <> · <a href={`https://www.semanticscholar.org/paper/${paper.corpusid}`} target="_blank" rel="noreferrer">Semantic Scholar</a></>}{paper.arxivId && <> · <button className="link bib" data-bibtex={bibtex(paper)} data-copy={bibtex(paper)} title="Copiar la ficha BibTeX de arXiv">BibTeX</button></>}</p>
-          {remote?.status === "failed" && <p className="fail-reason">{remote.reason}</p>}
+          {remote?.status === "failed" && <p className="fail-reason">{faltaText(remote.reason)}</p>}
           {remote?.source === "ocr" && <p className="ocr-band">leído por OCR: puede haber errores en ecuaciones</p>}
           {remote && autoSentence(paper.abstract) && <blockquote><span className="qlab">frase del abstract (automática)</span>«{polishText(autoSentence(paper.abstract))}»</blockquote>}
           {paper.license && <p className="license">{paper.license}</p>}

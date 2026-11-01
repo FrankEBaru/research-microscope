@@ -369,8 +369,9 @@ def s2_batch(corpusids) -> dict:
         path = _s2_cache(cid)
         if path is not None:
             try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(json.dumps(data), encoding="utf-8")
+                from rrm.reader.files import atomic_write
+
+                atomic_write(path, json.dumps(data))
             except OSError:
                 pass
     return out
@@ -397,8 +398,9 @@ def s2_graph(corpusid: int, tries: int = 1) -> dict:
         data = json.loads(raw.decode("utf-8", "replace"))
         if path is not None:
             try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(json.dumps(data), encoding="utf-8")
+                from rrm.reader.files import atomic_write
+
+                atomic_write(path, json.dumps(data))
             except OSError:
                 pass
     ext = data.get("externalIds") or {}

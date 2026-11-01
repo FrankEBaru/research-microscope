@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { layoutOf, mapCaption, mapPapers, placePapers, statusLine } from "../src/lib/layout.js";
+import { layoutOf, mapCaption, mapPapers, nodeLabel, placePapers, statusLine } from "../src/lib/layout.js";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -92,4 +92,11 @@ test("la línea de estado no bloquea y cuenta las fases", () => {
   const line = statusLine(papers, { 1: { status: "queued" }, 2: { status: "done" }, 3: { status: "failed" } });
   assert.equal(line, "1 preparando · 1 listo · 1 falló");
   assert.equal(statusLine([{ corpusid: 4 }, { corpusid: 5 }], {}), "2 encontrados");
+});
+
+test("la etiqueta es el apellido, o un título que se lee", () => {
+  assert.equal(nodeLabel({ authors: ["Ashish Vaswani"], year: 2017, title: "Attention Is All You Need" }), "Vaswani 2017");
+  assert.equal(nodeLabel({ authors: [{ name: "Ian Goodfellow" }], year: 2016 }), "Goodfellow 2016");
+  assert.equal(nodeLabel({ title: "What Can Neural Networks Do", year: 2022 }), "Neural Networks Do 2022");
+  assert.equal(nodeLabel({ title: "An Explanation of BERT", year: 2021 }), "Explanation of BERT 2021");
 });

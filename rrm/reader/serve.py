@@ -45,6 +45,7 @@ from rrm.reader.pipeline import (
     load_paper,
     make_stub,
     mark_queued,
+    paper_has_text,
     prefer_stub,
     seed_stub_from_cache,
     status_reason,
@@ -74,8 +75,16 @@ cpu_image = (
     .apt_install("nodejs", "npm", "ghostscript", "ca-certificates")
     .pip_install("torch", extra_index_url="https://download.pytorch.org/whl/cpu")
     .pip_install("pymupdf", "requests", "pyarrow", "numpy", "fastapi[standard]", "transformers", "adapters")
-    .run_commands("npm install --prefix /opt/katex katex@0.19.1")
-    .env({"NODE_PATH": "/opt/katex/node_modules"})
+    .run_commands(
+        "npm install --prefix /opt/katex katex@0.19.1",
+        "python -c \"from transformers import AutoTokenizer; from adapters import AutoAdapterModel; "
+        "AutoTokenizer.from_pretrained('allenai/specter2_base'); "
+        "m = AutoAdapterModel.from_pretrained('allenai/specter2_base'); "
+        "m.load_adapter('allenai/specter2_adhoc_query', source='hf', load_as='adhoc_query', set_active=True); "
+        "m.load_adapter('allenai/specter2', source='hf', load_as='proximity'); "
+        "m.eval()\"",
+    )
+    .env({"NODE_PATH": "/opt/katex/node_modules", "RRM_PHRASE_VECTORS": "1"})
     .add_local_python_source("rrm")
 )
 # MinerU 2.5 is a 1.2B VLM. L4 (24 GB) is the smallest Modal GPU that fits it.
@@ -373,7 +382,7 @@ def ocr_one(pdf: str, out: str, start: int = 0, end: int = 0) -> dict:
     return result
 
 
-@app.function(image=cpu_image, volumes={DATA: vol}, cpu=2, memory=4096, timeout=900, secrets=[secret])
+@app.function(image=cpu_image, volumes={DATA: vol}, cpu=2, memory=8192, timeout=900, secrets=[secret])
 def parse_one(corpusid: int, sam: bool = False) -> dict:
     del sam
     return _run(int(corpusid))
@@ -679,17 +688,146 @@ def _cache_root() -> Path:
     return Path(DATA) / CACHE_DIR
 
 
+_phrase_jobs = set()
+_phrase_guard = threading.Lock()
+
+
+def _needs_phrases(folder):
+    """Un paper ya parseado sin frases: se reconstruyen del paper.json, sin volver a bajar."""
+    from rrm.reader.phrases import read_phrases, text_rows
+    from rrm.reader.pipeline import load_paper
+
+    if text_rows(read_phrases(folder)):
+        return False
+    try:
+        paper = load_paper(folder)
+    except (OSError, ValueError):
+        return False
+    return isinstance(paper, dict) and bool(paper.get("blocks"))
+
+
+def _phrase_vectors_missing(ids):
+    from rrm.reader.phrases import read_phrases
+    from rrm.reader.similar import read_vectors, text_rows
+
+    pending = []
+    for raw in ids or []:
+        try:
+            cid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        folder = PAPERS / str(cid)
+        rows = text_rows(read_phrases(folder))
+        if rows and read_vectors(folder, len(rows)) is None:
+            pending.append(cid)
+        elif not rows and _needs_phrases(folder):
+            pending.append(cid)
+    return pending
+
+
+def _ensure_phrase_vectors(ids):
+    """Encode fuera del request. /ask solo lee el .npy."""
+    if os.environ.get("RRM_PHRASE_VECTORS") != "1":
+        return
+    try:
+        pending = _phrase_vectors_missing(ids)
+    except Exception:
+        return
+    if not pending:
+        return
+    with _phrase_guard:
+        todo = [cid for cid in pending if cid not in _phrase_jobs]
+        _phrase_jobs.update(todo)
+    if not todo:
+        return
+
+    def work():
+        from rrm.reader.phrases import read_phrases
+        from rrm.reader.similar import read_vectors, save_vectors, text_rows
+
+        try:
+            vol.reload()
+        except Exception:
+            pass
+        for cid in todo:
+            folder = PAPERS / str(cid)
+            try:
+                from rrm.reader.phrases import write_phrases
+                from rrm.reader.pipeline import load_paper
+
+                rows = text_rows(read_phrases(folder))
+                if not rows:
+                    paper = load_paper(folder)
+                    if isinstance(paper, dict) and paper.get("blocks"):
+                        rows = text_rows(write_phrases(folder, paper))
+                if rows and read_vectors(folder, len(rows)) is None:
+                    save_vectors(folder, rows)
+            except Exception:
+                pass
+            finally:
+                with _phrase_guard:
+                    _phrase_jobs.discard(cid)
+        try:
+            vol.commit()
+        except Exception:
+            pass
+
+    threading.Thread(target=work, name="rrm-phrase-vectors", daemon=True).start()
+
+
+def _ask_body(ids, text, stage):
+    from rrm.search.querylang import PREPARING
+    from rrm.reader.phrases import store_progress
+    from rrm.reader.similar import load_aligned
+    from rrm.reader.verify import answer
+
+    _ensure_phrase_vectors(ids)
+    store = store_progress(PAPERS, ids)
+    if not str(text or "").strip():
+        return {"extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {}, "note": "", "store": store}
+    rows, vectors, missing = load_aligned(PAPERS, ids)
+    if vectors is None:
+        note = PREPARING if missing else "No hay frases guardadas de estos papers."
+        return {"extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {}, "note": note, "store": store}
+    from rrm.reader.similar import specter_encode
+
+    def encode(texts):
+        return specter_encode(texts)
+
+    try:
+        return answer(rows, text, ids=ids, root=PAPERS, encode=encode, vectors=vectors, stage=stage or "todo")
+    except Exception:
+        return {
+            "extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {},
+            "note": PREPARING, "store": store,
+        }
+
+
 def read_status(ids: str = "", pending=None, question: str = ""):
-    vol.reload()
+    try:
+        vol.reload()
+    except Exception:
+        pass
     if pending is None:
-        pending = load_burst_top()
+        try:
+            pending = load_burst_top()
+        except Exception:
+            pending = None
     rows = []
-    for raw in ids.split(","):
+    asked = []
+    for raw in (ids or "").split(","):
         raw = raw.strip()
         if not raw:
             continue
-        cid = int(raw)
-        meta = load_meta(PAPERS / str(cid))
+        try:
+            cid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        asked.append(cid)
+        try:
+            meta = load_meta(PAPERS / str(cid))
+        except Exception:
+            meta = None
         if not meta:
             # Top-10 ids are noted before the volume commit lands. First poll
             # still sees queued; anything else with no meta.json stays missing.
@@ -708,7 +846,9 @@ def read_status(ids: str = "", pending=None, question: str = ""):
                 "full_s": meta.get("full_s"),
                 "ocr_gpu_s": meta.get("ocr_gpu_s"),
                 "ocr_invoked_at": meta.get("ocr_invoked_at"),
+                "text": paper_has_text(meta),
             })
+    _ensure_phrase_vectors(asked)
     saved = {}
     if question:
         try:
@@ -741,7 +881,7 @@ _FILE_TYPES = {
 
 
 # Same demo flag as the burst class. GPU functions are not kept warm.
-_api_fn = dict(image=cpu_image, volumes={DATA: vol}, timeout=60, secrets=[secret])
+_api_fn = dict(image=cpu_image, volumes={DATA: vol}, timeout=90, cpu=2, memory=8192, secrets=[secret])
 if scaledown_window() is not None:
     _api_fn["scaledown_window"] = scaledown_window()
 
@@ -757,6 +897,15 @@ def api():
     from fastapi.responses import FileResponse, JSONResponse, Response
 
     web = FastAPI()
+    if os.environ.get("RRM_PHRASE_VECTORS") == "1":
+        def _warm_phrases():
+            try:
+                from rrm.reader.similar import specter_encode
+                specter_encode(["warm"])
+            except Exception:
+                return
+
+        threading.Thread(target=_warm_phrases, name="rrm-phrase-encoder", daemon=True).start()
     web.add_middleware(CORSMiddleware, **cors_kwargs())
 
     def gate(request: Request, allow_query: bool):
@@ -788,7 +937,10 @@ def api():
         denied = gate(request, True)
         if denied:
             return denied
-        return read_status(ids, question=q)
+        try:
+            return read_status(ids, question=q)
+        except Exception:
+            return {"papers": []}
 
     @web.post("/ask")
     async def route_ask(request: Request):
@@ -798,18 +950,20 @@ def api():
             return denied
         item = await request.json()
         item = item or {}
-        from rrm.reader.phrases import load_rows
-        from rrm.reader.verify import answer
-
-        ids = item.get("ids") or []
-        text = item.get("text") or ""
-        if not str(text).strip():
+        try:
+            vol.reload()
+        except Exception:
+            pass
+        try:
+            return _ask_body(item.get("ids") or [], item.get("text") or "", item.get("stage") or "todo")
+        except Exception:
             from rrm.reader.phrases import store_progress
-
-            return {"extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {}, "note": "", "store": store_progress(PAPERS, ids)}
-        from rrm.reader.similar import encode_texts
-
-        return answer(load_rows(PAPERS, ids), text, ids=ids, root=PAPERS, encode=encode_texts, stage=item.get("stage") or "todo")
+            ids = item.get("ids") or []
+            return {
+                "extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {},
+                "note": "Preparando los vectores de las frases…",
+                "store": store_progress(PAPERS, ids),
+            }
 
     @web.post("/prepare")
     async def route_prepare(request: Request):

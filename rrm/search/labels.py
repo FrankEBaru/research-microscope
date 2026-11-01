@@ -147,6 +147,7 @@ def label_payload(papers, similar, meta, scores):
             "retracted": bool(row.get("retracted")),
             "retraction": row.get("retraction") or NO_RETRACTION,
             "tldr": src.get("tldr") or row.get("tldr") or "",
+            "authors": list(src.get("authors") or []),
         }
     return {"ok": True, "reason": "", "note": "", "by_id": by_id, "survey_paper": extra, "papers": ranked}
 
@@ -164,12 +165,15 @@ def parse_s2(data):
         return None
     ext = data.get("externalIds") or {}
     tldr = data.get("tldr") if isinstance(data.get("tldr"), dict) else {}
+    from rrm.reader.fetch import _author_names
+
     return {
         "abstract": data.get("abstract") or "",
         "publication_types": list(data.get("publicationTypes") or []),
         "doi": (ext.get("DOI") or "") if isinstance(ext, dict) else "",
         "title": data.get("title") or "",
         "tldr": (tldr or {}).get("text") or "",
+        "authors": _author_names(data.get("authors")),
     }
 
 
@@ -188,7 +192,7 @@ def fetch_s2(ids, timeout):
     if key:
         headers["x-api-key"] = key
     body = json.dumps({"ids": [f"CorpusId:{int(cid)}" for cid in ids]}).encode()
-    fields = "abstract,publicationTypes,externalIds,title,tldr"
+    fields = "abstract,publicationTypes,externalIds,title,tldr,authors"
     req = urllib.request.Request(f"{S2}batch?fields={fields}", data=body, headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8", "replace"))
@@ -304,25 +308,33 @@ def _retraction(found, cache_dir, crossref_fetch, openalex_fetch, timeout):
 def lookup_meta(ids, cache_dir, *, s2_fetch=fetch_s2, crossref_fetch=fetch_crossref, openalex_fetch=fetch_openalex, timeout=2.5):
     """None si Semantic Scholar no responde y no hay caché. Si no, un dict por corpus id."""
     ids = [int(cid) for cid in ids or []]
-    found, missing = {}, []
+    found, missing, stale = {}, [], {}
     for cid in ids:
         cached = _cache_load(_cache_path(cache_dir, "s2", cid)) if cache_dir else None
-        if isinstance(cached, dict) and "publication_types" in cached:
+        if isinstance(cached, dict) and "publication_types" in cached and "authors" in cached:
             found[cid] = cached
         else:
+            if isinstance(cached, dict) and "publication_types" in cached:
+                stale[cid] = cached
             missing.append(cid)
     if missing:
         try:
             rows = s2_fetch(missing, timeout)
         except Exception:
             rows = None
-        if rows is None and not found:
-            return None
-        for cid, data in zip(missing, rows or []):
-            parsed = parse_s2(data) or {"abstract": "", "publication_types": [], "doi": "", "title": "", "tldr": ""}
-            found[cid] = parsed
-            if cache_dir:
-                _cache_save(_cache_path(cache_dir, "s2", cid), parsed)
+        if rows is None:
+            if not found and not stale:
+                return None
+            for cid, row in stale.items():
+                kept = dict(row)
+                kept.setdefault("authors", [])
+                found.setdefault(cid, kept)
+        else:
+            for cid, data in zip(missing, rows or []):
+                parsed = parse_s2(data) or {"abstract": "", "publication_types": [], "doi": "", "title": "", "tldr": "", "authors": []}
+                found[cid] = parsed
+                if cache_dir:
+                    _cache_save(_cache_path(cache_dir, "s2", cid), parsed)
     _retraction(found, cache_dir, crossref_fetch, openalex_fetch, timeout)
     return found
 

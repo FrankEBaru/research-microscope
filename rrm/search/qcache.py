@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 
 CACHE_DIR = "rrm-cache"
-_STATUS_KEYS = ("id", "status", "stage", "reason", "source")
+_STATUS_KEYS = ("id", "status", "stage", "reason", "source", "text")
 
 
 def normalize_question(text) -> str:

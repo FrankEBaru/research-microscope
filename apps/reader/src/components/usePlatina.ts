@@ -92,7 +92,7 @@ export function usePlatina(resetKey: string, frame?: Frame | null) {
     if (!d) return;
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
-    if (!d.moved && Math.abs(dx) + Math.abs(dy) > 3) {
+    if (!d.moved && Math.abs(dx) + Math.abs(dy) > 6) {
       d.moved = true;
       box.current?.setPointerCapture(e.pointerId);
     }

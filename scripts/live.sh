@@ -207,9 +207,7 @@ deploy_one() {
 
 start_ui() {
   cd "$ROOT/apps/reader"
-  if [[ ! -d node_modules ]]; then
-    npm ci
-  fi
+  npm ci
   echo ""
   echo "Ábrelo en el navegador de Windows: http://localhost:3000"
   echo "Ctrl+C apaga la UI y corre modal app stop."

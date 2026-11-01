@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ProvChip } from "./Bits";
 import { mapLayout, paperKey } from "@/lib/backend.js";
 import { phaseOf } from "@/lib/qcache.js";
-import { clusterColor, layoutOf, mapCaption, statusLine } from "@/lib/layout.js";
+import { clusterColor, layoutOf, mapCaption, nodeLabel, statusLine } from "@/lib/layout.js";
 import { LENSES, usePlatina, type Frame } from "./usePlatina";
 
 // Franklin (1 nov): las lentes no ayudan a leer el mapa. El código sigue; la cámara se mueve con rueda y arrastre.
@@ -25,14 +25,7 @@ function namesOf(paper: any): string[] {
 }
 
 function shortName(paper: any) {
-  const year = paper?.year ? String(paper.year) : "";
-  const first = namesOf(paper)[0];
-  if (first) {
-    const last = String(first).split(/[\s,]+/).filter(Boolean).pop();
-    return `${last || first}${year ? ` ${year}` : ""}`;
-  }
-  const bit = String(paper?.title || "").replace(/\s+/g, " ").trim().split(" ").slice(0, 2).join(" ");
-  return [bit, year].filter(Boolean).join(" ");
+  return nodeLabel(paper);
 }
 
 function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) {
@@ -73,7 +66,10 @@ function ease(t: number) {
 }
 
 function fullText(paper: any, state: any) {
-  return state?.status === "done" || Boolean(paper?.full);
+  if (paper?.full || state?.text) return true;
+  if (state?.status === "done") return true;
+  if (state?.source === "latex" || state?.source === "ocr") return true;
+  return state?.stages?.sections === "done";
 }
 
 function sceneKey(frame: Frame | null) {
@@ -444,8 +440,7 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
               ? <p className="tldr">{short(cardPaper.paper.abstract, 320)}</p>
               : cardPaper.paper.tldr
                 ? <p className="tldr">{short(cardPaper.paper.tldr, 320)}</p>
-                : <p className="authors">Sin abstract en el índice.</p>}
-            {!cardPaper.paper.retracted && cardPaper.paper.retraction && <p className="authors">{cardPaper.paper.retraction}</p>}
+                : <p className="small">Sin abstract en el índice.</p>}
             <div className="map-actions">
               <button type="button" className="primary" onClick={() => onOpen(cardId!)}>Abrir</button>
               <button type="button" className="link" onClick={() => onWant(cardId!)}>quiero leer este</button>

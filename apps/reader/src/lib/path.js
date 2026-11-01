@@ -29,8 +29,10 @@ export function mergeLabels(papers, body) {
   const by = body.by_id || {};
   const next = (papers || []).map((paper) => {
     const extra = by[String(paper.corpusid)] || {};
+    const authors = Array.isArray(extra.authors) && extra.authors.length ? extra.authors : paper.authors;
     return {
       ...paper,
+      ...(authors ? { authors } : {}),
       abstract: extra.abstract || paper.abstract || "",
       tldr: paper.tldr || extra.tldr || "",
       survey: Boolean(extra.survey),

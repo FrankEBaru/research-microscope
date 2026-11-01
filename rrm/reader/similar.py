@@ -7,6 +7,7 @@ Si ese paquete no está, se usa una bolsa local con el glosario de panorama.
 import hashlib
 import os
 import unicodedata
+from pathlib import Path
 
 import numpy as np
 
@@ -68,28 +69,106 @@ def _phrase_text(row):
     return ((row.get("text") or "") + " " + latex).strip()
 
 
-def rank_similar(rows, text, encode=None):
-    """Las frases más cercanas a la explicación. Tope 3 por paper y 12."""
+def text_rows(rows):
+    return [row for row in rows or [] if isinstance(row, dict) and str(row.get("text") or "").strip()]
+
+
+def save_vectors(folder, rows, encode=None):
+    """SPECTER2 de las frases, al lado de phrases.json. Lo llama el prefetch, no /ask."""
+    usable = text_rows(rows)
+    if not usable:
+        return None
+    encode = encode or specter_encode
+    vecs = np.asarray(encode([_phrase_text(row) for row in usable]), dtype=np.float32)
+    if vecs.ndim != 2 or vecs.shape[0] != len(usable):
+        return None
+    path = Path(folder) / "phrases.npy"
+    tmp = path.with_name(f".phrases.{os.getpid()}.npy")
+    np.save(tmp, vecs)
+    os.replace(tmp, path)
+    return vecs
+
+
+def read_vectors(folder, n):
+    path = Path(folder) / "phrases.npy"
+    if n <= 0 or not path.is_file():
+        return None
+    try:
+        vecs = np.load(path, allow_pickle=False)
+    except Exception:
+        return None
+    if getattr(vecs, "ndim", 0) != 2 or vecs.shape[0] != int(n):
+        return None
+    return np.asarray(vecs, dtype=np.float32)
+
+
+def load_aligned(root, ids):
+    """Frases con vector guardado. `missing` si hay texto y todavía no hay .npy."""
+    from rrm.reader.phrases import read_phrases
+
+    base = Path(root) if root else None
+    if base is None:
+        return [], None, False
+    rows, mats, missing = [], [], False
+    for raw in ids or []:
+        try:
+            cid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        got = text_rows(read_phrases(base / str(cid)))
+        if not got:
+            continue
+        vecs = read_vectors(base / str(cid), len(got))
+        if vecs is None:
+            missing = True
+            continue
+        rows.extend(got)
+        mats.append(vecs)
+    if not rows:
+        return [], None, missing
+    return rows, np.vstack(mats), missing
+
+
+def _score_rows(usable, query, mat, chunks):
+    scored = []
+    for row, vec in zip(usable, mat):
+        score = cosine(query, vec)
+        if score is None:
+            continue
+        bonus = 1 if chunks and any(_chunk_in(chunk, row) for chunk in chunks) else 0
+        scored.append((bonus, score, row))
+    return scored
+
+
+def rank_similar(rows, text, encode=None, vectors=None):
+    """Las frases más cercanas a la explicación. Tope 3 por paper y 12.
+
+    Con `vectors` solo se encodea la explicación. El producto es el coseno,
+    el mismo margen 0.05 de antes.
+    """
     words, chunks = query_tokens(text or "")
-    usable = [row for row in rows or [] if isinstance(row, dict) and (row.get("text") or "").strip()]
+    usable = text_rows(rows)
     if not (text or "").strip() or not usable:
         return [], 0
     if chunks and not words:
         return rank_phrases(usable, text)
     encode = encode or local_encode
-    try:
-        vecs = np.asarray(encode([text] + [_phrase_text(row) for row in usable]), dtype=np.float32)
-    except Exception:
-        return [], 0
-    if vecs.ndim != 2 or vecs.shape[0] != len(usable) + 1:
-        return [], 0
-    scored = []
-    for row, vec in zip(usable, vecs[1:]):
-        score = cosine(vecs[0], vec)
-        if score is None:
-            continue
-        bonus = 1 if chunks and any(_chunk_in(chunk, row) for chunk in chunks) else 0
-        scored.append((bonus, score, row))
+    if vectors is not None:
+        mat = np.asarray(vectors, dtype=np.float32)
+        if mat.ndim != 2 or mat.shape[0] != len(usable):
+            return [], 0
+        query = np.asarray(encode([text]), dtype=np.float32).reshape(-1)
+        if query.shape != mat.shape[1:]:
+            raise ValueError(f"vector {tuple(query.shape)} != {tuple(mat.shape)}")
+        scored = _score_rows(usable, query, mat, chunks)
+    else:
+        try:
+            vecs = np.asarray(encode([text] + [_phrase_text(row) for row in usable]), dtype=np.float32)
+        except Exception:
+            return [], 0
+        if vecs.ndim != 2 or vecs.shape[0] != len(usable) + 1:
+            return [], 0
+        scored = _score_rows(usable, vecs[0], vecs[1:], chunks)
     if scored:
         best = max(item[1] for item in scored)
         # Una frase lejos de la mejor no entra: si no, «te faltó» cita cualquier cosa.

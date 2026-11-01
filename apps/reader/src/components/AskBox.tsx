@@ -36,6 +36,14 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPr
   const [err, setErr] = useState("");
   const [progress, setProgress] = useState("");
   const key = (ids || []).join(",");
+  const keepStore = (body: any) => {
+    const next = body?.store;
+    if (!next) return;
+    setStore((prev: any) => {
+      if (!prev || prev.total !== next.total) return next;
+      return { ...next, ready: Math.max(prev.ready || 0, next.ready || 0) };
+    });
+  };
   useEffect(() => {
     if (!key) return;
     let stop = false;
@@ -44,7 +52,7 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPr
       try {
         const body = await ask(ids || [], "");
         if (stop) return;
-        setStore(body?.store || null);
+        keepStore(body);
         if (body?.store && body.store.ready < body.store.total) timer = window.setTimeout(tick, 2000);
       } catch { /* el envío dice si no hubo almacén */ }
     };
@@ -58,20 +66,29 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPr
     setErr("");
     setProgress("buscando frases en los papers…");
     onPromote?.();
+    let held = "";
     try {
-      const ranked = await ask(ids || [], text, "frases");
-      setResult(ranked);
-      if (ranked?.store) setStore(ranked.store);
+      let ranked: any = null;
+      for (let attempt = 0; attempt < 60; attempt++) {
+        ranked = await ask(ids || [], text, "frases");
+        setResult(ranked);
+        keepStore(ranked);
+        if (!/Preparando los vectores/.test(ranked?.note || "")) break;
+        setProgress("preparando los vectores de las frases…");
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      }
       if (ranked?.empty) return;
       setProgress("revisando cada cita…");
       const body = await ask(ids || [], text, "revisar");
       setResult(body);
-      if (body?.store) setStore(body.store);
-    } catch {
-      setErr("No pude buscar en las frases guardadas.");
+      keepStore(body);
+    } catch (err: any) {
+      const timed = err?.kind === "timeout" || err?.name === "AbortError";
+      if (timed) held = "Sigue la revisión de las citas. Vuelve a enviar si no aparece.";
+      else setErr("No pude buscar en las frases guardadas.");
     } finally {
       setBusy(false);
-      setProgress("");
+      setProgress(held);
     }
   };
   const groups = group(result?.extracts || []);

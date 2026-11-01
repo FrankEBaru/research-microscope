@@ -63,12 +63,12 @@ def linea_final(citas):
     return ""
 
 
-def answer(rows, text, *, ids=None, root=None, encode=None, stage="todo"):
+def answer(rows, text, *, ids=None, root=None, encode=None, stage="todo", vectors=None):
     from rrm.reader.feedback import PARTS, review
     from rrm.reader.phrases import store_progress
     from rrm.reader.similar import rank_similar
 
-    hits, matched = rank_similar(rows, text, encode) if (text or "").strip() else ([], 0)
+    hits, matched = rank_similar(rows, text, encode, vectors=vectors) if (text or "").strip() else ([], 0)
     skip = stage == "frases"
     parts, note, meta = review(text, hits) if hits and not skip else ({part: [] for part in PARTS}, "", None)
     if not hits and (text or "").strip():

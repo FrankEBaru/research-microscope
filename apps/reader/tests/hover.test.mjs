@@ -49,4 +49,7 @@ test("el scan deja abstract, figuras, tablas y la conclusión", () => {
   assert.equal(ids.has("p1"), false);
   assert.equal(hasConclusion(blocks), true);
   assert.equal(hasConclusion([{ kind: "h", inlines: [{ t: "text", v: "Intro" }] }]), false);
+  assert.equal(hasConclusion([{ kind: "h", inlines: [{ t: "text", v: "5 Discussion" }] }]), true);
+  assert.equal(hasConclusion([{ kind: "h", inlines: [{ t: "text", v: "Concluding remarks" }] }]), true);
+  assert.equal(hasConclusion([{ kind: "h", inlines: [{ t: "text", v: "Summary" }] }]), true);
 });

@@ -40,7 +40,12 @@ RELEASE = "2026-10-20"
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("torch", extra_index_url="https://download.pytorch.org/whl/cpu")
-    .pip_install("numpy", "pyarrow", "faiss-cpu", "transformers", "adapters", "fastapi[standard]")
+    .pip_install("numpy", "pyarrow", "faiss-cpu", "transformers", "adapters", "sentencepiece", "fastapi[standard]")
+    .run_commands(
+        "python -c \"from transformers import MarianTokenizer, MarianMTModel; "
+        "MarianTokenizer.from_pretrained('Helsinki-NLP/opus-mt-es-en'); "
+        "MarianMTModel.from_pretrained('Helsinki-NLP/opus-mt-es-en')\""
+    )
     .add_local_python_source("rrm")
 )
 app = modal.App("rrm-burst")
@@ -166,7 +171,13 @@ class BurstSearch:
             hit = cached_burst(load_entry(root, query), n)
         except Exception:
             hit = None
+        from rrm.search.querylang import cache_miss_spanish
+
+        if hit is not None and cache_miss_spanish(query, hit):
+            hit = None
         if hit is not None:
+            if hit.get("topic_cosine") is None and hit.get("qvec") is not None:
+                self._fill_topic(hit)
             papers = hit.get("papers") or []
             saved = {}
             try:
@@ -289,6 +300,17 @@ class BurstSearch:
             self._refine_layout(key, rows, edges, slots)
         return out
 
+    def _fill_topic(self, payload):
+        from rrm.search.labels import cosine
+        from rrm.search.querylang import topic_fields
+
+        ids = [row.get("corpusid") for row in (payload.get("papers") or []) if isinstance(row, dict)]
+
+        def vector_of(corpusid):
+            return vector_at(self.index, self.faiss_ids, corpusid)
+
+        payload.update(topic_fields(payload.get("qvec"), ids, vector_of, cosine))
+
     def _compute(self, query, n):
         def search(vector, k):
             return search_vectors(self.index, self.faiss_ids, vector, k)
@@ -296,8 +318,12 @@ class BurstSearch:
         def vector_of(corpusid):
             return vector_at(self.index, self.faiss_ids, corpusid)
 
+        from rrm.search.labels import cosine
+        from rrm.search.querylang import retrieval_query, topic_fields
+
+        encoded, query_en = retrieval_query(query)
         result = burst_query(
-            query,
+            encoded,
             encode=self.encoder.encode,
             search=search,
             graph=self.graph,
@@ -314,6 +340,7 @@ class BurstSearch:
         t0 = time.perf_counter()
         out = {
             "query": query,
+            "query_en": query_en,
             "mode": result["mode"],
             "first": first,
             "papers": self._rows(papers["corpusids"], papers["scores"]),
@@ -324,6 +351,7 @@ class BurstSearch:
         }
         if result.get("qvec"):
             out["qvec"] = result["qvec"]
+        out.update(topic_fields(result.get("qvec"), papers["corpusids"], vector_of, cosine))
         out["seconds"]["hydrate"] = round(time.perf_counter() - t0, 4)
         out["n"] = int(n)
         out["cached"] = False
@@ -348,7 +376,7 @@ class BurstSearch:
 
             return pending_payload([])
         ids = candidate_ids(burst)
-        meta = lookup_meta(ids, Path(MOUNT) / "label_cache", timeout=2.5)
+        meta = lookup_meta(ids, Path(MOUNT) / "label_cache", timeout=6)
         encode = getattr(getattr(self, "encoder", None), "encode", None)
         index = getattr(self, "index", None)
         faiss_ids = getattr(self, "faiss_ids", None)

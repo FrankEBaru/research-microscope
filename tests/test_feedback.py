@@ -101,10 +101,14 @@ def test_review_uses_the_mock_and_stops_when_the_check_is_garbage():
     assert cost["cost_usd"] > 0
 
 
-def test_store_counts_phrase_files(tmp_path):
+def test_store_counts_phrases_with_text(tmp_path):
     (tmp_path / "7").mkdir()
-    (tmp_path / "7" / "phrases.json").write_text("{}", encoding="utf-8")
-    assert store_progress(tmp_path, [7, 8]) == {"ready": 1, "total": 2}
+    (tmp_path / "7" / "phrases.json").write_text(
+        '{"rows":[{"text":"Attention is all you need."}]}', encoding="utf-8",
+    )
+    (tmp_path / "8").mkdir()
+    (tmp_path / "8" / "phrases.json").write_text("{}", encoding="utf-8")
+    assert store_progress(tmp_path, [7, 8, 9]) == {"ready": 1, "total": 3}
 
 
 def test_bibtex_key_resolves_by_title_and_year():

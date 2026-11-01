@@ -113,6 +113,25 @@ def test_similar_does_not_encode_papers_outside_the_store():
     assert "Photosynthesis" not in blob
 
 
+def test_stored_vectors_encode_only_the_query():
+    from rrm.reader.similar import local_encode, rank_similar
+
+    rows = [
+        {"paper": 7, "text": "Attention is all you need for this model."},
+        {"paper": 8, "text": "We scale the learning rate with data."},
+    ]
+    stored = local_encode([row["text"] for row in rows])
+    seen = []
+
+    def encode(texts):
+        seen.extend(texts)
+        return local_encode(texts)
+
+    hits, _total = rank_similar(rows, "attention model", encode, vectors=stored)
+    assert seen == ["attention model"]
+    assert hits[0]["paper"] == 7
+
+
 def test_phrase_stage_skips_meta(monkeypatch):
     def explode(*_args, **_kwargs):
         raise AssertionError("meta")

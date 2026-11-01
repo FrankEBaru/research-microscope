@@ -39,6 +39,14 @@ test("el survey se agrega una vez y el retractado se marca sin inventarlo", () =
   assert.equal(offline[0].survey, undefined);
 });
 
+test("los autores de /labels reemplazan el título mudo", () => {
+  const papers = [{ corpusid: 1, title: "What Can", year: 2022 }];
+  const merged = mergeLabels(papers, { ok: true, by_id: { "1": { authors: ["Yann LeCun"], abstract: "" } } });
+  assert.deepEqual(merged[0].authors, ["Yann LeCun"]);
+  const kept = mergeLabels(papers, { ok: true, by_id: { "1": { authors: [] } } });
+  assert.equal(kept[0].authors, undefined);
+});
+
 test("el punto del survey no mueve a los demás", () => {
   const layout = { points: [{ corpusid: 1, x: 10, y: 20, rank: 0, cluster: 1 }] };
   const next = pinPoint(layout, { corpusid: 9 });

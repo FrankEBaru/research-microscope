@@ -58,7 +58,9 @@ def write_phrases(folder, paper):
     rows = collect_phrases(paper)
     path = Path(folder) / "phrases.json"
     body = {"paper": paper.get("corpusid"), "rows": rows}
-    path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+    from rrm.reader.files import atomic_write
+
+    atomic_write(path, json.dumps(body, ensure_ascii=False))
     return rows
 
 
@@ -159,8 +161,7 @@ def search_phrases(rows, text):
 
 
 def store_progress(root, ids):
-    from pathlib import Path
-
+    """Papers con al menos una frase con texto. Un archivo vacío no cuenta."""
     ready = total = 0
     base = Path(root) if root else None
     for raw in ids or []:
@@ -169,6 +170,9 @@ def store_progress(root, ids):
         except (TypeError, ValueError):
             continue
         total += 1
-        if base and (base / str(cid) / "phrases.json").is_file():
+        if not base:
+            continue
+        rows = read_phrases(base / str(cid))
+        if any(isinstance(row, dict) and str(row.get("text") or "").strip() for row in rows):
             ready += 1
     return {"ready": ready, "total": total}

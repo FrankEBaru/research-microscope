@@ -232,6 +232,12 @@ export default function Engine() {
           arxiv: meta.arxiv || doc.arxivId || "",
         },
       });
+      const blocks = doc.blocks || [];
+      const hasBody = Boolean(doc.full) || meta.source === "latex" || meta.source === "ocr"
+        || blocks.some((block: any) => block && (block.kind === "h" || block.kind === "eq" || (block.kind === "p" && !block.abs)));
+      if (hasBody) {
+        setRowState((prev) => ({ ...prev, [liveId]: { ...(prev[liveId] || {}), id: Number(liveId), text: true } }));
+      }
     };
     const signature = (body: any) => {
       const meta = body.meta || {};
@@ -307,6 +313,7 @@ export default function Engine() {
                 survey: Boolean(extra.survey),
                 retracted: extra.retracted === true,
                 retraction: extra.retraction || "",
+                ...(Array.isArray(extra.authors) && extra.authors.length ? { authors: extra.authors } : {}),
               };
             });
             const layout = body?.survey_paper ? pinPoint(prev.layout, body.survey_paper) : prev.layout;
@@ -416,7 +423,7 @@ export default function Engine() {
           </form>
         )}
         {!core && <button className="companion-toggle" aria-pressed={companion} onClick={() => setCompanion((v) => !v)} title="Compañero de lectura opcional: ofrece ayuda, nunca interrumpe, no guarda nada (tecla C)">Compañero {companion ? "activado" : "apagado"}</button>}
-        <span className="proto">prototipo · datos locales</span>
+        {!(live && process.env.NEXT_PUBLIC_RRM_OFFLINE !== "1") && <span className="proto">prototipo · datos locales</span>}
       </header>
 
       <main key={`${level}-${route.c}-${route.p}`} className="zoom-in">
@@ -465,6 +472,7 @@ export default function Engine() {
                   <button type="button" className={asList ? "on" : ""} onClick={() => setAsList(true)}>Lista</button>
                 </div>
                 {labelNote && <p className="muted" role="status">{labelNote}</p>}
+                {liveResult.topic_note && <p className="muted" role="status">{liveResult.topic_note}</p>}
                 {asList
                   ? <CoreList papers={liveResult.papers || []} states={rowState} onOpen={(id: string) => abrir(id, "nodo del mapa")} onWant={wantThis} />
                   : <LiveMap papers={mapPapers(liveResult)} edges={liveResult.edges || []} layout={liveResult.layout} states={rowState} query={liveQ} onLayout={(next) => setLiveResult((prev) => (prev ? { ...prev, layout: next } : prev))} onOpen={(id: string) => abrir(id, "nodo del mapa")} onWant={wantThis} />}
@@ -527,8 +535,7 @@ function CoreList({ papers, states, onOpen, onWant }: { papers: any[]; states: R
             <p className="authors">{[p.year, p.citationcount != null ? `${p.citationcount} citas` : null, p.venue].filter((x) => x != null && x !== "").join(" · ")}</p>
             {p.survey && <p className="survey-tag">survey</p>}
             {p.retracted && <p className="retract">retractado</p>}
-            {p.abstract ? <p className="core-blurb">{p.abstract}</p> : p.tldr ? <p className="core-blurb"><span className="chip chip-simulado">generado</span> {p.tldr}</p> : null}
-            {!p.retracted && p.retraction && <p className="authors">{p.retraction}</p>}
+            {p.abstract ? <p className="core-blurb">{p.abstract}</p> : p.tldr ? <p className="core-blurb"><span className="chip chip-simulado">generado</span> {p.tldr}</p> : <p className="small">Sin abstract en el índice.</p>}
             <button type="button" onClick={() => onWant(id)}>quiero leer este</button>
           </li>
         );

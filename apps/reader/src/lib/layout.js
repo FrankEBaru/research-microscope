@@ -7,6 +7,29 @@ import { phaseOf } from "./qcache.js";
 
 export const WORLD_W = 1600;
 export const WORLD_H = 1000;
+
+const LEADING = new Set(["a", "an", "the", "of", "on", "for", "to", "in", "and", "or", "with", "from", "by", "at", "as", "is", "are", "was", "be", "what", "how", "why", "do", "does", "did", "can", "could", "into", "via", "using", "toward", "towards", "over"]);
+
+function authorNames(paper) {
+  return (Array.isArray(paper?.authors) ? paper.authors : [])
+    .map((author) => (typeof author === "string" ? author : author?.name))
+    .filter(Boolean);
+}
+
+/** Apellido y año cuando hay autor. Si no, un título corto que se pueda leer. */
+export function nodeLabel(paper) {
+  const year = paper?.year ? String(paper.year) : "";
+  const first = authorNames(paper)[0];
+  if (first) {
+    const last = String(first).split(/[\s,]+/).filter(Boolean).pop();
+    return `${last || first}${year ? ` ${year}` : ""}`;
+  }
+  const words = String(paper?.title || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  let start = 0;
+  while (start < words.length - 1 && LEADING.has(words[start].toLowerCase().replace(/[^a-z]/g, ""))) start += 1;
+  const bit = words.slice(start, start + 4).join(" ");
+  return [bit, year].filter(Boolean).join(" ");
+}
 const STEPS = 220;
 const MARGIN = 96;
 const MIN_GAP = 28;
