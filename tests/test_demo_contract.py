@@ -118,6 +118,7 @@ def test_keep_warm_is_an_explicit_deploy_flag(monkeypatch):
         text = (root / name).read_text(encoding="utf-8")
         assert "min_containers=" not in text
     burst = (root / "rrm/search/serve.py").read_text(encoding="utf-8")
+    assert "enable_memory_snapshot=True" in burst
     assert 'request.query_params.get("k")' in burst
     reader = (root / "rrm/reader/serve.py").read_text(encoding="utf-8")
     assert reader.count("gate(request, True)") >= 4

@@ -85,6 +85,21 @@ test("missing is not settled and mbox is text", async () => {
   assert.equal(katexSource("\\mathds{R}"), "\\mathbb{R}");
 });
 
+test("display math and figure names are rewritten without naming a paper", async () => {
+  const { displayTex, figureCandidates, katexSource } = await load();
+  assert.equal(katexSource("\\ensuremath{\\mathcal{O}}"), "\\mathcal{O}");
+  assert.equal(katexSource("\\resizebox{0.9\\linewidth}{!}{$x$}"), "x");
+  assert.equal(katexSource("\\mbox{\\boldmath{$\\mbox{\\boldmath{$a$}}_{t}$}}"), "\\mathbf{\\mathbf{a}_{t}}");
+  assert.equal(katexSource("{i\\choose{k}}"), "\\binom{i}{k}");
+  assert.equal(katexSource("i~$odd$"), "i~\\text{odd}");
+  assert.match(displayTex("y =& \\begin{cases} 0 & 1 \\\\ 2 & 3 \\end{cases}"), /^\\begin\{aligned\}/);
+  assert.match(displayTex("\\begin{split} a &= b \\end{split}"), /^\\begin\{aligned\}/);
+  assert.equal(displayTex("y = x"), "y = x");
+  assert.deepEqual(figureCandidates("plot.png"), ["plot.png"]);
+  assert.deepEqual(figureCandidates("attn_soft.\\imgExt"), ["attn_soft.png", "attn_soft.jpg", "attn_soft.jpeg", "attn_soft.webp", "attn_soft.gif"]);
+  assert.deepEqual(figureCandidates("../secret.png"), []);
+});
+
 test("eq tag comes from number", async () => {
   const { eqTex } = await load();
   assert.equal(eqTex({ tex: "y = x", number: 1 }), "y = x\\tag{1}");

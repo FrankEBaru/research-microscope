@@ -26,6 +26,17 @@ test("analyze: cabecera multicolumna se expande por colspan y se ignora «2-3»"
   assert.equal(cellText(m.headRows[1][0].c), "", "el residuo «2-3» no se dibuja");
   assert.equal(m.bodyRows.length, 4);
 });
+test("analyze: cabecera más corta que la fila siguiente", () => {
+  const t = {
+    head: [[[T("Models")], [T("BLEU")]]],
+    body: [[[T("")], [T("dev")], [T("test")]], [[T("Baseline")], [T("30.64")], [T("33.30")]]],
+  };
+  const m = analyze(t);
+  assert.equal(m.headRows.length, 2);
+  assert.equal(m.bodyRows.length, 1);
+  assert.equal(m.bodyRows[0][0].c[0].v, "Baseline");
+  assert.ok(m.headRows.every((row) => row.every((cell) => Number.isInteger(cell.col) && cell.span >= 1)));
+});
 test("bars: orden, valores nulos fuera, y la escala log no cambia el orden", () => {
   const m = { rows: [{ label: "a", raw: ["a", "10"], num: [null, 10] }, { label: "b", raw: ["b", "1000"], num: [null, 1000] }, { label: "c", raw: ["c", ""], num: [null, null] }, { label: "d", raw: ["d", "100"], num: [null, 100] }] };
   const lin = bars(m, 1, { sort: "desc" }); assert.deepEqual(lin.map((x) => x.label), ["b", "d", "a"]); assert.equal(lin[0].frac, 1);

@@ -33,11 +33,130 @@ export function eqTex(b) {
   return b.number != null ? `${b.tex}\\tag{${b.number}}` : b.tex;
 }
 
+const FILE_NAME = /^[A-Za-z0-9._-]{1,180}$/;
+
+/** Names to try for a figure. `lstm.\\imgExt` is a macro the e-print never expanded. */
+export function figureCandidates(name) {
+  const raw = String(name || "");
+  if (raw.startsWith("/")) return [raw];
+  const out = [];
+  const push = (n) => { if (FILE_NAME.test(n) && !out.includes(n)) out.push(n); };
+  push(raw);
+  const cleaned = raw.replace(/\\+imgExt\b/g, "").replace(/\\/g, "").replace(/\.$/, "");
+  if (cleaned && cleaned !== raw) {
+    if (/\.(png|jpe?g|gif|webp|pdf)$/i.test(cleaned)) push(cleaned);
+    else for (const ext of [".png", ".jpg", ".jpeg", ".webp", ".gif"]) push(cleaned + ext);
+  }
+  return out;
+}
+
 const SI_UNITS = { minute: "min", second: "s", hour: "h", meter: "m", metre: "m", gram: "g", kilogram: "kg" };
+
+function readBrace(s, i) {
+  if (s[i] !== "{") return null;
+  let d = 0;
+  for (let j = i; j < s.length; j++) {
+    if (s[j] === "\\") { j += 1; continue; }
+    if (s[j] === "{") d += 1;
+    else if (s[j] === "}") {
+      d -= 1;
+      if (d === 0) return [s.slice(i + 1, j), j + 1];
+    }
+  }
+  return null;
+}
+
+function stripOuterBrace(s) {
+  const t = s.trim();
+  if (!t.startsWith("{")) return t;
+  const g = readBrace(t, 0);
+  if (g && g[1] === t.length) return g[0].trim();
+  return t;
+}
+
+/** `\mbox{\boldmath{$...$}}` is a bold symbol. Nested mboxes stay in math mode. */
+function unwrapBoldMbox(s) {
+  let out = "";
+  for (let i = 0; i < s.length;) {
+    if (s.startsWith("\\mbox", i) && !/[A-Za-z]/.test(s[i + 5] || "")) {
+      let j = i + 5;
+      while (s[j] === " ") j += 1;
+      const g = s[j] === "{" ? readBrace(s, j) : null;
+      if (g && g[0].trim().startsWith("\\boldmath")) {
+        let inner = g[0].trim().replace(/^\\boldmath\s*/, "");
+        inner = stripOuterBrace(inner);
+        inner = inner.replace(/^\$(.*)\$$/s, "$1");
+        inner = unwrapBoldMbox(inner);
+        out += `\\mathbf{${inner}}`;
+        i = g[1];
+        continue;
+      }
+    }
+    out += s[i];
+    i += 1;
+  }
+  return out;
+}
+
+function unwrapNamed(s, name) {
+  const mark = "\\" + name;
+  let out = "";
+  for (let i = 0; i < s.length;) {
+    if (s.startsWith(mark, i) && !/[A-Za-z]/.test(s[i + mark.length] || "")) {
+      let j = i + mark.length;
+      while (s[j] === " ") j += 1;
+      const g = s[j] === "{" ? readBrace(s, j) : null;
+      if (g) {
+        out += g[0];
+        i = g[1];
+        continue;
+      }
+    }
+    out += s[i];
+    i += 1;
+  }
+  return out;
+}
+
+/** `\resizebox{w}{h}{...}` is a size wrapper. Keep the third argument. */
+function unwrapResizebox(s) {
+  const mark = "\\resizebox";
+  let out = "";
+  for (let i = 0; i < s.length;) {
+    if (s.startsWith(mark, i) && !/[A-Za-z]/.test(s[i + mark.length] || "")) {
+      let j = i + mark.length;
+      while (s[j] === " ") j += 1;
+      const w = s[j] === "{" ? readBrace(s, j) : null;
+      if (w) {
+        j = w[1];
+        while (s[j] === " ") j += 1;
+        const h = s[j] === "{" ? readBrace(s, j) : null;
+        if (h) {
+          j = h[1];
+          while (s[j] === " ") j += 1;
+          const body = s[j] === "{" ? readBrace(s, j) : null;
+          if (body) {
+            let inner = body[0].trim();
+            if (inner.startsWith("$") && inner.endsWith("$")) inner = inner.slice(1, -1).trim();
+            out += inner;
+            i = body[1];
+            continue;
+          }
+        }
+      }
+    }
+    out += s[i];
+    i += 1;
+  }
+  return out;
+}
 
 /** Render-time TeX. Do not rewrite the stored source. Keep in step with rrm/reader/katex.py. */
 export function katexSource(tex) {
-  let s = String(tex ?? "");
+  let s = unwrapBoldMbox(String(tex ?? ""));
+  s = unwrapResizebox(s);
+  let prev;
+  do { prev = s; s = unwrapNamed(s, "ensuremath"); } while (s !== prev);
   s = s.replace(/\\mbox(?![A-Za-z])/g, "\\text");
   // NeRF / Instant-NGP: \left -> \mathopen{}\mathclose\bgroup\originalleft
   s = s.replace(/(?:\\mathopen\{\}\s*\\mathclose(?![A-Za-z])\s*\\bgroup\s*)+/g, "");
@@ -54,7 +173,37 @@ export function katexSource(tex) {
   });
   s = s.replace(/\\partialm(?![A-Za-z])/g, "\\partial m");
   s = s.replace(/\\mathds(?![A-Za-z])/g, "\\mathbb");
+  s = s.replace(/\\mathbbm(?![A-Za-z])\s*([0-9A-Za-z])/g, "\\mathbb{$1}");
+  s = s.replace(/\\mathbbm(?![A-Za-z])/g, "\\mathbb");
+  s = s.replace(/\\textrm(?![A-Za-z])/g, "\\text");
+  s = s.replace(/\\boldmath\s*\{\$([^{}$]+)\$\}/g, "\\mathbf{$1}");
+  s = s.replace(/\\boldmath(?![A-Za-z])\s*/g, "");
+  s = s.replace(/\\[vh]space\s*\{[^{}]*\}/g, "");
+  s = s.replace(/\\vskip\s*-?[0-9.]+\s*(?:pt|em|ex|mm|cm)?/g, "");
+  s = s.replace(/\\Tilde(?![A-Za-z])/g, "\\tilde");
+  s = s.replace(/\\Hat(?![A-Za-z])/g, "\\hat");
+  s = s.replace(/\\Bar(?![A-Za-z])/g, "\\bar");
+  s = s.replace(/\{([^{}\\]+)\\choose\s*\{([^{}]*)\}\}/g, "\\binom{$1}{$2}");
+  s = s.replace(/\{([^{}\\]+)\\choose\s*([^{}\\]+)\}/g, "\\binom{$1}{$2}");
+  s = s.replace(/\$([^$]+)\$/g, "\\text{$1}");
   return s;
+}
+
+const OUTER_ALIGN = /^\s*\\begin\{(aligned|align\*?|eqnarray\*?|gather\*?|flalign\*?|multline\*?|split|gathered|cases|array|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|Bmatrix|smallmatrix|subarray|dmath|equation\*?)\b/;
+
+/** Display math KaTeX can parse. `&` outside an alignment environment is wrapped. */
+export function displayTex(tex) {
+  let s = katexSource(tex);
+  const tag = s.match(/\\tag\{[^{}]*\}\s*$/);
+  let suffix = "";
+  if (tag && tag.index > 0) {
+    suffix = tag[0];
+    s = s.slice(0, tag.index);
+  }
+  s = s.replace(/^\s*\\begin\{split\}/, "\\begin{aligned}").replace(/\\end\{split\}\s*$/, "\\end{aligned}");
+  if (OUTER_ALIGN.test(s)) return s + suffix;
+  if (s.includes("&") || /\\\\/.test(s)) return `\\begin{aligned}${s}\\end{aligned}${suffix}`;
+  return s + suffix;
 }
 
 /** done / abstract_only / failed. `missing` is still in flight. */
@@ -104,8 +253,8 @@ function panoramaTimeout() {
 export const PANORAMA_TIMEOUT_MS = panoramaTimeout();
 
 // Tiempos de espera por ruta (ms). /burst puede tardar 100–131 s si el contenedor estaba dormido.
-const TIMEOUT = { burst: 150000, status: 20000, paper: 40000, panorama: PANORAMA_TIMEOUT_MS, crops: 20000, subtopics: 20000 };
-const RETRIES = { burst: 0, status: 2, paper: 1, panorama: 0, crops: 1, subtopics: 0 };
+const TIMEOUT = { warm: 150000, burst: 150000, status: 20000, paper: 40000, panorama: PANORAMA_TIMEOUT_MS, crops: 20000, subtopics: 20000, prepare: 20000 };
+const RETRIES = { warm: 0, burst: 0, status: 2, paper: 1, panorama: 0, crops: 1, subtopics: 0, prepare: 0 };
 const RETRYABLE = new Set(["timeout", "network", "rate", "server"]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const override = () => (typeof globalThis.__RRM_TIMEOUT_MS === "number" ? globalThis.__RRM_TIMEOUT_MS : null);
@@ -149,12 +298,27 @@ async function request(route, url, init = {}) {
   }
 }
 
+export function warm(which = "burst") {
+  const base = which === "reader" ? READER : BURST;
+  return request("warm", `${base}/warm`);
+}
+
 export function burst(q) {
   return request("burst", `${BURST}/burst?q=${encodeURIComponent(q)}&n=10`);
 }
 
-export function status(ids) {
-  return request("status", `${READER}/status?ids=${ids.join(",")}`);
+export function status(ids, q) {
+  const extra = q ? `&q=${encodeURIComponent(q)}` : "";
+  return request("status", `${READER}/status?ids=${ids.join(",")}${extra}`);
+}
+
+/** front=true moves those ids ahead of the background top-10. The UI does not wait on the parse. */
+export function prepare(ids, front = false) {
+  return request("prepare", `${READER}/prepare`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, front: Boolean(front) }),
+  });
 }
 
 export function paper(id) {

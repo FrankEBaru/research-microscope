@@ -26,6 +26,8 @@ if [[ ! -f "$ROOT/offline-fixtures/manifest.json" ]]; then
   rm -f "$ROOT/${TAG}.tar.gz"
 fi
 
+export RRM_FEATURES="${RRM_FEATURES:-core}"
+export NEXT_PUBLIC_RRM_FEATURES="${NEXT_PUBLIC_RRM_FEATURES:-$RRM_FEATURES}"
 export NEXT_PUBLIC_BURST_URL="http://127.0.0.1:${PORT}"
 export NEXT_PUBLIC_READER_URL="http://127.0.0.1:${PORT}"
 export NEXT_PUBLIC_RRM_DEMO_TOKEN="${NEXT_PUBLIC_RRM_DEMO_TOKEN:-local}"

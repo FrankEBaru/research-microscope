@@ -19,6 +19,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from rrm.features import core_mode, features_mode
+from rrm.search.layout import place_papers
+
 MISS = "consulta no grabada"
 _NAME = re.compile(r"^[A-Za-z0-9._-]{1,180}$")
 _TYPES = {
@@ -99,6 +102,9 @@ def _miss():
 
 
 def panorama_is_live() -> bool:
+    """Muse only in `all`. Core replays the recording and does not call Meta."""
+    if core_mode():
+        return False
     return (os.environ.get("RRM_OFFLINE_PANORAMA") or "").strip().lower() == "meta"
 
 
@@ -139,12 +145,12 @@ def build_handler(store: Store):
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "X-RRM-Demo, Content-Type")
 
-        def _send(self, code: int, body, content_type: str):
+        def _send(self, code: int, body, content_type: str, cache: str = "no-store"):
             data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode("utf-8")
             self.send_response(code)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", cache)
             self._cors()
             self.end_headers()
             if self.command != "HEAD":
@@ -170,6 +176,9 @@ def build_handler(store: Store):
             if path == "/":
                 self._json(200, {"ok": True, "queries": sorted(store.queries)})
                 return
+            if path == "/warm":
+                self._json(200, {"ready": True, "features": features_mode(), "loaded": ["fixtures"]})
+                return
             if path == "/burst":
                 hit = store.question(one("q"))
                 body = None if hit is None else hit.get("burst")
@@ -184,6 +193,11 @@ def build_handler(store: Store):
                 out = dict(body)
                 if isinstance(out.get("papers"), list):
                     out["papers"] = out["papers"][:n]
+                # Fixtures have citations and years, not SPECTER2 vectors.
+                # A stored specter layout (if a future recording has one) is kept.
+                stored = out.get("layout") if isinstance(out.get("layout"), dict) else None
+                if not stored or stored.get("method") != "specter2-pca":
+                    out["layout"] = place_papers(out.get("papers") or [], out.get("edges") or [])
                 self._json(200, out)
                 return
             if path == "/subtopics":
@@ -256,13 +270,36 @@ def build_handler(store: Store):
                     self._json(*_miss())
                     return
                 data = path_file.read_bytes()
-                self._send(200, data, _TYPES[path_file.suffix.lower()])
+                self._send(200, data, _TYPES[path_file.suffix.lower()], cache="public, max-age=86400")
                 return
             self._json(*_miss())
 
         def do_POST(self):
             url = urlparse(self.path)
-            if url.path.rstrip("/") != "/panorama":
+            path = url.path.rstrip("/") or "/"
+            if path == "/prepare":
+                length = int(self.headers.get("Content-Length") or "0")
+                if length < 0 or length > 2_000_000:
+                    self._json(400, {"error": "body"})
+                    return
+                raw = self.rfile.read(length) if length else b""
+                try:
+                    item = json.loads(raw.decode("utf-8") or "null")
+                except (UnicodeError, json.JSONDecodeError):
+                    self._json(400, {"error": "body must be a JSON object"})
+                    return
+                ids = item.get("ids") if isinstance(item, dict) else None
+                rows = []
+                for raw_id in ids or []:
+                    try:
+                        cid = str(int(raw_id))
+                    except (TypeError, ValueError):
+                        continue
+                    known = store.status.get(cid) or {"id": int(cid), "status": "missing"}
+                    rows.append(dict(known))
+                self._json(200, {"papers": rows, "front": bool(isinstance(item, dict) and item.get("front"))})
+                return
+            if path != "/panorama":
                 self._json(*_miss())
                 return
             length = int(self.headers.get("Content-Length") or "0")

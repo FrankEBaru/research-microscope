@@ -155,6 +155,7 @@ def test_panorama_meta_usa_los_papers_grabados(tmp_path, monkeypatch):
             "themes": [{"statement": "Attention replaces recurrence.", "picks": ["0"]}],
         }), {"total_tokens": 3}
 
+    monkeypatch.setenv("RRM_FEATURES", "all")
     monkeypatch.setenv("RRM_OFFLINE_PANORAMA", "meta")
     monkeypatch.setattr("rrm.panorama._muse", fake_muse)
     httpd = _server(root)

@@ -171,6 +171,8 @@ class IdTable:
             "year": cell("year"),
             "venue": cell("venue"),
             "citationcount": None if count is None else int(count),
+            "tldr": cell("tldr"),
+            "abstract": cell("abstract"),
         }
 
 
@@ -191,6 +193,8 @@ class IdTable:
                 "year": self._cell("year", at),
                 "venue": self._cell("venue", at),
                 "citationcount": None if count is None else int(count),
+                "tldr": self._cell("tldr", at),
+                "abstract": self._cell("abstract", at),
             })
         return out
 
