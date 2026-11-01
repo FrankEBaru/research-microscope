@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Rich } from "@/lib/math";
-import { ask, preparePhrases } from "@/lib/backend.js";
+import { ask, explain, preparePhrases } from "@/lib/backend.js";
 
 const PARTS = [
   ["coincide", "Coincide"],
@@ -9,6 +9,27 @@ const PARTS = [
   ["sin_respaldo", "Sin respaldo"],
   ["te_falto", "Te faltó"],
 ] as const;
+
+function boxKey(id?: string) {
+  return id ? `rrm-ask:${id}` : "";
+}
+
+function loadBox(id?: string) {
+  const key = boxKey(id);
+  if (!key || typeof sessionStorage === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveBox(id: string | undefined, snap: any) {
+  const key = boxKey(id);
+  if (!key || typeof sessionStorage === "undefined") return;
+  try { sessionStorage.setItem(key, JSON.stringify(snap)); } catch { /* el paper sigue; la caja lo dice */ }
+}
 
 function group(rows: any[]) {
   const map = new Map<string, any[]>();
@@ -36,10 +57,24 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
   const [result, setResult] = useState<any>(null);
   const [store, setStore] = useState<any>(null);
   const [err, setErr] = useState("");
+  const owner = useRef<string | undefined>(undefined);
   const [progress, setProgress] = useState("");
   const [phraseLine, setPhraseLine] = useState("");
   const phrases = useRef<Promise<unknown> | null>(null);
   const key = (ids || []).join(",");
+  useEffect(() => {
+    if (!focusId) return;
+    if (owner.current !== focusId) {
+      owner.current = focusId;
+      const next = loadBox(focusId);
+      setText(next?.text || "");
+      setResult(next?.result ?? null);
+      setErr(next?.err || "");
+      setStore(next?.store ?? null);
+      return;
+    }
+    saveBox(focusId, { text, result, err, store });
+  }, [focusId, text, result, err, store]);
   useEffect(() => {
     if (!focusId) { setPhraseLine(""); phrases.current = null; return; }
     let stop = false;
@@ -101,12 +136,12 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
       if (ranked?.empty) return;
       setProgress("revisando cada cita…");
       const body = await ask(ids || [], text, "revisar", focusId);
-      setResult(body);
-      keepStore(body);
+      if (body?.empty) setErr(body.note || "La revisión volvió vacía.");
+      else { setResult(body); keepStore(body); }
     } catch (err: any) {
       const timed = err?.kind === "timeout" || err?.name === "AbortError";
       if (timed) held = "Sigue la revisión de las citas. Vuelve a enviar si no aparece.";
-      else setErr("No pude buscar en las frases guardadas.");
+      else setErr(explain(err));
     } finally {
       setBusy(false);
       setProgress(held);

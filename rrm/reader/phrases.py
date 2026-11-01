@@ -1,6 +1,7 @@
 """Frases del autor para la caja. Parseo local: sin FAISS y sin modelo."""
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -44,7 +45,10 @@ def collect_phrases(paper):
             if eq and sent_i == len(sents) - 1:
                 bits = bits + [eq]
             text = plain(sent)
-            if text and bits:
+            # El abstract no trae símbolos. Sin esto, una frase literal del abstract
+            # no está en phrases.npy y el coseno cita a otro paper. RRM_PHRASE_ABSTRACT=0 lo apaga.
+            abstract = bool(block.get("abs")) and os.environ.get("RRM_PHRASE_ABSTRACT", "1") != "0"
+            if text and (bits or abstract):
                 rows.append({
                     "paper": paper.get("corpusid"),
                     "section": section,
@@ -158,6 +162,26 @@ def rank_phrases(rows, text):
 def search_phrases(rows, text):
     hits, _total = rank_phrases(rows, text)
     return hits
+
+
+def append_phrase_rows(folder, extra):
+    """Agrega filas al final. El .npy viejo sigue alineado con el prefijo."""
+    current = read_phrases(folder)
+    path = Path(folder) / "phrases.json"
+    paper = None
+    if path.is_file():
+        try:
+            body = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(body, dict):
+                paper = body.get("paper")
+        except (OSError, ValueError):
+            paper = None
+    if paper is None and extra:
+        paper = extra[0].get("paper")
+    from rrm.reader.files import atomic_write
+
+    atomic_write(path, json.dumps({"paper": paper, "rows": list(current) + list(extra)}, ensure_ascii=False))
+    return list(current) + list(extra)
 
 
 def store_progress(root, ids):

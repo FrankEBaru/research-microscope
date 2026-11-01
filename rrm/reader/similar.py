@@ -119,6 +119,17 @@ def commit_phrases(folder, reload, commit, encode=None):
                 error = error or type(err).__name__
         rows = text_rows(read_phrases(folder))
         vecs = read_vectors(folder, len(rows)) if rows else None
+    if rows and vecs is not None:
+        try:
+            if append_abstract(folder, rows, encode=encode):
+                try:
+                    commit()
+                except Exception as err:
+                    error = error or type(err).__name__
+                rows = text_rows(read_phrases(folder))
+                vecs = read_vectors(folder, len(rows)) if rows else None
+        except Exception as err:
+            error = error or f"{type(err).__name__}: {err}"[:180]
     return {
         "ready": bool(rows) and vecs is not None,
         "rows": len(rows or []),
@@ -158,6 +169,20 @@ def read_vectors(folder, n):
     return np.asarray(vecs, dtype=np.float32)
 
 
+def phrase_ids(ids, focus):
+    """Con paper abierto, el coseno usa solo su carpeta.
+
+    La UI manda los 10 de la ráfaga en `ids` y el abierto en `focus`. Mezclarlos
+    fue el fallo: el margen 0.05 se llenaba de Longformer, Big Bird y Linformer.
+    `RRM_PHRASE_NEIGHBORS=1` vuelve a rankear toda la ráfaga.
+    """
+    if os.environ.get("RRM_PHRASE_NEIGHBORS") == "1":
+        return list(ids or [])
+    if focus not in (None, ""):
+        return [focus]
+    return list(ids or [])
+
+
 def load_aligned(root, ids):
     """Frases con vector guardado. `missing` si hay texto y todavía no hay .npy."""
     from rrm.reader.phrases import read_phrases
@@ -174,6 +199,9 @@ def load_aligned(root, ids):
         got = text_rows(read_phrases(base / str(cid)))
         if not got:
             continue
+        for row in got:
+            if row.get("paper") in (None, ""):
+                row["paper"] = cid
         vecs = read_vectors(base / str(cid), len(got))
         if vecs is None:
             missing = True
@@ -185,13 +213,62 @@ def load_aligned(root, ids):
     return rows, np.vstack(mats), missing
 
 
-def _score_rows(usable, query, mat, chunks):
+def append_abstract(folder, rows, encode=None):
+    """Encodea solo las frases del abstract que el almacén viejo no tenía."""
+    if os.environ.get("RRM_PHRASE_ABSTRACT", "1") == "0":
+        return False
+    from rrm.reader.phrases import append_phrase_rows, collect_phrases
+    from rrm.reader.pipeline import load_paper
+
+    paper = load_paper(folder)
+    if not isinstance(paper, dict) or not paper.get("blocks"):
+        return False
+    have = {(row.get("text") or "").strip() for row in rows}
+    extra = [
+        row for row in text_rows(collect_phrases(paper))
+        if (row.get("text") or "").strip() not in have
+    ]
+    if not extra:
+        return False
+    old = read_vectors(folder, len(rows))
+    if old is None:
+        return False
+    encode = encode or specter_encode
+    new = np.asarray(encode([_phrase_text(row) for row in extra]), dtype=np.float32)
+    if new.ndim != 2 or new.shape[0] != len(extra) or tuple(new.shape[1:]) != tuple(old.shape[1:]):
+        return False
+    append_phrase_rows(folder, extra)
+    path = Path(folder) / "phrases.npy"
+    tmp = path.with_name(f".phrases.{os.getpid()}.npy")
+    np.save(tmp, np.vstack([old, new]))
+    os.replace(tmp, path)
+    return True
+
+
+def _norm(text):
+    import re
+    return re.sub(r"\s+", " ", text or "").strip().casefold()
+
+
+def _literal(query, row):
+    left, right = _norm(query), _norm(row.get("text"))
+    if len(left) < 24 or len(right) < 24:
+        return False
+    return left in right or right in left
+
+
+def _score_rows(usable, query, mat, chunks, raw=""):
     scored = []
     for row, vec in zip(usable, mat):
         score = cosine(query, vec)
         if score is None:
             continue
-        bonus = 1 if chunks and any(_chunk_in(chunk, row) for chunk in chunks) else 0
+        if _literal(raw, row):
+            bonus = 2
+        elif chunks and any(_chunk_in(chunk, row) for chunk in chunks):
+            bonus = 1
+        else:
+            bonus = 0
         scored.append((bonus, score, row))
     return scored
 
@@ -216,7 +293,7 @@ def rank_similar(rows, text, encode=None, vectors=None):
         query = np.asarray(encode([text]), dtype=np.float32).reshape(-1)
         if query.shape != mat.shape[1:]:
             raise ValueError(f"vector {tuple(query.shape)} != {tuple(mat.shape)}")
-        scored = _score_rows(usable, query, mat, chunks)
+        scored = _score_rows(usable, query, mat, chunks, text)
     else:
         try:
             vecs = np.asarray(encode([text] + [_phrase_text(row) for row in usable]), dtype=np.float32)
@@ -224,7 +301,7 @@ def rank_similar(rows, text, encode=None, vectors=None):
             return [], 0
         if vecs.ndim != 2 or vecs.shape[0] != len(usable) + 1:
             return [], 0
-        scored = _score_rows(usable, vecs[0], vecs[1:], chunks)
+        scored = _score_rows(usable, vecs[0], vecs[1:], chunks, text)
     if scored:
         best = max(item[1] for item in scored)
         # Una frase lejos de la mejor no entra: si no, «te faltó» cita cualquier cosa.
