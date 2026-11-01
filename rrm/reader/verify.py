@@ -1,5 +1,6 @@
 """Verificador de citas. La capa 1 es este archivo; la capa 2 vive en feedback.py."""
 
+import os
 import re
 
 _WORD = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
@@ -61,6 +62,30 @@ def linea_final(citas):
     """La caja ya no usa una sola línea. Se queda vacío para no llamar a Meta por otro camino."""
     del citas
     return ""
+
+
+def ask_error_text(err):
+    """Texto para la UI. Sin clave, sin URL y sin el cuerpo crudo de la red."""
+    raw = str(err or "").strip() or "La revisión falló."
+    secret = os.environ.get("MODEL_API_KEY") or ""
+    if secret and secret in raw:
+        raw = raw.replace(secret, "")
+    raw = re.sub(r"Bearer\s+\S+", "Bearer", raw)
+    raw = re.sub(r"https?://\S+", "", raw)
+    raw = " ".join(raw.split())
+    return (raw[:180] or "La revisión falló.")
+
+
+def ask_http(body, stage):
+    """Un fallo de la revisión no sale como 200 vacío."""
+    from rrm.reader.metacall import note_for
+
+    note = str((body or {}).get("note") or "")
+    parts = (body or {}).get("parts") or {}
+    filled = any(parts.get(name) for name in ("coincide", "contradice", "sin_respaldo", "te_falto"))
+    if (stage or "") == "revisar" and note in {note_for("red"), note_for("parse")} and not filled:
+        return 502, {"error": note}
+    return 200, body
 
 
 def answer(rows, text, *, ids=None, root=None, encode=None, stage="todo", vectors=None):
