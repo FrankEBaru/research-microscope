@@ -1133,7 +1133,7 @@ def test_ocr_route_skip_does_not_count_as_gpu(tmp_path: Path):
     assert "ocr_invoked_at" not in meta
     assert meta["ocr_gpu_s"] == 0.0
     assert meta["timings"]["ocr"] == 0.0
-    assert "skipped" in (meta.get("reason") or "")
+    assert meta.get("reason") == "Esta corrida no usó OCR."
 
 
 def test_ocr_slot_caps_at_one_and_fails_closed():

@@ -5,8 +5,15 @@ import { Tex, Rich, Sym } from "@/lib/math";
 import { ProvChip } from "./Bits";
 import Instrument from "./Instrument";
 import { bibtex } from "@/lib/bibtex.js";
-import { crops, eqTex, figureCandidates, figureUrl, paperKey, refText } from "@/lib/backend.js";
+import { crops, eqTex, figureCandidates, figureUrl, paperKey, refText, sourcePdfUrl } from "@/lib/backend.js";
 import { pdfPagesOnly, polishText, presentInlines, visibleInlines } from "@/lib/prose.js";
+import { equationHover, symbolHover, tableHover } from "@/lib/hover.js";
+import { faltaText } from "@/lib/falta.js";
+import { hasConclusion, scanIds } from "@/lib/scan.js";
+import { resolveCite } from "@/lib/path.js";
+import { citeName } from "@/lib/layout.js";
+import AskBox from "./AskBox";
+import ReadMinimap from "./ReadMinimap";
 import { devBegin, devFinish } from "@/lib/devlog.js";
 import { createTracker } from "@/lib/companion.js";
 import { analyze, bars } from "@/lib/tablechart.js";
@@ -20,7 +27,7 @@ export function plainOf(inls: Inline[]): string {
   return (inls || []).map((x) => x.t === "text" ? x.v : x.t === "math" ? `$${x.v}$` : x.t === "cite" ? "" : x.t === "note" ? "" : Array.isArray(x.c) ? plainOf(x.c) : x.v || "").join("").replace(/\s+/g, " ").trim();
 }
 
-interface Ctx { figs?: Set<string>; syms: Sym[]; refIndex: Record<string, number>; refLabels?: Record<string, string>; xref?: Record<string, string>; counter: { n: number } }
+interface Ctx { figs?: Set<string>; syms: Sym[]; refIndex: Record<string, number>; refLabels?: Record<string, string>; xref?: Record<string, string>; counter: { n: number }; core?: boolean; block?: string; sent?: number }
 
 function Inlines({ inls, ctx }: { inls: Inline[]; ctx: Ctx }) {
   const shown = presentInlines(inls);
@@ -30,7 +37,11 @@ function Inlines({ inls, ctx }: { inls: Inline[]; ctx: Ctx }) {
 function One({ x, ctx, prev = "" }: { x: Inline; ctx: Ctx; prev?: string }) {
   switch (x.t) {
     case "text": return <>{x.v.replaceAll("~", "\u00a0")}</>;
-    case "math": return <Tex tex={x.v} display={false} syms={ctx.syms} />;
+    case "math": {
+      if (!ctx.core) return <Tex tex={x.v} display={false} syms={ctx.syms} />;
+      const token = encodeURIComponent(x.v).replace(/\|/g, "%7C");
+      return <span data-pop={`m|${ctx.block}|${ctx.sent}|${token}`} data-tex={x.v}><Tex tex={x.v} display={false} syms={ctx.syms} /></span>;
+    }
     case "em": return <em><Inlines inls={x.c} ctx={ctx} /></em>;
     case "strong": return <strong><Inlines inls={x.c} ctx={ctx} /></strong>;
     case "span": return <Inlines inls={x.c} ctx={ctx} />;
@@ -67,13 +78,21 @@ function One({ x, ctx, prev = "" }: { x: Inline; ctx: Ctx; prev?: string }) {
 /* ---------- popover ---------- */
 type PopState = { key: string; rect: DOMRect } | null;
 
-function Popover({ pop, paper, model, content }: { pop: NonNullable<PopState>; paper: Paper; model: any; content: any }) {
+function Popover({ pop, paper, model, content, core }: { pop: NonNullable<PopState>; paper: Paper; model: any; content: any; core?: boolean }) {
   const [kind, ...r] = pop.key.split("|");
   const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, counter: { n: 0 } };
   let body: any = null;
   if (kind === "c") {
     body = r[0].split(",").map((k) => <p key={k} className="pop-ref"><b>[{paper.refLabels?.[k] ?? model.refIndex[k] ?? "?"}]</b> {paper.refs[k] || "referencia no encontrada en el paper"}</p>);
     body = <>{body}<div className="pop-meta"><ProvChip kind="paper" text="bibliografía del paper" /></div></>;
+  } else if (kind === "m" && core) {
+    let tex = r[2] || "";
+    try { tex = decodeURIComponent(tex); } catch { /* el LaTeX se muestra igual */ }
+    const hit = symbolHover(paper.blocks, tex, { block: r[0], index: Number(r[1]) });
+    body = <><p className="pop-quote">{hit.text}</p><div className="pop-meta"><ProvChip kind="paper" text="frase del autor" /></div></>;
+  } else if (kind === "e" && core) {
+    const hit = equationHover(paper.blocks, r[0]);
+    body = <><p className="pop-title">De dónde sale</p>{hit.texts.map((text: string, i: number) => <p key={i} className="pop-quote">{text}</p>)}{!hit.texts.length && <p className="pop-quote">el paper no lo define</p>}<div className="pop-meta"><ProvChip kind="paper" text="frase del autor" /></div></>;
   } else if (kind === "y") {
     const s = content.attention.symbols.find((s: any) => s.id === r[0]);
     body = (
@@ -111,7 +130,15 @@ function Popover({ pop, paper, model, content }: { pop: NonNullable<PopState>; p
   } else if (kind === "t") {
     const t = model.byId[r[0]]; const an = t.an; const ri = +r[1], col = +r[2];
     const row = an.bodyRows[ri]; const cell = row.find((c: any) => c.col === col) || row[0];
-    body = (
+    const told = core ? tableHover(paper.blocks, r[0]) : null;
+    body = core ? (
+      <>
+        <p className="pop-title">Tabla</p>
+        {told.caption && <p className="pop-quote">{told.caption}</p>}
+        {told.sentence ? <p className="pop-quote">{told.sentence}</p> : <p className="pop-line">El paper no la discute en una frase.</p>}
+        <div className="pop-meta"><ProvChip kind="paper" text="pie y frase del autor" /></div>
+      </>
+    ) : (
       <>
         <p className="pop-title">Tabla · fila «<Inlines inls={row[0].c} ctx={ctx} />»</p>
         <p className="pop-line">Columna «{an.headers[col] || "—"}»: <b><Inlines inls={cell.c} ctx={ctx} /></b></p>
@@ -126,7 +153,7 @@ function Popover({ pop, paper, model, content }: { pop: NonNullable<PopState>; p
 }
 
 /* ---------- tabla (+ gráfica viva) ---------- */
-function TableChart({ model, n }: { model: any; n: number }) {
+function TableChart({ model, n, predict = true }: { model: any; n: number; predict?: boolean }) {
   const [col, setCol] = useState<number>(model.numericCols[0]);
   const [sort, setSort] = useState<"original" | "desc" | "asc">("original");
   const [log, setLog] = useState(false);
@@ -144,11 +171,11 @@ function TableChart({ model, n }: { model: any; n: number }) {
         <label>orden <select value={sort} onChange={(e) => setSort(e.target.value as any)}><option value="original">como en la tabla</option><option value="desc">mayor a menor</option><option value="asc">menor a mayor</option></select></label>
         <label className="chk"><input type="checkbox" checked={log} onChange={(e) => setLog(e.target.checked)} /> escala logarítmica</label>
       </div>
-      <div className="tpredict">
+      {predict && <div className="tpredict">
         <label className="chk"><input type="checkbox" checked={ask} onChange={(e) => setAsk(e.target.checked)} /> predecir antes de ver <ProvChip kind="hipotesis" text="hipótesis" /></label>
         {hide && <span role="status">¿Cuál crees que tiene el valor más alto en «{model.headers[col]}»? Haz clic en una fila.</span>}
         {ask && guess !== null && top && <span role="status" className="tp-result">{guess === top.label ? `Acertaste: ${top.label} (${top.raw}).` : `Elegiste ${guess}; el más alto es ${top.label} (${top.raw}).`}</span>}
-      </div>
+      </div>}
       <div className="tbars">
         {data.map((d: any) => (
           <div key={d.row} className={`tbar-row ${hide ? "hid" : ""} ${ask && guess === d.label ? "guess" : ""} ${ask && guess !== null && top && d.label === top.label ? "truth" : ""}`} data-row-label={d.label} onClick={hide ? () => setGuess(d.label) : undefined} onMouseEnter={() => window.dispatchEvent(new CustomEvent("rrm-row", { detail: d.label }))} onMouseLeave={() => window.dispatchEvent(new CustomEvent("rrm-row", { detail: "" }))}>
@@ -163,7 +190,7 @@ function TableChart({ model, n }: { model: any; n: number }) {
   );
 }
 
-function Table({ b, ctx, n }: { b: Block; ctx: Ctx; n: number }) {
+function Table({ b, ctx, n, predict = true, still = false }: { b: Block; ctx: Ctx; n: number; predict?: boolean; still?: boolean }) {
   const [hc, setHc] = useState<number | null>(null);
   const [showChart, setShowChart] = useState(false);
   const [hl, setHl] = useState("");
@@ -173,7 +200,7 @@ function Table({ b, ctx, n }: { b: Block; ctx: Ctx; n: number }) {
   return (
     <figure className="table-fig" id={b.label || undefined} data-tab={b.id}>
       {chartable && <div className="tchart-bar"><button className="tchart-toggle" aria-pressed={showChart} onClick={() => setShowChart((v) => !v)}>{showChart ? "Ocultar gráfica" : "Ver como gráfica"}</button></div>}
-      {showChart && <TableChart model={model} n={n} />}
+      {showChart && <TableChart model={model} n={n} predict={predict} />}
       <div className="table-wrap" onMouseLeave={() => setHc(null)}>
         <table data-hc={hc ?? undefined}>
           <thead>{model.headRows.map((hr: any[], ri: number) => (
@@ -181,7 +208,7 @@ function Table({ b, ctx, n }: { b: Block; ctx: Ctx; n: number }) {
           ))}</thead>
           <tbody>
             {model.bodyRows.map((r: any[], ri: number) => (
-              <tr key={ri} className={hl && plainOf(r[0].c).replace(/\[cite\]/g, "").trim() === hl ? "row-on" : ""} style={{ animationDelay: `${ri * 35}ms` }}>
+              <tr key={ri} className={hl && plainOf(r[0].c).replace(/\[cite\]/g, "").trim() === hl ? "row-on" : ""} style={still ? undefined : { animationDelay: `${ri * 35}ms` }}>
                 {r.map((c: any, ci: number) => <td key={ci} colSpan={c.span} data-c={c.col} className={hc !== null && hc >= c.col && hc < c.col + c.span ? "col-on" : ""} onMouseEnter={() => setHc(c.col)} data-pop={`t|${b.id}|${ri}|${c.col}`} tabIndex={0}><Inlines inls={c.c} ctx={ctx} /></td>)}
               </tr>
             ))}
@@ -311,9 +338,13 @@ function CropStrip({ id }: { id: string }) {
   );
 }
 
-export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote, showInstrument = true, showCrops = true }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string } | null; showInstrument?: boolean; showCrops?: boolean }) {
+export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote, showInstrument = true, showCrops = true, core = false, burstIds, map, onOpenPaper, onPromote }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string; pdf?: boolean; oa_pdf?: string; arxiv?: string } | null; showInstrument?: boolean; showCrops?: boolean; core?: boolean; burstIds?: string[]; map?: { papers: any[]; edges: any[]; layout: any } | null; onOpenPaper?: (id: string, why: string) => void; onPromote?: () => void }) {
   const art = useRef<HTMLElement>(null);
   const [pop, setPop] = useState<PopState>(null);
+  const [reading, setReading] = useState(false);
+  const [left, setLeft] = useState("");
+  const [hold, setHold] = useState("");
+  const prevSec = useRef("");
   const timer = useRef<any>(null);
   const [active, setActive] = useState<string>("");
   const tracker = useRef(createTracker());
@@ -413,6 +444,14 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     if (sym && att) { const s = att.symbols.find((y: any) => y.id === sym.dataset.sym); if (s) goTo(s.def.anchor.blockId); return; }
     const xr = t.closest("[data-xref]") as HTMLElement | null;
     if (xr) { e.preventDefault(); const el = document.getElementById(model.target[xr.dataset.xref!] || xr.dataset.xref!); el?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    const cite = t.closest("[data-pop]") as HTMLElement | null;
+    if (core && cite?.dataset.pop?.startsWith("c|")) {
+      const keys = cite.dataset.pop.slice(2).split(",");
+      const hit = keys.map((key) => resolveCite(key, paper.citeMap)).find(Boolean);
+      if (hit && onOpenPaper) { onOpenPaper(hit, "cita en el paper"); return; }
+      setPop({ key: cite.dataset.pop, rect: cite.getBoundingClientRect() });
+      return;
+    }
     const cp = t.closest("[data-copy]") as HTMLElement | null;
     if (cp) { const old = cp.textContent; navigator.clipboard?.writeText(cp.dataset.copy!); cp.textContent = "copiado"; setTimeout(() => (cp.textContent = old), 1200); }
   };
@@ -451,13 +490,45 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     const io = new IntersectionObserver((es) => { es.forEach((e) => e.isIntersecting && setActive(e.target.id)); }, { rootMargin: "-10% 0px -80% 0px" });
     hs.forEach((h) => io.observe(h));
     return () => io.disconnect();
-  }, [paper]);
+  }, [paper, reading]);
+  useEffect(() => {
+    if (!core) return;
+    if (prevSec.current && prevSec.current !== active) setLeft(prevSec.current);
+    prevSec.current = active;
+  }, [active, core]);
 
   const instAfter = att?.instrument.claim.anchor.blockId;
   const authors = authorLine(paper.authors || []);
+  const scan = core && !reading ? scanIds(paper.blocks) : null;
+  const firstHead = (paper.blocks || []).find((b) => b.kind === "h");
+  const sectionNow = active.startsWith("sec-") ? (paper.blocks || []).find((b) => b.kind === "h" && b.id === active.slice(4)) : firstHead;
+  const sectionLabel = sectionNow ? plainOf(sectionNow.inlines) : "inicio";
+  const abstractId = (paper.blocks || []).find((b) => b.kind === "p" && b.abs)?.id || "";
+  const nameOf = (id: string, section?: string) => citeName((map?.papers || []).find((item) => paperKey(item) === String(id)), section);
+  const askBox = core ? (
+    <div className="ask-slot">
+      {hold
+        ? <AskBox sectionLabel="la sección que cerraste" ids={burstIds} focusId={paper.corpusid != null ? String(paper.corpusid) : ""} onOpen={onOpenPaper} onPromote={onPromote} onName={nameOf} closed onSkip={() => { setHold(""); setLeft(""); }} />
+        : <AskBox sectionLabel={sectionLabel} ids={burstIds} focusId={paper.corpusid != null ? String(paper.corpusid) : ""} onOpen={onOpenPaper} onPromote={onPromote} onName={nameOf} />}
+    </div>
+  ) : null;
+  const undrawn = core && (remote?.status === "abstract_only" || remote?.status === "failed");
+  const arxivId = paper.arxivId || remote?.arxiv || "";
+  const oaPdf = remote?.oa_pdf || paper.oaPdf || "";
+  const pdfHref = remote?.pdf && paper.corpusid != null
+    ? sourcePdfUrl(paper.corpusid)
+    : arxivId
+      ? `https://arxiv.org/pdf/${arxivId}`
+      : (typeof oaPdf === "string" && oaPdf.startsWith("http") ? oaPdf : "");
+  const honest = arxivId
+    ? `https://arxiv.org/abs/${arxivId}`
+    : paper.corpusid != null
+      ? `https://www.semanticscholar.org/paper/${paper.corpusid}`
+      : "";
 
   return (
     <div className="paper-layout">
+      {core && map && <ReadMinimap papers={map.papers} edges={map.edges} layout={map.layout} onOpen={(id) => onOpenPaper?.(id, "nodo del minimapa")} />}
       {model.toc.length > 0 && (
         <nav className="toc" aria-label="Secciones">
           {model.toc.map((t) => (
@@ -466,18 +537,25 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           ))}
         </nav>
       )}
-      <article key={mountKey(paper)} ref={art} className="paper" onTouchStart={() => (touched.current = Date.now())} onMouseOver={onOver} onMouseOut={onOut} onFocus={onOver} onBlur={onOut} onClick={onClick}>
+      <article key={mountKey(paper)} ref={art} className={`paper${reading ? " is-read" : ""}`} onTouchStart={() => (touched.current = Date.now())} onMouseOver={onOver} onMouseOut={onOut} onFocus={onOver} onBlur={onOut} onClick={onClick}>
         <header className="paper-head">
           <div className="chips">
             <ProvChip kind="paper" text={paper.arxivId ? `arXiv:${paper.arxivId}` : `corpus:${paper.corpusid ?? ""}`} />
             {!paper.full && !remote && <ProvChip kind="curado" text="solo abstract en esta ráfaga" />}
-            {remote?.stage === "stub" && <span className="chip chip-curado">solo abstract · cargando texto completo…</span>}
+            {remote?.stage === "stub" && <span className="chip chip-curado">leyendo secciones…</span>}
             {(remote?.status === "abstract_only" || remote?.stage === "abstract_only") && <span className="chip chip-curado">solo abstract: sin LaTeX ni PDF usable</span>}
           </div>
           <h1>{polishText(paper.title)}</h1>
+          {core && paper.full && <p className="meta"><button type="button" className="link" onClick={() => setReading((v) => !v)}>{reading ? "Volver al scan" : "Leer"}</button></p>}
+          {core && !reading && !hasConclusion(paper.blocks) && <p className="muted">No encontré una sección de conclusión.</p>}
+          {core && left && !hold && <p className="ask-offer">Cerraste una sección. <button type="button" className="link" onClick={() => setHold(left)}>Escribir</button> <button type="button" className="link" onClick={() => setLeft("")}>Seguir</button></p>}
+          {!abstractId && askBox}
+          {undrawn && <p className="fail-reason">Falta: {faltaText(remote?.reason)}</p>}
+          {undrawn && pdfHref && <iframe className="source-pdf" title="PDF del paper" src={pdfHref} />}
+          {undrawn && !pdfHref && honest && <p className="fail-reason"><a href={honest} target="_blank" rel="noreferrer">No hay PDF en el lector, ni en arXiv, ni un openAccessPdf. La ficha está aquí.</a></p>}
           <p className="authors">{authors}</p>
           <p className="meta">{paper.date?.slice(0, 4)}{paper.arxivId && <> · <a href={`https://arxiv.org/abs/${paper.arxivId}`} target="_blank" rel="noreferrer">ver original en arXiv</a></>}{paper.full && paper.arxivId && <> · <a href={`https://arxiv.org/pdf/${paper.arxivId}`} target="_blank" rel="noreferrer">PDF</a></>}{(remote?.status === "abstract_only" || remote?.status === "failed" || remote?.stage === "abstract_only") && !paper.arxivId && paper.corpusid != null && <> · <a href={`https://www.semanticscholar.org/paper/${paper.corpusid}`} target="_blank" rel="noreferrer">Semantic Scholar</a></>}{paper.arxivId && <> · <button className="link bib" data-bibtex={bibtex(paper)} data-copy={bibtex(paper)} title="Copiar la ficha BibTeX de arXiv">BibTeX</button></>}</p>
-          {remote?.status === "failed" && <p className="fail-reason">{remote.reason}</p>}
+          {remote?.status === "failed" && <p className="fail-reason">{faltaText(remote.reason)}</p>}
           {remote?.source === "ocr" && <p className="ocr-band">leído por OCR: puede haber errores en ecuaciones</p>}
           {remote && autoSentence(paper.abstract) && <blockquote><span className="qlab">frase del abstract (automática)</span>«{polishText(autoSentence(paper.abstract))}»</blockquote>}
           {paper.license && <p className="license">{paper.license}</p>}
@@ -489,7 +567,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
 
         {pdfPagesOnly(paper.blocks) && <p className="pdf-only">Este e-print no trae el texto: las páginas vienen insertadas de un PDF.</p>}
         {paper.blocks.map((b) => {
-          const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, refLabels: paper.refLabels, xref: model.xref, figs: model.figs, counter: { n: model.noteBase[b.id] } };
+          if (scan && !scan.has(b.id)) return null;
+          const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, refLabels: paper.refLabels, xref: model.xref, figs: model.figs, counter: { n: model.noteBase[b.id] }, core, block: b.id };
           let el: any = null;
           if (b.kind === "h") {
             const Tag: any = b.level === 1 ? "h2" : b.level === 2 ? "h3" : "h4";
@@ -501,14 +580,14 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             el = (
               <div id={`blk-${b.id}`} className={`blk ${b.abs ? "abstract" : ""} ${b.raw ? "raw" : ""}`}>
                 {b.abs && <div className="abs-label">Resumen</div>}
-                <p>{(b.sents || [b.inlines]).map((s: Inline[], i: number) => <span key={i} className="sent" data-pop={`s|${b.id}|${i}`}><Inlines inls={s} ctx={ctx} /></span>)}</p>
-                {b.abs && remote && paper.tldr && <p className="tldr"><span className="chip chip-simulado">TLDR de Semantic Scholar (modelo)</span> {paper.tldr}</p>}
+                <p>{(b.sents || [b.inlines]).map((s: Inline[], i: number) => <span key={i} className="sent" data-pop={`s|${b.id}|${i}`}><Inlines inls={s} ctx={{ ...ctx, sent: i }} /></span>)}</p>
+                {b.abs && remote && paper.tldr && <p className="tldr"><span className="chip chip-simulado">generado</span> {paper.tldr}</p>}
                 {nb > 0 && <ol className="notes" start={model.noteBase[b.id] + 1}>{model.notes.slice(model.noteBase[b.id], model.noteBase[b.id] + nb).map((n, i) => <li key={i} value={model.noteBase[b.id] + i + 1}><Inlines inls={n.blocks.flatMap((x: Block) => x.inlines || [])} ctx={{ ...ctx, counter: { n: 999 } }} /></li>)}</ol>}
               </div>
             );
           } else if (b.kind === "eq") {
             el = (
-              <div id={`blk-${b.id}`} className="eq blk">
+              <div id={`blk-${b.id}`} className="eq blk" {...(core ? { "data-pop": `e|${b.id}`, tabIndex: 0 } : {})}>
                 <Tex tex={eqTex(b)} display syms={model.syms} />
                 <button className="copy" data-copy={b.tex} aria-label="Copiar LaTeX">LaTeX</button>
               </div>
@@ -525,9 +604,9 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               </figure>
             );
           } else if (b.kind === "table") {
-            el = <Table b={b} ctx={ctx} n={model.tabN[b.id]} />;
+            el = <Table b={b} ctx={ctx} n={model.tabN[b.id]} predict={showInstrument} still={reading} />;
           }
-          return (
+          const row = (
             <div key={b.id} className="row">
               {el}
               {breakdown === b.id && b.kind === "eq" && (
@@ -543,12 +622,14 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               {showInstrument && att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
             </div>
           );
+          if (askBox && b.id === abstractId) return <div key={b.id}>{row}{askBox}</div>;
+          return row;
         })}
         <footer className="paper-foot">
           <p>Texto, ecuaciones, figuras y tablas son los del e-print de arXiv:{paper.arxivId}, convertidos desde LaTeX sin resumir ni parafrasear. Lo que no es del paper lleva una etiqueta de procedencia.</p>
         </footer>
       </article>
-      {pop && <Popover pop={pop} paper={paper} model={model} content={content} />}
+      {pop && <Popover pop={pop} paper={paper} model={model} content={content} core={core} />}
       {companion && <Companion offer={offer} target={point} onAnswer={() => setOffer(null)} onHide={() => onHideCompanion?.()} />}
     </div>
   );

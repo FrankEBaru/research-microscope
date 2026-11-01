@@ -65,6 +65,18 @@ test("burst no se reintenta (arranque en frío) y 5xx se explica", async () => {
   assert.equal(slow.kind, "timeout"); assert.equal(calls.length, 1);
 });
 
+test("un 500 con mensaje se ve, y un stub no pisa el paper leído", async () => {
+  script(reply(500, { error: "Sin retroalimentación: no hubo red." }));
+  const err = await m.ask(["1"], "frase", "revisar", "1").catch((e) => e);
+  assert.equal(err.kind, "server");
+  assert.match(m.explain(err), /no hubo red/);
+  assert.ok(!m.explain(err).includes("http"));
+  const full = { corpusid: 7, full: true, blocks: [{ id: "a" }, { id: "b" }] };
+  const stub = { corpusid: 7, full: false, stage: "stub", blocks: [{ id: "a" }] };
+  assert.equal(m.keepOpened(full, stub), full);
+  assert.equal(m.keepOpened(full, { ...full, blocks: full.blocks.concat({ id: "c" }) }).blocks.length, 3);
+});
+
 test("sin conexión: kind network", async () => {
   script(() => { throw new TypeError("fetch failed"); });
   const err = await m.paper("1").catch((e) => e); assert.equal(err.kind, "network"); assert.match(m.explain(err), /No se pudo conectar/);

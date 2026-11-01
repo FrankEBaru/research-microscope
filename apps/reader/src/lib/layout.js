@@ -7,9 +7,110 @@ import { phaseOf } from "./qcache.js";
 
 export const WORLD_W = 1600;
 export const WORLD_H = 1000;
+
+function authorNames(paper) {
+  return (Array.isArray(paper?.authors) ? paper.authors : [])
+    .map((author) => (typeof author === "string" ? author : author?.name))
+    .filter(Boolean);
+}
+
+/** Apellido y año cuando hay autor. Si no, el título corto, entero si cabe. */
+export function nodeLabel(paper) {
+  const year = paper?.year ? String(paper.year) : "";
+  const first = authorNames(paper)[0];
+  if (first) {
+    const last = String(first).split(/[\s,]+/).filter(Boolean).pop();
+    return `${last || first}${year ? ` ${year}` : ""}`;
+  }
+  const title = String(paper?.title || "").replace(/\s+/g, " ").trim();
+  if (!title) return year ? `paper ${year}` : "paper";
+  const room = year ? 32 : 40;
+  let text = title;
+  if (title.length > room) {
+    const cut = title.slice(0, room).replace(/\s+\S*$/, "").trim();
+    text = `${cut.length >= 8 ? cut : title.slice(0, room).trim()}…`;
+  }
+  return year ? `${text} ${year}` : text;
+}
+
+/** «Autor Año · sección». Nunca el id de corpus. */
+export function citeName(paper, section) {
+  const who = paper ? nodeLabel(paper) : "";
+  const sec = String(section || "").replace(/\s+/g, " ").trim();
+  if (who && sec) return `${who} · ${sec}`;
+  return who || sec || "paper";
+}
+
+// Misma regla que rrm/search/querylang.py FAR_GAP. Los tops de RRM-42 van de 0.72 a 0.82.
+export const FAR_GAP = 0.15;
+
+/** Ids de grupo cuya mediana cae FAR_GAP por debajo del mejor paper de esta pregunta. */
+export function farGroupIds(papers, points) {
+  const score = new Map();
+  for (const paper of papers || []) {
+    if (typeof paper?.query_cosine === "number") score.set(paper.corpusid, paper.query_cosine);
+  }
+  const buckets = new Map();
+  for (const point of points || []) {
+    const value = score.get(point.corpusid);
+    if (typeof value !== "number") continue;
+    const key = String(point.cluster);
+    const list = buckets.get(key) || [];
+    list.push(value);
+    buckets.set(key, list);
+  }
+  if (buckets.size < 2) return new Set();
+  let top = null;
+  for (const list of buckets.values()) top = Math.max(top ?? -Infinity, ...list);
+  const far = new Set();
+  for (const [id, list] of buckets) {
+    const ordered = [...list].sort((a, b) => a - b);
+    const mid = ordered[Math.floor((ordered.length - 1) / 2)];
+    if (top - mid >= FAR_GAP) far.add(id);
+  }
+  return far;
+}
+
+export function groupPacks(papers, layout) {
+  const by = new Map((papers || []).map((paper) => [paper.corpusid, paper]));
+  const groups = new Map();
+  for (const point of layout?.points || []) {
+    const paper = by.get(point.corpusid);
+    if (!paper) continue;
+    const id = String(point.cluster);
+    const bucket = groups.get(id) || { id, titles: [], abstracts: [] };
+    if (paper.title) bucket.titles.push(String(paper.title));
+    if (paper.abstract) bucket.abstracts.push(String(paper.abstract).slice(0, 800));
+    groups.set(id, bucket);
+  }
+  return [...groups.values()];
+}
+
+export function applyGroupNames(result, names) {
+  if (!result?.layout?.groups || !names?.length) return result;
+  const by = new Map(names.map((row) => [String(row.id), row.name]));
+  let changed = false;
+  const groups = result.layout.groups.map((group) => {
+    const name = by.get(String(group.id));
+    if (!name || name === group.name) return group;
+    changed = true;
+    return { ...group, name };
+  });
+  if (!changed) return result;
+  return { ...result, layout: { ...result.layout, groups } };
+}
 const STEPS = 220;
 const MARGIN = 96;
 const MIN_GAP = 28;
+
+export function mapPapers(result) {
+  const ranked = Array.isArray(result?.papers) ? result.papers : [];
+  const seen = new Set(ranked.map((paper) => paper?.corpusid));
+  const extra = (Array.isArray(result?.similar) ? result.similar : []).filter(
+    (paper) => paper && Number.isInteger(paper.corpusid) && !seen.has(paper.corpusid),
+  );
+  return ranked.concat(extra);
+}
 
 export function layoutOf(payload) {
   const papers = Array.isArray(payload?.papers) ? payload.papers : [];
@@ -316,6 +417,19 @@ export function mapCaption(layout) {
   const method = layout?.method;
   const nudged = (layout?.points || []).some((p) => p.nudged);
   const nudge = nudged ? " Algunos puntos se separaron para no quedar encima; esa separación no es una distancia." : "";
+  if (method === "specter2-knn") {
+    const kept = layout?.neighbors?.preserved;
+    const pct = typeof kept === "number" ? ` Se conservan ${Math.round(kept * 100)}% de los vecinos.` : "";
+    return {
+      position: "posición: vecinos de SPECTER2",
+      positionKind: "calculo",
+      positionTitle: `Cada paper queda junto a los que SPECTER2 ve cerca. El círculo es un grupo; el nombre son palabras del título y el abstract, sin un modelo.${pct}`,
+      grouping: "color del círculo: grupo",
+      edges: "línea tenue al pasar el mouse: cita (Semantic Scholar)",
+      similar: "",
+      note: "Los 10 primeros son más grandes. El resto de lo que FAISS revisó se queda en su grupo, más tenue.",
+    };
+  }
   if (method === "specter2-pca") {
     const share = (layout.variance || []).reduce((a, b) => a + (Number(b) || 0), 0);
     const pct = share > 0 ? ` (${Math.round(share * 100)}% de la varianza)` : "";
@@ -365,4 +479,11 @@ export function mapCaption(layout) {
     similar: "",
     note: "",
   };
+}
+
+export function pinPoint(layout, paper) {
+  if (!layout || !paper || !Number.isInteger(paper.corpusid)) return layout;
+  const points = Array.isArray(layout.points) ? layout.points : [];
+  if (points.some((point) => point.corpusid === paper.corpusid)) return layout;
+  return { ...layout, points: [...points, { corpusid: paper.corpusid, x: 1488, y: 96, rank: points.length, cluster: 0 }] };
 }

@@ -11,6 +11,7 @@ Cache layout on the volume, under papers/{corpusid}/:
 """
 
 import json
+import os
 import threading
 import time
 from pathlib import Path
@@ -46,18 +47,55 @@ def meta_path(folder: Path) -> Path:
 
 def load_meta(folder: Path) -> dict | None:
     path = meta_path(folder)
-    if not path.is_file():
+    try:
+        if not path.is_file():
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def save_meta(folder: Path, meta: dict):
+    from rrm.reader.files import atomic_write
+
     folder.mkdir(parents=True, exist_ok=True)
-    meta_path(folder).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write(meta_path(folder), json.dumps(meta, ensure_ascii=False, indent=2))
 
 
 def save_paper(folder: Path, paper: dict):
-    (folder / "paper.json").write_text(json.dumps(paper, ensure_ascii=False), encoding="utf-8")
+    from rrm.reader.files import atomic_write
+
+    folder.mkdir(parents=True, exist_ok=True)
+    atomic_write(folder / "paper.json", json.dumps(paper, ensure_ascii=False))
+
+
+def paper_has_text(meta) -> bool:
+    """Hay texto del paper, aunque el trabajo de figuras siga."""
+    if not isinstance(meta, dict):
+        return False
+    if meta.get("source") in ("latex", "ocr"):
+        return True
+    if (meta.get("stages") or {}).get("sections") == "done":
+        return True
+    return meta.get("status") == "done"
+
+
+def _store_phrases(folder, paper):
+    """Almacén local de frases. El vector se calcula aquí, fuera de /ask."""
+    if not isinstance(paper, dict) or not paper.get("blocks"):
+        return
+    try:
+        from rrm.reader.phrases import write_phrases
+        rows = write_phrases(folder, paper)
+    except Exception:
+        return
+    if os.environ.get("RRM_PHRASE_VECTORS") != "1":
+        return
+    try:
+        from rrm.reader.similar import save_vectors
+        save_vectors(folder, rows)
+    except Exception:
+        return
 
 
 def _round(timings):
@@ -126,6 +164,7 @@ def _publish(folder, meta, paper, commit, stage: str):
         if stage == "sections" and meta.get("sections_s") is None:
             meta["sections_s"] = round(now - started, 4)
         save_paper(folder, paper)
+        _store_phrases(folder, paper)
     if meta.get("status") in ("done", "abstract_only", "failed"):
         meta["full_s"] = round(now - started, 4)
         if (
@@ -211,8 +250,12 @@ def apply_s2_fields(paper: dict, info: dict) -> dict:
         paper["abstract"] = info.get("abstract") or ""
     if not paper.get("title"):
         paper["title"] = info.get("title") or ""
+    if info.get("refs"):
+        paper["graphRefs"] = dict(info["refs"])
     if not paper.get("refs"):
         paper["refs"] = dict(info.get("refs") or {})
+    if info.get("oa_pdf"):
+        paper["oaPdf"] = info["oa_pdf"]
     if not paper.get("arxivId"):
         paper["arxivId"] = info.get("arxiv") or ""
     if paper.get("corpusid") is None:
@@ -435,6 +478,9 @@ def parse_corpus(
     _fill_refs(info, display_path)
     if paper is not None:
         apply_s2_fields(paper, info)
+        from rrm.reader.cites import bind_cites
+
+        paper["citeMap"] = bind_cites(paper.get("refs") or {}, paper.get("graphRefs") or {})
 
     if route == "abstract":
         meta["status"] = "abstract_only"
@@ -717,7 +763,11 @@ def _ocr_route(folder, info, meta, pdf_path, ocr, why: str, publish=None, announ
     if result.get("skipped"):
         # The stamp above is only for a GPU call. A cap skip never started one.
         meta.pop("ocr_invoked_at", None)
-        _note_reason(meta, f"ocr skipped: {result.get('skipped')}"[:500])
+        skipped = str(result.get("skipped") or "")
+        if skipped == "cap":
+            _note_reason(meta, "Esta corrida no usó OCR.")
+        else:
+            _note_reason(meta, f"ocr skipped: {skipped}"[:500])
         paper = abstract_paper(info)
         paper["full"] = False
         return "abstract", paper, pdf_path

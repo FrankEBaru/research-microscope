@@ -27,7 +27,7 @@ from rrm.demo_warm import scaledown_window
 from rrm.features import core_mode, features_mode
 from rrm.panorama import docs_for, parse_request, run as run_panorama
 from rrm.search.qcache import CACHE_DIR, apply_status_cache, load_entry, save_entry, status_map
-from rrm.reader.files import resolve_figure
+from rrm.reader.files import resolve_figure, resolve_source_pdf
 
 import rrm.reader.fetch as _fetch
 from rrm.reader.fetch import ARXIV, arxiv_index_at, arxiv_pdf, arxiv_slot_start, reader_identity
@@ -45,6 +45,7 @@ from rrm.reader.pipeline import (
     load_paper,
     make_stub,
     mark_queued,
+    paper_has_text,
     prefer_stub,
     seed_stub_from_cache,
     status_reason,
@@ -72,9 +73,18 @@ SAM_USD_PER_IMAGE = 0.0025
 cpu_image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("nodejs", "npm", "ghostscript", "ca-certificates")
-    .pip_install("pymupdf", "requests", "pyarrow", "numpy", "fastapi[standard]")
-    .run_commands("npm install --prefix /opt/katex katex@0.19.1")
-    .env({"NODE_PATH": "/opt/katex/node_modules"})
+    .pip_install("torch", extra_index_url="https://download.pytorch.org/whl/cpu")
+    .pip_install("pymupdf", "requests", "pyarrow", "numpy", "fastapi[standard]", "transformers", "adapters")
+    .run_commands(
+        "npm install --prefix /opt/katex katex@0.19.1",
+        "python -c \"from transformers import AutoTokenizer; from adapters import AutoAdapterModel; "
+        "AutoTokenizer.from_pretrained('allenai/specter2_base'); "
+        "m = AutoAdapterModel.from_pretrained('allenai/specter2_base'); "
+        "m.load_adapter('allenai/specter2_adhoc_query', source='hf', load_as='adhoc_query', set_active=True); "
+        "m.load_adapter('allenai/specter2', source='hf', load_as='proximity'); "
+        "m.eval()\"",
+    )
+    .env({"NODE_PATH": "/opt/katex/node_modules", "RRM_PHRASE_VECTORS": "1"})
     .add_local_python_source("rrm")
 )
 # MinerU 2.5 is a 1.2B VLM. L4 (24 GB) is the smallest Modal GPU that fits it.
@@ -372,7 +382,7 @@ def ocr_one(pdf: str, out: str, start: int = 0, end: int = 0) -> dict:
     return result
 
 
-@app.function(image=cpu_image, volumes={DATA: vol}, cpu=2, memory=4096, timeout=900, secrets=[secret])
+@app.function(image=cpu_image, volumes={DATA: vol}, cpu=2, memory=8192, timeout=900, secrets=[secret])
 def parse_one(corpusid: int, sam: bool = False) -> dict:
     del sam
     return _run(int(corpusid))
@@ -433,13 +443,19 @@ def _prepare_ids(ids, front=False) -> dict:
         pass
     vol.commit()  # parse_one containers must see s2.json before they resolve
     rows = []
+    ordered = []
     for raw in ids or []:
-        cid = int(raw)
-        if front:
+        try:
+            ordered.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    if front:
+        for cid in reversed(ordered):
             try:
                 prioritize(cid)
             except Exception:
                 pass
+    for cid in ordered:
         status = mark_queued(PAPERS / str(cid), cid)
         if status == "queued":
             seed_stub_from_cache(PAPERS / str(cid), cid)
@@ -464,18 +480,92 @@ def _heal_figures(folder: Path, paper):
         return
 
 
-def read_paper(id: str):
-    """Return whatever is already readable. Parsing continues in the background."""
-    vol.reload()
-    _shared_arxiv_wait()
+def _oa_url(corpusid, paper, meta):
+    for src in (paper or {}, meta or {}):
+        url = src.get("oa_pdf") or src.get("oaPdf") or ""
+        if isinstance(url, str) and url.startswith("http"):
+            return url
+    try:
+        from rrm.reader.fetch import _s2_cache
+
+        path = _s2_cache(int(corpusid))
+        if path is None or not path.is_file():
+            return ""
+        data = json.loads(path.read_text(encoding="utf-8"))
+        oa = data.get("openAccessPdf") or {}
+        return (oa.get("url") if isinstance(oa, dict) else "") or ""
+    except Exception:
+        return ""
+
+
+def _attach_cites(paper):
+    """Resuelve claves BibTeX con el grafo local. No llama a Semantic Scholar."""
+    if not isinstance(paper, dict) or isinstance(paper.get("citeMap"), dict):
+        return paper
+    paper = dict(paper)
+    try:
+        from rrm.reader.cites import bind_cites
+        from rrm.reader.fetch import graph_reference_map
+
+        graph = graph_reference_map(DISPLAY.parent, int(paper.get("corpusid") or 0))
+    except Exception:
+        graph = {}
+    paper["graphRefs"] = graph or paper.get("graphRefs") or {}
+    paper["citeMap"] = bind_cites(paper.get("refs") or {}, paper["graphRefs"])
+    return paper
+
+
+def _with_pdf(folder: Path, body: dict, cites: bool = True) -> dict:
+    meta = dict(body.get("meta") or {})
+    paper = body.get("paper")
+    meta["pdf"] = (Path(folder) / "source.pdf").is_file()
+    meta["oa_pdf"] = _oa_url(folder.name, paper, meta)
+    meta["arxiv"] = meta.get("arxiv") or (paper or {}).get("arxivId") or ""
+    out = dict(body)
+    if isinstance(paper, dict):
+        if cites:
+            out["paper"] = _attach_cites(paper)
+        elif not isinstance(paper.get("citeMap"), dict):
+            out["cites"] = "pending"
+    out["meta"] = meta
+    return out
+
+
+def _ready_local(folder: Path):
+    """Paper ya visible en este contenedor, sin recargar el volumen."""
+    paper = load_paper(folder)
+    if not isinstance(paper, dict) or not (paper.get("title") or paper.get("blocks")):
+        return None
+    meta = load_meta(folder) or {}
+    return _with_pdf(
+        folder,
+        {"status": meta.get("status"), "meta": meta, "paper": paper, "cached": True},
+        cites=False,
+    )
+
+
+def read_paper(id: str, cites: bool = False):
+    """Devuelve el paper que ya está. Las citas llegan en una segunda lectura.
+
+    Sin `cites`, no recarga el volumen ni resuelve el grafo si el archivo ya
+    está en este contenedor. Con `cites`, resuelve los títulos y puede recargar.
+    """
     cid = int(id)
     folder = PAPERS / str(cid)
     folder.mkdir(parents=True, exist_ok=True)
+    if not cites:
+        local = _ready_local(folder)
+        if local is not None:
+            _kick_phrases(cid)
+            return local
+    vol.reload()
+    _shared_arxiv_wait()
     meta = load_meta(folder)
     if meta and meta.get("status") in ("done", "abstract_only", "failed"):
         paper = load_paper(folder)
         _heal_figures(folder, paper)
-        return {"status": meta["status"], "meta": meta, "paper": paper, "cached": True}
+        _kick_phrases(cid)
+        return _with_pdf(folder, {"status": meta["status"], "meta": meta, "paper": paper, "cached": True}, cites=cites)
     try:
         prioritize(cid)
     except Exception:
@@ -490,7 +580,8 @@ def read_paper(id: str):
     else:
         _heal_figures(folder, paper_obj)
     meta = load_meta(folder) or {}
-    return {"status": meta.get("status"), "meta": meta, "paper": paper_obj, "cached": False}
+    _kick_phrases(cid)
+    return _with_pdf(folder, {"status": meta.get("status"), "meta": meta, "paper": paper_obj, "cached": False}, cites=cites)
 
 
 @app.function(image=cpu_image, volumes={DATA: vol}, cpu=2, memory=4096, timeout=600, secrets=[secret])
@@ -624,17 +715,151 @@ def _cache_root() -> Path:
     return Path(DATA) / CACHE_DIR
 
 
+_phrase_jobs = set()
+_phrase_guard = threading.Lock()
+# reload() tira archivos sin commit. Escritura, commit y reload comparten este candado.
+_phrase_lock = threading.Lock()
+
+
+def prepare_paper_phrases(cid) -> dict:
+    """Frases y vectores de un paper, commiteados antes de volver."""
+    from rrm.reader.similar import commit_phrases
+
+    if os.environ.get("RRM_PHRASE_VECTORS") != "1":
+        return {"id": int(cid), "ready": False, "rows": 0, "had_phrases": False, "had_vectors": False, "seconds": 0.0, "error": "off"}
+    folder = PAPERS / str(int(cid))
+    folder.mkdir(parents=True, exist_ok=True)
+    with _phrase_lock:
+        out = commit_phrases(folder, vol.reload, vol.commit)
+    out["id"] = int(cid)
+    return out
+
+
+def _kick_phrases(cid):
+    """Al abrir, este paper va primero. El hilo usa el mismo candado que /ask."""
+    if os.environ.get("RRM_PHRASE_VECTORS") != "1":
+        return
+
+    def work():
+        try:
+            prepare_paper_phrases(cid)
+        except Exception:
+            return
+
+    threading.Thread(target=work, name="rrm-phrase-open", daemon=True).start()
+
+
+def _needs_phrases(folder):
+    """Un paper ya parseado sin frases: se reconstruyen del paper.json, sin volver a bajar."""
+    from rrm.reader.phrases import read_phrases, text_rows
+    from rrm.reader.pipeline import load_paper
+
+    if text_rows(read_phrases(folder)):
+        return False
+    try:
+        paper = load_paper(folder)
+    except (OSError, ValueError):
+        return False
+    return isinstance(paper, dict) and bool(paper.get("blocks"))
+
+
+def _phrase_vectors_missing(ids):
+    from rrm.reader.phrases import read_phrases
+    from rrm.reader.similar import read_vectors, text_rows
+
+    pending = []
+    for raw in ids or []:
+        try:
+            cid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        folder = PAPERS / str(cid)
+        rows = text_rows(read_phrases(folder))
+        if rows and read_vectors(folder, len(rows)) is None:
+            pending.append(cid)
+        elif not rows and _needs_phrases(folder):
+            pending.append(cid)
+    return pending
+
+
+def _ensure_phrase_vectors(ids):
+    """Encode fuera del request. /ask solo lee el .npy."""
+    if os.environ.get("RRM_PHRASE_VECTORS") != "1":
+        return
+    try:
+        pending = _phrase_vectors_missing(ids)
+    except Exception:
+        return
+    if not pending:
+        return
+    with _phrase_guard:
+        todo = [cid for cid in pending if cid not in _phrase_jobs]
+        _phrase_jobs.update(todo)
+    if not todo:
+        return
+
+    def work():
+        for cid in todo:
+            try:
+                prepare_paper_phrases(cid)
+            except Exception:
+                pass
+            finally:
+                with _phrase_guard:
+                    _phrase_jobs.discard(cid)
+
+    threading.Thread(target=work, name="rrm-phrase-vectors", daemon=True).start()
+
+
+def _ask_body(ids, text, stage, focus=None):
+    from rrm.search.querylang import PREPARING
+    from rrm.reader.phrases import store_progress
+    from rrm.reader.similar import load_aligned, phrase_ids
+    from rrm.reader.verify import answer
+
+    # Con focus el paper abierto ya se preparó y se commiteó. No encodar los otros diez aquí.
+    if not focus:
+        _ensure_phrase_vectors(ids)
+    store = store_progress(PAPERS, ids)
+    if not str(text or "").strip():
+        return {"extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {}, "note": "", "store": store}
+    rows, vectors, missing = load_aligned(PAPERS, phrase_ids(ids, focus))
+    if vectors is None:
+        note = PREPARING if missing else "No hay frases guardadas de estos papers."
+        return {"extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {}, "note": note, "store": store}
+    from rrm.reader.similar import specter_encode
+
+    def encode(texts):
+        return specter_encode(texts)
+
+    return answer(rows, text, ids=ids, root=PAPERS, encode=encode, vectors=vectors, stage=stage or "todo")
+
+
 def read_status(ids: str = "", pending=None, question: str = ""):
-    vol.reload()
+    try:
+        vol.reload()
+    except Exception:
+        pass
     if pending is None:
-        pending = load_burst_top()
+        try:
+            pending = load_burst_top()
+        except Exception:
+            pending = None
     rows = []
-    for raw in ids.split(","):
+    asked = []
+    for raw in (ids or "").split(","):
         raw = raw.strip()
         if not raw:
             continue
-        cid = int(raw)
-        meta = load_meta(PAPERS / str(cid))
+        try:
+            cid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        asked.append(cid)
+        try:
+            meta = load_meta(PAPERS / str(cid))
+        except Exception:
+            meta = None
         if not meta:
             # Top-10 ids are noted before the volume commit lands. First poll
             # still sees queued; anything else with no meta.json stays missing.
@@ -653,7 +878,9 @@ def read_status(ids: str = "", pending=None, question: str = ""):
                 "full_s": meta.get("full_s"),
                 "ocr_gpu_s": meta.get("ocr_gpu_s"),
                 "ocr_invoked_at": meta.get("ocr_invoked_at"),
+                "text": paper_has_text(meta),
             })
+    _ensure_phrase_vectors(asked)
     saved = {}
     if question:
         try:
@@ -686,7 +913,7 @@ _FILE_TYPES = {
 
 
 # Same demo flag as the burst class. GPU functions are not kept warm.
-_api_fn = dict(image=cpu_image, volumes={DATA: vol}, timeout=60, secrets=[secret])
+_api_fn = dict(image=cpu_image, volumes={DATA: vol}, timeout=90, cpu=2, memory=8192, secrets=[secret])
 if scaledown_window() is not None:
     _api_fn["scaledown_window"] = scaledown_window()
 
@@ -702,6 +929,15 @@ def api():
     from fastapi.responses import FileResponse, JSONResponse, Response
 
     web = FastAPI()
+    if os.environ.get("RRM_PHRASE_VECTORS") == "1":
+        def _warm_phrases():
+            try:
+                from rrm.reader.similar import specter_encode
+                specter_encode(["warm"])
+            except Exception:
+                return
+
+        threading.Thread(target=_warm_phrases, name="rrm-phrase-encoder", daemon=True).start()
     web.add_middleware(CORSMiddleware, **cors_kwargs())
 
     def gate(request: Request, allow_query: bool):
@@ -715,11 +951,11 @@ def api():
         return None
 
     @web.get("/paper")
-    def route_paper(request: Request, id: str):
+    def route_paper(request: Request, id: str, cites: int = 0):
         denied = gate(request, True)
         if denied:
             return denied
-        return read_paper(id)
+        return read_paper(id, cites=bool(cites))
 
     @web.get("/warm")
     def route_warm(request: Request):
@@ -733,7 +969,57 @@ def api():
         denied = gate(request, True)
         if denied:
             return denied
-        return read_status(ids, question=q)
+        try:
+            return read_status(ids, question=q)
+        except Exception:
+            return {"papers": []}
+
+    @web.post("/ask")
+    async def route_ask(request: Request):
+        """Busca en el almacén. Meta entra solo aquí, con las frases ya elegidas."""
+        denied = gate(request, False)
+        if denied:
+            return denied
+        item = await request.json()
+        item = item or {}
+        focus = item.get("focus")
+        prep = None
+        if focus not in (None, ""):
+            try:
+                prep = prepare_paper_phrases(focus)
+            except Exception:
+                prep = None
+        else:
+            with _phrase_lock:
+                try:
+                    vol.reload()
+                except Exception:
+                    pass
+        try:
+            body = _ask_body(item.get("ids") or [], item.get("text") or "", item.get("stage") or "todo", focus=focus or None)
+        except Exception as err:
+            from rrm.reader.verify import ask_error_text
+            return JSONResponse({"error": ask_error_text(err)}, status_code=500)
+        from rrm.reader.verify import ask_http
+        code, payload = ask_http(body, item.get("stage") or "")
+        if code != 200:
+            return JSONResponse(payload, status_code=code)
+        if prep is not None:
+            payload["phrase_prep"] = prep
+        return payload
+
+    @web.post("/phrases")
+    async def route_phrases(request: Request):
+        """Un paper abierto: frases y vectores ahora, y commit antes de responder."""
+        denied = gate(request, False)
+        if denied:
+            return denied
+        item = await request.json()
+        item = item or {}
+        try:
+            return prepare_paper_phrases(item.get("id"))
+        except Exception as err:
+            return {"ready": False, "rows": 0, "error": type(err).__name__}
 
     @web.post("/prepare")
     async def route_prepare(request: Request):
@@ -785,6 +1071,13 @@ def api():
             except Exception:
                 path = None
         if path is None:
+            pdf = resolve_source_pdf(PAPERS, id, name)
+            if pdf is not None:
+                return FileResponse(
+                    pdf,
+                    media_type="application/pdf",
+                    headers={"Cache-Control": "public, max-age=86400", "X-Content-Type-Options": "nosniff"},
+                )
             return Response(status_code=404)
         return FileResponse(
             path,

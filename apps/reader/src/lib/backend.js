@@ -13,6 +13,15 @@ if (liveEnabled() && !TOKEN && process.env.NEXT_PUBLIC_RRM_OFFLINE !== "1") {
   throw new Error("NEXT_PUBLIC_RRM_DEMO_TOKEN is empty");
 }
 
+/** Una recarga que trae el stub no pisa el paper ya leído. */
+export function keepOpened(prev, next) {
+  if (!prev || !next || String(prev.corpusid) !== String(next.corpusid)) return next;
+  const pb = Array.isArray(prev.blocks) ? prev.blocks.length : 0;
+  const nb = Array.isArray(next.blocks) ? next.blocks.length : 0;
+  if (pb > nb && prev.full && !next.full) return prev;
+  return next;
+}
+
 export function paperKey(paper) {
   return typeof paper.corpusid === "number" ? String(paper.corpusid) : paper.arxivId;
 }
@@ -21,6 +30,10 @@ export function figureUrl(id, name) {
   if (String(name).startsWith("/")) return name;
   if (!liveEnabled()) return `/papers/${id}/${name}`;
   return `${READER}/file?id=${id}&name=${encodeURIComponent(name)}&k=${TOKEN}`;
+}
+
+export function sourcePdfUrl(id) {
+  return figureUrl(id, "source.pdf");
 }
 
 export function refText(x, xref) {
@@ -235,7 +248,12 @@ export function explain(err) {
   if (k === "auth") return "El servidor rechazó el token de la demo (401). Revisa NEXT_PUBLIC_RRM_DEMO_TOKEN.";
   if (k === "origin") return "El servidor no acepta este origen (403). Hay que agregarlo a la lista de orígenes permitidos.";
   if (k === "rate") return "El servidor está recibiendo demasiadas peticiones (429). Espera unos segundos y vuelve a intentar.";
-  if (k === "server") return `El servidor falló (${err.status}). Vuelve a intentar en un momento.`;
+  if (k === "server") {
+    const detail = String(err?.message || "").trim();
+    const base = `El servidor falló (${err.status}). Vuelve a intentar en un momento.`;
+    if (!detail || detail === `server ${err.status}` || /https?:|bearer|token|key/i.test(detail)) return base;
+    return `${base} ${detail}`;
+  }
   if (k === "timeout") return "El servidor no respondió a tiempo. Puede estar arrancando; vuelve a intentar.";
   if (k === "network") return "No se pudo conectar con el servidor.";
   if (k === "http") return `El servidor respondió ${err.status}.`;
@@ -253,8 +271,8 @@ function panoramaTimeout() {
 export const PANORAMA_TIMEOUT_MS = panoramaTimeout();
 
 // Tiempos de espera por ruta (ms). /burst puede tardar 100–131 s si el contenedor estaba dormido.
-const TIMEOUT = { warm: 150000, burst: 150000, status: 20000, paper: 40000, panorama: PANORAMA_TIMEOUT_MS, crops: 20000, subtopics: 20000, prepare: 20000 };
-const RETRIES = { warm: 0, burst: 0, status: 2, paper: 1, panorama: 0, crops: 1, subtopics: 0, prepare: 0 };
+const TIMEOUT = { warm: 150000, burst: 150000, status: 20000, paper: 40000, panorama: PANORAMA_TIMEOUT_MS, crops: 20000, subtopics: 20000, prepare: 20000, labels: 8000, ask: 50000, names: 30000 };
+const RETRIES = { warm: 0, burst: 0, status: 2, paper: 1, panorama: 0, crops: 1, subtopics: 0, prepare: 0, labels: 0, ask: 0, names: 0 };
 const RETRYABLE = new Set(["timeout", "network", "rate", "server"]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const override = () => (typeof globalThis.__RRM_TIMEOUT_MS === "number" ? globalThis.__RRM_TIMEOUT_MS : null);
@@ -307,6 +325,10 @@ export function burst(q) {
   return request("burst", `${BURST}/burst?q=${encodeURIComponent(q)}&n=10`);
 }
 
+export function mapLayout(q) {
+  return request("burst", `${BURST}/map?q=${encodeURIComponent(q)}`);
+}
+
 export function status(ids, q) {
   const extra = q ? `&q=${encodeURIComponent(q)}` : "";
   return request("status", `${READER}/status?ids=${ids.join(",")}${extra}`);
@@ -321,8 +343,17 @@ export function prepare(ids, front = false) {
   });
 }
 
-export function paper(id) {
-  return request("paper", `${READER}/paper?id=${encodeURIComponent(id)}`);
+export function paper(id, opts = {}) {
+  const cites = opts.cites ? "&cites=1" : "";
+  return request("paper", `${READER}/paper?id=${encodeURIComponent(id)}${cites}`);
+}
+
+export function groupNames(groups) {
+  return request("names", `${BURST}/group-names`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ groups }),
+  });
 }
 
 /** Selecciones SIMULADAS del servidor: [{id, statement, selections: [{paper, quote}]}]. La compuerta sigue en la UI. */
@@ -340,4 +371,30 @@ export function crops(id, pages = "0,1,2") {
 
 export function subtopics(q) {
   return request("subtopics", `${BURST}/subtopics?q=${encodeURIComponent(q)}`);
+}
+
+export function labels(q) {
+  return request("labels", `${BURST}/labels?q=${encodeURIComponent(q)}`);
+}
+
+export function preparePhrases(id) {
+  return request("ask", `${READER}/phrases`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+}
+
+export function ask(ids, text, stage, focus) {
+  if (!READER) {
+    return Promise.resolve({
+      extracts: [], papers: 0, line: "", empty: false, matched: 0, parts: {},
+      note: "Sin retroalimentación: no hay clave.", store: { ready: 0, total: 0 },
+    });
+  }
+  return request("ask", `${READER}/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, text, stage: stage || "", focus: focus || "" }),
+  });
 }
