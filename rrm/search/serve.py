@@ -221,6 +221,8 @@ class BurstSearch:
             hit = None
         if hit is not None and has_stub(hit):
             hit = None  # RRM-48: stored before the NeRF twin fix; recompute once
+        if hit is not None and "title_seed" in hit:
+            hit = None  # RRM-49: a test deploy pulled FAISS toward the title's vector (medical papers); never serve it
         if hit is not None and not title_hijack(query) and "title_first" not in hit and (
             hit.get("mode") == "paper" or self._resolve(query) is not None
         ):
