@@ -2,6 +2,7 @@
 
 from rrm.reader.metacall import add_usage, meta_status, note_for, parse_json, post_responses, response_text, usage_cost
 from rrm.reader.metacall import MODEL
+from rrm.textcase import cap_first
 
 PARTS = ("coincide", "contradice", "sin_respaldo", "te_falto")
 _QUOTED = ("coincide", "contradice", "te_falto")
@@ -54,7 +55,8 @@ def _sentences(text):
     """Corte barato por oración; Meta afina dentro de la misma llamada."""
     import re
     flat = " ".join((text or "").split())
-    parts = re.split(r"(?<=[.!?;])\s+(?=[^\W\d_¿¡]|[¿¡])", flat)
+    # RRM-51: a semicolon is not a sentence end; the cut left «attention is only used…» lowercase.
+    parts = re.split(r"(?<=[.!?])\s+(?=[^\W\d_¿¡]|[¿¡])", flat)
     return [part for part in (p.strip() for p in parts) if part]
 
 
@@ -164,7 +166,7 @@ def layer1(data, citations):
         for item in data.get(part) or []:
             if not isinstance(item, dict):
                 continue
-            text = " ".join(str(item.get("text") or "").split())
+            text = cap_first(" ".join(str(item.get("text") or "").split()))
             if part == "te_falto":
                 text = text.split("\n", 1)[0][:240]
             if not text:

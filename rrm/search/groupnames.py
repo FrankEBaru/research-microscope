@@ -132,7 +132,9 @@ def accept(groups, data):
         if key in used:
             continue
         used.add(key)
-        out.append({"id": gid, "name": name})
+        from rrm.textcase import cap_first
+
+        out.append({"id": gid, "name": cap_first(name)})
     return out
 
 
