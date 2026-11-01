@@ -164,7 +164,17 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
   };
   useEffect(() => {
     // RRM-47: la caja tiene scroll propio; sin esto la respuesta quedaba abajo, sin verse.
-    if (shown) answer.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    // Tras el layout: el scroll interno de la caja pone arriba el resultado (Coincide
+    // primero) y luego la página lo trae a la vista; si no cabe, se ve su comienzo.
+    if (!shown) return;
+    const frame = requestAnimationFrame(() => {
+      const el = answer.current;
+      const card = el?.closest("form.ask-card") as HTMLElement | null;
+      if (!el) return;
+      if (card) card.scrollTop += el.getBoundingClientRect().top - card.getBoundingClientRect().top - 8;
+      el.scrollIntoView({ block: el.offsetHeight > window.innerHeight ? "start" : "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
   }, [shown]);
   const groups = group(result?.extracts || []);
   const parts = result?.parts || {};
@@ -186,20 +196,9 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
       {(phraseLine || progress) && <p className="small" role="status">{phraseLine || progress}</p>}
       {err && <p className="fail-reason">{err}</p>}
       {result?.empty && <p role="status">{result.note || "No hay frases guardadas de estos papers."}</p>}
-      {result && !result.empty && (
-        <div className="extracts">
-          <p className="ask-label">{result.papers === 1 ? "el paper dice" : `estos papers dicen (${result.papers})`}</p>
-          {result.matched > listed && <p className="small">Encontré {result.matched} frases cercanas. Aquí van las {listed} más próximas a lo que escribiste.</p>}
-          {groups.map(([id, rows]) => (
-            <section key={id} className="extract">
-              <button type="button" className="link" onClick={() => onOpen?.(id, "cita en la caja")}>{citeOf(id, rows[0]?.section)}</button>
-              {rows.map((row: any, index: number) => <blockquote key={index}><Rich text={cleanExtract(row.text)} /></blockquote>)}
-            </section>
-          ))}
-        </div>
-      )}
+      <div className="ask-result" ref={answer}>
       {!result?.empty && (result?.note || hasParts) && (
-        <div className="feedback generated" ref={answer}>
+        <div className="feedback generated">
           <p><span className="chip chip-simulado">generado</span></p>
           {result?.note && <p>{result.note}</p>}
           {PARTS.map(([id, label]) => (parts[id] || []).length ? (
@@ -218,6 +217,19 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
           ) : null)}
         </div>
       )}
+      {result && !result.empty && (
+        <div className="extracts">
+          <p className="ask-label">{result.papers === 1 ? "el paper dice" : `estos papers dicen (${result.papers})`}</p>
+          {result.matched > listed && <p className="small">Encontré {result.matched} frases cercanas. Aquí van las {listed} más próximas a lo que escribiste.</p>}
+          {groups.map(([id, rows]) => (
+            <section key={id} className="extract">
+              <button type="button" className="link" onClick={() => onOpen?.(id, "cita en la caja")}>{citeOf(id, rows[0]?.section)}</button>
+              {rows.map((row: any, index: number) => <blockquote key={index}><Rich text={cleanExtract(row.text)} /></blockquote>)}
+            </section>
+          ))}
+        </div>
+      )}
+      </div>
     </form>
   );
 }

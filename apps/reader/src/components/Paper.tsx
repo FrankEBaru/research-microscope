@@ -257,7 +257,8 @@ function FigImg({ paper, name, alt, eager }: { paper: Paper; name: string; alt: 
     if (missing) return;
     step.current = devBegin("figura", names[idx] || name);
   }, [name, paper.stage, missing, src]);
-  if (missing) return <div className="fig-missing">figura no disponible</div>;
+  // RRM-47: si ningún nombre cargó (404), la figura se oculta sin hueco ni ícono roto.
+  if (missing) return idx > 0 ? null : <div className="fig-missing">figura no disponible</div>;
   return (
     <span className={`fig-slot ${loaded ? "in" : ""}`}>
       {!loaded && <span className="fig-ph">figura</span>}
@@ -336,7 +337,7 @@ function CropStrip({ id }: { id: string }) {
   return (
     <section className="crops" aria-label="Recortes de página" data-crops>
       <p className="small">Recortes de las páginas grabadas</p>
-      <div className="fig-imgs">{rows.map((row) => row.file ? <img key={row.file} src={figureUrl(id, row.file)} alt={`recorte, página ${row.page ?? ""}`} loading="lazy" decoding="async" /> : null)}</div>
+      <div className="fig-imgs">{rows.map((row) => row.file ? <img key={row.file} src={figureUrl(id, row.file)} alt={`recorte, página ${row.page ?? ""}`} loading="lazy" decoding="async" onError={(e) => e.currentTarget.setAttribute("hidden", "")} /> : null)}</div>
     </section>
   );
 }

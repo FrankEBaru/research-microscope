@@ -1118,8 +1118,14 @@ def api():
                     headers={"Cache-Control": "public, max-age=86400", "X-Content-Type-Options": "nosniff"},
                 )
             return Response(status_code=404)
-        return FileResponse(
-            path,
+        # RRM-47: is_file() can pass and the read still fail (volume view mid-
+        # reload); FileResponse then died mid-stream as a 500. Read first: 404.
+        try:
+            data = path.read_bytes()
+        except OSError:
+            return Response(status_code=404)
+        return Response(
+            data,
             media_type=_FILE_TYPES[path.suffix.lower()],
             headers={
                 "Cache-Control": "public, max-age=86400",

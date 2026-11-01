@@ -684,7 +684,7 @@ function Cluster({ q, cl, papers, go }: any) {
                 <blockquote><span className="qlab">Aporte, en palabras del abstract</span>«<Rich text={cp.contribution.quote} />»
                   <button className="link" onClick={() => go({ q: q.id, c: cl.id, p: p.arxivId, b: cp.contribution.anchor.blockId })}>ver dónde lo dice →</button></blockquote>
                 {fig && (
-                  <figure className="thumb"><img src={fig.images[0]} alt={plainOf(fig.caption)} /><figcaption><b>Figura 1 del paper</b> · {plainOf(fig.caption)}</figcaption></figure>
+                  <figure className="thumb"><img src={fig.images[0]} alt={plainOf(fig.caption)} onError={(e) => { (e.currentTarget.closest("figure") || e.currentTarget).setAttribute("hidden", ""); }} /><figcaption><b>Figura 1 del paper</b> · {plainOf(fig.caption)}</figcaption></figure>
                 )}
                 {cp.pending ? (
                   <blockquote><span className="qlab">Lo que el paper deja pendiente (no declara limitaciones)</span>«<Rich text={cp.pending.quote} />»</blockquote>
