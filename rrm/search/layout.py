@@ -542,6 +542,23 @@ def _stem(term):
     return " ".join(parts)
 
 
+_SURFACE = re.compile(r"[a-z][a-z0-9]+(?:-[a-z0-9]+)*", re.I)
+
+
+def _display_name(term, surface):
+    """The matching term back in the titles' own spelling (NeRF, GNN), first letter up."""
+    from rrm.textcase import cap_first, enabled, is_identifier
+
+    if not enabled():
+        return term
+    words = []
+    for word in term.split():
+        seen = surface.get(word)
+        form = seen.most_common(1)[0][0] if seen else word
+        words.append(form if is_identifier(form) or (form.isupper() and len(form) > 1) else word)
+    return cap_first(" ".join(words))
+
+
 def _cluster_names(rows, clusters):
     """c-TF-IDF keywords. No model, no question phrasing."""
     from collections import Counter
@@ -550,6 +567,10 @@ def _cluster_names(rows, clusters):
     counts = {cid: Counter() for cid in ids}
     docs = {cid: Counter() for cid in ids}
     titles = {cid: Counter() for cid in ids}
+    surface = {}
+    for row in rows:
+        for token in _SURFACE.findall(str(row.get("title") or "")):
+            surface.setdefault(token.lower(), Counter())[token] += 1
     for row, cid in zip(rows, clusters):
         title = _terms(row.get("title"))
         abstract = _terms(row.get("abstract"))
@@ -595,7 +616,7 @@ def _cluster_names(rows, clusters):
         ]
         names[cid] = (words[0] if words else "grupo")[:48]
         used_words.update(_stem(names[cid]).split())
-    return names
+    return {cid: _display_name(name, surface) for cid, name in names.items()}
 
 
 def _neighbor_stats(unit, pos, k):

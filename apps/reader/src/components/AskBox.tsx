@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Rich } from "@/lib/math";
 import { ask, explain, preparePhrases } from "@/lib/backend.js";
-import { cleanExtract, storeLine } from "@/lib/extract.js";
+import { cleanExtract, markMidStart, storeLine } from "@/lib/extract.js";
 
 const PARTS = [
   ["coincide", "Coincide"],
@@ -207,7 +207,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
               {(parts[id] || []).map((item: any, index: number) => (
                 <p key={index}>
                   {item.text}
-                  {item.cite && <> <q>{item.cite}</q></>}
+                  {item.cite && <> <q>{markMidStart(item.cite)}</q></>}
                   {item.paper_id && <button type="button" className="link" onClick={() => onOpen?.(String(item.paper_id), "cita en la caja")}>{citeOf(String(item.paper_id), item.section)}</button>}
                   {item.verified && item.cite && <span className="chip chip-simulado">verificado contra la cita</span>}
                   {id === "sin_respaldo" && <span className="small"> No encontré esto en los extractos seleccionados del paper.</span>}
@@ -219,12 +219,12 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
       )}
       {result && !result.empty && (
         <div className="extracts">
-          <p className="ask-label">{result.papers === 1 ? "el paper dice" : `estos papers dicen (${result.papers})`}</p>
+          <p className="ask-label">{result.papers === 1 ? "El paper dice" : `Estos papers dicen (${result.papers})`}</p>
           {result.matched > listed && <p className="small">Encontré {result.matched} frases cercanas. Aquí van las {listed} más próximas a lo que escribiste.</p>}
           {groups.map(([id, rows]) => (
             <section key={id} className="extract">
               <button type="button" className="link" onClick={() => onOpen?.(id, "cita en la caja")}>{citeOf(id, rows[0]?.section)}</button>
-              {rows.map((row: any, index: number) => <blockquote key={index}><Rich text={cleanExtract(row.text)} /></blockquote>)}
+              {rows.map((row: any, index: number) => <blockquote key={index}><Rich text={markMidStart(cleanExtract(row.text))} /></blockquote>)}
             </section>
           ))}
         </div>

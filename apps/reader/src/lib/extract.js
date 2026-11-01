@@ -24,3 +24,16 @@ export function storeLine(store, done) {
     ? `Frases listas de ${ready} de ${total} papers. ${rest === 1 ? "El otro no tiene" : `Los otros ${rest} no tienen`} texto disponible por ahora.`
     : `Preparando frases: ${ready} de ${total} papers…`;
 }
+
+/** RRM-51: a quote that starts mid-sentence gets «…», never a forced capital. NeRF, word2vec stay. */
+export function markMidStart(text) {
+  const value = String(text || "");
+  if (process.env.NEXT_PUBLIC_RRM_CASE === "raw") return value;
+  const m = value.match(/^\s*(\S+)/);
+  if (!m) return value;
+  const word = m[1];
+  const first = word.charAt(0);
+  if (first.toLowerCase() === first.toUpperCase() || first !== first.toLowerCase()) return value;
+  if (/\d/.test(word) || /\p{Lu}/u.test(word.slice(1))) return value;
+  return `…${value.trimStart()}`;
+}
