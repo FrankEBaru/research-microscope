@@ -22,7 +22,7 @@ from pathlib import Path
 
 import modal
 
-from rrm.demo_guard import check, cors_kwargs
+from rrm.demo_guard import add_error_json, check, cors_kwargs
 from rrm.demo_warm import scaledown_window
 from rrm.features import core_mode, features_mode
 from rrm.panorama import docs_for, parse_request, run as run_panorama
@@ -544,6 +544,21 @@ def _ready_local(folder: Path):
     )
 
 
+def _ensure_folder(folder):
+    """mkdir that survives a concurrent vol.reload (RRM-46: 3 of 9 /paper hit
+    PermissionError or FileNotFoundError while /data was being remounted)."""
+    for attempt in range(2):
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            return
+        except OSError:
+            if folder.is_dir():
+                return
+            if attempt:
+                raise
+            time.sleep(0.25)
+
+
 def read_paper(id: str, cites: bool = False):
     """Devuelve el paper que ya está. Las citas llegan en una segunda lectura.
 
@@ -552,7 +567,7 @@ def read_paper(id: str, cites: bool = False):
     """
     cid = int(id)
     folder = PAPERS / str(cid)
-    folder.mkdir(parents=True, exist_ok=True)
+    _ensure_folder(folder)
     if not cites:
         local = _ready_local(folder)
         if local is not None:
@@ -938,6 +953,7 @@ def api():
                 return
 
         threading.Thread(target=_warm_phrases, name="rrm-phrase-encoder", daemon=True).start()
+    add_error_json(web)
     web.add_middleware(CORSMiddleware, **cors_kwargs())
 
     def gate(request: Request, allow_query: bool):

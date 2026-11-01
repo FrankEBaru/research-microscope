@@ -47,3 +47,20 @@ def check(header, query, origin=None):
     if origin and origin not in ALLOWED_ORIGINS:
         return 403
     return None
+
+
+def add_error_json(web):
+    """Turn an unhandled error into a JSON 500 inside CORS.
+
+    Call it before `add_middleware(CORSMiddleware, ...)`: the last middleware
+    added is the outermost, so CORS still adds its headers to this 500 and the
+    browser sees the status instead of a CORS failure.
+    """
+    from fastapi.responses import JSONResponse
+
+    @web.middleware("http")
+    async def _json_500(request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as err:
+            return JSONResponse({"error": f"error del servidor ({type(err).__name__})"}, status_code=500)
