@@ -8,15 +8,13 @@ import { phaseOf } from "./qcache.js";
 export const WORLD_W = 1600;
 export const WORLD_H = 1000;
 
-const LEADING = new Set(["a", "an", "the", "of", "on", "for", "to", "in", "and", "or", "with", "from", "by", "at", "as", "is", "are", "was", "be", "what", "how", "why", "do", "does", "did", "can", "could", "into", "via", "using", "toward", "towards", "over"]);
-
 function authorNames(paper) {
   return (Array.isArray(paper?.authors) ? paper.authors : [])
     .map((author) => (typeof author === "string" ? author : author?.name))
     .filter(Boolean);
 }
 
-/** Apellido y año cuando hay autor. Si no, un título corto que se pueda leer. */
+/** Apellido y año cuando hay autor. Si no, el título corto, entero si cabe. */
 export function nodeLabel(paper) {
   const year = paper?.year ? String(paper.year) : "";
   const first = authorNames(paper)[0];
@@ -24,11 +22,82 @@ export function nodeLabel(paper) {
     const last = String(first).split(/[\s,]+/).filter(Boolean).pop();
     return `${last || first}${year ? ` ${year}` : ""}`;
   }
-  const words = String(paper?.title || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
-  let start = 0;
-  while (start < words.length - 1 && LEADING.has(words[start].toLowerCase().replace(/[^a-z]/g, ""))) start += 1;
-  const bit = words.slice(start, start + 4).join(" ");
-  return [bit, year].filter(Boolean).join(" ");
+  const title = String(paper?.title || "").replace(/\s+/g, " ").trim();
+  if (!title) return year ? `paper ${year}` : "paper";
+  const room = year ? 32 : 40;
+  let text = title;
+  if (title.length > room) {
+    const cut = title.slice(0, room).replace(/\s+\S*$/, "").trim();
+    text = `${cut.length >= 8 ? cut : title.slice(0, room).trim()}…`;
+  }
+  return year ? `${text} ${year}` : text;
+}
+
+/** «Autor Año · sección». Nunca el id de corpus. */
+export function citeName(paper, section) {
+  const who = paper ? nodeLabel(paper) : "";
+  const sec = String(section || "").replace(/\s+/g, " ").trim();
+  if (who && sec) return `${who} · ${sec}`;
+  return who || sec || "paper";
+}
+
+// Misma regla que rrm/search/querylang.py FAR_GAP. Los tops de RRM-42 van de 0.72 a 0.82.
+export const FAR_GAP = 0.15;
+
+/** Ids de grupo cuya mediana cae FAR_GAP por debajo del mejor paper de esta pregunta. */
+export function farGroupIds(papers, points) {
+  const score = new Map();
+  for (const paper of papers || []) {
+    if (typeof paper?.query_cosine === "number") score.set(paper.corpusid, paper.query_cosine);
+  }
+  const buckets = new Map();
+  for (const point of points || []) {
+    const value = score.get(point.corpusid);
+    if (typeof value !== "number") continue;
+    const key = String(point.cluster);
+    const list = buckets.get(key) || [];
+    list.push(value);
+    buckets.set(key, list);
+  }
+  if (buckets.size < 2) return new Set();
+  let top = null;
+  for (const list of buckets.values()) top = Math.max(top ?? -Infinity, ...list);
+  const far = new Set();
+  for (const [id, list] of buckets) {
+    const ordered = [...list].sort((a, b) => a - b);
+    const mid = ordered[Math.floor((ordered.length - 1) / 2)];
+    if (top - mid >= FAR_GAP) far.add(id);
+  }
+  return far;
+}
+
+export function groupPacks(papers, layout) {
+  const by = new Map((papers || []).map((paper) => [paper.corpusid, paper]));
+  const groups = new Map();
+  for (const point of layout?.points || []) {
+    const paper = by.get(point.corpusid);
+    if (!paper) continue;
+    const id = String(point.cluster);
+    const bucket = groups.get(id) || { id, titles: [], abstracts: [] };
+    if (paper.title) bucket.titles.push(String(paper.title));
+    if (paper.abstract) bucket.abstracts.push(String(paper.abstract).slice(0, 800));
+    groups.set(id, bucket);
+  }
+  return [...groups.values()];
+}
+
+export function applyGroupNames(result, names) {
+  if (!result?.layout?.groups || !names?.length) return result;
+  const by = new Map(names.map((row) => [String(row.id), row.name]));
+  let changed = false;
+  const groups = result.layout.groups.map((group) => {
+    const name = by.get(String(group.id));
+    if (!name || name === group.name) return group;
+    changed = true;
+    return { ...group, name };
+  });
+  if (!changed) return result;
+  return { ...result, layout: { ...result.layout, groups } };
 }
 const STEPS = 220;
 const MARGIN = 96;

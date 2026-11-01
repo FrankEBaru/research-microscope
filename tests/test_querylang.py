@@ -4,6 +4,7 @@ from rrm.search.querylang import (
     TOPIC_COSINE,
     TOPIC_NOTE,
     cache_miss_spanish,
+    far_group_ids,
     looks_spanish,
     retrieval_query,
     topic_fields,
@@ -45,5 +46,13 @@ def test_low_top_cosine_says_so():
     assert low["topic_note"] == TOPIC_NOTE
     assert low["topic_cosine"] < TOPIC_COSINE
     high = topic_fields([1.0], [2], vector_of, cosine)
-    assert high == {"topic_cosine": 0.9}
+    assert high["topic_cosine"] == 0.9
+    assert high["query_cosines"] == {"2": 0.9}
     assert "topic_note" not in high
+
+
+def test_a_group_is_far_only_against_this_question():
+    assert far_group_ids({"a": [0.77, 0.75, 0.74], "b": [0.76, 0.73]}) == []
+    assert far_group_ids({"near": [0.76, 0.74], "far": [0.48, 0.44]}) == ["far"]
+    assert far_group_ids({"only": [0.4, 0.2]}) == []
+    assert far_group_ids({"a": [0.77, 0.76, 0.50], "b": [0.75, 0.74]}) == []

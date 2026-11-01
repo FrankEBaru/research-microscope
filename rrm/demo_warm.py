@@ -10,6 +10,8 @@ import os
 
 # Modal rejects scaledown_window above 20 minutes.
 DEMO_SCALEDOWN_S = 1200
+# Between questions the burst container stays up. min_containers stays 0.
+BURST_IDLE_S = 600
 _ON = {"1", "true", "yes", "on"}
 
 
@@ -18,7 +20,21 @@ def demo_keep_warm() -> bool:
 
 
 def scaledown_window() -> int | None:
-    """Seconds to pass as scaledown_window, or None to leave Modal's 60s default."""
+    """Seconds for the demo flag, or None to leave Modal's 60s default.
+
+    The reader still uses this. The burst container uses burst_scaledown().
+    """
     if demo_keep_warm():
         return DEMO_SCALEDOWN_S
     return None
+
+
+def burst_scaledown() -> int:
+    """How long the burst container stays after the last question.
+
+    Ten minutes between questions. The demo flag keeps the 20 minute window.
+    No min_containers: an idle demo still scales to zero after the window.
+    """
+    if demo_keep_warm():
+        return DEMO_SCALEDOWN_S
+    return BURST_IDLE_S

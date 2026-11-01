@@ -515,7 +515,7 @@ def _attach_cites(paper):
     return paper
 
 
-def _with_pdf(folder: Path, body: dict) -> dict:
+def _with_pdf(folder: Path, body: dict, cites: bool = True) -> dict:
     meta = dict(body.get("meta") or {})
     paper = body.get("paper")
     meta["pdf"] = (Path(folder) / "source.pdf").is_file()
@@ -523,23 +523,47 @@ def _with_pdf(folder: Path, body: dict) -> dict:
     meta["arxiv"] = meta.get("arxiv") or (paper or {}).get("arxivId") or ""
     out = dict(body)
     if isinstance(paper, dict):
-        out["paper"] = _attach_cites(paper)
+        if cites:
+            out["paper"] = _attach_cites(paper)
+        elif not isinstance(paper.get("citeMap"), dict):
+            out["cites"] = "pending"
     out["meta"] = meta
     return out
 
 
-def read_paper(id: str):
-    """Return whatever is already readable. Parsing continues in the background."""
-    vol.reload()
-    _shared_arxiv_wait()
+def _ready_local(folder: Path):
+    """Paper ya visible en este contenedor, sin recargar el volumen."""
+    paper = load_paper(folder)
+    if not isinstance(paper, dict) or not (paper.get("title") or paper.get("blocks")):
+        return None
+    meta = load_meta(folder) or {}
+    return _with_pdf(
+        folder,
+        {"status": meta.get("status"), "meta": meta, "paper": paper, "cached": True},
+        cites=False,
+    )
+
+
+def read_paper(id: str, cites: bool = False):
+    """Devuelve el paper que ya está. Las citas llegan en una segunda lectura.
+
+    Sin `cites`, no recarga el volumen ni resuelve el grafo si el archivo ya
+    está en este contenedor. Con `cites`, resuelve los títulos y puede recargar.
+    """
     cid = int(id)
     folder = PAPERS / str(cid)
     folder.mkdir(parents=True, exist_ok=True)
+    if not cites:
+        local = _ready_local(folder)
+        if local is not None:
+            return local
+    vol.reload()
+    _shared_arxiv_wait()
     meta = load_meta(folder)
     if meta and meta.get("status") in ("done", "abstract_only", "failed"):
         paper = load_paper(folder)
         _heal_figures(folder, paper)
-        return _with_pdf(folder, {"status": meta["status"], "meta": meta, "paper": paper, "cached": True})
+        return _with_pdf(folder, {"status": meta["status"], "meta": meta, "paper": paper, "cached": True}, cites=cites)
     try:
         prioritize(cid)
     except Exception:
@@ -554,7 +578,7 @@ def read_paper(id: str):
     else:
         _heal_figures(folder, paper_obj)
     meta = load_meta(folder) or {}
-    return _with_pdf(folder, {"status": meta.get("status"), "meta": meta, "paper": paper_obj, "cached": False})
+    return _with_pdf(folder, {"status": meta.get("status"), "meta": meta, "paper": paper_obj, "cached": False}, cites=cites)
 
 
 @app.function(image=cpu_image, volumes={DATA: vol}, cpu=2, memory=4096, timeout=600, secrets=[secret])
@@ -919,11 +943,11 @@ def api():
         return None
 
     @web.get("/paper")
-    def route_paper(request: Request, id: str):
+    def route_paper(request: Request, id: str, cites: int = 0):
         denied = gate(request, True)
         if denied:
             return denied
-        return read_paper(id)
+        return read_paper(id, cites=bool(cites))
 
     @web.get("/warm")
     def route_warm(request: Request):

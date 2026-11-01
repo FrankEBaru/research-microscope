@@ -123,7 +123,9 @@ def test_reader_serves_figures_in_parallel_and_core_skips_meta():
     ui = (root / "apps/reader/src/components/Engine.tsx").read_text(encoding="utf-8")
     live_map = (root / "apps/reader/src/components/LiveMap.tsx").read_text(encoding="utf-8")
     ui = ui + live_map
-    assert "preparando el motor…" in ui
+    assert "despertando el motor" in ui
+    assert "burst_scaledown()" in burst
+    assert 'out["cites"] = "pending"' in reader
     assert "calentando el motor" not in ui
     assert "quiero leer este" in ui
     assert "data-live-map" in ui

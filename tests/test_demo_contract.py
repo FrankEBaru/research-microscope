@@ -106,19 +106,22 @@ def test_display_math_is_its_own_block():
 
 
 def test_keep_warm_is_an_explicit_deploy_flag(monkeypatch):
-    from rrm.demo_warm import DEMO_SCALEDOWN_S, demo_keep_warm, scaledown_window
+    from rrm.demo_warm import BURST_IDLE_S, DEMO_SCALEDOWN_S, burst_scaledown, demo_keep_warm, scaledown_window
 
     monkeypatch.delenv("RRM_DEMO_KEEP_WARM", raising=False)
     assert demo_keep_warm() is False
     assert scaledown_window() is None
+    assert burst_scaledown() == BURST_IDLE_S == 600
     monkeypatch.setenv("RRM_DEMO_KEEP_WARM", "1")
     assert scaledown_window() == DEMO_SCALEDOWN_S == 1200
+    assert burst_scaledown() == DEMO_SCALEDOWN_S
     root = Path(__file__).parents[1]
     for name in ("rrm/search/serve.py", "rrm/reader/serve.py"):
         text = (root / name).read_text(encoding="utf-8")
         assert "min_containers=" not in text
     burst = (root / "rrm/search/serve.py").read_text(encoding="utf-8")
     assert "enable_memory_snapshot=True" in burst
+    assert "scaledown_window=burst_scaledown()" in burst
     assert 'request.query_params.get("k")' in burst
     reader = (root / "rrm/reader/serve.py").read_text(encoding="utf-8")
     assert reader.count("gate(request, True)") >= 4

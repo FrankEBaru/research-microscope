@@ -21,13 +21,14 @@ function group(rows: any[]) {
   return [...map.entries()];
 }
 
-export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPromote }: {
+export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPromote, onName }: {
   sectionLabel: string;
   ids?: string[];
   onOpen?: (id: string, why: string) => void;
   closed?: boolean;
   onSkip?: () => void;
   onPromote?: () => void;
+  onName?: (id: string, section?: string) => string;
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -95,6 +96,7 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPr
   const parts = result?.parts || {};
   const hasParts = PARTS.some(([id]) => (parts[id] || []).length);
   const shown = (result?.extracts || []).length;
+  const citeOf = (id: string, section?: string) => onName?.(String(id), section) || "paper";
   return (
     <form className="ask-card" onSubmit={send}>
       {closed && (
@@ -113,10 +115,10 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPr
       {result && !result.empty && (
         <div className="extracts">
           <p className="ask-label">estos papers dicen ({result.papers})</p>
-          {result.matched > shown && <p className="small">Había {result.matched}. Muestro {shown}.</p>}
+          {result.matched > shown && <p className="small">Encontré {result.matched} frases cercanas. Aquí van las {shown} más próximas a lo que escribiste.</p>}
           {groups.map(([id, rows]) => (
             <section key={id} className="extract">
-              <button type="button" className="link" onClick={() => onOpen?.(id, "cita en la caja")}>{id}</button>
+              <button type="button" className="link" onClick={() => onOpen?.(id, "cita en la caja")}>{citeOf(id, rows[0]?.section)}</button>
               {rows.map((row: any, index: number) => <blockquote key={index}>{row.text}</blockquote>)}
             </section>
           ))}
@@ -133,7 +135,7 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPr
                 <p key={index}>
                   {item.text}
                   {item.cite && <> <q>{item.cite}</q></>}
-                  {item.paper_id && <button type="button" className="link" onClick={() => onOpen?.(String(item.paper_id), "cita en la caja")}>{item.paper_id}</button>}
+                  {item.paper_id && <button type="button" className="link" onClick={() => onOpen?.(String(item.paper_id), "cita en la caja")}>{citeOf(String(item.paper_id), item.section)}</button>}
                   {item.verified && <span className="chip chip-simulado">verificado contra la cita</span>}
                   {id === "sin_respaldo" && <span className="small"> Ningún paper analizado lo menciona.</span>}
                 </p>

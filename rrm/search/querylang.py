@@ -9,6 +9,10 @@ import re
 
 TOPIC_COSINE = 0.60
 TOPIC_NOTE = "Estos papers podrían no ser de tu tema; prueba en inglés o con otras palabras."
+# RRM-42 midió el mejor coseno de preguntas de un solo tema entre 0.72 y 0.82.
+# El corte absoluto 0.60 no separa un grupo mezclado. Un grupo se marca lejos
+# cuando su mediana cae al menos esto por debajo del mejor paper de la misma pregunta.
+FAR_GAP = 0.15
 PREPARING = "Preparando los vectores de las frases…"
 
 _MARK = re.compile(r"[¿¡áéíóúñü]", re.IGNORECASE)
@@ -80,11 +84,16 @@ def cache_miss_spanish(query, payload) -> bool:
 
 
 def topic_fields(qvec, ids, vector_of, cosine):
-    """Coseno del paper más cercano. La nota solo sale si ese coseno es bajo."""
+    """Coseno del paper más cercano, y el coseno de cada id pedido.
+
+    La nota global solo sale si el mejor de los diez primeros es bajo.
+    query_cosines lleva el resto, para comparar grupos dentro de la misma pregunta.
+    """
     if qvec is None or vector_of is None:
         return {}
+    scores = {}
     best = None
-    for raw in list(ids or [])[:10]:
+    for index, raw in enumerate(list(ids or [])):
         try:
             cid = int(raw)
         except (TypeError, ValueError):
@@ -96,10 +105,42 @@ def topic_fields(qvec, ids, vector_of, cosine):
         score = cosine(qvec, vec) if vec is not None else None
         if score is None:
             continue
-        best = score if best is None else max(best, score)
+        scores[str(cid)] = round(float(score), 4)
+        if index < 10:
+            best = score if best is None else max(best, score)
+    if best is None and scores:
+        best = max(scores.values())
     if best is None:
         return {}
-    out = {"topic_cosine": round(float(best), 4)}
+    out = {"topic_cosine": round(float(best), 4), "query_cosines": scores}
     if best < TOPIC_COSINE:
         out["topic_note"] = TOPIC_NOTE
     return out
+
+
+def far_group_ids(groups):
+    """Ids de grupo cuya mediana queda FAR_GAP por debajo del mejor paper.
+
+    groups: {id: [coseno, ...]}. Un paper suelto y bajo no apaga un grupo
+    cuya mediana sigue cerca del mejor.
+    """
+    rows = []
+    for key, values in (groups or {}).items():
+        clean = []
+        for value in values or []:
+            try:
+                clean.append(float(value))
+            except (TypeError, ValueError):
+                continue
+        if clean:
+            rows.append((key, clean))
+    if len(rows) < 2:
+        return []
+    top = max(max(values) for _key, values in rows)
+    far = []
+    for key, values in rows:
+        ordered = sorted(values)
+        mid = ordered[(len(ordered) - 1) // 2]
+        if top - mid >= FAR_GAP:
+            far.append(key)
+    return far
