@@ -334,7 +334,9 @@ tr.row-on td { background: rgba(39,71,107,.14) !important; }
 .ask-offer { margin: .4rem 0 .8rem; }
 .extract { border-left: 3px solid var(--accent); padding-left: .7rem; margin: .45rem 0; }
 .extract blockquote { margin: .25rem 0; font-family: var(--serif); }
-.generated { margin-top: .6rem; }
+.feedback { margin-top: .8rem; border: 1px dashed #b999d0; border-radius: 10px; padding: .6rem .8rem; background: var(--c-simulado-bg, #f7f1fb); }
+.feedback h3 { margin: .6rem 0 .2rem; font: 600 .85rem/1.3 var(--sans); }
+.feedback q { font-family: var(--serif); }
 .paper.is-read tr { animation: none; }
 .source-pdf { width: 100%; height: 78vh; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .core-list li.is-sunk { opacity: .72; }

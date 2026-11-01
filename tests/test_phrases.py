@@ -2,7 +2,7 @@
 
 import urllib.request
 
-from rrm.reader.phrases import collect_phrases, query_tokens, search_phrases, write_phrases
+from rrm.reader.phrases import collect_phrases, query_tokens, rank_phrases, search_phrases, write_phrases
 from rrm.reader.verify import answer, linea_final, verify_line
 
 
@@ -66,14 +66,31 @@ def test_verifier_drops_a_sentence_missing_from_that_paper():
     assert "attention" in verify_line("attention need.", cites)
 
 
+def test_symbol_letter_is_capped_and_not_a_substring():
+    rows = [
+        {"paper": 1, "text": "We keep the keys.", "latex": ["K"]},
+        {"paper": 1, "text": "Another K here.", "latex": ["K"]},
+        {"paper": 1, "text": "Third K.", "latex": ["K"]},
+        {"paper": 1, "text": "Fourth K is past the cap.", "latex": ["K"]},
+        {"paper": 2, "text": "The word keep has no symbol.", "latex": []},
+    ]
+    hits, total = rank_phrases(rows, "$K$")
+    assert total == 4
+    assert len(hits) == 3
+    assert all(row["paper"] == 1 for row in hits)
+
+
 def test_linea_final_is_empty_and_does_not_touch_the_network(monkeypatch):
     def explode(*_args, **_kwargs):
         raise AssertionError("red")
 
     monkeypatch.setattr(urllib.request, "urlopen", explode)
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
     cites = [{"paper": 7, "text": "attention is all you need"}]
     assert linea_final(cites) == ""
     body = answer(cites, "attention")
     assert body["line"] == ""
     assert body["papers"] == 1
     assert body["empty"] is False
+    assert body["parts"]["coincide"] == []
+    assert "Sin retroalimentación" in body["note"]

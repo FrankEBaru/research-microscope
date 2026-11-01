@@ -257,7 +257,7 @@ function panoramaTimeout() {
 export const PANORAMA_TIMEOUT_MS = panoramaTimeout();
 
 // Tiempos de espera por ruta (ms). /burst puede tardar 100–131 s si el contenedor estaba dormido.
-const TIMEOUT = { warm: 150000, burst: 150000, status: 20000, paper: 40000, panorama: PANORAMA_TIMEOUT_MS, crops: 20000, subtopics: 20000, prepare: 20000, labels: 8000, ask: 20000 };
+const TIMEOUT = { warm: 150000, burst: 150000, status: 20000, paper: 40000, panorama: PANORAMA_TIMEOUT_MS, crops: 20000, subtopics: 20000, prepare: 20000, labels: 8000, ask: 50000 };
 const RETRIES = { warm: 0, burst: 0, status: 2, paper: 1, panorama: 0, crops: 1, subtopics: 0, prepare: 0, labels: 0, ask: 0 };
 const RETRYABLE = new Set(["timeout", "network", "rate", "server"]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -351,6 +351,12 @@ export function labels(q) {
 }
 
 export function ask(ids, text) {
+  if (!READER) {
+    return Promise.resolve({
+      extracts: [], papers: 0, line: "", empty: false, matched: 0, parts: {},
+      note: "Sin retroalimentación: no hay clave.", store: { ready: 0, total: 0 },
+    });
+  }
   return request("ask", `${READER}/ask`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

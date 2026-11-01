@@ -12,7 +12,7 @@ import { burst, explain, labels as fetchLabels, liveEnabled, paperKey, paper as 
 import { coreMode } from "@/lib/features.js";
 import { pinPoint } from "@/lib/layout.js";
 import { mergeLabels, popVisit, pushVisit } from "@/lib/path.js";
-import { normalizeQuestion, phaseOf, readOverflow, recallQuestion, rememberQuestion, writeOverflow } from "@/lib/qcache.js";
+import { normalizeQuestion, phaseOf, readOverflow, readQuestions, recallQuestion, rememberQuestion, writeOverflow } from "@/lib/qcache.js";
 import { bindDevLog, createDevLog } from "@/lib/devlog.js";
 import { LiveCircle } from "./MapView";
 import LiveMap from "./LiveMap";
@@ -50,7 +50,6 @@ export default function Engine() {
   const [asList, setAsList] = useState(false);
   const [camino, setCamino] = useState<{ id: string; porQue: string; padre: string | null }[]>([]);
   const [labelNote, setLabelNote] = useState("");
-  const labeled = useRef("");
   const [devTick, setDevTick] = useState(0);
   const devRef = useRef<ReturnType<typeof createDevLog> | null>(null);
   if (!devRef.current) devRef.current = createDevLog();
@@ -136,13 +135,20 @@ export default function Engine() {
   const liveIds: string[] = (liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p));
   const liveName = (id: string) => { const p = (liveResult?.papers || []).find((x: any) => paperKey(x) === id); return p ? `${String(p.title || id).slice(0, 28)}${p.year ? ` ${p.year}` : ""}` : id; };
   const liveId = live && route.p && /^\d+$/.test(route.p) ? route.p : "";
+  const promoteBurst = useCallback((first?: string) => {
+    const ids = (liveResult?.papers || []).slice(0, 10).map((p: any) => p.corpusid).filter((id: any) => typeof id === "number");
+    const head = Number(first);
+    const ordered = Number.isInteger(head) ? [head, ...ids.filter((id: number) => id !== head)] : ids;
+    if (ordered.length) prepare(ordered, true).catch(() => {});
+  }, [liveResult]);
   const abrir = useCallback((id: string, porQue: string) => {
     const key = String(id || "");
     if (!key) return;
     setCamino((prev) => pushVisit(prev, key, porQue));
+    promoteBurst(key);
     if (key === liveId) return;
     go({ p: key });
-  }, [go, liveId]);
+  }, [go, liveId, promoteBurst]);
   const volver = () => {
     const next = popVisit(camino);
     setCamino(next);
@@ -222,6 +228,8 @@ export default function Engine() {
           reason: meta.reason,
           source: doc.source || meta.source,
           pdf: Boolean(meta.pdf),
+          oa_pdf: meta.oa_pdf || "",
+          arxiv: meta.arxiv || doc.arxivId || "",
         },
       });
     };
@@ -261,30 +269,53 @@ export default function Engine() {
     return () => { stop = true; };
   }, [liveId, liveQ]);
 
-  useEffect(() => {
-    if (!liveQ) labeled.current = "";
-  }, [liveQ]);
   const hasResult = Boolean(liveResult);
   useEffect(() => {
-    if (!core || !liveQ || !hasResult || labeled.current === liveQ) return;
-    labeled.current = liveQ;
+    if (!core || !live || liveResult || !route.p) return;
+    let rows: any[] = [];
+    try { rows = readQuestions(localStorage); } catch { rows = []; }
+    const hit = rows.find((row) => (row?.payload?.result?.papers || []).some((p: any) => paperKey(p) === route.p));
+    if (!hit?.payload?.result) return;
+    setLiveQ(hit.q);
+    setRowState(hit.payload.states || {});
+    setLiveResult(hit.payload.result);
+    setLiveOn(true);
+  }, [core, live, liveResult, route.p]);
+  useEffect(() => {
+    if (!core || !liveQ || !hasResult) return;
     let stop = false;
-    fetchLabels(liveQ).then(
-      (body: any) => {
-        if (stop) return;
-        setLabelNote(body?.note || "");
-        setLiveResult((prev) => {
-          if (!prev) return prev;
-          const papers = mergeLabels(prev.papers || [], body);
-          const layout = body?.survey_paper ? pinPoint(prev.layout, body.survey_paper) : prev.layout;
-          return { ...prev, papers, layout };
-        });
-        const sid = body?.survey_paper?.corpusid;
-        if (sid) prepare([sid], false).catch(() => {});
-      },
-      () => { if (!stop) setLabelNote("Sin red: solo el título, sin survey."); },
-    );
-    return () => { stop = true; };
+    let timer = 0;
+    const run = (attempt: number) => {
+      fetchLabels(liveQ).then(
+        (body: any) => {
+          if (stop) return;
+          if (body?.reason === "pending" && attempt < 5) {
+            setLabelNote("");
+            timer = window.setTimeout(() => run(attempt + 1), 400 * 2 ** attempt);
+            return;
+          }
+          setLabelNote(body?.reason === "network" ? (body.note || "Sin red: solo el título, sin survey.") : "");
+          setLiveResult((prev) => {
+            if (!prev) return prev;
+            const papers = mergeLabels(prev.papers || [], body);
+            const layout = body?.survey_paper ? pinPoint(prev.layout, body.survey_paper) : prev.layout;
+            return { ...prev, papers, layout };
+          });
+          const sid = body?.survey_paper?.corpusid;
+          if (sid) prepare([sid], false).catch(() => {});
+        },
+        () => {
+          if (stop) return;
+          if (attempt < 4) {
+            timer = window.setTimeout(() => run(attempt + 1), 400 * 2 ** attempt);
+            return;
+          }
+          setLabelNote("Sin red: solo el título, sin survey.");
+        },
+      );
+    };
+    run(0);
+    return () => { stop = true; window.clearTimeout(timer); };
   }, [core, liveQ, hasResult]);
 
   const onSearch = async (e: { preventDefault: () => void }) => {
@@ -381,7 +412,7 @@ export default function Engine() {
             {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
             {core && <button type="button" className="link" onClick={volver}>volver</button>}
             {core && camino[camino.length - 1]?.porQue && <p className="jump-why">Salto: {camino[camino.length - 1].porQue}</p>}
-            <PaperView paper={opened.paper} content={content || {}} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} showInstrument={!core} showCrops={!core} core={core} burstIds={(liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p))} map={liveResult ? { papers: liveResult.papers || [], edges: liveResult.edges || [], layout: liveResult.layout } : null} onOpenPaper={abrir} />
+            <PaperView paper={opened.paper} content={content || {}} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} showInstrument={!core} showCrops={!core} core={core} burstIds={(liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p))} map={liveResult ? { papers: liveResult.papers || [], edges: liveResult.edges || [], layout: liveResult.layout } : null} onOpenPaper={abrir} onPromote={() => promoteBurst(liveId)} />
           </div>
         )}
         {live && (liveOn || liveId) && liveId && !opened && (

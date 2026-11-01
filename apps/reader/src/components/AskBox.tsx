@@ -1,7 +1,14 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Rich } from "@/lib/math";
 import { ask } from "@/lib/backend.js";
+
+const PARTS = [
+  ["coincide", "Coincide"],
+  ["contradice", "Contradice"],
+  ["sin_respaldo", "Sin respaldo"],
+  ["te_falto", "Te faltó"],
+] as const;
 
 function group(rows: any[]) {
   const map = new Map<string, any[]>();
@@ -14,24 +21,45 @@ function group(rows: any[]) {
   return [...map.entries()];
 }
 
-export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip }: {
+export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPromote }: {
   sectionLabel: string;
   ids?: string[];
   onOpen?: (id: string, why: string) => void;
   closed?: boolean;
   onSkip?: () => void;
+  onPromote?: () => void;
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [store, setStore] = useState<any>(null);
   const [err, setErr] = useState("");
+  const key = (ids || []).join(",");
+  useEffect(() => {
+    if (!key) return;
+    let stop = false;
+    let timer = 0;
+    const tick = async () => {
+      try {
+        const body = await ask(ids || [], "");
+        if (stop) return;
+        setStore(body?.store || null);
+        if (body?.store && body.store.ready < body.store.total) timer = window.setTimeout(tick, 2000);
+      } catch { /* el envío dice si no hubo almacén */ }
+    };
+    tick();
+    return () => { stop = true; window.clearTimeout(timer); };
+  }, [key]);
   const send = async (event: { preventDefault: () => void }) => {
     event.preventDefault();
     if (!text.trim() || busy) return;
     setBusy(true);
     setErr("");
+    onPromote?.();
     try {
-      setResult(await ask(ids || [], text));
+      const body = await ask(ids || [], text);
+      setResult(body);
+      if (body?.store) setStore(body.store);
     } catch {
       setErr("No pude buscar en las frases guardadas.");
     } finally {
@@ -39,6 +67,9 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip }: {
     }
   };
   const groups = group(result?.extracts || []);
+  const parts = result?.parts || {};
+  const hasParts = PARTS.some(([id]) => (parts[id] || []).length);
+  const shown = (result?.extracts || []).length;
   return (
     <form className="ask-card" onSubmit={send}>
       {closed && (
@@ -47,6 +78,7 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip }: {
         </p>
       )}
       <p className="small">Sección: {sectionLabel}. Se puede seguir sin llenar la caja.</p>
+      {store && store.total > 0 && <p className="small" role="status">En el almacén: {store.ready} de {store.total}.</p>}
       <textarea aria-label="Qué entendiste" value={text} onChange={(event) => setText(event.target.value)} placeholder="En tus palabras. El LaTeX va entre $." />
       {text.trim() && <div className="ask-preview" aria-hidden="true"><Rich text={text} /></div>}
       <button type="submit" disabled={busy || !text.trim()}>Enviar</button>
@@ -55,6 +87,7 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip }: {
       {result && !result.empty && (
         <div className="extracts">
           <p className="ask-label">estos papers dicen ({result.papers})</p>
+          {result.matched > shown && <p className="small">Había {result.matched}. Muestro {shown}.</p>}
           {groups.map(([id, rows]) => (
             <section key={id} className="extract">
               <button type="button" className="link" onClick={() => onOpen?.(id, "cita en la caja")}>{id}</button>
@@ -63,12 +96,26 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip }: {
           ))}
         </div>
       )}
-      {result?.line ? (
-        <details className="generated">
-          <summary><span className="chip chip-simulado">generado</span></summary>
-          <p>{result.line}</p>
-        </details>
-      ) : null}
+      {(result?.note || hasParts) && (
+        <div className="feedback generated">
+          <p><span className="chip chip-simulado">generado</span></p>
+          {result?.note && <p>{result.note}</p>}
+          {PARTS.map(([id, label]) => (parts[id] || []).length ? (
+            <section key={id}>
+              <h3>{label}</h3>
+              {(parts[id] || []).map((item: any, index: number) => (
+                <p key={index}>
+                  {item.text}
+                  {item.cite && <> <q>{item.cite}</q></>}
+                  {item.paper_id && <button type="button" className="link" onClick={() => onOpen?.(String(item.paper_id), "cita en la caja")}>{item.paper_id}</button>}
+                  {item.verified && <span className="chip chip-simulado">verificado contra la cita</span>}
+                  {id === "sin_respaldo" && <span className="small"> Ningún paper analizado lo menciona.</span>}
+                </p>
+              ))}
+            </section>
+          ) : null)}
+        </div>
+      )}
     </form>
   );
 }

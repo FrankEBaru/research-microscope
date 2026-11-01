@@ -165,7 +165,7 @@ def _ask(store: Store, item):
             doc = dict(doc)
             doc["corpusid"] = int(cid)
         rows.extend(collect_phrases(doc))
-    return answer(rows, text or "")
+    return answer(rows, text or "", ids=ids)
 
 
 def build_handler(store: Store):
@@ -298,7 +298,7 @@ def build_handler(store: Store):
                 return
             if path == "/labels":
                 from rrm.search.labels import OFFLINE_NOTE
-                self._json(200, {"ok": False, "note": OFFLINE_NOTE, "by_id": {}, "survey_paper": None})
+                self._json(200, {"ok": False, "reason": "network", "note": OFFLINE_NOTE, "by_id": {}, "survey_paper": None})
                 return
             if path == "/file":
                 cid = cid_of()

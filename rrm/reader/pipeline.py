@@ -223,8 +223,12 @@ def apply_s2_fields(paper: dict, info: dict) -> dict:
         paper["abstract"] = info.get("abstract") or ""
     if not paper.get("title"):
         paper["title"] = info.get("title") or ""
+    if info.get("refs"):
+        paper["graphRefs"] = dict(info["refs"])
     if not paper.get("refs"):
         paper["refs"] = dict(info.get("refs") or {})
+    if info.get("oa_pdf"):
+        paper["oaPdf"] = info["oa_pdf"]
     if not paper.get("arxivId"):
         paper["arxivId"] = info.get("arxiv") or ""
     if paper.get("corpusid") is None:
@@ -447,6 +451,9 @@ def parse_corpus(
     _fill_refs(info, display_path)
     if paper is not None:
         apply_s2_fields(paper, info)
+        from rrm.reader.cites import bind_cites
+
+        paper["citeMap"] = bind_cites(paper.get("refs") or {}, paper.get("graphRefs") or {})
 
     if route == "abstract":
         meta["status"] = "abstract_only"

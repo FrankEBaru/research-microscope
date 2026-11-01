@@ -9,6 +9,7 @@ import { crops, eqTex, figureCandidates, figureUrl, paperKey, refText, sourcePdf
 import { pdfPagesOnly, polishText, presentInlines, visibleInlines } from "@/lib/prose.js";
 import { equationHover, symbolHover, tableHover } from "@/lib/hover.js";
 import { hasConclusion, scanIds } from "@/lib/scan.js";
+import { resolveCite } from "@/lib/path.js";
 import AskBox from "./AskBox";
 import ReadMinimap from "./ReadMinimap";
 import { devBegin, devFinish } from "@/lib/devlog.js";
@@ -335,7 +336,7 @@ function CropStrip({ id }: { id: string }) {
   );
 }
 
-export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote, showInstrument = true, showCrops = true, core = false, burstIds, map, onOpenPaper }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string; pdf?: boolean } | null; showInstrument?: boolean; showCrops?: boolean; core?: boolean; burstIds?: string[]; map?: { papers: any[]; edges: any[]; layout: any } | null; onOpenPaper?: (id: string, why: string) => void }) {
+export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote, showInstrument = true, showCrops = true, core = false, burstIds, map, onOpenPaper, onPromote }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string; pdf?: boolean; oa_pdf?: string; arxiv?: string } | null; showInstrument?: boolean; showCrops?: boolean; core?: boolean; burstIds?: string[]; map?: { papers: any[]; edges: any[]; layout: any } | null; onOpenPaper?: (id: string, why: string) => void; onPromote?: () => void }) {
   const art = useRef<HTMLElement>(null);
   const [pop, setPop] = useState<PopState>(null);
   const [reading, setReading] = useState(false);
@@ -442,9 +443,12 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     const xr = t.closest("[data-xref]") as HTMLElement | null;
     if (xr) { e.preventDefault(); const el = document.getElementById(model.target[xr.dataset.xref!] || xr.dataset.xref!); el?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
     const cite = t.closest("[data-pop]") as HTMLElement | null;
-    if (core && onOpenPaper && cite?.dataset.pop?.startsWith("c|")) {
-      const hit = cite.dataset.pop.slice(2).split(",").map((key) => /^s2:(\d+)$/.exec(key)).find(Boolean);
-      if (hit) { onOpenPaper(hit[1], "cita en el paper"); return; }
+    if (core && cite?.dataset.pop?.startsWith("c|")) {
+      const keys = cite.dataset.pop.slice(2).split(",");
+      const hit = keys.map((key) => resolveCite(key, paper.citeMap)).find(Boolean);
+      if (hit && onOpenPaper) { onOpenPaper(hit, "cita en el paper"); return; }
+      setPop({ key: cite.dataset.pop, rect: cite.getBoundingClientRect() });
+      return;
     }
     const cp = t.closest("[data-copy]") as HTMLElement | null;
     if (cp) { const old = cp.textContent; navigator.clipboard?.writeText(cp.dataset.copy!); cp.textContent = "copiado"; setTimeout(() => (cp.textContent = old), 1200); }
@@ -494,8 +498,22 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const instAfter = att?.instrument.claim.anchor.blockId;
   const authors = authorLine(paper.authors || []);
   const scan = core && !reading ? scanIds(paper.blocks) : null;
-  const boxKey = hold || (active.startsWith("sec-") ? active.slice(4) : "");
+  const firstHead = (paper.blocks || []).find((b) => b.kind === "h");
+  const sectionNow = active.startsWith("sec-") ? (paper.blocks || []).find((b) => b.kind === "h" && b.id === active.slice(4)) : firstHead;
+  const sectionLabel = sectionNow ? plainOf(sectionNow.inlines) : "inicio";
   const undrawn = core && (remote?.status === "abstract_only" || remote?.status === "failed");
+  const arxivId = paper.arxivId || remote?.arxiv || "";
+  const oaPdf = remote?.oa_pdf || paper.oaPdf || "";
+  const pdfHref = remote?.pdf && paper.corpusid != null
+    ? sourcePdfUrl(paper.corpusid)
+    : arxivId
+      ? `https://arxiv.org/pdf/${arxivId}`
+      : (typeof oaPdf === "string" && oaPdf.startsWith("http") ? oaPdf : "");
+  const honest = arxivId
+    ? `https://arxiv.org/abs/${arxivId}`
+    : paper.corpusid != null
+      ? `https://www.semanticscholar.org/paper/${paper.corpusid}`
+      : "";
 
   return (
     <div className="paper-layout">
@@ -520,10 +538,11 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           {core && paper.full && <p className="meta"><button type="button" className="link" onClick={() => setReading((v) => !v)}>{reading ? "Volver al scan" : "Leer"}</button></p>}
           {core && !reading && !hasConclusion(paper.blocks) && <p className="muted">No encontré una sección de conclusión.</p>}
           {core && left && !hold && <p className="ask-offer">Cerraste una sección. <button type="button" className="link" onClick={() => setHold(left)}>Escribir</button> <button type="button" className="link" onClick={() => setLeft("")}>Seguir</button></p>}
-          {core && hold && <AskBox sectionLabel="la sección que cerraste" ids={burstIds} onOpen={onOpenPaper} closed onSkip={() => { setHold(""); setLeft(""); }} />}
+          {core && hold && <AskBox sectionLabel="la sección que cerraste" ids={burstIds} onOpen={onOpenPaper} onPromote={onPromote} closed onSkip={() => { setHold(""); setLeft(""); }} />}
+          {core && !hold && <AskBox sectionLabel={sectionLabel} ids={burstIds} onOpen={onOpenPaper} onPromote={onPromote} />}
           {undrawn && <p className="fail-reason">Falta: {remote?.reason || "no se pudo dibujar el paper"}</p>}
-          {undrawn && remote?.pdf && paper.corpusid != null && <iframe className="source-pdf" title="PDF del paper" src={sourcePdfUrl(paper.corpusid)} />}
-          {undrawn && !remote?.pdf && paper.arxivId && <iframe className="source-pdf" title="PDF del paper" src={`https://arxiv.org/pdf/${paper.arxivId}`} />}
+          {undrawn && pdfHref && <iframe className="source-pdf" title="PDF del paper" src={pdfHref} />}
+          {undrawn && !pdfHref && honest && <p className="fail-reason"><a href={honest} target="_blank" rel="noreferrer">No hay PDF en el lector, ni en arXiv, ni un openAccessPdf. La ficha está aquí.</a></p>}
           <p className="authors">{authors}</p>
           <p className="meta">{paper.date?.slice(0, 4)}{paper.arxivId && <> · <a href={`https://arxiv.org/abs/${paper.arxivId}`} target="_blank" rel="noreferrer">ver original en arXiv</a></>}{paper.full && paper.arxivId && <> · <a href={`https://arxiv.org/pdf/${paper.arxivId}`} target="_blank" rel="noreferrer">PDF</a></>}{(remote?.status === "abstract_only" || remote?.status === "failed" || remote?.stage === "abstract_only") && !paper.arxivId && paper.corpusid != null && <> · <a href={`https://www.semanticscholar.org/paper/${paper.corpusid}`} target="_blank" rel="noreferrer">Semantic Scholar</a></>}{paper.arxivId && <> · <button className="link bib" data-bibtex={bibtex(paper)} data-copy={bibtex(paper)} title="Copiar la ficha BibTeX de arXiv">BibTeX</button></>}</p>
           {remote?.status === "failed" && <p className="fail-reason">{remote.reason}</p>}
@@ -552,7 +571,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               <div id={`blk-${b.id}`} className={`blk ${b.abs ? "abstract" : ""} ${b.raw ? "raw" : ""}`}>
                 {b.abs && <div className="abs-label">Resumen</div>}
                 <p>{(b.sents || [b.inlines]).map((s: Inline[], i: number) => <span key={i} className="sent" data-pop={`s|${b.id}|${i}`}><Inlines inls={s} ctx={{ ...ctx, sent: i }} /></span>)}</p>
-                {b.abs && remote && paper.tldr && <p className="tldr"><span className="chip chip-simulado">TLDR de Semantic Scholar (modelo)</span> {paper.tldr}</p>}
+                {b.abs && remote && paper.tldr && <p className="tldr"><span className="chip chip-simulado">generado</span> {paper.tldr}</p>}
                 {nb > 0 && <ol className="notes" start={model.noteBase[b.id] + 1}>{model.notes.slice(model.noteBase[b.id], model.noteBase[b.id] + nb).map((n, i) => <li key={i} value={model.noteBase[b.id] + i + 1}><Inlines inls={n.blocks.flatMap((x: Block) => x.inlines || [])} ctx={{ ...ctx, counter: { n: 999 } }} /></li>)}</ol>}
               </div>
             );
@@ -580,7 +599,6 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           return (
             <div key={b.id} className="row">
               {el}
-              {core && !hold && b.kind === "h" && b.id === boxKey && <AskBox sectionLabel={plainOf(b.inlines)} ids={burstIds} onOpen={onOpenPaper} />}
               {breakdown === b.id && b.kind === "eq" && (
                 <aside id={`bd-${b.id}`} className="breakdown" aria-label="Desglose de la ecuación">
                   <div className="chips"><ProvChip kind="curado" text="desglose curado: símbolos y definiciones del paper, no texto generado" /></div>

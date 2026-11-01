@@ -433,13 +433,19 @@ def _prepare_ids(ids, front=False) -> dict:
         pass
     vol.commit()  # parse_one containers must see s2.json before they resolve
     rows = []
+    ordered = []
     for raw in ids or []:
-        cid = int(raw)
-        if front:
+        try:
+            ordered.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    if front:
+        for cid in reversed(ordered):
             try:
                 prioritize(cid)
             except Exception:
                 pass
+    for cid in ordered:
         status = mark_queued(PAPERS / str(cid), cid)
         if status == "queued":
             seed_stub_from_cache(PAPERS / str(cid), cid)
@@ -464,10 +470,50 @@ def _heal_figures(folder: Path, paper):
         return
 
 
+def _oa_url(corpusid, paper, meta):
+    for src in (paper or {}, meta or {}):
+        url = src.get("oa_pdf") or src.get("oaPdf") or ""
+        if isinstance(url, str) and url.startswith("http"):
+            return url
+    try:
+        from rrm.reader.fetch import _s2_cache
+
+        path = _s2_cache(int(corpusid))
+        if path is None or not path.is_file():
+            return ""
+        data = json.loads(path.read_text(encoding="utf-8"))
+        oa = data.get("openAccessPdf") or {}
+        return (oa.get("url") if isinstance(oa, dict) else "") or ""
+    except Exception:
+        return ""
+
+
+def _attach_cites(paper):
+    """Resuelve claves BibTeX con el grafo local. No llama a Semantic Scholar."""
+    if not isinstance(paper, dict) or isinstance(paper.get("citeMap"), dict):
+        return paper
+    paper = dict(paper)
+    try:
+        from rrm.reader.cites import bind_cites
+        from rrm.reader.fetch import graph_reference_map
+
+        graph = graph_reference_map(DISPLAY.parent, int(paper.get("corpusid") or 0))
+    except Exception:
+        graph = {}
+    paper["graphRefs"] = graph or paper.get("graphRefs") or {}
+    paper["citeMap"] = bind_cites(paper.get("refs") or {}, paper["graphRefs"])
+    return paper
+
+
 def _with_pdf(folder: Path, body: dict) -> dict:
     meta = dict(body.get("meta") or {})
+    paper = body.get("paper")
     meta["pdf"] = (Path(folder) / "source.pdf").is_file()
+    meta["oa_pdf"] = _oa_url(folder.name, paper, meta)
+    meta["arxiv"] = meta.get("arxiv") or (paper or {}).get("arxivId") or ""
     out = dict(body)
+    if isinstance(paper, dict):
+        out["paper"] = _attach_cites(paper)
     out["meta"] = meta
     return out
 
@@ -745,7 +791,7 @@ def api():
 
     @web.post("/ask")
     async def route_ask(request: Request):
-        """Busca en el almacén de frases. linea_final no llama a Meta."""
+        """Busca en el almacén. Meta entra solo aquí, con las frases ya elegidas."""
         denied = gate(request, False)
         if denied:
             return denied
@@ -754,7 +800,13 @@ def api():
         from rrm.reader.phrases import load_rows
         from rrm.reader.verify import answer
 
-        return answer(load_rows(PAPERS, item.get("ids") or []), item.get("text") or "")
+        ids = item.get("ids") or []
+        text = item.get("text") or ""
+        if not str(text).strip():
+            from rrm.reader.phrases import store_progress
+
+            return {"extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {}, "note": "", "store": store_progress(PAPERS, ids)}
+        return answer(load_rows(PAPERS, ids), text, ids=ids, root=PAPERS)
 
     @web.post("/prepare")
     async def route_prepare(request: Request):

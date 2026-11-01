@@ -182,9 +182,11 @@ class BurstSearch:
                     break
             if papers and not settled:
                 _prefetch_reader([row.get("corpusid") for row in papers[:10]])
+            hit.pop("qvec", None)
             return self._with_layout(hit)
         out = self._compute(query, n)
         _store_burst(query, out)
+        out.pop("qvec", None)
         return self._with_layout(out)
 
     def _vectors_for(self, papers):
@@ -249,6 +251,8 @@ class BurstSearch:
             "subtopics": result["subtopics"],
             "seconds": result["seconds"],
         }
+        if result.get("qvec"):
+            out["qvec"] = result["qvec"]
         out["seconds"]["hydrate"] = round(time.perf_counter() - t0, 4)
         out["n"] = int(n)
         out["cached"] = False
@@ -269,7 +273,9 @@ class BurstSearch:
             entry = None
         burst = entry.get("burst") if isinstance(entry, dict) else None
         if not isinstance(burst, dict):
-            return label_payload([], [], None, {})
+            from rrm.search.labels import pending_payload
+
+            return pending_payload([])
         ids = candidate_ids(burst)
         meta = lookup_meta(ids, Path(MOUNT) / "label_cache", timeout=2.5)
         encode = getattr(getattr(self, "encoder", None), "encode", None)
@@ -281,7 +287,7 @@ class BurstSearch:
                 return None
             return vector_at(index, faiss_ids, corpusid)
 
-        scores = cosines_for(review_ids(meta), encode, vector_of, query) if meta else {}
+        scores = cosines_for(review_ids(meta), None if burst.get("qvec") else encode, vector_of, query, query_vec=burst.get("qvec")) if meta else {}
         return label_payload(burst.get("papers"), burst.get("similar"), meta, scores)
 
     @modal.method()

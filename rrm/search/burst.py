@@ -278,12 +278,21 @@ def _result(mode, first_id, papers, scores, similar, edges, subtopics, seconds):
     }
 
 
+def _with_qvec(result, vec):
+    if vec is None:
+        return result
+    result = dict(result)
+    result["qvec"] = [round(float(x), 6) for x in np.asarray(vec, dtype=np.float32).reshape(-1)]
+    return result
+
+
 def _from_paper(seed, search, graph, cc, vector_of, n):
     """Stored vector, capped bibliography, then the long-text link rank."""
     seconds = {"encode": 0.0, "search": 0.0, "rank": 0.0, "split": 0.0}
     local = _locate_one(graph, seed)
     hits = []
     t0 = time.perf_counter()
+    vec = None
     if vector_of is not None and local >= 0:
         vec = vector_of(int(seed))
         if vec is not None:
@@ -302,7 +311,7 @@ def _from_paper(seed, search, graph, cc, vector_of, n):
         scores = [float(x) for x in score_arr.tolist()]
         edges = edges_among(graph, _edge_locals(graph, chosen, similar))
     seconds["rank"] = time.perf_counter() - t0
-    return _result("paper", int(seed), papers, scores, similar, edges, [], seconds)
+    return _with_qvec(_result("paper", int(seed), papers, scores, similar, edges, [], seconds), vec)
 
 
 def burst_query(
@@ -351,7 +360,7 @@ def burst_query(
     edges = edges_among(graph, _edge_locals(graph, chosen, similar))
     seconds["edges"] = time.perf_counter() - t0
     subtopics, seconds["split"] = _join_split(pending, started, pool, split_timeout)
-    return _result(
+    return _with_qvec(_result(
         "long" if proximity else "short",
         None,
         papers,
@@ -360,4 +369,4 @@ def burst_query(
         edges,
         subtopics,
         seconds,
-    )
+    ), qvec)

@@ -1,8 +1,6 @@
-"""Verificador de la línea final. Algoritmo, no una segunda llamada al modelo."""
+"""Verificador de citas. La capa 1 es este archivo; la capa 2 vive en feedback.py."""
 
 import re
-
-from rrm.reader.phrases import search_phrases
 
 _WORD = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
 
@@ -60,22 +58,36 @@ def verify_line(line, citations):
 
 
 def linea_final(citas):
-    """Core devuelve vacío, sin red. Meta se colgaría aquí cuando se elija el modelo."""
+    """La caja ya no usa una sola línea. Se queda vacío para no llamar a Meta por otro camino."""
     del citas
-    from rrm.features import core_mode
-
-    if core_mode():
-        return ""
     return ""
 
 
-def answer(rows, text):
-    hits = search_phrases(rows, text)
-    draft = linea_final(hits)
-    line = verify_line(draft, hits) if draft else ""
+def answer(rows, text, *, ids=None, root=None):
+    from rrm.reader.feedback import PARTS, review
+    from rrm.reader.phrases import rank_phrases, store_progress
+
+    hits, matched = rank_phrases(rows, text) if (text or "").strip() else ([], 0)
+    parts, note, meta = review(text, hits) if hits else ({part: [] for part in PARTS}, "", None)
+    if not hits and (text or "").strip():
+        from rrm.reader.metacall import meta_status, note_for
+
+        status = meta_status()
+        if status:
+            note = note_for(status)
     seen = []
     for row in hits:
         key = row.get("paper")
         if key not in seen:
             seen.append(key)
-    return {"extracts": hits, "papers": len(seen), "line": line, "empty": not hits}
+    return {
+        "extracts": hits,
+        "papers": len(seen),
+        "line": "",
+        "empty": not hits,
+        "matched": matched,
+        "parts": parts,
+        "note": note,
+        "meta": meta,
+        "store": store_progress(root, ids if ids is not None else []),
+    }

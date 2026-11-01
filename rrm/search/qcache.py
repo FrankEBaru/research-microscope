@@ -4,6 +4,7 @@ One JSON file per normalized question: the burst payload and the last paper
 status rows. A repeat question reads that file instead of FAISS.
 """
 
+import fcntl
 import hashlib
 import json
 import os
@@ -43,23 +44,27 @@ def load_entry(root, text):
 
 
 def save_entry(root, text, *, burst=None, papers=None):
-    """Merge and write. Returns the stored dict, or None when the question is empty."""
+    """Merge under a lock. A papers-only write re-reads so it cannot null the burst."""
     key = normalize_question(text)
     if not key:
         return None
-    current = load_entry(root, text) or {"q": key, "burst": None, "papers": {}}
-    if burst is not None:
-        current["burst"] = burst
-    if papers is not None:
-        merged = dict(current.get("papers") or {})
-        merged.update(papers)
-        current["papers"] = merged
-    current["q"] = key
     path = entry_path(root, text)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(current, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, path)
+    lock_path = path.with_suffix(".lock")
+    with open(lock_path, "a+", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        current = load_entry(root, text) or {"q": key, "burst": None, "papers": {}}
+        if burst is not None:
+            current["burst"] = burst
+        if papers is not None:
+            merged = dict(current.get("papers") or {})
+            merged.update(papers)
+            current["papers"] = merged
+        current["q"] = key
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(current, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, path)
+        fcntl.flock(lock, fcntl.LOCK_UN)
     return current
 
 

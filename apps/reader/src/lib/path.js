@@ -9,6 +9,15 @@ export function pushVisit(stack, id, porQue) {
   return [...prev, { id: nextId, porQue: porQue || "", padre: cur ? cur.id : null }];
 }
 
+export function resolveCite(key, citeMap) {
+  const raw = String(key || "");
+  const direct = /^s2:(\d+)$/.exec(raw);
+  if (direct) return direct[1];
+  const hit = citeMap && citeMap[raw];
+  const mapped = /^s2:(\d+)$/.exec(String(hit || ""));
+  return mapped ? mapped[1] : "";
+}
+
 export function popVisit(stack) {
   const prev = Array.isArray(stack) ? stack : [];
   if (prev.length <= 1) return [];

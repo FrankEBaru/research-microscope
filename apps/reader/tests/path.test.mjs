@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { mergeLabels, popVisit, pushVisit } from "../src/lib/path.js";
+import { mergeLabels, popVisit, pushVisit, resolveCite } from "../src/lib/path.js";
 import { pinPoint } from "../src/lib/layout.js";
 
 test("no duplica el paper abierto y el padre es la visita anterior", () => {
@@ -45,4 +45,10 @@ test("el punto del survey no mueve a los demás", () => {
   assert.equal(next.points[0].x, 10);
   assert.equal(next.points[1].corpusid, 9);
   assert.equal(pinPoint(next, { corpusid: 9 }).points.length, 2);
+});
+
+test("la cita BibTeX abre solo si el mapa trae s2", () => {
+  assert.equal(resolveCite("s2:12", {}), "12");
+  assert.equal(resolveCite("Cho2014a", { Cho2014a: "s2:99" }), "99");
+  assert.equal(resolveCite("Cho2014a", {}), "");
 });
