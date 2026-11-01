@@ -131,3 +131,16 @@ test("un grupo se atenúa solo si su mediana queda lejos del mejor", () => {
   assert.deepEqual([...farGroupIds(mixed, both)], ["1"]);
   assert.equal(farGroupIds(mixed, [{ corpusid: 3, cluster: 1 }, { corpusid: 4, cluster: 1 }]).size, 0);
 });
+
+test("RRM-48: la etiqueta del punto lleva el año cuando el paper lo tiene", () => {
+  assert.equal(nodeLabel({ authors: ["Ben Mildenhall", "Pratul P. Srinivasan"], year: 2020, title: "NeRF: Representing Scenes" }), "Mildenhall 2020");
+  assert.equal(nodeLabel({ title: "NeRF: Representing Scenes as Neural Radiance Fields for View Synthesis", year: 2020 }), "NeRF: Representing Scenes as… 2020");
+  assert.ok(!/\d{4}$/.test(nodeLabel({ title: "Representing Scenes as Neural Radiance Fields" })), "sin año no inventa uno");
+});
+
+test("RRM-48: el punto i es el paper i en el layout del navegador", () => {
+  const papers = Array.from({ length: 12 }, (_, i) => ({ corpusid: 500 + i, year: 2000 + (i % 4), title: `p${i}` }));
+  const layout = layoutOf({ papers, edges: [{ citing: 501, cited: 500 }] });
+  for (const point of layout.points) assert.equal(point.corpusid, papers[point.rank].corpusid);
+  assert.equal(layout.points.length, papers.length);
+});
