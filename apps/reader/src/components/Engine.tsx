@@ -204,6 +204,7 @@ export default function Engine() {
 
   useEffect(() => {
     if (!liveResult || !liveQ) return;
+    if (liveResult.provisional) return; // RRM-48: búsqueda sin el índice de títulos; no se guarda
     const keep = () => {
       try { rememberQuestion(localStorage, liveQ, { result: liveResult, states: rowState }, (json: string) => { writeOverflow(indexedDB, json).catch(() => {}); }); }
       catch { /* private mode: the list is still on screen */ }
