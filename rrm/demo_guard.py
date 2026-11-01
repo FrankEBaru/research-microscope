@@ -63,4 +63,6 @@ def add_error_json(web):
         try:
             return await call_next(request)
         except Exception as err:
+            import traceback
+            traceback.print_exc()  # sigue en el log de Modal
             return JSONResponse({"error": f"error del servidor ({type(err).__name__})"}, status_code=500)
