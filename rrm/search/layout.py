@@ -747,7 +747,11 @@ def _median_groups(unit, target):
 
 
 def _kmeans_pp(x, k, seed, iters=25):
-    """Spherical k-means, k-means++ seeds from a fixed RNG. Returns (labels, inertia)."""
+    """Spherical k-means, k-means++ seeds from a fixed RNG. Returns (labels, inertia).
+
+    Vectorized: a cold container builds the title index in a thread, and every
+    Python-level step here waits on that thread's GIL.
+    """
     import numpy as np
 
     rng = np.random.default_rng(seed)
@@ -758,15 +762,40 @@ def _kmeans_pp(x, k, seed, iters=25):
         total = float(gap.sum())
         chosen.append(int(rng.choice(n, p=gap / total)) if total > 0 else int(rng.integers(n)))
     cents = x[np.asarray(chosen)].copy()
-    labels = np.zeros(n, dtype=np.int64)
+    labels = np.full(n, -1, dtype=np.int64)
     for _ in range(iters):
-        labels = np.argmax(x @ cents.T, axis=1)
-        for j in range(k):
-            block = x[labels == j]
-            if len(block):
-                mean = block.mean(axis=0)
-                cents[j] = mean / (float(np.linalg.norm(mean)) or 1e-9)
+        new = np.argmax(x @ cents.T, axis=1)
+        if np.array_equal(new, labels):
+            break
+        labels = new
+        sums = (labels[None, :] == np.arange(k)[:, None]).astype(x.dtype) @ x
+        norms = np.linalg.norm(sums, axis=1, keepdims=True)
+        cents = np.where(norms > 1e-9, sums / np.clip(norms, 1e-9, None), cents)
     return labels, float(np.sum(1.0 - np.max(x @ cents.T, axis=1)))
+
+
+def _silhouette_fast(x, labels):
+    """Same value as _silhouette, without a Python loop over the points."""
+    import numpy as np
+
+    labels = np.asarray(labels)
+    kinds = np.unique(labels)
+    if len(kinds) < 2:
+        return -1.0
+    dist = np.clip(1.0 - (x @ x.T), 0.0, 2.0)
+    np.fill_diagonal(dist, 0.0)
+    onehot = (labels[:, None] == kinds[None, :]).astype(np.float64)
+    sizes = onehot.sum(axis=0)
+    sums = dist @ onehot
+    own = np.searchsorted(kinds, labels)
+    rows = np.arange(len(labels))
+    mine = sizes[own] - 1.0
+    a = sums[rows, own] / np.clip(mine, 1.0, None)
+    other = sums / sizes[None, :]
+    other[rows, own] = np.inf
+    b = other.min(axis=1)
+    score = (b - a) / np.maximum(np.maximum(a, b), 1e-9)
+    return float(np.where(mine > 0, score, 0.0).sum() / len(labels))
 
 
 GROUP_MIN = 8
@@ -790,12 +819,12 @@ def _proximity_groups(unit):
     x = x / np.clip(np.linalg.norm(x, axis=1, keepdims=True), 1e-9, None)
     best, score = None, GROUP_SIL_MIN
     for k in range(2, min(4, n // floor) + 1):
-        labels = min((_kmeans_pp(x, k, seed) for seed in range(6)), key=lambda t: t[1])[0]
+        labels = min((_kmeans_pp(x, k, seed) for seed in range(4)), key=lambda t: t[1])[0]
         counts = np.bincount(labels, minlength=k)
         counts = counts[counts > 0]
         if len(counts) < 2 or int(counts.min()) < floor:
             continue
-        got = _silhouette(x, labels)
+        got = _silhouette_fast(x, labels)
         if got > score:
             best, score = labels.tolist(), got
     return _renumber(best) if best is not None else [0] * n
