@@ -508,8 +508,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const askBox = core ? (
     <div className="ask-slot">
       {hold
-        ? <AskBox sectionLabel="la sección que cerraste" ids={burstIds} onOpen={onOpenPaper} onPromote={onPromote} onName={nameOf} closed onSkip={() => { setHold(""); setLeft(""); }} />
-        : <AskBox sectionLabel={sectionLabel} ids={burstIds} onOpen={onOpenPaper} onPromote={onPromote} onName={nameOf} />}
+        ? <AskBox sectionLabel="la sección que cerraste" ids={burstIds} focusId={paper.corpusid != null ? String(paper.corpusid) : ""} onOpen={onOpenPaper} onPromote={onPromote} onName={nameOf} closed onSkip={() => { setHold(""); setLeft(""); }} />
+        : <AskBox sectionLabel={sectionLabel} ids={burstIds} focusId={paper.corpusid != null ? String(paper.corpusid) : ""} onOpen={onOpenPaper} onPromote={onPromote} onName={nameOf} />}
     </div>
   ) : null;
   const undrawn = core && (remote?.status === "abstract_only" || remote?.status === "failed");

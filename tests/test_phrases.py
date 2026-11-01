@@ -31,6 +31,52 @@ def _paper():
     }
 
 
+def test_commit_survives_a_reload_that_drops_uncommitted_files(tmp_path):
+    import json
+    import numpy as np
+    from rrm.reader.similar import commit_phrases, read_vectors, text_rows
+    from rrm.reader.phrases import read_phrases
+
+    folder = tmp_path / "7"
+    remote = tmp_path / "remote"
+    folder.mkdir()
+    remote.mkdir()
+    (folder / "paper.json").write_text(json.dumps(_paper()), encoding="utf-8")
+
+    def reload():
+        for path in list(folder.iterdir()):
+            if path.name == "paper.json":
+                continue
+            if not (remote / path.name).is_file():
+                path.unlink()
+        for path in remote.iterdir():
+            if path.is_file():
+                (folder / path.name).write_bytes(path.read_bytes())
+
+    def commit():
+        for name in ("phrases.json", "phrases.npy"):
+            src = folder / name
+            if src.is_file():
+                (remote / name).write_bytes(src.read_bytes())
+
+    def encode(texts):
+        return np.ones((len(list(texts)), 4), dtype=np.float32)
+
+    # Sin commit, el reload se lleva el archivo. Es el fallo que vio /ask.
+    from rrm.reader.phrases import write_phrases
+    write_phrases(folder, _paper())
+    reload()
+    assert not (folder / "phrases.json").is_file()
+
+    out = commit_phrases(folder, reload, commit, encode=encode)
+    assert out["had_phrases"] is False and out["had_vectors"] is False
+    assert out["ready"] is True and out["rows"] >= 1
+    (folder / "phrases.npy").unlink()
+    reload()
+    rows = text_rows(read_phrases(folder))
+    assert read_vectors(folder, len(rows)) is not None
+
+
 def test_collect_keeps_symbol_and_equation_sentence():
     rows = collect_phrases(_paper())
     texts = [row["text"] for row in rows]

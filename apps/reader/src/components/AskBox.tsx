@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Rich } from "@/lib/math";
-import { ask } from "@/lib/backend.js";
+import { ask, preparePhrases } from "@/lib/backend.js";
 
 const PARTS = [
   ["coincide", "Coincide"],
@@ -21,9 +21,10 @@ function group(rows: any[]) {
   return [...map.entries()];
 }
 
-export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPromote, onName }: {
+export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onSkip, onPromote, onName }: {
   sectionLabel: string;
   ids?: string[];
+  focusId?: string;
   onOpen?: (id: string, why: string) => void;
   closed?: boolean;
   onSkip?: () => void;
@@ -36,7 +37,24 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPr
   const [store, setStore] = useState<any>(null);
   const [err, setErr] = useState("");
   const [progress, setProgress] = useState("");
+  const [phraseLine, setPhraseLine] = useState("");
+  const phrases = useRef<Promise<unknown> | null>(null);
   const key = (ids || []).join(",");
+  useEffect(() => {
+    if (!focusId) { setPhraseLine(""); phrases.current = null; return; }
+    let stop = false;
+    const t0 = Date.now();
+    setPhraseLine("preparando frases de este paper… 0 s");
+    const clock = window.setInterval(() => {
+      setPhraseLine(`preparando frases de este paper… ${Math.round((Date.now() - t0) / 1000)} s`);
+    }, 400);
+    const job = preparePhrases(focusId).then(
+      () => { if (!stop) { window.clearInterval(clock); setPhraseLine(""); } },
+      () => { if (!stop) { window.clearInterval(clock); setPhraseLine(""); } },
+    );
+    phrases.current = job;
+    return () => { stop = true; window.clearInterval(clock); };
+  }, [focusId]);
   const keepStore = (body: any) => {
     const next = body?.store;
     if (!next) return;
@@ -51,7 +69,7 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPr
     let timer = 0;
     const tick = async () => {
       try {
-        const body = await ask(ids || [], "");
+        const body = await ask(ids || [], "", "", focusId);
         if (stop) return;
         keepStore(body);
         if (body?.store && body.store.ready < body.store.total) timer = window.setTimeout(tick, 2000);
@@ -65,22 +83,24 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPr
     if (!text.trim() || busy) return;
     setBusy(true);
     setErr("");
-    setProgress("buscando frases en los papers…");
     onPromote?.();
     let held = "";
     try {
+      if (phrases.current) await phrases.current;
+      setPhraseLine("");
+      setProgress("buscando frases en los papers…");
       let ranked: any = null;
       for (let attempt = 0; attempt < 60; attempt++) {
-        ranked = await ask(ids || [], text, "frases");
+        ranked = await ask(ids || [], text, "frases", focusId);
         setResult(ranked);
         keepStore(ranked);
         if (!/Preparando los vectores/.test(ranked?.note || "")) break;
-        setProgress("preparando los vectores de las frases…");
+        setProgress("preparando frases de este paper…");
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
       }
       if (ranked?.empty) return;
       setProgress("revisando cada cita…");
-      const body = await ask(ids || [], text, "revisar");
+      const body = await ask(ids || [], text, "revisar", focusId);
       setResult(body);
       keepStore(body);
     } catch (err: any) {
@@ -109,7 +129,7 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPr
       <textarea aria-label="Qué entendiste" value={text} onChange={(event) => setText(event.target.value)} placeholder="En tus palabras. El LaTeX va entre $." />
       {text.trim() && <div className="ask-preview" aria-hidden="true"><Rich text={text} /></div>}
       <button type="submit" disabled={busy || !text.trim()}>Enviar</button>
-      {progress && <p className="small" role="status">{progress}</p>}
+      {(phraseLine || progress) && <p className="small" role="status">{phraseLine || progress}</p>}
       {err && <p className="fail-reason">{err}</p>}
       {result?.empty && <p role="status">{result.note || "No hay frases guardadas de estos papers."}</p>}
       {result && !result.empty && (

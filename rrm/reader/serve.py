@@ -556,6 +556,7 @@ def read_paper(id: str, cites: bool = False):
     if not cites:
         local = _ready_local(folder)
         if local is not None:
+            _kick_phrases(cid)
             return local
     vol.reload()
     _shared_arxiv_wait()
@@ -563,6 +564,7 @@ def read_paper(id: str, cites: bool = False):
     if meta and meta.get("status") in ("done", "abstract_only", "failed"):
         paper = load_paper(folder)
         _heal_figures(folder, paper)
+        _kick_phrases(cid)
         return _with_pdf(folder, {"status": meta["status"], "meta": meta, "paper": paper, "cached": True}, cites=cites)
     try:
         prioritize(cid)
@@ -578,6 +580,7 @@ def read_paper(id: str, cites: bool = False):
     else:
         _heal_figures(folder, paper_obj)
     meta = load_meta(folder) or {}
+    _kick_phrases(cid)
     return _with_pdf(folder, {"status": meta.get("status"), "meta": meta, "paper": paper_obj, "cached": False}, cites=cites)
 
 
@@ -714,6 +717,36 @@ def _cache_root() -> Path:
 
 _phrase_jobs = set()
 _phrase_guard = threading.Lock()
+# reload() tira archivos sin commit. Escritura, commit y reload comparten este candado.
+_phrase_lock = threading.Lock()
+
+
+def prepare_paper_phrases(cid) -> dict:
+    """Frases y vectores de un paper, commiteados antes de volver."""
+    from rrm.reader.similar import commit_phrases
+
+    if os.environ.get("RRM_PHRASE_VECTORS") != "1":
+        return {"id": int(cid), "ready": False, "rows": 0, "had_phrases": False, "had_vectors": False, "seconds": 0.0, "error": "off"}
+    folder = PAPERS / str(int(cid))
+    folder.mkdir(parents=True, exist_ok=True)
+    with _phrase_lock:
+        out = commit_phrases(folder, vol.reload, vol.commit)
+    out["id"] = int(cid)
+    return out
+
+
+def _kick_phrases(cid):
+    """Al abrir, este paper va primero. El hilo usa el mismo candado que /ask."""
+    if os.environ.get("RRM_PHRASE_VECTORS") != "1":
+        return
+
+    def work():
+        try:
+            prepare_paper_phrases(cid)
+        except Exception:
+            return
+
+    threading.Thread(target=work, name="rrm-phrase-open", daemon=True).start()
 
 
 def _needs_phrases(folder):
@@ -766,46 +799,27 @@ def _ensure_phrase_vectors(ids):
         return
 
     def work():
-        from rrm.reader.phrases import read_phrases
-        from rrm.reader.similar import read_vectors, save_vectors, text_rows
-
-        try:
-            vol.reload()
-        except Exception:
-            pass
         for cid in todo:
-            folder = PAPERS / str(cid)
             try:
-                from rrm.reader.phrases import write_phrases
-                from rrm.reader.pipeline import load_paper
-
-                rows = text_rows(read_phrases(folder))
-                if not rows:
-                    paper = load_paper(folder)
-                    if isinstance(paper, dict) and paper.get("blocks"):
-                        rows = text_rows(write_phrases(folder, paper))
-                if rows and read_vectors(folder, len(rows)) is None:
-                    save_vectors(folder, rows)
+                prepare_paper_phrases(cid)
             except Exception:
                 pass
             finally:
                 with _phrase_guard:
                     _phrase_jobs.discard(cid)
-        try:
-            vol.commit()
-        except Exception:
-            pass
 
     threading.Thread(target=work, name="rrm-phrase-vectors", daemon=True).start()
 
 
-def _ask_body(ids, text, stage):
+def _ask_body(ids, text, stage, focus=None):
     from rrm.search.querylang import PREPARING
     from rrm.reader.phrases import store_progress
     from rrm.reader.similar import load_aligned
     from rrm.reader.verify import answer
 
-    _ensure_phrase_vectors(ids)
+    # Con focus el paper abierto ya se preparó y se commiteó. No encodar los otros diez aquí.
+    if not focus:
+        _ensure_phrase_vectors(ids)
     store = store_progress(PAPERS, ids)
     if not str(text or "").strip():
         return {"extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {}, "note": "", "store": store}
@@ -974,20 +988,45 @@ def api():
             return denied
         item = await request.json()
         item = item or {}
+        focus = item.get("focus")
+        prep = None
+        if focus not in (None, ""):
+            try:
+                prep = prepare_paper_phrases(focus)
+            except Exception:
+                prep = None
+        else:
+            with _phrase_lock:
+                try:
+                    vol.reload()
+                except Exception:
+                    pass
         try:
-            vol.reload()
-        except Exception:
-            pass
-        try:
-            return _ask_body(item.get("ids") or [], item.get("text") or "", item.get("stage") or "todo")
+            body = _ask_body(item.get("ids") or [], item.get("text") or "", item.get("stage") or "todo", focus=focus or None)
         except Exception:
             from rrm.reader.phrases import store_progress
             ids = item.get("ids") or []
-            return {
+            body = {
                 "extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {},
                 "note": "Preparando los vectores de las frases…",
                 "store": store_progress(PAPERS, ids),
             }
+        if prep is not None:
+            body["phrase_prep"] = prep
+        return body
+
+    @web.post("/phrases")
+    async def route_phrases(request: Request):
+        """Un paper abierto: frases y vectores ahora, y commit antes de responder."""
+        denied = gate(request, False)
+        if denied:
+            return denied
+        item = await request.json()
+        item = item or {}
+        try:
+            return prepare_paper_phrases(item.get("id"))
+        except Exception as err:
+            return {"ready": False, "rows": 0, "error": type(err).__name__}
 
     @web.post("/prepare")
     async def route_prepare(request: Request):

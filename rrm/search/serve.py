@@ -69,10 +69,8 @@ def _safe(name):
 
 # Ten minutes between questions (burst_scaledown). The demo flag still means
 # 20 minutes. min_containers stays 0. See scripts/warm.sh.
-# enable_memory_snapshot captures FAISS, the graph, both display tables, and
-# the SPECTER encoder after the first deployed boot. Later cold starts restore
-# that RAM instead of reading the artifacts again. The first boot still loads them.
-# memory stays 32768: FAISS, the graph and display.parquet are already several GB.
+# Memory snapshot stays off. On this 32 GB class the restore was not clearly
+# faster than a full load (128.0 s, 125.6 s, 101.0 s). memory stays 32768.
 _burst_cls = dict(
     image=image,
     volumes={MOUNT: vol},
@@ -80,7 +78,6 @@ _burst_cls = dict(
     memory=32768,
     timeout=900,
     secrets=[model_secret],
-    enable_memory_snapshot=True,
     scaledown_window=burst_scaledown(),
 )
 
@@ -88,9 +85,9 @@ _burst_cls = dict(
 @app.cls(**_burst_cls)
 @modal.concurrent(max_inputs=8)  # /subtopics waits seconds on Muse; /burst must not queue behind it
 class BurstSearch:
-    @modal.enter(snap=True)
+    @modal.enter()
     def load(self):
-        """Read the index into RAM before Modal snapshots the container.
+        """Read the index into RAM when the container starts.
 
         What this loads, from the volume (sizes from the RRM-3 build): FAISS
         index (~999 MB) plus faiss_ids, the citation graph (~2.13 GB of npy),
@@ -131,9 +128,9 @@ class BurstSearch:
             pass
         self.loaded = ["faiss", "faiss_ids", "graph", "node_meta", "display", "display_ext", "encoder"]
 
-    @modal.enter(snap=False)
+    @modal.enter()
     def resume(self):
-        """The volume mount does not survive the snapshot. Reopen it for cache writes."""
+        """Reopen the volume so a cache write sees the latest commit."""
         try:
             vol.reload()
         except Exception:

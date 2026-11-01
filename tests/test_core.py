@@ -116,7 +116,7 @@ def test_reader_serves_figures_in_parallel_and_core_skips_meta():
     reader = (root / "rrm/reader/serve.py").read_text(encoding="utf-8")
     burst = (root / "rrm/search/serve.py").read_text(encoding="utf-8")
     assert "@modal.concurrent(max_inputs=8)" in reader
-    assert "enable_memory_snapshot=True" in burst
+    assert "enable_memory_snapshot" not in burst
     assert "min_containers=" not in reader and "min_containers=" not in burst
     assert 'reason": "core"' in burst
     assert "if core_mode():" in reader
@@ -124,6 +124,7 @@ def test_reader_serves_figures_in_parallel_and_core_skips_meta():
     live_map = (root / "apps/reader/src/components/LiveMap.tsx").read_text(encoding="utf-8")
     ui = ui + live_map
     assert "despertando el motor" in ui
+    assert "preparando frases de este paper" in (root / "apps/reader/src/components/AskBox.tsx").read_text(encoding="utf-8")
     assert "burst_scaledown()" in burst
     assert 'out["cites"] = "pending"' in reader
     assert "calentando el motor" not in ui

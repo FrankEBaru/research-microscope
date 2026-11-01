@@ -6,21 +6,26 @@ from rrm.reader.metacall import MODEL
 PARTS = ("coincide", "contradice", "sin_respaldo", "te_falto")
 _QUOTED = ("coincide", "contradice", "te_falto")
 _PROMPT = (
-    "Partes la explicación del lector en afirmaciones, una por oración. "
-    "Cada afirmación se clasifica contra una frase numerada, con una sola clase: "
-    "coincide si esa frase dice lo mismo, contradice si dice lo contrario, "
+    "La explicación del lector es una afirmación. Clasifícala contra las frases numeradas, "
+    "con una sola clase y una sola entrada en afirmaciones: "
+    "coincide si dice lo mismo que una frase (si la repite, también); "
+    "contradice si la niega, aunque la frase no contenga la palabra «no»; "
     "sin_respaldo si ninguna frase habla de eso. "
-    "En coincide y contradice, cite es un trozo copiado tal cual de esa frase "
-    "(al menos unas doce letras) y paper_id es el de la frase. "
+    "En coincide y contradice, cite es un trozo copiado tal cual de esa frase, "
+    "sin reescribir el LaTeX, y paper_id es el de la frase. "
     "En sin_respaldo, cite y paper_id van vacíos. "
     "te_falto va aparte: una cosa que las frases dicen y el lector no mencionó. "
     "Su texto habla de lo que dice la cita, y la cita es un trozo literal de esa frase. "
     "No des un veredicto de bien o mal."
 )
 _CHECK = (
-    "Para cada punto, en orden: true si la cita respalda (coincide, te_falto), "
-    "si contradice (contradice), o si ninguna frase lo respalda (sin_respaldo). "
-    "Un punto dudoso es false. Responde solo el arreglo keep."
+    "keep[i] es true o false. "
+    "Si la parte es contradice, true cuando el texto dice que la cita es falsa o afirma lo contrario. "
+    "La frase «It is false that» seguida de lo que dice la cita es true. "
+    "Si la parte es coincide, true cuando el texto repite la cita o dice lo mismo. "
+    "Si la parte es sin_respaldo, true cuando el texto habla de otra cosa. "
+    "Si la parte es te_falto, true cuando la cita aporta un hecho que el texto no dijo. "
+    "No uses false solo porque la cita no contiene la palabra no."
 )
 
 
