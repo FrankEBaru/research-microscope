@@ -490,6 +490,20 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
   };
   useEffect(() => { if (focus) setTimeout(() => goTo(focus), 250); }, [focus, paper.arxivId]);
+  // RRM-48: en scan casi no hay encabezados (2 de 28 en Vaswani) y el índice no iba a ningún lado.
+  // Si la sección no está pintada, pasa a «Leer» y baja a ella después del render.
+  const pendingSec = useRef("");
+  const toSection = (id: string) => {
+    const el = document.getElementById(`sec-${id}`);
+    if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+    if (core && !reading && paper.full) { pendingSec.current = id; setReading(true); }
+  };
+  useEffect(() => {
+    const id = pendingSec.current;
+    if (!reading || !id) return;
+    pendingSec.current = "";
+    requestAnimationFrame(() => document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, [reading]);
   useEffect(() => {
     const hs = Array.from(document.querySelectorAll<HTMLElement>("[data-toc]"));
     const io = new IntersectionObserver((es) => { es.forEach((e) => e.isIntersecting && setActive(e.target.id)); }, { rootMargin: "-10% 0px -80% 0px" });
@@ -538,7 +552,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         <nav className="toc" aria-label="Secciones">
           {model.toc.map((t) => (
             <a key={t.id} href={`#sec-${t.id}`} className={`toc-${t.level} ${active === `sec-${t.id}` ? "on" : ""}`}
-              onClick={(e) => { e.preventDefault(); document.getElementById(`sec-${t.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>{t.label}</a>
+              onClick={(e) => { e.preventDefault(); toSection(t.id); }}>{t.label}</a>
           ))}
         </nav>
       )}

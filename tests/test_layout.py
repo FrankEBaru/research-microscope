@@ -166,3 +166,14 @@ def test_offline_burst_uses_citations_not_specter(tmp_path):
         assert xs[1] < xs[2]
     finally:
         httpd.shutdown()
+
+
+def test_point_i_is_paper_i_on_every_layout_path():
+    """RRM-48: a dot opens the paper it is drawn for (click → card → Abrir use point.corpusid)."""
+    rng = np.random.default_rng(7)
+    papers = [{"corpusid": 100 + i, "year": 2000 + i % 5, "title": f"t{i}"} for i in range(30)]
+    edges = [{"citing": 101, "cited": 100}, {"citing": 105, "cited": 103}]
+    vectors = rng.normal(size=(30, 8))
+    for layout in (place_papers(papers, edges), place_papers(papers, edges, vectors)):
+        by_rank = {p["rank"]: p["corpusid"] for p in layout["points"]}
+        assert by_rank == {i: row["corpusid"] for i, row in enumerate(papers)}, layout["method"]

@@ -25,6 +25,7 @@ from rrm.demo_warm import burst_scaledown
 from rrm.features import core_mode, features_mode
 from rrm.search.burst import burst_query
 from rrm.search.layout import map_rows, place_papers
+from rrm.search.twins import STUB_OF, has_stub, remap_result
 from rrm.search.qcache import CACHE_DIR, cached_burst, load_entry, normalize_question, save_entry
 from rrm.search.vecfill import fill_encoded, read_cache
 from rrm.search.prefetch import detach_queue, note_burst_top
@@ -191,6 +192,15 @@ class BurstSearch:
                     row["citationcount"] = int(self.cc[local])
             else:
                 row["is_cs"] = from_cs
+            if cid in STUB_OF:
+                # RRM-48: the real record of a split paper keeps the stub's citations.
+                found, at = locate(self.graph.ids, [STUB_OF[cid]])
+                if bool(found[0]):
+                    row["citationcount"] = max(int(row["citationcount"] or 0), int(self.cc[int(at[0])]))
+                stub = self.display_ext.rows([STUB_OF[cid]])[0] or {}
+                head, tail = str(row.get("title") or ""), str(stub.get("title") or "")
+                if tail and tail.casefold() not in head.casefold():
+                    row["title"] = f"{head}: {tail}" if head else tail  # S2 kept «NeRF» here, the subtitle there
             score = None if scores is None else scores[i]
             row["score"] = None if score is None else float(score)
             out.append(row)
@@ -207,6 +217,8 @@ class BurstSearch:
 
         if hit is not None and cache_miss_spanish(query, hit):
             hit = None
+        if hit is not None and has_stub(hit):
+            hit = None  # RRM-48: stored before the NeRF twin fix; recompute once
         if hit is not None:
             scored_rows = list(hit.get("papers") or []) + list(hit.get("similar") or [])
             needs_cosine = hit.get("qvec") is not None and (
@@ -233,8 +245,16 @@ class BurstSearch:
                 _prefetch_reader([row.get("corpusid") for row in papers[:10]])
             hit.pop("qvec", None)
             return self._with_layout(hit)
+        ready = getattr(self, "_lookup_ready", None)
+        early = ready is not None and not ready.is_set() and not is_identifier(query)
         out = self._compute(query, n)
-        _store_burst(query, out)
+        if early:
+            # RRM-48: the exact-title seed was skipped while PaperLookup builds
+            # (~66 s after a cold start). Answer, but do not keep it: the next
+            # ask computes it with the lookup. The browser skips it too.
+            out["provisional"] = True
+        else:
+            _store_burst(query, out)
         out.pop("qvec", None)
         return self._with_layout(out)
 
@@ -375,6 +395,7 @@ class BurstSearch:
             vector_of=vector_of,
             split=None,  # papers never wait on Muse; labels come from GET /subtopics
         )
+        result = remap_result(result)
         papers = result["papers"]
         first = None
         if result["first_id"] is not None:

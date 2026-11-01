@@ -377,3 +377,20 @@ def test_is_identifier_only_for_lookup_forms():
     assert is_identifier("arXiv:1706.03762") and is_identifier("CorpusId:13756489")
     assert not is_identifier("graph neural networks for molecules")
     assert not is_identifier("¿qué algoritmo aprende el in-context learning?")
+
+
+def test_split_nerf_stub_becomes_the_real_record_in_place():
+    from rrm.search.twins import has_stub, remap_result
+
+    result = {
+        "first_id": None,
+        "papers": {"corpusids": [246016186, 282134003, 213175590, 7], "scores": [3.0, 2.0, 1.0, 0.5]},
+        "similar": [{"corpusid": 213175590, "dist": 1.0}, {"corpusid": 282134003, "dist": 2.0}],
+        "edges": [{"citing": 246016186, "cited": 282134003}, {"citing": 246016186, "cited": 213175590}, {"citing": 282134003, "cited": 213175590}],
+    }
+    out = remap_result(result)
+    assert out["papers"]["corpusids"] == [246016186, 213175590, 7]
+    assert out["papers"]["scores"] == [3.0, 2.0, 0.5]
+    assert [row["corpusid"] for row in out["similar"]] == [213175590]
+    assert out["edges"] == [{"citing": 246016186, "cited": 213175590}]
+    assert has_stub({"papers": [{"corpusid": 282134003}]}) and not has_stub({"papers": [{"corpusid": 213175590}]})
