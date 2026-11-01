@@ -52,6 +52,108 @@ _SI_UNITS = {
 }
 
 
+def _strip_outer_brace(body: str) -> str:
+    body = body.strip()
+    if body.startswith("{"):
+        inner, end = _read_simple_brace(body, 0)
+        if end == len(body):
+            return inner.strip()
+    return body
+
+
+def _unwrap_bold_mbox(tex: str) -> str:
+    """`\\mbox{\\boldmath{$...$}}` becomes `\\mathbf{...}`. Nested mboxes stay in math mode."""
+    mark = r"\mbox"
+    out = []
+    i, n = 0, len(tex)
+    while i < n:
+        if tex.startswith(mark, i) and (i + len(mark) == n or not tex[i + len(mark)].isalpha()):
+            j = i + len(mark)
+            while j < n and tex[j] == " ":
+                j += 1
+            if j < n and tex[j] == "{":
+                inner, end = _read_simple_brace(tex, j)
+                body = inner.strip()
+                if body.startswith(r"\boldmath"):
+                    body = body[len(r"\boldmath"):].strip()
+                    body = _strip_outer_brace(body)
+                    if len(body) >= 2 and body[0] == "$" and body[-1] == "$":
+                        body = body[1:-1]
+                    body = _unwrap_bold_mbox(body)
+                    out.append(r"\mathbf{" + body + "}")
+                    i = end
+                    continue
+        out.append(tex[i])
+        i += 1
+    return "".join(out)
+
+
+def _unwrap_named(tex: str, name: str) -> str:
+    mark = "\\" + name
+    out = []
+    i, n = 0, len(tex)
+    while i < n:
+        if tex.startswith(mark, i) and (i + len(mark) == n or not tex[i + len(mark)].isalpha()):
+            j = i + len(mark)
+            while j < n and tex[j] == " ":
+                j += 1
+            if j < n and tex[j] == "{":
+                inner, end = _read_simple_brace(tex, j)
+                out.append(inner)
+                i = end
+                continue
+        out.append(tex[i])
+        i += 1
+    return "".join(out)
+
+
+def _unwrap_resizebox(tex: str) -> str:
+    mark = r"\resizebox"
+    out = []
+    i, n = 0, len(tex)
+    while i < n:
+        if tex.startswith(mark, i) and (i + len(mark) == n or not tex[i + len(mark)].isalpha()):
+            j = i + len(mark)
+            got = True
+            body = None
+            end = j
+            for _ in range(3):
+                while j < n and tex[j] == " ":
+                    j += 1
+                if j >= n or tex[j] != "{":
+                    got = False
+                    break
+                inner, j = _read_simple_brace(tex, j)
+                body, end = inner, j
+            if got and body is not None:
+                inner = body.strip()
+                if len(inner) >= 2 and inner[0] == "$" and inner[-1] == "$":
+                    inner = inner[1:-1].strip()
+                out.append(inner)
+                i = end
+                continue
+        out.append(tex[i])
+        i += 1
+    return "".join(out)
+
+
+def _read_simple_brace(s: str, i: int):
+    depth = 0
+    j = i
+    while j < len(s):
+        if s[j] == "\\":
+            j += 2
+            continue
+        if s[j] == "{":
+            depth += 1
+        elif s[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return s[i + 1:j], j + 1
+        j += 1
+    return s[i + 1:], len(s)
+
+
 def _si_repl(match: re.Match) -> str:
     num = match.group(1).strip()
     unit = match.group(2).strip()
@@ -71,7 +173,12 @@ def for_katex(tex: str) -> str:
     in those two papers. ``\\\\partialm`` is ``\\\\partial`` glued to the
     one-letter macro ``\\\\nn`` (body ``m``).
     """
-    tex = tex or ""
+    tex = _unwrap_bold_mbox(tex or "")
+    tex = _unwrap_resizebox(tex)
+    prev = None
+    while prev != tex:
+        prev = tex
+        tex = _unwrap_named(tex, "ensuremath")
     tex = re.sub(r"\\mbox(?![A-Za-z])", r"\\text", tex)
     tex = re.sub(r"(?:\\mathopen\{\}\s*\\mathclose(?![A-Za-z])\s*\\bgroup\s*)+", "", tex)
     tex = re.sub(r"(?:\\aftergroup\s*\\egroup\s*)+", "", tex)
@@ -84,6 +191,17 @@ def for_katex(tex: str) -> str:
     tex = re.sub(r"\\SI(?![A-Za-z])\s*\{([^{}]*)\}\s*\{([^{}]*)\}", _si_repl, tex)
     tex = re.sub(r"\\partialm(?![A-Za-z])", r"\\partial m", tex)
     tex = re.sub(r"\\mathds(?![A-Za-z])", r"\\mathbb", tex)
+    tex = re.sub(r"\\textrm(?![A-Za-z])", r"\\text", tex)
+    tex = re.sub(r"\\boldmath\s*\{\$([^{}$]+)\$\}", r"\\mathbf{\1}", tex)
+    tex = re.sub(r"\\boldmath(?![A-Za-z])\s*", "", tex)
+    tex = re.sub(r"\\[vh]space\s*\{[^{}]*\}", "", tex)
+    tex = re.sub(r"\\vskip\s*-?[0-9.]+\s*(?:pt|em|ex|mm|cm)?", "", tex)
+    tex = re.sub(r"\\Tilde(?![A-Za-z])", r"\\tilde", tex)
+    tex = re.sub(r"\\Hat(?![A-Za-z])", r"\\hat", tex)
+    tex = re.sub(r"\\Bar(?![A-Za-z])", r"\\bar", tex)
+    tex = re.sub(r"\{([^{}\\]+)\\choose\s*\{([^{}]*)\}\}", r"\\binom{\1}{\2}", tex)
+    tex = re.sub(r"\{([^{}\\]+)\\choose\s*([^{}\\]+)\}", r"\\binom{\1}{\2}", tex)
+    tex = re.sub(r"\$([^$]+)\$", r"\\text{\1}", tex)
     return tex
 
 

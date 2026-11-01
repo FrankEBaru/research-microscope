@@ -130,18 +130,44 @@ def parse_inlines(s: str, macros: dict) -> list:
 
     i, n = 0, len(s)
     while i < n:
+        if s[i] == "{":
+            inner, j = read_braced(s, i)
+            styled = re.match(r"\s*\\(it|em|bf|bfit|sc|rm|tt|textbf|textit)\b\s*([\s\S]*)$", inner or "")
+            if styled:
+                flush()
+                kind = {"bf": "strong", "bfit": "strong", "textbf": "strong", "tt": "code"}.get(styled.group(1), "em")
+                body = parse_inlines(styled.group(2), macros)
+                if kind == "code":
+                    out.append({"t": "code", "v": plain(body)})
+                elif kind == "em" and styled.group(1) == "rm":
+                    out.extend(body)
+                else:
+                    out.append({"t": kind, "c": body})
+                i = j
+                continue
         if s[i] == "\\":
             name, j = read_name(s, i)
-            if name in ("emph", "textit", "textbf", "texttt", "textsc"):
+            if name in ("rule", "cmidrule", "cline", "specialrule", "cellcolor", "color", "rowcolor", "definecolor", "hdashline"):
+                j = _skip_ws(s, j)
+                while j < n and s[j] == "{":
+                    _, j = read_braced(s, j)
+                    j = _skip_ws(s, j)
+                i = j
+                continue
+            if name in ("emph", "textit", "textbf", "texttt", "textsc", "edit", "mbox", "text", "bf", "it", "em", "bfit", "sc", "rm"):
                 j = _skip_ws(s, j)
                 if j < n and s[j] == "{":
                     inner, j = read_braced(s, j)
                     flush()
-                    kind = {"textbf": "strong", "texttt": "code"}.get(name, "em")
-                    if kind == "code":
-                        out.append({"t": "code", "v": plain(parse_inlines(inner, macros))})
+                    kids = parse_inlines(inner, macros)
+                    if name in ("textbf", "bf", "bfit"):
+                        out.append({"t": "strong", "c": kids})
+                    elif name == "texttt":
+                        out.append({"t": "code", "v": plain(kids)})
+                    elif name in ("mbox", "text", "edit", "rm"):
+                        out.extend(kids)
                     else:
-                        out.append({"t": kind, "c": parse_inlines(inner, macros)})
+                        out.append({"t": "em", "c": kids})
                     i = j
                     continue
             if name in ("footnote", "thanks"):
@@ -323,8 +349,13 @@ def _split_top(s: str, sep: str) -> list[str]:
 
 
 def _cell(raw: str, macros: dict):
-    """One tabular cell -> (inlines, colspan). `\\multicolumn{n}{spec}{text}` is the only merge read."""
+    """One tabular cell -> (inlines, colspan). `\\multicolumn` sets colspan; `\\multirow` keeps its text."""
     c = raw.strip()
+    c = re.sub(r"\\rule\s*\{[^{}]*\}\s*\{[^{}]*\}", "", c).strip()
+    row = re.match(r"\\multirow\s*\{[^{}]*\}\s*\{[^{}]*\}\s*\{", c)
+    if row:
+        inner, _ = read_braced(c, row.end() - 1)
+        return parse_inlines(inner.strip(), macros), 1
     m = re.match(r"\\multicolumn\s*\{\s*(\d+)\s*\}\s*\{", c)
     if m:
         _, after_spec = read_braced(c, m.end() - 1)
@@ -492,6 +523,10 @@ def parse_body(body: str, macros: dict, prose: set | None = None) -> list:
             elif base == "thebibliography":
                 continue
             elif base in ("tabular", "tabularx", "longtable"):
+                spec = inner.lstrip()
+                if spec.startswith("{"):
+                    _, end = read_braced(inner, inner.find("{"))
+                    inner = inner[end:]
                 blocks.append(_table_block(inner, macros))
             elif base in ("verbatim", "lstlisting", "minted", "algorithm", "algorithmic"):
                 blocks.append(_raw_block("\\begin{" + name + "}" + inner + "\\end{" + name + "}"))

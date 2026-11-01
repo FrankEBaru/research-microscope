@@ -49,9 +49,9 @@ if [[ "$1" == "deploy" ]]; then
     exit 1
   fi
   if [[ "$2" == *reader* ]]; then
-    echo "{READER}"
+    printf '%b\n' '{READER}\\033\\033[2;4m{READER}'
   else
-    echo "{BURST}"
+    printf '%b\n' '{BURST}\\033\\033[2;4m{BURST}'
   fi
   if [[ "{hold}" == "1" ]]; then
     /bin/sleep 30
@@ -156,8 +156,8 @@ def _stop(proc, sig, timeout=5):
 
 
 def _stops(text: str):
-    assert "modal app stop rrm-burst" in text
-    assert "modal app stop rrm-reader" in text
+    assert "modal app stop --yes rrm-burst" in text
+    assert "modal app stop --yes rrm-reader" in text
     assert "modal app list" in text
 
 
