@@ -258,6 +258,32 @@ class BurstSearch:
         _prefetch_reader(papers["corpusids"][:10])
         return out
 
+    def _labels(self, query: str):
+        from rrm.search.labelnet import candidate_ids, cosines_for, lookup_meta, review_ids
+        from rrm.search.labels import label_payload
+
+        root = Path(MOUNT) / CACHE_DIR
+        try:
+            entry = load_entry(root, query)
+        except Exception:
+            entry = None
+        burst = entry.get("burst") if isinstance(entry, dict) else None
+        if not isinstance(burst, dict):
+            return label_payload([], [], None, {})
+        ids = candidate_ids(burst)
+        meta = lookup_meta(ids, Path(MOUNT) / "label_cache", timeout=2.5)
+        encode = getattr(getattr(self, "encoder", None), "encode", None)
+        index = getattr(self, "index", None)
+        faiss_ids = getattr(self, "faiss_ids", None)
+
+        def vector_of(corpusid):
+            if index is None or faiss_ids is None:
+                return None
+            return vector_at(index, faiss_ids, corpusid)
+
+        scores = cosines_for(review_ids(meta), encode, vector_of, query) if meta else {}
+        return label_payload(burst.get("papers"), burst.get("similar"), meta, scores)
+
     @modal.method()
     def run_burst(self, q: str, n: int = 50):
         return self._answer(q, n)
@@ -289,6 +315,14 @@ class BurstSearch:
             if denied:
                 return denied
             return {"ready": True, "features": features_mode(), "loaded": list(getattr(self, "loaded", []))}
+
+        @web.get("/labels")
+        def route_labels(request: Request, q: str):
+            """Abstract, survey y retractación. No bloquea /burst ni vuelve a correr FAISS."""
+            denied = gate(request)
+            if denied:
+                return denied
+            return self._labels(q)
 
         @web.get("/burst")
         def route_burst(request: Request, q: str, n: int = 50):

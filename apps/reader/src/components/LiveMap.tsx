@@ -180,20 +180,21 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant 
             if (!meta) return null;
             const here = shown[i] || { x: point.x, y: point.y, s: 1 };
             const phase = phaseOf(states[id]?.status);
+            const sunk = Boolean(meta.paper.retracted);
             const r = pointRadius(point.rank, targets.length) * Math.max(here.s, 0.001);
             const label = z >= 1.55 || point.rank === 0 ? (meta.paper.title || id) : "";
             return (
               <g
                 key={id}
-                className="node-dot"
-                transform={`translate(${sx(here.x)} ${sy(here.y)})`}
+                className={`node-dot${sunk ? " is-sunk" : ""}`}
+                transform={`translate(${sx(here.x)} ${sy(here.y) + (sunk ? 26 : 0)})`}
                 onPointerEnter={() => setHover(id)}
                 onFocus={() => setHover(id)}
                 onClick={(e) => { e.stopPropagation(); if (!drag.current?.moved) onOpen(id); }}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); onOpen(id); } }}
                 tabIndex={0}
                 role="button"
-                aria-label={`${meta.paper.title || id}. ${phase.label}`}
+                aria-label={`${meta.paper.title || id}. ${phase.label}${meta.paper.survey ? ". survey" : ""}${sunk ? ". retractado" : ""}`}
               >
                 <circle r={r + 3} fill={clusterColor(point.cluster)} opacity={phase.id === "fallo" ? 0.35 : 0.95} />
                 <circle
@@ -204,6 +205,8 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant 
                   className={phase.id === "preparando" ? "ring-prep" : undefined}
                 />
                 {phase.id === "fallo" && <text textAnchor="middle" y="4" className="dot-x">×</text>}
+                {sunk && <text y={r + 12} textAnchor="middle" className="dot-label">retractado</text>}
+                {meta.paper.survey && !sunk && <text y={r + 12} textAnchor="middle" className="dot-label">survey</text>}
                 {label && here.s > 0.65 && (() => {
                   const px = sx(here.x);
                   const py = sy(here.y);
@@ -244,9 +247,14 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant 
             </p>
             <h3>{hoverPaper.paper.title || hoverId}</h3>
             <p className="authors">{[hoverPaper.paper.year, hoverPaper.paper.citationcount != null ? `${hoverPaper.paper.citationcount} citas` : null].filter((x) => x != null && x !== "").join(" · ") || "sin año ni citas en el índice"}</p>
-            {hoverPaper.paper.tldr || hoverPaper.paper.abstract
-              ? <p className="tldr">{short(hoverPaper.paper.tldr || hoverPaper.paper.abstract, 280)}</p>
-              : <p className="authors">Sin TLDR en esta respuesta.</p>}
+            {hoverPaper.paper.survey && <p className="survey-tag">survey</p>}
+            {hoverPaper.paper.retracted && <p className="retract">retractado</p>}
+            {hoverPaper.paper.abstract
+              ? <p className="tldr">{short(hoverPaper.paper.abstract, 280)}</p>
+              : hoverPaper.paper.tldr
+                ? <p className="tldr"><span className="chip chip-simulado">generado</span> {short(hoverPaper.paper.tldr, 240)}</p>
+                : <p className="authors">Solo el título: el abstract no llegó.</p>}
+            {!hoverPaper.paper.retracted && hoverPaper.paper.retraction && <p className="authors">{hoverPaper.paper.retraction}</p>}
             <div className="map-actions">
               <button type="button" className="primary" onClick={() => onOpen(hoverId!)}>Abrir</button>
               <button type="button" className="link" onClick={() => onWant(hoverId!)}>quiero leer este</button>

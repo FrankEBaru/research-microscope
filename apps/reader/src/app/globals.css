@@ -322,3 +322,19 @@ tr.row-on td { background: rgba(39,71,107,.14) !important; }
 @media (max-width: 640px) { .sim-ask { flex-direction: column; } .sim-ask button { width: 100%; } .predict .link { margin-left: 0; } .sim-progress { flex-wrap: wrap; } .sim-progress .coverage-bar { width: 100%; } }
 /* número de ecuación: en pantallas angostas va debajo, a la derecha, en vez de encimarse a la fórmula */
 @media (max-width: 760px) { .eq .katex-display > .katex > .katex-html > .tag { position: static; display: block; text-align: right; margin-top: .15rem; } .eq .katex-display > .katex { text-align: center; } }
+.node-dot.is-sunk { opacity: .55; }
+.jump-why, .survey-tag, .retract { margin: .2rem 0 .4rem; font: .82rem/1.4 var(--sans); color: var(--muted); }
+.retract { color: #8d2a2a; font-weight: 650; }
+.read-minimap { position: fixed; right: 1rem; bottom: 1rem; width: 168px; height: 108px; z-index: 25; background: #fffdf8; border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; box-shadow: 0 10px 24px -16px rgba(29,27,23,.5); }
+.read-minimap.is-big { width: 420px; height: 270px; }
+.read-minimap svg { width: 100%; height: 100%; display: block; }
+.ask-card { border: 1px solid var(--line); border-radius: 12px; padding: .8rem 1rem; margin: .8rem 0 1.2rem; background: #fff; }
+.ask-card textarea { width: 100%; min-height: 4.5rem; font: 1rem/1.45 var(--serif); border: 1px solid var(--line-2); border-radius: 10px; padding: .6rem .7rem; }
+.ask-preview { margin: .4rem 0; }
+.ask-offer { margin: .4rem 0 .8rem; }
+.extract { border-left: 3px solid var(--accent); padding-left: .7rem; margin: .45rem 0; }
+.extract blockquote { margin: .25rem 0; font-family: var(--serif); }
+.generated { margin-top: .6rem; }
+.paper.is-read tr { animation: none; }
+.source-pdf { width: 100%; height: 78vh; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.core-list li.is-sunk { opacity: .72; }

@@ -127,5 +127,5 @@ def test_reader_serves_figures_in_parallel_and_core_skips_meta():
     assert "calentando el motor" not in ui
     assert "quiero leer este" in ui
     assert "data-live-map" in ui
-    assert "volver al mapa" in ui
+    assert "Salto:" in ui and "onClick={volver}" in ui
     assert "data-devlog" in ui

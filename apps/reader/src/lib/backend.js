@@ -23,6 +23,10 @@ export function figureUrl(id, name) {
   return `${READER}/file?id=${id}&name=${encodeURIComponent(name)}&k=${TOKEN}`;
 }
 
+export function sourcePdfUrl(id) {
+  return figureUrl(id, "source.pdf");
+}
+
 export function refText(x, xref) {
   const label = x.label || "";
   if (x.number != null) return String(label).startsWith("eq") ? `(${x.number})` : String(x.number);
@@ -253,8 +257,8 @@ function panoramaTimeout() {
 export const PANORAMA_TIMEOUT_MS = panoramaTimeout();
 
 // Tiempos de espera por ruta (ms). /burst puede tardar 100–131 s si el contenedor estaba dormido.
-const TIMEOUT = { warm: 150000, burst: 150000, status: 20000, paper: 40000, panorama: PANORAMA_TIMEOUT_MS, crops: 20000, subtopics: 20000, prepare: 20000 };
-const RETRIES = { warm: 0, burst: 0, status: 2, paper: 1, panorama: 0, crops: 1, subtopics: 0, prepare: 0 };
+const TIMEOUT = { warm: 150000, burst: 150000, status: 20000, paper: 40000, panorama: PANORAMA_TIMEOUT_MS, crops: 20000, subtopics: 20000, prepare: 20000, labels: 8000, ask: 20000 };
+const RETRIES = { warm: 0, burst: 0, status: 2, paper: 1, panorama: 0, crops: 1, subtopics: 0, prepare: 0, labels: 0, ask: 0 };
 const RETRYABLE = new Set(["timeout", "network", "rate", "server"]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const override = () => (typeof globalThis.__RRM_TIMEOUT_MS === "number" ? globalThis.__RRM_TIMEOUT_MS : null);
@@ -340,4 +344,16 @@ export function crops(id, pages = "0,1,2") {
 
 export function subtopics(q) {
   return request("subtopics", `${BURST}/subtopics?q=${encodeURIComponent(q)}`);
+}
+
+export function labels(q) {
+  return request("labels", `${BURST}/labels?q=${encodeURIComponent(q)}`);
+}
+
+export function ask(ids, text) {
+  return request("ask", `${READER}/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, text }),
+  });
 }

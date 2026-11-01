@@ -8,8 +8,10 @@ import MapView from "./MapView";
 import Panorama, { LiveCoverage } from "./Panorama";
 import SimPanorama from "./SimPanorama";
 import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
-import { burst, explain, liveEnabled, paperKey, paper as fetchPaper, prepare, settled, status as fetchStatus, subtopics as fetchSubtopics, warm } from "@/lib/backend.js";
+import { burst, explain, labels as fetchLabels, liveEnabled, paperKey, paper as fetchPaper, prepare, settled, status as fetchStatus, subtopics as fetchSubtopics, warm } from "@/lib/backend.js";
 import { coreMode } from "@/lib/features.js";
+import { pinPoint } from "@/lib/layout.js";
+import { mergeLabels, popVisit, pushVisit } from "@/lib/path.js";
 import { normalizeQuestion, phaseOf, readOverflow, recallQuestion, rememberQuestion, writeOverflow } from "@/lib/qcache.js";
 import { bindDevLog, createDevLog } from "@/lib/devlog.js";
 import { LiveCircle } from "./MapView";
@@ -46,6 +48,9 @@ export default function Engine() {
   const [opened, setOpened] = useState<any>(null);
   const [devOn, setDevOn] = useState(false);
   const [asList, setAsList] = useState(false);
+  const [camino, setCamino] = useState<{ id: string; porQue: string; padre: string | null }[]>([]);
+  const [labelNote, setLabelNote] = useState("");
+  const labeled = useRef("");
   const [devTick, setDevTick] = useState(0);
   const devRef = useRef<ReturnType<typeof createDevLog> | null>(null);
   if (!devRef.current) devRef.current = createDevLog();
@@ -131,6 +136,19 @@ export default function Engine() {
   const liveIds: string[] = (liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p));
   const liveName = (id: string) => { const p = (liveResult?.papers || []).find((x: any) => paperKey(x) === id); return p ? `${String(p.title || id).slice(0, 28)}${p.year ? ` ${p.year}` : ""}` : id; };
   const liveId = live && route.p && /^\d+$/.test(route.p) ? route.p : "";
+  const abrir = useCallback((id: string, porQue: string) => {
+    const key = String(id || "");
+    if (!key) return;
+    setCamino((prev) => pushVisit(prev, key, porQue));
+    if (key === liveId) return;
+    go({ p: key });
+  }, [go, liveId]);
+  const volver = () => {
+    const next = popVisit(camino);
+    setCamino(next);
+    if (next.length) go({ p: next[next.length - 1].id });
+    else go({});
+  };
 
   useEffect(() => {
     if (!liveOn || !liveResult) return;
@@ -203,6 +221,7 @@ export default function Engine() {
           stage: doc.stage || meta.stage,
           reason: meta.reason,
           source: doc.source || meta.source,
+          pdf: Boolean(meta.pdf),
         },
       });
     };
@@ -241,6 +260,32 @@ export default function Engine() {
     })();
     return () => { stop = true; };
   }, [liveId, liveQ]);
+
+  useEffect(() => {
+    if (!liveQ) labeled.current = "";
+  }, [liveQ]);
+  const hasResult = Boolean(liveResult);
+  useEffect(() => {
+    if (!core || !liveQ || !hasResult || labeled.current === liveQ) return;
+    labeled.current = liveQ;
+    let stop = false;
+    fetchLabels(liveQ).then(
+      (body: any) => {
+        if (stop) return;
+        setLabelNote(body?.note || "");
+        setLiveResult((prev) => {
+          if (!prev) return prev;
+          const papers = mergeLabels(prev.papers || [], body);
+          const layout = body?.survey_paper ? pinPoint(prev.layout, body.survey_paper) : prev.layout;
+          return { ...prev, papers, layout };
+        });
+        const sid = body?.survey_paper?.corpusid;
+        if (sid) prepare([sid], false).catch(() => {});
+      },
+      () => { if (!stop) setLabelNote("Sin red: solo el título, sin survey."); },
+    );
+    return () => { stop = true; };
+  }, [core, liveQ, hasResult]);
 
   const onSearch = async (e: { preventDefault: () => void }) => {
     e.preventDefault();
@@ -334,14 +379,15 @@ export default function Engine() {
         {live && (liveOn || liveId) && liveId && opened && (
           <div className="lvl">
             {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
-            {core && <button type="button" className="link" onClick={backToCurated}>volver al mapa</button>}
-            <PaperView paper={opened.paper} content={content || {}} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} showInstrument={!core} showCrops={!core} />
+            {core && <button type="button" className="link" onClick={volver}>volver</button>}
+            {core && camino[camino.length - 1]?.porQue && <p className="jump-why">Salto: {camino[camino.length - 1].porQue}</p>}
+            <PaperView paper={opened.paper} content={content || {}} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} showInstrument={!core} showCrops={!core} core={core} burstIds={(liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p))} map={liveResult ? { papers: liveResult.papers || [], edges: liveResult.edges || [], layout: liveResult.layout } : null} onOpenPaper={abrir} />
           </div>
         )}
         {live && (liveOn || liveId) && liveId && !opened && (
           <div className="lvl">
             {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
-            {core && <button type="button" className="link" onClick={backToCurated}>volver al mapa</button>}
+            {core && <button type="button" className="link" onClick={volver}>volver</button>}
             <p className="center-msg">{liveErr ? "No se pudo cargar el paper (se sigue intentando)." : "Cargando…"}</p>
             {liveErr && <p className="fail-reason" role="alert">{liveErr}</p>}
           </div>
@@ -374,9 +420,10 @@ export default function Engine() {
                   <button type="button" className={!asList ? "on" : ""} onClick={() => setAsList(false)}>Mapa</button>
                   <button type="button" className={asList ? "on" : ""} onClick={() => setAsList(true)}>Lista</button>
                 </div>
+                {labelNote && <p className="muted" role="status">{labelNote}</p>}
                 {asList
-                  ? <CoreList papers={liveResult.papers || []} states={rowState} onOpen={(id: string) => go({ p: id })} onWant={wantThis} />
-                  : <LiveMap papers={liveResult.papers || []} edges={liveResult.edges || []} layout={liveResult.layout} states={rowState} onOpen={(id: string) => go({ p: id })} onWant={wantThis} />}
+                  ? <CoreList papers={liveResult.papers || []} states={rowState} onOpen={(id: string) => abrir(id, "nodo del mapa")} onWant={wantThis} />
+                  : <LiveMap papers={liveResult.papers || []} edges={liveResult.edges || []} layout={liveResult.layout} states={rowState} onOpen={(id: string) => abrir(id, "nodo del mapa")} onWant={wantThis} />}
                 <p className="muted small">Datos de papers y citas: Semantic Scholar. LaTeX primero; OCR solo si el paper no tiene LaTeX.</p>
               </>
             )}
@@ -394,7 +441,7 @@ export default function Engine() {
         )}
         {!(live && core) && !(live && (liveOn || liveId)) && level === 1 && <Area q={q} questions={questions} papers={papers} go={go} content={content} core={core} />}
         {!(live && core) && !(live && (liveOn || liveId)) && level === 2 && cluster && <Cluster q={q} cl={cluster} papers={papers} go={go} />}
-        {!(live && core) && !(live && (liveOn || liveId)) && level === 3 && paper && <PaperView paper={paper} content={content} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} showInstrument={!core} showCrops={!core} />}
+        {!(live && core) && !(live && (liveOn || liveId)) && level === 3 && paper && <PaperView paper={paper} content={content} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} showInstrument={!core} showCrops={!core} core={core} onOpenPaper={abrir} />}
         {!(live && (liveOn || liveId)) && level === 3 && !paper && <p className="center-msg">Paper no encontrado.</p>}
       </main>
 
@@ -422,19 +469,22 @@ export default function Engine() {
 }
 
 function CoreList({ papers, states, onOpen, onWant }: { papers: any[]; states: Record<string, any>; onOpen: (id: string) => void; onWant: (id: string) => void }) {
+  const ordered = [...papers].sort((a, b) => Number(Boolean(a.retracted)) - Number(Boolean(b.retracted)));
   return (
     <ol className="core-list">
-      {papers.map((p) => {
+      {ordered.map((p) => {
         const id = paperKey(p);
         const phase = phaseOf(states[id]?.status);
         const reason = states[id]?.reason;
-        const blurb = p.tldr || p.abstract || "";
         return (
-          <li key={id}>
+          <li key={id} className={p.retracted ? "is-sunk" : undefined}>
             <p className={`phase phase-${phase.id}`} data-phase={phase.id}>{phase.label}{phase.id === "fallo" && reason ? ` (${reason})` : ""}</p>
             <h2><button type="button" className="link" onClick={() => onOpen(id)}>{p.title || id}</button></h2>
             <p className="authors">{[p.year, p.citationcount != null ? `${p.citationcount} citas` : null, p.venue].filter((x) => x != null && x !== "").join(" · ")}</p>
-            {blurb ? <p className="core-blurb">{blurb}</p> : null}
+            {p.survey && <p className="survey-tag">survey</p>}
+            {p.retracted && <p className="retract">retractado</p>}
+            {p.abstract ? <p className="core-blurb">{p.abstract}</p> : p.tldr ? <p className="core-blurb"><span className="chip chip-simulado">generado</span> {p.tldr}</p> : null}
+            {!p.retracted && p.retraction && <p className="authors">{p.retraction}</p>}
             <button type="button" onClick={() => onWant(id)}>quiero leer este</button>
           </li>
         );

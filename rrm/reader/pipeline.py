@@ -60,6 +60,17 @@ def save_paper(folder: Path, paper: dict):
     (folder / "paper.json").write_text(json.dumps(paper, ensure_ascii=False), encoding="utf-8")
 
 
+def _store_phrases(folder, paper):
+    """Almacén local de frases. No llama a FAISS ni a la red."""
+    if not isinstance(paper, dict) or not paper.get("blocks"):
+        return
+    try:
+        from rrm.reader.phrases import write_phrases
+        write_phrases(folder, paper)
+    except Exception:
+        return
+
+
 def _round(timings):
     return {k: round(float(timings.get(k) or 0), 4) for k in TIMING_KEYS}
 
@@ -126,6 +137,7 @@ def _publish(folder, meta, paper, commit, stage: str):
         if stage == "sections" and meta.get("sections_s") is None:
             meta["sections_s"] = round(now - started, 4)
         save_paper(folder, paper)
+        _store_phrases(folder, paper)
     if meta.get("status") in ("done", "abstract_only", "failed"):
         meta["full_s"] = round(now - started, 4)
         if (

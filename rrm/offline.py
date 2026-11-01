@@ -90,7 +90,7 @@ class Store:
                 if len(rel.parts) != 2:
                     continue
                 cid, name = rel.parts
-                if cid.isdigit() and safe_name(name):
+                if cid.isdigit() and (safe_name(name) or name == "source.pdf"):
                     self.files[(str(int(cid)), name)] = path.resolve()
 
     def question(self, raw: str):
@@ -132,6 +132,40 @@ def live_panorama(store: Store, item):
     question, ids = parse_request(item)
     docs = {pid: _paper_doc(store.papers.get(pid)) for pid in ids}
     return meta_panorama(question, docs)
+
+
+def _json_body(handler):
+    length = int(handler.headers.get("Content-Length") or "0")
+    if length < 0 or length > 2_000_000:
+        return None, "body"
+    raw = handler.rfile.read(length) if length else b""
+    try:
+        item = json.loads(raw.decode("utf-8") or "null")
+    except (UnicodeError, json.JSONDecodeError):
+        return None, "body must be a JSON object"
+    return item, None
+
+
+def _ask(store: Store, item):
+    from rrm.reader.phrases import collect_phrases
+    from rrm.reader.verify import answer
+
+    ids = item.get("ids") if isinstance(item, dict) else []
+    text = item.get("text") if isinstance(item, dict) else ""
+    rows = []
+    for raw in ids or []:
+        try:
+            cid = str(int(raw))
+        except (TypeError, ValueError):
+            continue
+        doc = _paper_doc(store.papers.get(cid))
+        if not isinstance(doc, dict):
+            continue
+        if doc.get("corpusid") is None:
+            doc = dict(doc)
+            doc["corpusid"] = int(cid)
+        rows.extend(collect_phrases(doc))
+    return answer(rows, text or "")
 
 
 def build_handler(store: Store):
@@ -262,21 +296,34 @@ def build_handler(store: Store):
                     body["crops"] = [row for row in rows if row.get("page") in set(wanted)]
                 self._json(200, body)
                 return
+            if path == "/labels":
+                from rrm.search.labels import OFFLINE_NOTE
+                self._json(200, {"ok": False, "note": OFFLINE_NOTE, "by_id": {}, "survey_paper": None})
+                return
             if path == "/file":
                 cid = cid_of()
                 name = one("name")
-                path_file = store.files.get((cid, name)) if cid and safe_name(name) else None
+                allowed = bool(cid) and (safe_name(name) or name == "source.pdf")
+                path_file = store.files.get((cid, name)) if allowed else None
                 if path_file is None or not path_file.is_file():
                     self._json(*_miss())
                     return
                 data = path_file.read_bytes()
-                self._send(200, data, _TYPES[path_file.suffix.lower()], cache="public, max-age=86400")
+                media = "application/pdf" if name == "source.pdf" else _TYPES[path_file.suffix.lower()]
+                self._send(200, data, media, cache="public, max-age=86400")
                 return
             self._json(*_miss())
 
         def do_POST(self):
             url = urlparse(self.path)
             path = url.path.rstrip("/") or "/"
+            if path == "/ask":
+                item, err = _json_body(self)
+                if err:
+                    self._json(400, {"error": err})
+                    return
+                self._json(200, _ask(store, item))
+                return
             if path == "/prepare":
                 length = int(self.headers.get("Content-Length") or "0")
                 if length < 0 or length > 2_000_000:

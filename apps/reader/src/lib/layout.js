@@ -366,3 +366,10 @@ export function mapCaption(layout) {
     note: "",
   };
 }
+
+export function pinPoint(layout, paper) {
+  if (!layout || !paper || !Number.isInteger(paper.corpusid)) return layout;
+  const points = Array.isArray(layout.points) ? layout.points : [];
+  if (points.some((point) => point.corpusid === paper.corpusid)) return layout;
+  return { ...layout, points: [...points, { corpusid: paper.corpusid, x: 1488, y: 96, rank: points.length, cluster: 0 }] };
+}

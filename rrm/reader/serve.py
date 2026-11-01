@@ -27,7 +27,7 @@ from rrm.demo_warm import scaledown_window
 from rrm.features import core_mode, features_mode
 from rrm.panorama import docs_for, parse_request, run as run_panorama
 from rrm.search.qcache import CACHE_DIR, apply_status_cache, load_entry, save_entry, status_map
-from rrm.reader.files import resolve_figure
+from rrm.reader.files import resolve_figure, resolve_source_pdf
 
 import rrm.reader.fetch as _fetch
 from rrm.reader.fetch import ARXIV, arxiv_index_at, arxiv_pdf, arxiv_slot_start, reader_identity
@@ -464,6 +464,14 @@ def _heal_figures(folder: Path, paper):
         return
 
 
+def _with_pdf(folder: Path, body: dict) -> dict:
+    meta = dict(body.get("meta") or {})
+    meta["pdf"] = (Path(folder) / "source.pdf").is_file()
+    out = dict(body)
+    out["meta"] = meta
+    return out
+
+
 def read_paper(id: str):
     """Return whatever is already readable. Parsing continues in the background."""
     vol.reload()
@@ -475,7 +483,7 @@ def read_paper(id: str):
     if meta and meta.get("status") in ("done", "abstract_only", "failed"):
         paper = load_paper(folder)
         _heal_figures(folder, paper)
-        return {"status": meta["status"], "meta": meta, "paper": paper, "cached": True}
+        return _with_pdf(folder, {"status": meta["status"], "meta": meta, "paper": paper, "cached": True})
     try:
         prioritize(cid)
     except Exception:
@@ -490,7 +498,7 @@ def read_paper(id: str):
     else:
         _heal_figures(folder, paper_obj)
     meta = load_meta(folder) or {}
-    return {"status": meta.get("status"), "meta": meta, "paper": paper_obj, "cached": False}
+    return _with_pdf(folder, {"status": meta.get("status"), "meta": meta, "paper": paper_obj, "cached": False})
 
 
 @app.function(image=cpu_image, volumes={DATA: vol}, cpu=2, memory=4096, timeout=600, secrets=[secret])
@@ -735,6 +743,19 @@ def api():
             return denied
         return read_status(ids, question=q)
 
+    @web.post("/ask")
+    async def route_ask(request: Request):
+        """Busca en el almacén de frases. linea_final no llama a Meta."""
+        denied = gate(request, False)
+        if denied:
+            return denied
+        item = await request.json()
+        item = item or {}
+        from rrm.reader.phrases import load_rows
+        from rrm.reader.verify import answer
+
+        return answer(load_rows(PAPERS, item.get("ids") or []), item.get("text") or "")
+
     @web.post("/prepare")
     async def route_prepare(request: Request):
         denied = gate(request, False)
@@ -785,6 +806,13 @@ def api():
             except Exception:
                 path = None
         if path is None:
+            pdf = resolve_source_pdf(PAPERS, id, name)
+            if pdf is not None:
+                return FileResponse(
+                    pdf,
+                    media_type="application/pdf",
+                    headers={"Cache-Control": "public, max-age=86400", "X-Content-Type-Options": "nosniff"},
+                )
             return Response(status_code=404)
         return FileResponse(
             path,
