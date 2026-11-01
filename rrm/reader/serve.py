@@ -72,7 +72,8 @@ SAM_USD_PER_IMAGE = 0.0025
 cpu_image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("nodejs", "npm", "ghostscript", "ca-certificates")
-    .pip_install("pymupdf", "requests", "pyarrow", "numpy", "fastapi[standard]")
+    .pip_install("torch", extra_index_url="https://download.pytorch.org/whl/cpu")
+    .pip_install("pymupdf", "requests", "pyarrow", "numpy", "fastapi[standard]", "transformers", "adapters")
     .run_commands("npm install --prefix /opt/katex katex@0.19.1")
     .env({"NODE_PATH": "/opt/katex/node_modules"})
     .add_local_python_source("rrm")
@@ -806,7 +807,9 @@ def api():
             from rrm.reader.phrases import store_progress
 
             return {"extracts": [], "papers": 0, "line": "", "empty": True, "matched": 0, "parts": {}, "note": "", "store": store_progress(PAPERS, ids)}
-        return answer(load_rows(PAPERS, ids), text, ids=ids, root=PAPERS)
+        from rrm.reader.similar import encode_texts
+
+        return answer(load_rows(PAPERS, ids), text, ids=ids, root=PAPERS, encode=encode_texts, stage=item.get("stage") or "todo")
 
     @web.post("/prepare")
     async def route_prepare(request: Request):

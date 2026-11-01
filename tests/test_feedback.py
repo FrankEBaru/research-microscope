@@ -82,6 +82,7 @@ def test_review_uses_the_mock_and_stops_when_the_check_is_garbage():
 
     def complete(body):
         calls["n"] += 1
+        assert body["reasoning"]["effort"] == "minimal"
         if calls["n"] == 1:
             raw = {
                 "coincide": [{"text": "Habla de atención.", "cite": "Attention is all you need", "paper_id": "7"}],

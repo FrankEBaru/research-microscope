@@ -148,6 +148,7 @@ def _json_body(handler):
 
 def _ask(store: Store, item):
     from rrm.reader.phrases import collect_phrases
+    from rrm.reader.similar import encode_texts
     from rrm.reader.verify import answer
 
     ids = item.get("ids") if isinstance(item, dict) else []
@@ -165,7 +166,8 @@ def _ask(store: Store, item):
             doc = dict(doc)
             doc["corpusid"] = int(cid)
         rows.extend(collect_phrases(doc))
-    return answer(rows, text or "", ids=ids)
+    stage = item.get("stage") if isinstance(item, dict) else ""
+    return answer(rows, text or "", ids=ids, encode=encode_texts, stage=stage or "todo")
 
 
 def build_handler(store: Store):

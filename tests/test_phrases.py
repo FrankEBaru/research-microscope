@@ -80,6 +80,51 @@ def test_symbol_letter_is_capped_and_not_a_substring():
     assert all(row["paper"] == 1 for row in hits)
 
 
+def test_spanish_and_english_rank_the_matching_english_phrase():
+    from rrm.reader.similar import rank_similar
+
+    rows = [
+        {"paper": 7, "text": "Attention is all you need for this model."},
+        {"paper": 8, "text": "We scale the learning rate with data."},
+        {"paper": 99, "text": "Photosynthesis converts sunlight into sugar."},
+    ]
+    spanish, _total = rank_similar(rows, "La atención basta para este modelo.")
+    english, _total = rank_similar(rows, "We scale the learning rate with data.")
+    assert spanish[0]["paper"] == 7
+    assert english[0]["paper"] == 8
+
+
+def test_similar_does_not_encode_papers_outside_the_store():
+    from rrm.reader.similar import local_encode, rank_similar
+
+    seen = []
+
+    def encode(texts):
+        seen.extend(texts)
+        return local_encode(texts)
+
+    rows = [
+        {"paper": 7, "text": "Attention is all you need for this model."},
+        {"paper": 8, "text": "We scale the learning rate with data."},
+    ]
+    rank_similar(rows, "La atención basta para este modelo.", encode)
+    blob = " ".join(seen)
+    assert "Attention is all you need" in blob
+    assert "Photosynthesis" not in blob
+
+
+def test_phrase_stage_skips_meta(monkeypatch):
+    def explode(*_args, **_kwargs):
+        raise AssertionError("meta")
+
+    monkeypatch.setattr("rrm.reader.feedback.review", explode)
+    rows = [{"paper": 7, "text": "Attention is all you need for this model."}]
+    body = answer(rows, "La atención basta para este modelo.", stage="frases")
+    assert body["extracts"][0]["paper"] == 7
+    assert body["parts"]["coincide"] == []
+    assert body["note"] == ""
+
+
 def test_linea_final_is_empty_and_does_not_touch_the_network(monkeypatch):
     def explode(*_args, **_kwargs):
         raise AssertionError("red")

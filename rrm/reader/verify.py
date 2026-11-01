@@ -63,18 +63,17 @@ def linea_final(citas):
     return ""
 
 
-def answer(rows, text, *, ids=None, root=None):
+def answer(rows, text, *, ids=None, root=None, encode=None, stage="todo"):
     from rrm.reader.feedback import PARTS, review
-    from rrm.reader.phrases import rank_phrases, store_progress
+    from rrm.reader.phrases import store_progress
+    from rrm.reader.similar import rank_similar
 
-    hits, matched = rank_phrases(rows, text) if (text or "").strip() else ([], 0)
-    parts, note, meta = review(text, hits) if hits else ({part: [] for part in PARTS}, "", None)
+    hits, matched = rank_similar(rows, text, encode) if (text or "").strip() else ([], 0)
+    skip = stage == "frases"
+    parts, note, meta = review(text, hits) if hits and not skip else ({part: [] for part in PARTS}, "", None)
     if not hits and (text or "").strip():
-        from rrm.reader.metacall import meta_status, note_for
-
-        status = meta_status()
-        if status:
-            note = note_for(status)
+        had = any(isinstance(row, dict) and (row.get("text") or "").strip() for row in rows or [])
+        note = "No pude comparar la explicación con las frases." if had else "No hay frases guardadas de estos papers."
     seen = []
     for row in hits:
         key = row.get("paper")

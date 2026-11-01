@@ -350,7 +350,7 @@ export function labels(q) {
   return request("labels", `${BURST}/labels?q=${encodeURIComponent(q)}`);
 }
 
-export function ask(ids, text) {
+export function ask(ids, text, stage) {
   if (!READER) {
     return Promise.resolve({
       extracts: [], papers: 0, line: "", empty: false, matched: 0, parts: {},
@@ -360,6 +360,6 @@ export function ask(ids, text) {
   return request("ask", `${READER}/ask`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, text }),
+    body: JSON.stringify({ ids, text, stage: stage || "" }),
   });
 }

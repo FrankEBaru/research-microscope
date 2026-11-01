@@ -15,9 +15,9 @@ _PROMPT = (
     "La cita es un trozo literal de una sola frase. paper_id es el de esa frase."
 )
 _CHECK = (
-    "Para cada punto responde si la cita respalda el texto (coincide y te_falto), "
-    "si lo contradice (contradice), o si ninguna frase lo respalda (sin_respaldo). "
-    'JSON {"keep":[true,false]} en el mismo orden. Un punto dudoso es false.'
+    "Para cada punto, en orden: true si la cita respalda (coincide, te_falto), "
+    "si contradice (contradice), o si ninguna frase lo respalda (sin_respaldo). "
+    "Un punto dudoso es false. Responde solo el arreglo keep."
 )
 
 
@@ -47,7 +47,7 @@ def _phrases(citations):
 
 def _body(user, name, schema, tokens, prompt):
     return {
-        "model": MODEL, "store": False, "reasoning": {"effort": "low"}, "max_output_tokens": tokens,
+        "model": MODEL, "store": False, "reasoning": {"effort": "minimal"}, "max_output_tokens": tokens,
         "input": [{"role": "developer", "content": prompt}, {"role": "user", "content": user}],
         "text": {"format": _schema(name, schema)},
     }
@@ -118,7 +118,7 @@ def review(explanation, citations, complete=None):
     call = complete or post_responses
     user = f"Explicación:\n{explanation.strip()}\n\nFrases:\n{_phrases(citations)}"
     try:
-        first = call(_body(user, "caja", _point_schema(), 2500, _PROMPT))
+        first = call(_body(user, "caja", _point_schema(), 1200, _PROMPT))
     except Exception:
         return empty, note_for("red"), usage_cost(None)
     cost = usage_cost(first.get("usage") if isinstance(first, dict) else None)
@@ -139,7 +139,7 @@ def review(explanation, citations, complete=None):
         for i, (part, item) in enumerate(rows)
     )
     try:
-        second = call(_body(f"Frases:\n{_phrases(citations)}\n\nPuntos:\n{listed}", "chequeo", check, 2000, _CHECK))
+        second = call(_body(f"Frases:\n{_phrases(citations)}\n\nPuntos:\n{listed}", "chequeo", check, 800, _CHECK))
     except Exception:
         return empty, note_for("red"), cost
     cost = add_usage(cost, usage_cost(second.get("usage") if isinstance(second, dict) else None))

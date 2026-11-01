@@ -34,6 +34,7 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPr
   const [result, setResult] = useState<any>(null);
   const [store, setStore] = useState<any>(null);
   const [err, setErr] = useState("");
+  const [progress, setProgress] = useState("");
   const key = (ids || []).join(",");
   useEffect(() => {
     if (!key) return;
@@ -55,15 +56,22 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPr
     if (!text.trim() || busy) return;
     setBusy(true);
     setErr("");
+    setProgress("buscando frases en los papers…");
     onPromote?.();
     try {
-      const body = await ask(ids || [], text);
+      const ranked = await ask(ids || [], text, "frases");
+      setResult(ranked);
+      if (ranked?.store) setStore(ranked.store);
+      if (ranked?.empty) return;
+      setProgress("revisando cada cita…");
+      const body = await ask(ids || [], text, "revisar");
       setResult(body);
       if (body?.store) setStore(body.store);
     } catch {
       setErr("No pude buscar en las frases guardadas.");
     } finally {
       setBusy(false);
+      setProgress("");
     }
   };
   const groups = group(result?.extracts || []);
@@ -82,8 +90,9 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPr
       <textarea aria-label="Qué entendiste" value={text} onChange={(event) => setText(event.target.value)} placeholder="En tus palabras. El LaTeX va entre $." />
       {text.trim() && <div className="ask-preview" aria-hidden="true"><Rich text={text} /></div>}
       <button type="submit" disabled={busy || !text.trim()}>Enviar</button>
+      {progress && <p className="small" role="status">{progress}</p>}
       {err && <p className="fail-reason">{err}</p>}
-      {result?.empty && <p role="status">No encontré esas palabras.</p>}
+      {result?.empty && <p role="status">{result.note || "No hay frases guardadas de estos papers."}</p>}
       {result && !result.empty && (
         <div className="extracts">
           <p className="ask-label">estos papers dicen ({result.papers})</p>
@@ -96,7 +105,7 @@ export default function AskBox({ sectionLabel, ids, onOpen, closed, onSkip, onPr
           ))}
         </div>
       )}
-      {(result?.note || hasParts) && (
+      {!result?.empty && (result?.note || hasParts) && (
         <div className="feedback generated">
           <p><span className="chip chip-simulado">generado</span></p>
           {result?.note && <p>{result.note}</p>}
