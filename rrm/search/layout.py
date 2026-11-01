@@ -510,17 +510,35 @@ _STOP = frozenset(
     proposed model models data dataset datasets algorithm algorithms which where
     when while than then also can may such not only more most other into within
     between without across per each both all any few many one two three
+    retraction retracted phys conf ser proceedings preprint copyright doi figure
+    table university department page pages vol volume issue springer elsevier
     """.split()
 )
 
 
+def _keep(word):
+    return word not in _STOP and not word.isdigit() and len(word) > 2
+
+
 def _terms(text):
-    words = [
-        w for w in re.findall(r"[a-z][a-z0-9]+(?:-[a-z0-9]+)*", str(text or "").lower())
-        if w not in _STOP and not w.isdigit() and len(w) > 2
+    raw = re.findall(r"[a-z][a-z0-9]+(?:-[a-z0-9]+)*", str(text or "").lower())
+    words = [word for word in raw if _keep(word)]
+    # Bigrams only when the two words were next to each other. Dropping a
+    # stopword must not glue "relationship" to "architecture".
+    bigrams = [
+        f"{a} {b}" for a, b in zip(raw, raw[1:])
+        if _keep(a) and _keep(b) and a not in b and b not in a
     ]
-    bigrams = [f"{a} {b}" for a, b in zip(words, words[1:]) if a not in b and b not in a]
     return words + bigrams
+
+
+def _stem(term):
+    parts = []
+    for word in term.split():
+        if len(word) > 4 and word.endswith("s"):
+            word = word[:-1]
+        parts.append(word)
+    return " ".join(parts)
 
 
 def _cluster_names(rows, clusters):
@@ -529,39 +547,53 @@ def _cluster_names(rows, clusters):
 
     ids = sorted(set(clusters))
     counts = {cid: Counter() for cid in ids}
+    docs = {cid: Counter() for cid in ids}
+    titles = {cid: Counter() for cid in ids}
     for row, cid in zip(rows, clusters):
-        blob = f"{row.get('title') or ''} {row.get('abstract') or ''}"
-        counts[cid].update(_terms(blob))
+        title = _terms(row.get("title"))
+        abstract = _terms(row.get("abstract"))
+        counts[cid].update(title)
+        counts[cid].update(title)
+        counts[cid].update(title)
+        counts[cid].update(abstract)
+        docs[cid].update(set(title) | set(abstract))
+        titles[cid].update(set(title))
     total = Counter()
     for ctr in counts.values():
         total.update(ctr)
     sizes = [sum(ctr.values()) for ctr in counts.values() if ctr]
     avg = (sum(sizes) / len(sizes)) if sizes else 1.0
-    names = {}
+    pool = []
     for cid in ids:
-        scored = []
         for term, tf in counts[cid].items():
-            everywhere = float(total[term] or tf)
-            scored.append((tf * math.log1p(avg / everywhere), term))
-        scored.sort(key=lambda item: (-item[0], -len(item[1]), item[1]))
-        unigrams = [term for _score, term in scored if " " not in term]
-        top_uni = unigrams[0] if unigrams else ""
-        phrase = next((term for _score, term in scored if " " in term and top_uni and top_uni in term.split()), "")
-        if not phrase:
-            phrase = next((term for _score, term in scored if " " in term), "")
-        best = scored[0][0] if scored else 0.0
-        phrase_score = next((score for score, term in scored if term == phrase), 0.0)
-        if phrase and (phrase_score >= 0.45 * (best or 1.0) or top_uni in phrase.split()):
-            names[cid] = phrase[:48]
-            continue
-        picked = []
-        for _score, term in scored:
-            if any(term in prev or prev in term for prev in picked):
+            if titles[cid][term] < 2:
                 continue
-            picked.append(term)
-            if len(picked) == 2:
-                break
-        names[cid] = (" ".join(picked[:2]) if picked else "grupo")[:48]
+            if " " not in term or not 2 <= len(term.split()) <= 4:
+                continue
+            everywhere = float(total[term] or tf)
+            pool.append((tf * math.log1p(avg / everywhere), cid, term))
+    pool.sort(key=lambda item: (-item[0], -len(item[2]), item[2]))
+    names = {}
+    used = set()
+    used_words = set()
+    for _score, cid, term in pool:
+        if cid in names:
+            continue
+        stem = _stem(term)
+        if stem in used or all(word in used_words for word in stem.split()):
+            continue
+        names[cid] = term[:48]
+        used.add(stem)
+        used_words.update(stem.split())
+    for cid in ids:
+        if cid in names:
+            continue
+        words = [
+            term for term, _tf in counts[cid].most_common()
+            if " " not in term and titles[cid][term] >= 3 and _stem(term) not in used_words
+        ]
+        names[cid] = (words[0] if words else "grupo")[:48]
+        used_words.update(_stem(names[cid]).split())
     return names
 
 
@@ -633,173 +665,120 @@ def _agglomerate(sim):
     return _renumber([find(i) for i in range(n)])
 
 
-def _centroids(unit, clusters):
+def _kmeans(unit, k):
     import numpy as np
 
-    ids = sorted(set(clusters))
-    out = {}
-    for cid in ids:
-        block = unit[[i for i, c in enumerate(clusters) if c == cid]]
-        mean = block.mean(axis=0)
-        norm = float(np.linalg.norm(mean)) or 1e-9
-        out[cid] = mean / norm
-    return out
-
-
-def _absorb_and_cap(unit, clusters, cap=6):
-    import numpy as np
-
-    clusters = list(clusters)
-    n = len(clusters)
-    if n == 0:
-        return clusters
-    changed = True
-    while changed:
-        changed = False
-        counts = {}
-        for cid in clusters:
-            counts[cid] = counts.get(cid, 0) + 1
-        cents = _centroids(unit, clusters)
-        ids = list(cents)
-        if len(ids) > cap:
-            best = None
-            for i, a in enumerate(ids):
-                for b in ids[i + 1 :]:
-                    cos = float(cents[a] @ cents[b])
-                    if best is None or cos > best[0]:
-                        best = (cos, a, b)
-            if best is not None:
-                _a, left, right = best
-                clusters = [left if cid == right else cid for cid in clusters]
-                changed = True
+    n = int(unit.shape[0])
+    k = int(min(max(k, 1), n))
+    chosen = [int(np.argmax(np.linalg.norm(unit - unit.mean(axis=0), axis=1)))]
+    for _ in range(k - 1):
+        nearest = np.max(unit @ unit[chosen].T, axis=1)
+        chosen.append(int(np.argmin(nearest)))
+    cents = unit[np.asarray(chosen)].copy()
+    labels = np.zeros(n, dtype=np.int64)
+    for _ in range(18):
+        labels = np.argmax(unit @ cents.T, axis=1)
+        for j in range(k):
+            block = unit[labels == j]
+            if len(block) == 0:
+                cents[j] = unit[(chosen[0] + j) % n]
                 continue
-        singles = [cid for cid, count in counts.items() if count == 1]
-        hosts = [cid for cid, count in counts.items() if count >= 2]
-        if not singles or not hosts:
-            break
-        for cid in singles:
-            i = clusters.index(cid)
-            best_host, best_cos = None, -2.0
-            for host in hosts:
-                cos = float(unit[i] @ cents[host])
-                if cos > best_cos:
-                    best_host, best_cos = host, cos
-            if best_host is not None and best_cos >= 0.50:
-                clusters[i] = best_host
-                changed = True
-        if not changed and len(singles) > 4:
-            keep = singles[0]
-            clusters = [keep if cid in singles[1:] else cid for cid in clusters]
-            changed = True
-    return _renumber(clusters)
+            mean = block.mean(axis=0)
+            cents[j] = mean / (float(np.linalg.norm(mean)) or 1e-9)
+    return labels
 
 
-def _bisect_large(unit, clusters):
+def _silhouette(unit, labels):
     import numpy as np
 
-    clusters = list(clusters)
-    n = len(clusters)
-    if n < 16:
-        return clusters
-    counts = {}
-    for cid in clusters:
-        counts[cid] = counts.get(cid, 0) + 1
-    big = max(counts, key=counts.get)
-    if counts[big] < max(12, int(0.75 * n)):
-        return clusters
-    idx = [i for i, cid in enumerate(clusters) if cid == big]
-    coords = _pca(unit[idx])
-    xs = coords[:, 0]
-    if float(np.std(xs)) < 1e-5:
-        return clusters
-    med = float(np.median(xs))
-    right = [i for i, x in zip(idx, xs.tolist()) if x > med]
-    left = [i for i in idx if i not in set(right)]
-    if len(left) < 3 or len(right) < 3:
-        return clusters
-    left_mean = unit[left].mean(axis=0)
-    right_mean = unit[right].mean(axis=0)
-    denom = float(np.linalg.norm(left_mean) * np.linalg.norm(right_mean)) or 1e-9
-    if float(left_mean @ right_mean / denom) >= 0.90:
-        return clusters
-    fresh = max(clusters) + 1
-    for i in right:
-        clusters[i] = fresh
-    return _renumber(clusters)
+    dist = np.clip(1.0 - (unit @ unit.T), 0.0, 2.0)
+    np.fill_diagonal(dist, 0.0)
+    labels = np.asarray(labels)
+    kinds = sorted(set(int(c) for c in labels.tolist()))
+    if len(kinds) < 2:
+        return -1.0
+    total = 0.0
+    n = len(labels)
+    for i in range(n):
+        mine = labels == labels[i]
+        mine[i] = False
+        if not bool(mine.any()):
+            continue
+        a = float(dist[i, mine].mean())
+        b = min(float(dist[i, labels == c].mean()) for c in kinds if c != int(labels[i]))
+        total += (b - a) / max(a, b, 1e-9)
+    return total / float(n)
 
 
-def _disk(pos, radius):
-    if not pos:
-        return
-    xs = [p[0] for p in pos]
-    ys = [p[1] for p in pos]
-    cx = (min(xs) + max(xs)) / 2
-    cy = (min(ys) + max(ys)) / 2
-    span = 0.0
-    for p in pos:
-        span = max(span, math.hypot(p[0] - cx, p[1] - cy))
-    if span < 1e-4:
-        m = len(pos)
-        ring = max(radius * 0.45, 16.0)
-        for i, p in enumerate(pos):
-            ang = -math.pi / 2 + (2 * math.pi * i) / max(m, 1)
-            p[0] = ring * math.cos(ang)
-            p[1] = ring * math.sin(ang) + radius * 0.12
-        return
-    scale = (radius * 0.72) / span
-    for p in pos:
-        p[0] = (p[0] - cx) * scale
-        p[1] = (p[1] - cy) * scale + radius * 0.2
+def _median_groups(unit, target):
+    """Split the biggest group on its first axis until there are `target` groups.
+
+    k-means on a tight FAISS ball isolates one outlier. A median cut keeps
+    every group large enough to read.
+    """
+    import numpy as np
+
+    groups = [list(range(int(unit.shape[0])))]
+    while len(groups) < target:
+        groups.sort(key=len)
+        big = groups.pop()
+        if len(big) < 10:
+            groups.append(big)
+            break
+        block = unit[np.asarray(big)]
+        centered = block - block.mean(axis=0)
+        vec = centered[int(np.argmax(np.linalg.norm(centered, axis=1)))]
+        for _ in range(8):
+            vec = centered.T @ (centered @ vec)
+            norm = float(np.linalg.norm(vec))
+            if norm < 1e-9:
+                break
+            vec /= norm
+        order = np.argsort(centered @ vec)
+        mid = len(big) // 2
+        groups.append([big[int(i)] for i in order[:mid]])
+        groups.append([big[int(i)] for i in order[mid:]])
+    labels = [0] * int(unit.shape[0])
+    for cid, members in enumerate(groups):
+        for i in members:
+            labels[i] = cid
+    return labels
 
 
-def _force_local(pos, edges, steps=36):
-    n = len(pos)
-    if n <= 2 or not edges:
-        return
-    k = max(0.4, math.sqrt(n) * 0.55)
-    for step in range(steps):
-        temp = 0.28 * (1 - step / max(steps, 1)) + 0.02
-        disp = [[0.0, 0.0] for _ in range(n)]
-        for i in range(n):
-            for j in range(i + 1, n):
-                dx = pos[i][0] - pos[j][0]
-                dy = pos[i][1] - pos[j][1]
-                dist = math.hypot(dx, dy) or 0.01
-                push = (k * k) / dist * 0.12
-                ux, uy = dx / dist, dy / dist
-                disp[i][0] += ux * push
-                disp[i][1] += uy * push
-                disp[j][0] -= ux * push
-                disp[j][1] -= uy * push
-        for i, j in edges:
-            dx = pos[i][0] - pos[j][0]
-            dy = pos[i][1] - pos[j][1]
-            dist = math.hypot(dx, dy) or 0.01
-            pull = (dist * dist) / k * 0.4
-            ux, uy = dx / dist, dy / dist
-            disp[i][0] -= ux * pull
-            disp[i][1] -= uy * pull
-            disp[j][0] += ux * pull
-            disp[j][1] += uy * pull
-        for i in range(n):
-            dist = math.hypot(disp[i][0], disp[i][1]) or 1.0
-            scale = min(dist, temp) / dist
-            pos[i][0] += disp[i][0] * scale
-            pos[i][1] += disp[i][1] * scale
+def _groups_of(unit):
+    """3 to 6 groups. k by silhouette when every group has enough papers."""
+    n = int(unit.shape[0])
+    if n < 12:
+        return _agglomerate(unit @ unit.T)
+    floor = 5 if n >= 25 else 3
+    hi = min(6, max(3, n // floor))
+    best, score = None, -2.0
+    for k in range(3, hi + 1):
+        labels = _kmeans(unit, k)
+        counts = {}
+        for cid in labels.tolist():
+            counts[int(cid)] = counts.get(int(cid), 0) + 1
+        if len(counts) < 3 or min(counts.values()) < floor:
+            continue
+        got = _silhouette(unit, labels)
+        if got > score:
+            best, score = labels.tolist(), got
+    if best is None:
+        best = _median_groups(unit, min(4, hi))
+    return _renumber(best)
 
 
-def _local_knn(unit, indexes):
-    m = len(indexes)
-    radius = 36.0 + 20.0 * math.sqrt(m)
-    if m == 1:
-        return [[0.0, radius * 0.05]], radius
-    # PCA, then a scale into the disk. Force on this graph pulled every point
-    # to the rim and left a hole. `_force_local` stays in the file, unused.
-    pos = _pca(unit[indexes]).tolist()
-    _disk(pos, radius)
-    gap = min(12.0, max(7.0, radius * 0.045))
-    # A local nudge when two points still share a pixel. `_separate` clamps to the world and is the wrong scale here.
-    for _ in range(8):
+def _local_pack(m):
+    """Even dots inside the circle. A collapsed PCA left them stacked."""
+    gap = 30.0
+    if m <= 1:
+        return [[0.0, 0.0]], 40.0
+    pos = []
+    for i in range(m):
+        rad = gap * 0.5 * math.sqrt(i)
+        ang = i * 2.39996323
+        pos.append([rad * math.cos(ang), rad * math.sin(ang)])
+    for _ in range(10):
         moved = False
         for i in range(m):
             for j in range(i + 1, m):
@@ -810,31 +789,18 @@ def _local_knn(unit, indexes):
                     continue
                 moved = True
                 if dist < 0.01:
-                    dx, dy, dist = 0.0, 1.0, 1.0
-                push = (gap - dist) / 2 + 0.2
+                    dx, dy, dist = 1.0, 0.0, 1.0
+                push = (gap - dist) / 2
                 pos[i][0] -= dx / dist * push
                 pos[i][1] -= dy / dist * push
                 pos[j][0] += dx / dist * push
                 pos[j][1] += dy / dist * push
         if not moved:
             break
-    # A few far papers would otherwise set the scale and leave the rest as a knot.
-    dists = sorted(math.hypot(p[0], p[1]) for p in pos)
-    knee = dists[min(m - 1, max(0, int(0.85 * (m - 1))))]
-    want = radius * 0.50
-    if knee > 1.0 and knee < want:
-        scale = want / knee
-        limit = radius * 0.72
-        for p in pos:
-            p[0] *= scale
-            p[1] *= scale
-            dist = math.hypot(p[0], p[1])
-            if dist > limit and dist > 0:
-                p[0] *= limit / dist
-                p[1] *= limit / dist
-    span = max((math.hypot(p[0], p[1]) for p in pos), default=0.0)
-    radius = max(radius, span / 0.72)
-    return pos, radius
+    span = max(math.hypot(p[0], p[1]) for p in pos)
+    return pos, span + gap * 0.75
+
+
 
 
 def _pack(radii, gap=88.0):
@@ -844,7 +810,7 @@ def _pack(radii, gap=88.0):
         return []
     if g == 1:
         return [(0.0, 0.0)]
-    cols = g if g <= 3 else 3
+    cols = g
     centers = []
     rows = [radii[i : i + cols] for i in range(0, g, cols)]
     row_gap = gap + 36.0
@@ -883,41 +849,6 @@ def _fit_groups(centers, radii):
     return fitted, [r * scale for r in radii]
 
 
-def _spread_in_groups(world, clusters, center_of, radius_of):
-    """Keep dots from sitting on each other. Focus papers need a wider gap."""
-    n = len(world)
-    for _ in range(18):
-        moved = False
-        for i in range(n):
-            for j in range(i + 1, n):
-                dx = world[j][0] - world[i][0]
-                dy = world[j][1] - world[i][1]
-                dist = math.hypot(dx, dy)
-                gap = 46.0 if i < 10 or j < 10 else 18.0
-                if dist >= gap:
-                    continue
-                moved = True
-                if dist < 0.01:
-                    dx, dy, dist = 0.0, 1.0, 1.0
-                push = (gap - dist) / 2 + 0.3
-                world[i][0] -= dx / dist * push
-                world[i][1] -= dy / dist * push
-                world[j][0] += dx / dist * push
-                world[j][1] += dy / dist * push
-                for idx in (i, j):
-                    cid = clusters[idx]
-                    cx, cy = center_of[cid]
-                    limit = radius_of[cid] * 0.84
-                    ox = world[idx][0] - cx
-                    oy = world[idx][1] - cy
-                    span = math.hypot(ox, oy)
-                    if span > limit and span > 0:
-                        world[idx][0] = cx + ox / span * limit
-                        world[idx][1] = cy + oy / span * limit
-        if not moved:
-            break
-
-
 def _knn_map(rows, edges, vectors):
     import numpy as np
 
@@ -929,26 +860,29 @@ def _knn_map(rows, edges, vectors):
     norms = np.clip(np.linalg.norm(raw, axis=1, keepdims=True), 1e-9, None)
     unit = raw / norms
     sim = unit @ unit.T
-    clusters = _absorb_and_cap(unit, _bisect_large(unit, _agglomerate(sim)))
+    clusters = _groups_of(unit)
     names = _cluster_names(rows, clusters)
     members = {}
     for i, cid in enumerate(clusters):
         members.setdefault(cid, []).append(i)
-    order = sorted(members)
+    axis = _pca(unit)[:, 0]
+    order = sorted(members, key=lambda cid: float(sum(axis[i] for i in members[cid]) / len(members[cid])))
     local = {}
     radii = []
     for cid in order:
-        pos, radius = _local_knn(unit, members[cid])
+        pos, radius = _local_pack(len(members[cid]))
         local[cid] = pos
         radii.append(radius)
+    raw_radii = list(radii)
     centers, radii = _fit_groups(_pack(radii), radii)
     world = [[0.0, 0.0] for _ in range(n)]
     groups = []
-    for cid, center, radius in zip(order, centers, radii):
+    for cid, center, radius, raw in zip(order, centers, radii, raw_radii):
         sx, sy = center
+        grown = radius / max(raw, 1.0)
         for slot, i in enumerate(members[cid]):
-            world[i][0] = sx + local[cid][slot][0]
-            world[i][1] = sy + local[cid][slot][1]
+            world[i][0] = sx + local[cid][slot][0] * grown
+            world[i][1] = sy + local[cid][slot][1] * grown
         groups.append({
             "id": int(cid),
             "n": len(members[cid]),
@@ -958,9 +892,6 @@ def _knn_map(rows, edges, vectors):
             "cy": round(sy, 2),
             "r": round(radius, 2),
         })
-    center_of = {cid: center for cid, center in zip(order, centers)}
-    radius_of = {cid: radius for cid, radius in zip(order, radii)}
-    _spread_in_groups(world, clusters, center_of, radius_of)
     for p in world:
         p[0] = min(WORLD_W - 36, max(36, p[0]))
         p[1] = min(WORLD_H - 36, max(36, p[1]))

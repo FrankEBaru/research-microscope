@@ -209,6 +209,13 @@ class BurstSearch:
             slots.append(vec)
         return slots, missing
 
+    def _remember_vectors(self, key, matrix):
+        if not key or matrix is None:
+            return
+        if not hasattr(self, "_vectors"):
+            self._vectors = {}
+        self._vectors[key] = matrix
+
     def _remember_layout(self, key, layout):
         if not key:
             return
@@ -237,6 +244,7 @@ class BurstSearch:
                     matrix, still = fill_encoded(rows, slots, encode, cache)
                 if matrix is not None:
                     layout = place_papers(rows, edges, matrix)
+                    self._remember_vectors(key, matrix)
                 else:
                     layout = dict(place_papers(rows, edges, missing_vectors=still))
                     layout["pending_vectors"] = []
@@ -267,8 +275,10 @@ class BurstSearch:
         if rows and not missing:
             import numpy as np
 
-            out["layout"] = place_papers(rows, edges, np.stack(slots))
+            matrix = np.stack(slots)
+            out["layout"] = place_papers(rows, edges, matrix)
             self._remember_layout(key, out["layout"])
+            self._remember_vectors(key, matrix)
             return out
         out["layout"] = place_papers(rows, edges, missing_vectors=missing or None)
         if missing:
@@ -392,6 +402,7 @@ class BurstSearch:
             "layout": {key: layout.get(key) for key in ("method", "points", "groups", "links", "neighbors", "width", "height")},
             "rows": [_slim_row(row) for row in rows],
             "edges": (first or {}).get("edges") or [],
+            "vectors": _rounded_vectors(getattr(self, "_vectors", {}).get(key)),
         }
 
     @modal.method()
@@ -537,6 +548,17 @@ def main(query: str, n: int = 50, release: str = "2026-10-20", dest: str = "inde
     print(json.dumps(out, ensure_ascii=False))
 
 
+def _rounded_vectors(matrix):
+    if matrix is None:
+        return None
+    import numpy as np
+
+    arr = np.asarray(matrix, dtype=np.float64)
+    if arr.ndim != 2 or arr.size == 0:
+        return None
+    return np.round(arr, 4).tolist()
+
+
 def _slim_row(row):
     if not isinstance(row, dict):
         return {}
@@ -562,5 +584,10 @@ def measure():
         "survey of graph neural networks",
     ]
     rows = BurstSearch().measure_queries.remote(questions)
+    dest = os.environ.get("RRM_MEASURE_OUT", "")
+    if dest:
+        Path(dest).write_text(json.dumps(rows), encoding="utf-8")
     for summary in rows:
-        print(json.dumps(summary, ensure_ascii=False), flush=True)
+        public = dict(summary)
+        public.pop("vectors", None)
+        print(json.dumps(public, ensure_ascii=False), flush=True)

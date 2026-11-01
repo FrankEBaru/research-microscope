@@ -4,7 +4,7 @@ import { ProvChip } from "./Bits";
 import { mapLayout, paperKey } from "@/lib/backend.js";
 import { phaseOf } from "@/lib/qcache.js";
 import { clusterColor, layoutOf, mapCaption, statusLine } from "@/lib/layout.js";
-import { LENSES, usePlatina } from "./usePlatina";
+import { LENSES, usePlatina, type Frame } from "./usePlatina";
 
 // Franklin (1 nov): las lentes no ayudan a leer el mapa. El código sigue; la cámara se mueve con rueda y arrastre.
 const showLenses = false;
@@ -31,17 +31,24 @@ function shortName(paper: any) {
     const last = String(first).split(/[\s,]+/).filter(Boolean).pop();
     return `${last || first}${year ? ` ${year}` : ""}`;
   }
-  const bit = String(paper?.title || "").replace(/\s+/g, " ").trim().split(" ").slice(0, 3).join(" ");
+  const bit = String(paper?.title || "").replace(/\s+/g, " ").trim().split(" ").slice(0, 2).join(" ");
   return [bit, year].filter(Boolean).join(" ");
 }
 
 function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) {
-  return a.x < b.x + b.w + 10 && a.x + a.w + 10 > b.x && a.y < b.y + b.h + 6 && a.y + a.h + 6 > b.y;
+  return a.x < b.x + b.w + 14 && a.x + a.w + 14 > b.x && a.y < b.y + b.h + 10 && a.y + a.h + 10 > b.y;
+}
+
+function fitTitle(title: string, chord: number) {
+  for (const size of [17, 15, 13, 12]) {
+    if (title.length * size * 0.54 <= chord) return { size, text: title };
+  }
+  return { size: 12, text: fitWords(title, Math.max(8, Math.floor(chord / 6.5))) };
 }
 
 function labelChoices(px: number, py: number, r: number, raw: string, w: number, h: number) {
   if (px < 8 || px > w - 8 || py < 12 || py > h - 8) return [];
-  const text = short(raw, 22);
+  const text = short(raw, 36);
   const tw = text.length * CHAR_W + 6;
   const out: { x: number; y: number; anchor: "start" | "end"; text: string; box: { x: number; y: number; w: number; h: number } }[] = [];
   const add = (x: number, yOff: number, anchor: "start" | "end", x0: number) => {
@@ -69,6 +76,88 @@ function fullText(paper: any, state: any) {
   return state?.status === "done" || Boolean(paper?.full);
 }
 
+function sceneKey(frame: Frame | null) {
+  if (!frame) return "0";
+  return [frame.minX, frame.minY, frame.maxX, frame.maxY].map((n) => Math.round(n)).join(",");
+}
+
+function contentFrame(groups: any[], points: any[]): Frame | null {
+  if (groups.length) {
+    return {
+      minX: Math.min(...groups.map((g) => g.cx - g.r)) - 20,
+      maxX: Math.max(...groups.map((g) => g.cx + g.r)) + 20,
+      minY: Math.min(...groups.map((g) => g.cy - g.r * 1.62)),
+      maxY: Math.max(...groups.map((g) => g.cy + g.r)) + 26,
+    };
+  }
+  if (!points.length) return null;
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  return { minX: Math.min(...xs) - 48, maxX: Math.max(...xs) + 48, minY: Math.min(...ys) - 48, maxY: Math.max(...ys) + 48 };
+}
+
+function reflowNarrow(groups: any[], points: any[]) {
+  const cols = Math.ceil(groups.length / 2);
+  const gap = 64;
+  let y = 0;
+  const rows: { id: number; x: number; y: number }[][] = [];
+  const widths: number[] = [];
+  for (let i = 0; i < groups.length; i += cols) {
+    const row = groups.slice(i, i + cols);
+    const rh = Math.max(...row.map((g) => g.r));
+    y += rh * 0.7 + rh;
+    let x = 0;
+    const items: { id: number; x: number; y: number }[] = [];
+    for (const g of row) {
+      x += g.r;
+      items.push({ id: g.id, x, y });
+      x += g.r + gap;
+    }
+    rows.push(items);
+    widths.push(x - gap);
+    y += rh + 12;
+  }
+  const maxW = Math.max(...widths, 1);
+  const at = new Map<number, { x: number; y: number }>();
+  rows.forEach((items, i) => {
+    const shift = (maxW - widths[i]) / 2;
+    items.forEach((item) => at.set(item.id, { x: item.x + shift, y: item.y }));
+  });
+  const nextGroups = groups.map((g) => {
+    const pos = at.get(g.id);
+    return pos ? { ...g, cx: pos.x, cy: pos.y } : g;
+  });
+  const nextPoints = points.map((p) => {
+    const pos = at.get(p.cluster);
+    const from = groups.find((g) => g.id === p.cluster);
+    if (!pos || !from) return p;
+    return { ...p, x: p.x + pos.x - from.cx, y: p.y + pos.y - from.cy };
+  });
+  return { groups: nextGroups, points: nextPoints };
+}
+
+function staggerWide(groups: any[], points: any[]) {
+  if (groups.length < 3) return { groups, points };
+  const drop = Math.min(...groups.map((g) => g.r)) * 0.85;
+  const nextGroups = groups.map((g, i) => (i % 2 ? { ...g, cy: g.cy + drop } : g));
+  const moved = new Map(groups.map((g, i) => [g.id, i % 2 ? drop : 0]));
+  const nextPoints = points.map((p) => {
+    const dy = moved.get(p.cluster) || 0;
+    return dy ? { ...p, y: p.y + dy } : p;
+  });
+  return { groups: nextGroups, points: nextPoints };
+}
+
+function placeScene(model: any, w: number) {
+  const groups = (model.groups || []).filter((g: any) => Number.isFinite(g.cx) && Number.isFinite(g.r) && g.r > 0);
+  const points = (model.points || []).map((p: any) => ({ ...p }));
+  const knn = model.method === "specter2-knn";
+  const narrow = w > 0 && w < 760 && groups.length >= 4 && knn;
+  const placed = narrow ? reflowNarrow(groups, points) : knn ? staggerWide(groups, points) : { groups, points };
+  const frame = contentFrame(placed.groups, placed.points);
+  return { ...placed, frame, frameKey: `${sceneKey(frame)}:${narrow ? "n" : "w"}` };
+}
+
 export default function LiveMap({ papers, edges, layout, states, onOpen, onWant, query, onLayout }: {
   papers: any[];
   edges: any[];
@@ -81,14 +170,21 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
 }) {
   const model = useMemo(() => layoutOf({ papers, edges, layout }), [papers, edges, layout]);
   const ids = papers.map((p) => paperKey(p)).join(",");
-  const plat = usePlatina(ids);
+  const [frame, setFrame] = useState<Frame | null>(null);
+  const frameHeld = useRef("");
+  const plat = usePlatina(ids, frame);
   const { box, size, view, kFit, sx, sy, animateTo, lensZ, drag, onDown, onMove, onUp, onKey } = plat;
+  const scene = useMemo(() => placeScene(model, size.w), [model, size.w]);
+  if (frameHeld.current !== scene.frameKey) {
+    frameHeld.current = scene.frameKey;
+    setFrame(scene.frame);
+  }
   const byId = useMemo(() => {
     const map = new Map<string, any>();
     papers.forEach((paper, rank) => map.set(paperKey(paper), { paper, rank }));
     return map;
   }, [papers]);
-  const targets = model.points || [];
+  const targets = scene.points;
   const signature = targets.map((p: any) => `${p.corpusid}:${p.x}:${p.y}`).join("|");
   const shownRef = useRef<Map<string, { x: number; y: number; s: number }>>(new Map());
   const [shown, setShown] = useState<Record<string, { x: number; y: number; s: number }>>({});
@@ -164,7 +260,7 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
     if (!point) return null;
     return shown[String(cid)] || { x: point.x, y: point.y, s: 1 };
   };
-  const regions = (model.groups || []).filter((group: any) => Number.isFinite(group.cx) && Number.isFinite(group.r) && group.r > 0);
+  const regions = scene.groups;
   const years = model.method === "year-citation" ? yearTicks(papers, targets) : [];
   const line = statusLine(papers, states);
   const activeId = selected || hover;
@@ -186,10 +282,16 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
   }
 
   const members = (cluster: number) => targets.filter((point: any) => point.cluster === cluster);
-  const nameBudget: Record<string, number> = {};
   const taken: { x: number; y: number; w: number; h: number }[] = [];
-  const claimLabel = (here: { x: number; y: number }, r: number, text: string) => {
-    const place = labelChoices(sx(here.x), sy(here.y), r, text, size.w, size.h).find((opt) => !taken.some((box) => overlaps(opt.box, box)));
+  const claimLabel = (here: { x: number; y: number }, r: number, text: string, cluster?: number) => {
+    const group = regions.find((item: any) => item.id === cluster);
+    const place = labelChoices(sx(here.x), sy(here.y), r, text, size.w, size.h).find((opt) => {
+      if (taken.some((box) => overlaps(opt.box, box))) return false;
+      if (!group) return true;
+      const cx = opt.box.x + opt.box.w / 2;
+      const cy = opt.box.y + opt.box.h / 2;
+      return Math.hypot(cx - sx(group.cx), cy - sy(group.cy)) <= group.r * view.k + 6;
+    });
     if (!place) return null;
     taken.push(place.box);
     return place;
@@ -235,30 +337,30 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
           {regions.map((group: any) => {
             const ink = clusterColor(group.id);
             const inside = members(group.id);
-            let maxD = 0;
-            for (const point of inside) {
-              const here = shown[String(point.corpusid)] || point;
-              maxD = Math.max(maxD, Math.hypot(here.x - group.cx, here.y - group.cy));
-            }
-            const drawR = Math.max(maxD * 1.34, 48);
-            const screenR = drawR * view.k;
+            const screenR = group.r * view.k;
             const idsIn = inside.map((point: any) => String(point.corpusid));
             const have = idsIn.filter((id) => fullText(byId.get(id)?.paper, states[id])).length;
             const title = String(group.name || "grupo");
             const tx = sx(group.cx);
             const ty = sy(group.cy);
-            const titleSize = screenR > 130 ? 17 : screenR > 88 ? 15 : 12;
-            const chord = Math.max(screenR * 1.7, 72);
-            const titleBudget = Math.floor(chord / (titleSize * 0.5));
-            const titleText = titleBudget >= 8 ? fitWords(title, titleBudget) : "";
+            const pitch = regions.reduce((best: number, other: any) => {
+              if (other.id === group.id) return best;
+              const dist = Math.hypot(sx(other.cx) - tx, sy(other.cy) - ty);
+              return dist > 8 ? Math.min(best, dist) : best;
+            }, 1e9);
+            const chord = Math.max(72, (pitch < 1e8 ? pitch : screenR * 2.3) - 12);
+            const fitted = fitTitle(title, chord);
+            const titleSize = fitted.size;
+            const titleText = fitted.text;
             const noun = group.n === 1 ? "paper" : "papers";
-            const subGap = titleSize + 4;
-            const subChord = chord;
-            const subFull = have > 0 ? `${group.n} ${noun} · texto completo de ${have}` : `${group.n} ${noun}`;
-            const subMid = have > 0 ? `${group.n} ${noun} · ${have} con texto` : `${group.n} ${noun}`;
-            const subText = screenR < 78 ? "" : ([subFull, subMid, `${group.n} ${noun}`].find((line) => line.length * 6.1 <= subChord) || "");
-            const titleY = ty - screenR - subGap - 8;
-            if (titleText || subText) taken.push({ x: tx - chord / 2, y: titleY - titleSize, w: chord, h: subGap + titleSize + 6 });
+            const subFull = `${group.n} ${noun} · texto completo de ${have}`;
+            const subLine = [11, 10, 9].map((size) => (subFull.length * size * 0.5 <= chord ? { size, text: subFull } : null)).find(Boolean);
+            const subText = screenR < 36 ? "" : (subLine?.text || "");
+            const subSize = subLine?.size || 11;
+            const subGap = titleSize + 3;
+            const titleY = ty - screenR - subGap - 4;
+            const textW = Math.min(chord, Math.max(titleText.length, subText.length) * titleSize * 0.5);
+            if (titleText || subText) taken.push({ x: tx - textW / 2, y: titleY - titleSize, w: textW, h: subGap + (subText ? subSize : 0) + 4 });
             return (
               <g key={`g${group.id}`} className="region" opacity={groupOpacity} onClick={() => { if (!drag.current?.moved) animateTo({ k: Math.max(view.k * 1.7, kFit * 2), cx: group.cx, cy: group.cy }); }}>
                 <circle cx={tx} cy={ty} r={screenR} fill={ink} fillOpacity={0.07} stroke={ink} strokeOpacity={0.45} strokeWidth={1.5} strokeDasharray="6 6" style={{ pointerEvents: "visibleStroke" }} />
@@ -269,7 +371,7 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
                     </text>
                   )}
                   {subText && (
-                    <text x={tx} y={titleY + subGap} textAnchor="middle" className="region-sub">
+                    <text x={tx} y={titleY + subGap} textAnchor="middle" className="region-sub" style={{ fontSize: subSize }}>
                       {subText}
                     </text>
                   )}
@@ -284,7 +386,7 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
             if (!a || !b) return null;
             return <line key={`c${i}`} x1={sx(a.x)} y1={sy(a.y)} x2={sx(b.x)} y2={sy(b.y)} className="edge dash" strokeOpacity={0.45} />;
           })}
-          {targets.map((point: any) => {
+          {[...targets].sort((a: any, b: any) => Number(Boolean(b.focus) || b.rank < 10) - Number(Boolean(a.focus) || a.rank < 10)).map((point: any) => {
             const id = String(point.corpusid);
             const meta = byId.get(id);
             if (!meta) return null;
@@ -293,21 +395,19 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
             const sunk = Boolean(meta.paper.retracted);
             const phase = phaseOf(states[id]?.status);
             const full = fullText(meta.paper, states[id]);
-            const ink = clusterColor(point.cluster);
-            const r = (focus ? 9 : 3.4) * Math.max(here.s, 0.15);
-            const groupR = (regions.find((group: any) => group.id === point.cluster)?.r || 0) * view.k;
-            const tight = size.w < 760 || groupR < 86;
-            const bucket = String(point.cluster);
-            const named = nameBudget[bucket] || 0;
-            const showLabel = here.s > 0.55 && (selected === id || hover === id || (!tight && focus && named < 4));
-            if (showLabel && selected !== id && hover !== id) nameBudget[bucket] = named + 1;
+            const ink = sunk ? "#8d2a2a" : clusterColor(point.cluster);
+            const r = (focus ? 4.6 : 3) * Math.max(here.s, 0.45);
+            const showLabel = here.s > 0.55 && (selected === id || hover === id || focus);
             const label = showLabel ? shortName(meta.paper) : "";
+            const namePlace = label ? claimLabel(here, r, label, point.cluster) : null;
+            const tag = !namePlace && (selected === id || hover === id) ? (sunk ? "retractado" : meta.paper.survey ? "survey" : "") : "";
+            const tagPlace = tag ? claimLabel(here, r, tag, point.cluster) : null;
             return (
               <g
                 key={id}
                 className={`node-dot${sunk ? " is-sunk" : ""}${focus ? "" : " is-faint"}`}
-                opacity={focus ? 1 : 0.5}
-                transform={`translate(${sx(here.x)} ${sy(here.y) + (sunk ? 18 : 0)})`}
+                opacity={focus ? 1 : 0.55}
+                transform={`translate(${sx(here.x)} ${sy(here.y)})`}
                 onPointerEnter={() => setHover(id)}
                 onPointerLeave={() => setHover((cur) => (cur === id ? null : cur))}
                 onClick={(e) => { e.stopPropagation(); if (!drag.current?.moved) setSelected(id); }}
@@ -316,19 +416,9 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
                 role="button"
                 aria-label={`${meta.paper.title || id}. ${phase.label}${meta.paper.survey ? ". survey" : ""}${sunk ? ". retractado" : ""}`}
               >
-                <circle r={r + (selected === id ? 4 : 0)} fill={full ? ink : "#fffdf8"} stroke="#fffdf8" strokeWidth={full ? 1.5 : 0} />
-                <circle r={r + 2.2} fill="none" stroke={phase.id === "fallo" ? "#8d2a2a" : ink} strokeWidth={selected === id ? 2.4 : 1.5} strokeDasharray={full ? undefined : "3 2"} className={phase.id === "preparando" ? "ring-prep" : undefined} />
-                {(() => {
-                  const namePlace = label ? claimLabel(here, r, label) : null;
-                  const tag = !namePlace ? (sunk ? "retractado" : meta.paper.survey ? "survey" : "") : "";
-                  const tagPlace = tag ? claimLabel({ x: here.x, y: here.y + 18 }, r, tag) : null;
-                  return (
-                    <>
-                      {namePlace && <text x={namePlace.x} y={namePlace.y} textAnchor={namePlace.anchor} className="dot-label">{namePlace.text}</text>}
-                      {tagPlace && <text x={tagPlace.x} y={tagPlace.y} textAnchor={tagPlace.anchor} className="dot-label">{tagPlace.text}</text>}
-                    </>
-                  );
-                })()}
+                <circle r={r + (selected === id ? 2.5 : 0)} fill={full ? ink : "#fffdf8"} stroke={ink} strokeWidth={full ? 1 : 1.35} strokeDasharray={full ? undefined : "2 1.5"} />
+                {namePlace && <text x={namePlace.x} y={namePlace.y} textAnchor={namePlace.anchor} className="dot-label">{namePlace.text}</text>}
+                {tagPlace && <text x={tagPlace.x} y={tagPlace.y} textAnchor={tagPlace.anchor} className="dot-label">{tagPlace.text}</text>}
               </g>
             );
           })}
@@ -340,20 +430,6 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
             {LENSES.map((l) => <button key={l} type="button" className={lensZ === l ? "on" : ""} onClick={() => animateTo({ k: kFit * l })}>×{l}</button>)}
           </div>
         )}
-        <div className="minimap live-minimap" aria-label="Minimapa" onClick={(e) => {
-          const r = e.currentTarget.getBoundingClientRect();
-          animateTo({ cx: ((e.clientX - r.left) / r.width) * 1600, cy: ((e.clientY - r.top) / r.height) * 1000 });
-        }}>
-          <svg viewBox="0 0 1600 1000">
-            {regions.map((group: any) => <circle key={group.id} cx={group.cx} cy={group.cy} r={group.r} fill={clusterColor(group.id)} fillOpacity={0.08} stroke={clusterColor(group.id)} strokeWidth={6} />)}
-            {targets.map((p: any) => {
-              const paper = byId.get(String(p.corpusid))?.paper;
-              const full = fullText(paper, states[String(p.corpusid)]);
-              return <circle key={p.corpusid} cx={p.x} cy={p.y} r={p.focus ? 16 : 8} fill={full ? clusterColor(p.cluster) : "#fffdf8"} stroke={clusterColor(p.cluster)} strokeWidth={5} />;
-            })}
-            <rect x={view.cx - size.w / view.k / 2} y={view.cy - size.h / view.k / 2} width={size.w / view.k} height={size.h / view.k} className="mm-view" vectorEffect="non-scaling-stroke" />
-          </svg>
-        </div>
         {cardPaper && (
           <aside className="map-tip" style={tipStyle || undefined} onPointerDown={(e) => e.stopPropagation()}>
             <p className={`phase phase-${phaseOf(states[cardId!]?.status).id}`}>
@@ -377,9 +453,24 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
           </aside>
         )}
       </div>
+      <div className="minimap live-minimap" aria-label="Minimapa" onClick={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        const box = frame || { minX: 0, minY: 0, maxX: 1600, maxY: 1000 };
+        animateTo({ cx: box.minX + ((e.clientX - r.left) / r.width) * (box.maxX - box.minX), cy: box.minY + ((e.clientY - r.top) / r.height) * (box.maxY - box.minY) });
+      }}>
+        <svg viewBox={frame ? `${frame.minX} ${frame.minY} ${frame.maxX - frame.minX} ${frame.maxY - frame.minY}` : "0 0 1600 1000"}>
+          {regions.map((group: any) => <circle key={group.id} cx={group.cx} cy={group.cy} r={group.r} fill={clusterColor(group.id)} fillOpacity={0.08} stroke={clusterColor(group.id)} strokeWidth={6} />)}
+          {targets.map((p: any) => {
+            const paper = byId.get(String(p.corpusid))?.paper;
+            const full = fullText(paper, states[String(p.corpusid)]);
+            return <circle key={p.corpusid} cx={p.x} cy={p.y} r={p.focus ? 14 : 7} fill={full ? clusterColor(p.cluster) : "#fffdf8"} stroke={clusterColor(p.cluster)} strokeWidth={4} />;
+          })}
+          <rect x={view.cx - size.w / view.k / 2} y={view.cy - size.h / view.k / 2} width={size.w / view.k} height={size.h / view.k} className="mm-view" vectorEffect="non-scaling-stroke" />
+        </svg>
+      </div>
       <p className="map-legend">
         <ProvChip kind={caption.positionKind as any} text={caption.position} title={caption.positionTitle} />
-        {" "}Círculo: grupo, por las palabras del título y el abstract. Punto grande: uno de los 10 primeros. Punto relleno: texto completo. Anillo punteado: todavía sin ese texto.
+        {" "}Círculo: grupo, por las palabras del título y el abstract. Nombre: uno de los 10 primeros. Punto relleno: texto completo. Anillo punteado: todavía sin ese texto.
         {line ? ` ${line}.` : ""}
         {caption.note ? ` ${caption.note}` : ""}
       </p>

@@ -249,6 +249,8 @@ td[data-pop] { cursor: help; }
 .map-legend { font: .8rem/1.9 var(--sans); color: var(--muted); margin: .7rem 1.4rem 0; }
 .node-dot.is-faint { cursor: pointer; }
 [data-live-map] .region text { pointer-events: none; }
+[data-live-map] .dot-label { font-size: 12px; stroke-width: 3px; }
+[data-live-map] .minimap { position: static; width: 168px; margin: .35rem 0 0 1.4rem; box-shadow: none; }
 .map-tip { max-height: min(280px, 70%); overflow: auto; }
 @media (max-width: 760px) {
   .map-tip { left: 8px !important; right: 8px; top: auto !important; bottom: 8px; width: auto; max-height: 48%; }

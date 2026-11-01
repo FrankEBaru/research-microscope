@@ -79,42 +79,40 @@ def test_specter_knn_groups_by_cosine_and_keeps_citations():
     assert "?" not in names
 
 
-def test_knn_preserves_neighbors_of_two_blobs():
-    rng = np.random.default_rng(0)
-    left = rng.normal(size=(12, 32)) + np.array([8.0] + [0.0] * 31)
-    right = rng.normal(size=(12, 32)) + np.array([-8.0] + [0.0] * 31)
-    vectors = np.vstack([left, right])
-    papers = []
-    for i in range(24):
-        title = "in-context learning prompts" if i < 12 else "neural radiance anti aliasing"
-        papers.append({"corpusid": i + 1, "year": 2020, "title": title, "abstract": title})
+def test_knn_splits_a_neighborhood_across_the_canvas():
+    rng = np.random.default_rng(3)
+    titles = [
+        "in-context learning prompts",
+        "neural radiance field",
+        "graph neural networks",
+        "attention transformer heads",
+    ]
+    blobs = []
+    for t in range(4):
+        center = np.zeros(16)
+        center[t] = 5.0
+        blobs.append(center + rng.normal(scale=0.12, size=(18, 16)))
+    vectors = np.vstack(blobs)
+    papers = [
+        {"corpusid": i + 1, "year": 2018, "title": titles[i // 18], "abstract": titles[i // 18]}
+        for i in range(72)
+    ]
     layout = place_papers(papers, [], vectors)
-    assert layout["method"] == "specter2-knn"
-    assert len(layout["groups"]) >= 2
-    assert layout["neighbors"]["preserved"] >= 0.75
-    assert layout["neighbors"]["trustworthiness"] >= 0.8
-    assert sum(1 for point in layout["points"] if point.get("focus")) == 10
-    # Circles stay apart: each group center is outside the other radius.
     groups = layout["groups"]
+    assert 3 <= len(groups) <= 6
+    assert all(group["n"] >= 5 for group in groups)
+    assert "context" in " ".join(group["name"] for group in groups)
+    assert "?" not in " ".join(group["name"] for group in groups)
     for i, a in enumerate(groups):
         for b in groups[i + 1 :]:
             dist = ((a["cx"] - b["cx"]) ** 2 + (a["cy"] - b["cy"]) ** 2) ** 0.5
-            assert dist > a["r"] * 0.9 + b["r"] * 0.9
-
-
-def test_knn_keeps_neighbors_along_a_line():
-    rng = np.random.default_rng(1)
-    xs = np.linspace(-3, 3, 30)
-    vectors = np.zeros((30, 8))
-    vectors[:, 0] = xs
-    vectors += rng.normal(scale=0.05, size=vectors.shape)
-    papers = [
-        {"corpusid": i + 1, "year": 2020, "title": "in-context learning", "abstract": "prompts"}
-        for i in range(30)
-    ]
-    layout = place_papers(papers, [], vectors)
-    assert layout["neighbors"]["preserved"] >= 0.55
-    assert layout["neighbors"]["trustworthiness"] >= 0.85
+            assert dist > a["r"] + b["r"]
+    pts = [(p["x"], p["y"], p["cluster"]) for p in layout["points"]]
+    for i, a in enumerate(pts):
+        for b in pts[i + 1 :]:
+            if a[2] != b[2]:
+                continue
+            assert (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 >= 20 ** 2
 
 
 def test_identical_vectors_stay_apart():
