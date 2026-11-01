@@ -13,6 +13,9 @@ import { hasConclusion, scanIds } from "@/lib/scan.js";
 import { resolveCite } from "@/lib/path.js";
 import { citeName } from "@/lib/layout.js";
 import AskBox from "./AskBox";
+
+// Pop de oración con la maqueta «ejemplo simulado… no está conectado». Apagado en core; NEXT_PUBLIC_RRM_SENTENCE_MOCK=1 lo vuelve a mostrar.
+const SENTENCE_MOCK = process.env.NEXT_PUBLIC_RRM_SENTENCE_MOCK === "1";
 import ReadMinimap from "./ReadMinimap";
 import { devBegin, devFinish } from "@/lib/devlog.js";
 import { createTracker } from "@/lib/companion.js";
@@ -411,6 +414,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     clearTimeout(timer.current);
     if (!el) return;
     const key = el.dataset.pop || `y|${el.dataset.sym}`;
+    if (core && !SENTENCE_MOCK && key.startsWith("s|")) return; // RRM-47: en core la oración solo traía la maqueta «ejemplo simulado»
     if (companion) signal(key);
     const show = () => setPop({ key, rect: el.getBoundingClientRect() });
     if (key.startsWith("s|")) timer.current = setTimeout(show, 380); else show();
