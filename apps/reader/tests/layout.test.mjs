@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { layoutOf, mapCaption, placePapers, statusLine } from "../src/lib/layout.js";
+import { citeName, farGroupIds, layoutOf, mapCaption, mapPapers, nodeLabel, placePapers, statusLine } from "../src/lib/layout.js";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -67,9 +67,67 @@ test("sin citas el rótulo no dice que sea SPECTER2", () => {
   assert.doesNotMatch(caption.position, /SPECTER/);
 });
 
+test("el mapa junta la lista rankeada con los hits de FAISS", () => {
+  const rows = mapPapers({
+    papers: [{ corpusid: 1, title: "primero" }],
+    similar: [{ corpusid: 1, title: "dup" }, { corpusid: 8, title: "faiss" }],
+  });
+  assert.deepEqual(rows.map((row) => row.corpusid), [1, 8]);
+});
+
+test("el rótulo del kNN no promete una pregunta de modelo", () => {
+  const caption = mapCaption({
+    method: "specter2-knn",
+    neighbors: { k: 8, preserved: 0.81, trustworthiness: 0.9 },
+    groups: [{ id: 0, name: "in-context learning" }],
+    points: [],
+  });
+  assert.match(caption.position, /vecinos de SPECTER2/);
+  assert.match(caption.positionTitle, /sin un modelo/);
+  assert.match(caption.note, /10 primeros/);
+});
+
 test("la línea de estado no bloquea y cuenta las fases", () => {
   const papers = [{ corpusid: 1 }, { corpusid: 2 }, { corpusid: 3 }];
   const line = statusLine(papers, { 1: { status: "queued" }, 2: { status: "done" }, 3: { status: "failed" } });
   assert.equal(line, "1 preparando · 1 listo · 1 falló");
   assert.equal(statusLine([{ corpusid: 4 }, { corpusid: 5 }], {}), "2 encontrados");
+});
+
+test("la etiqueta es el apellido, o un título que se lee", () => {
+  assert.equal(nodeLabel({ authors: ["Ashish Vaswani"], year: 2017, title: "Attention Is All You Need" }), "Vaswani 2017");
+  assert.equal(nodeLabel({ authors: [{ name: "Ian Goodfellow" }], year: 2016 }), "Goodfellow 2016");
+  assert.equal(nodeLabel({ title: "What Can Neural Networks Do", year: 2022 }), "What Can Neural Networks Do 2022");
+  assert.equal(nodeLabel({ title: "An Explanation of BERT", year: 2021 }), "An Explanation of BERT 2021");
+  assert.equal(nodeLabel({ title: "A Very Long Title About Something Else Entirely In This Paper", year: 2019 }), "A Very Long Title About… 2019");
+  assert.equal(nodeLabel({}), "paper");
+});
+
+test("la cita es autor y sección, nunca el id", () => {
+  assert.equal(citeName({ authors: ["Ashish Vaswani"], year: 2017 }, "3.2"), "Vaswani 2017 · 3.2");
+  assert.equal(citeName(null, ""), "paper");
+  assert.equal(citeName({ corpusid: 204838007, title: "Attention Is All You Need", year: 2017 }, "intro"), "Attention Is All You Need 2017 · intro");
+});
+
+test("un grupo se atenúa solo si su mediana queda lejos del mejor", () => {
+  const near = [
+    { corpusid: 1, query_cosine: 0.77 },
+    { corpusid: 2, query_cosine: 0.75 },
+    { corpusid: 3, query_cosine: 0.74 },
+  ];
+  const points = [
+    { corpusid: 1, cluster: 0 },
+    { corpusid: 2, cluster: 0 },
+    { corpusid: 3, cluster: 1 },
+  ];
+  assert.equal(farGroupIds(near, points).size, 0);
+  const mixed = [
+    { corpusid: 1, query_cosine: 0.76 },
+    { corpusid: 2, query_cosine: 0.74 },
+    { corpusid: 3, query_cosine: 0.48 },
+    { corpusid: 4, query_cosine: 0.44 },
+  ];
+  const both = points.concat([{ corpusid: 4, cluster: 1 }]);
+  assert.deepEqual([...farGroupIds(mixed, both)], ["1"]);
+  assert.equal(farGroupIds(mixed, [{ corpusid: 3, cluster: 1 }, { corpusid: 4, cluster: 1 }]).size, 0);
 });

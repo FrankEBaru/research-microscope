@@ -7,11 +7,17 @@ export const LENSES = [1, 2, 4, 8];
 
 const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
 
+export type Frame = { minX: number; minY: number; maxX: number; maxY: number };
+
 /** Drag, wheel, lenses and keyboard for the platina. Shared by the curated map and the live map. */
-export function usePlatina(resetKey: string) {
+export function usePlatina(resetKey: string, frame?: Frame | null) {
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 1000, h: 600 });
-  const kFit = Math.min(size.w / WORLD_W, size.h / WORLD_H) * 0.96;
+  const framed = Boolean(frame && frame.maxX > frame.minX && frame.maxY > frame.minY);
+  const bounds = framed && frame ? frame : { minX: 0, minY: 0, maxX: WORLD_W, maxY: WORLD_H };
+  const kFit = Math.min(size.w / (bounds.maxX - bounds.minX), size.h / (bounds.maxY - bounds.minY)) * (framed ? 0.98 : 0.96);
+  const homeCx = (bounds.minX + bounds.maxX) / 2;
+  const homeCy = (bounds.minY + bounds.maxY) / 2;
   const [view, setView] = useState({ k: 0.6, cx: WORLD_W / 2, cy: WORLD_H / 2 });
   const raf = useRef(0);
   const viewRef = useRef(view);
@@ -28,8 +34,8 @@ export function usePlatina(resetKey: string) {
   }, []);
 
   useEffect(() => {
-    setView({ k: kFit, cx: WORLD_W / 2, cy: WORLD_H / 2 });
-  }, [resetKey, kFit]);
+    setView({ k: kFit, cx: homeCx, cy: homeCy });
+  }, [resetKey, kFit, homeCx, homeCy]);
 
   const animateTo = useCallback((t: { k?: number; cx?: number; cy?: number }) => {
     cancelAnimationFrame(raf.current);
@@ -77,7 +83,7 @@ export function usePlatina(resetKey: string) {
 
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const onDown = (e: PointerEvent) => {
-    if ((e.target as HTMLElement).closest("button,.ov,.minimap,.map-tip")) return;
+    if ((e.target as HTMLElement).closest("button,.ov,.minimap,.map-tip,.node-dot,.node-card")) return;
     cancelAnimationFrame(raf.current);
     drag.current = { x: e.clientX, y: e.clientY, moved: false };
   };
@@ -86,7 +92,7 @@ export function usePlatina(resetKey: string) {
     if (!d) return;
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
-    if (!d.moved && Math.abs(dx) + Math.abs(dy) > 3) {
+    if (!d.moved && Math.abs(dx) + Math.abs(dy) > 6) {
       d.moved = true;
       box.current?.setPointerCapture(e.pointerId);
     }
@@ -103,7 +109,7 @@ export function usePlatina(resetKey: string) {
     const s = 90 / v.k;
     if (e.key === "+" || e.key === "=") animateTo({ k: v.k * 1.6 });
     else if (e.key === "-") animateTo({ k: v.k / 1.6 });
-    else if (e.key === "0") animateTo({ k: kFit, cx: WORLD_W / 2, cy: WORLD_H / 2 });
+    else if (e.key === "0") animateTo({ k: kFit, cx: homeCx, cy: homeCy });
     else if (e.key === "ArrowLeft") animateTo({ cx: v.cx - s });
     else if (e.key === "ArrowRight") animateTo({ cx: v.cx + s });
     else if (e.key === "ArrowUp") animateTo({ cy: v.cy - s });

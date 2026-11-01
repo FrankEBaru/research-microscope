@@ -61,6 +61,17 @@ def test_missing_retraction_and_offline_note(tmp_path):
     assert found[3]["retracted"] is False
     assert found[3]["retraction"] == NO_RETRACTION
     assert lookup_meta([9], tmp_path / "empty", s2_fetch=lambda *_: (_ for _ in ()).throw(TimeoutError())) is None
+    old = tmp_path / "s2" / "8.json"
+    old.parent.mkdir(parents=True, exist_ok=True)
+    old.write_text('{"abstract": "viejo", "publication_types": [], "doi": "", "title": "Viejo", "tldr": ""}', encoding="utf-8")
+    kept = lookup_meta([8], tmp_path, s2_fetch=lambda *_: (_ for _ in ()).throw(TimeoutError()), crossref_fetch=lambda *_: {}, openalex_fetch=lambda *_: {})
+    assert kept[8]["abstract"] == "viejo" and kept[8]["authors"] == []
+    fresh = lookup_meta(
+        [8], tmp_path,
+        s2_fetch=lambda ids, _timeout: [{"abstract": "nuevo", "publicationTypes": [], "title": "Viejo", "authors": [{"name": "Ashish Vaswani"}]}],
+        crossref_fetch=lambda *_: {}, openalex_fetch=lambda *_: {},
+    )
+    assert fresh[8]["authors"] == ["Ashish Vaswani"]
     body = label_payload([{"corpusid": 9, "title": "Solo"}], [], None, {})
     assert body["ok"] is False and body["note"] == OFFLINE_NOTE
 

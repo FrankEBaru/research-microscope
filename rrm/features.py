@@ -1,8 +1,9 @@
 """Feature flag for the demo surface.
 
 `RRM_FEATURES=core` (default) keeps the burst and the reader. Panorama, Muse
-subtopics, SAM crops, and any other Meta call stay off. `all` is the previous
-surface. An unknown value is core, so a typo cannot turn Meta on.
+subtopics and SAM crops stay off. The ask box may call Meta when
+`MODEL_API_KEY` is set. `all` is the previous surface. An unknown value is
+core, so a typo cannot turn the rest of Meta on.
 """
 
 import os

@@ -42,7 +42,7 @@ Burst rows include `tldr` and `abstract` from the display table when those colum
 
 ## Cold start
 
-`BurstSearch` sets `enable_memory_snapshot=True`. `@modal.enter(snap=True)` loads FAISS, faiss ids, the citation graph, `node_meta`, `display.parquet`, `display_ext.parquet`, and the SPECTER2 query encoder, then encodes one short string. `@modal.enter(snap=False)` only reloads the volume. `min_containers` is not set. The first container after a deploy still pays that load (and writes the snapshot). Later cold starts are expected to restore the snapshot instead of reading those artifacts again. That effect is not measured in this change. Image pull and scheduling still happen. A real `modal deploy` has to confirm the snapshot is created and that a later cold `/warm` is shorter than the 100–131 s starts measured on 29 Oct.
+`BurstSearch` does not set `enable_memory_snapshot`. `@modal.enter` loads FAISS, faiss ids, the citation graph, `node_meta`, `display.parquet`, `display_ext.parquet`, and the SPECTER2 query encoder, then encodes one short string. A second `@modal.enter` reloads the volume. `min_containers` is not set. Measured 1 Nov 2026 on the 32 GB class: first `/warm` 128.0 s, after `modal app stop` and a new deploy 125.6 s, and after the container was gone on the same deploy 101.0 s. That is not a clear drop, so the snapshot stays off.
 
 The UI calls `/warm` on burst and on the reader when it opens, then `/burst` with `n=10`, then `/status`, `/paper`, and `/file`. In `all` it also calls `/panorama`. In `core` it does not call `/panorama`, `/subtopics`, or `/crops`. `run_burst` is a Modal method with no public URL.
 

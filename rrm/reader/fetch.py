@@ -369,8 +369,9 @@ def s2_batch(corpusids) -> dict:
         path = _s2_cache(cid)
         if path is not None:
             try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(json.dumps(data), encoding="utf-8")
+                from rrm.reader.files import atomic_write
+
+                atomic_write(path, json.dumps(data))
             except OSError:
                 pass
     return out
@@ -397,8 +398,9 @@ def s2_graph(corpusid: int, tries: int = 1) -> dict:
         data = json.loads(raw.decode("utf-8", "replace"))
         if path is not None:
             try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(json.dumps(data), encoding="utf-8")
+                from rrm.reader.files import atomic_write
+
+                atomic_write(path, json.dumps(data))
             except OSError:
                 pass
     ext = data.get("externalIds") or {}
@@ -435,7 +437,7 @@ def merge_s2(info: dict, remote: dict) -> dict:
 def _display_row(path: Path, corpusid: int) -> dict | None:
     """Read only the row group whose corpusid range holds the id (file is sorted). None if not found."""
     import pyarrow.parquet as pq
-    cols = ["corpusid", "title", "arxiv", "doi", "tldr"]
+    cols = ["corpusid", "title", "year", "arxiv", "doi", "tldr"]
     pf = pq.ParquetFile(path)
     names = pf.schema_arrow.names
     cols = [c for c in cols if c in names]
@@ -490,7 +492,7 @@ def lookup_display(path: Path, corpusid: int) -> dict:
         "abstract": "",
         "oa_pdf": "",
         "authors": [],
-        "year": None,
+        "year": row.get("year"),
         "is_open_access": None,
     }
 
@@ -641,7 +643,18 @@ def graph_reference_map(index_dir: Path, corpusid: int, limit: int = 30) -> dict
         cited.append(int(ids[int(local)]))
         if len(cited) >= limit:
             break
-    return {f"s2:{cid}": f"Semantic Scholar corpus {cid}" for cid in cited}
+    display = index_dir / "display.parquet"
+    out = {}
+    for cid in cited:
+        label = f"Semantic Scholar corpus {cid}"
+        if display.is_file():
+            row = lookup_display(display, cid) or {}
+            title = (row.get("title") or "").strip()
+            year = row.get("year") or ""
+            if title:
+                label = f"{year}. {title}".strip(". ") if year else title
+        out[f"s2:{cid}"] = label
+    return out
 
 
 def s2_reference_map(corpusid: int, limit: int = 40) -> dict:

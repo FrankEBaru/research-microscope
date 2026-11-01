@@ -20,7 +20,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from rrm.features import core_mode, features_mode
-from rrm.search.layout import place_papers
+from rrm.search.layout import map_rows, place_papers
 
 MISS = "consulta no grabada"
 _NAME = re.compile(r"^[A-Za-z0-9._-]{1,180}$")
@@ -148,6 +148,7 @@ def _json_body(handler):
 
 def _ask(store: Store, item):
     from rrm.reader.phrases import collect_phrases
+    from rrm.reader.similar import encode_texts
     from rrm.reader.verify import answer
 
     ids = item.get("ids") if isinstance(item, dict) else []
@@ -165,7 +166,8 @@ def _ask(store: Store, item):
             doc = dict(doc)
             doc["corpusid"] = int(cid)
         rows.extend(collect_phrases(doc))
-    return answer(rows, text or "")
+    stage = item.get("stage") if isinstance(item, dict) else ""
+    return answer(rows, text or "", ids=ids, encode=encode_texts, stage=stage or "todo")
 
 
 def build_handler(store: Store):
@@ -228,10 +230,10 @@ def build_handler(store: Store):
                 if isinstance(out.get("papers"), list):
                     out["papers"] = out["papers"][:n]
                 # Fixtures have citations and years, not SPECTER2 vectors.
-                # A stored specter layout (if a future recording has one) is kept.
+                # A stored specter layout (PCA or kNN) is kept.
                 stored = out.get("layout") if isinstance(out.get("layout"), dict) else None
-                if not stored or stored.get("method") != "specter2-pca":
-                    out["layout"] = place_papers(out.get("papers") or [], out.get("edges") or [])
+                if not stored or stored.get("method") not in ("specter2-pca", "specter2-knn"):
+                    out["layout"] = place_papers(map_rows(out), out.get("edges") or [])
                 self._json(200, out)
                 return
             if path == "/subtopics":
@@ -298,7 +300,7 @@ def build_handler(store: Store):
                 return
             if path == "/labels":
                 from rrm.search.labels import OFFLINE_NOTE
-                self._json(200, {"ok": False, "note": OFFLINE_NOTE, "by_id": {}, "survey_paper": None})
+                self._json(200, {"ok": False, "reason": "network", "note": OFFLINE_NOTE, "by_id": {}, "survey_paper": None})
                 return
             if path == "/file":
                 cid = cid_of()

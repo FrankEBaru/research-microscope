@@ -8,11 +8,11 @@ import MapView from "./MapView";
 import Panorama, { LiveCoverage } from "./Panorama";
 import SimPanorama from "./SimPanorama";
 import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
-import { burst, explain, labels as fetchLabels, liveEnabled, paperKey, paper as fetchPaper, prepare, settled, status as fetchStatus, subtopics as fetchSubtopics, warm } from "@/lib/backend.js";
+import { burst, explain, groupNames, keepOpened, labels as fetchLabels, liveEnabled, paperKey, paper as fetchPaper, prepare, settled, status as fetchStatus, subtopics as fetchSubtopics, warm } from "@/lib/backend.js";
 import { coreMode } from "@/lib/features.js";
-import { pinPoint } from "@/lib/layout.js";
+import { applyGroupNames, groupPacks, mapPapers, pinPoint } from "@/lib/layout.js";
 import { mergeLabels, popVisit, pushVisit } from "@/lib/path.js";
-import { normalizeQuestion, phaseOf, readOverflow, recallQuestion, rememberQuestion, writeOverflow } from "@/lib/qcache.js";
+import { normalizeQuestion, phaseOf, readOverflow, readQuestions, recallQuestion, rememberQuestion, writeOverflow } from "@/lib/qcache.js";
 import { bindDevLog, createDevLog } from "@/lib/devlog.js";
 import { LiveCircle } from "./MapView";
 import LiveMap from "./LiveMap";
@@ -25,6 +25,13 @@ const parse = (h: string): Route => {
   return r;
 };
 const fmt = (r: Route) => "#/" + (["q", "c", "p", "b"] as const).filter((k) => r[k]).map((k) => `${k}/${encodeURIComponent(r[k]!)}`).join("/");
+
+function beat(phase: string, since: number) {
+  const tail = ` ${Math.max(0, since)} s`;
+  if (phase === "wake") return `despertando el motor (la primera vez tarda ~1–2 min)…${tail}`;
+  if (phase === "layout") return `acomodando el mapa…${tail}`;
+  return `buscando papers…${tail}`;
+}
 
 export default function Engine() {
   const [route, setRoute] = useState<Route>({});
@@ -50,7 +57,11 @@ export default function Engine() {
   const [asList, setAsList] = useState(false);
   const [camino, setCamino] = useState<{ id: string; porQue: string; padre: string | null }[]>([]);
   const [labelNote, setLabelNote] = useState("");
-  const labeled = useRef("");
+  const [phase, setPhase] = useState("");
+  const [since, setSince] = useState(0);
+  const [openLine, setOpenLine] = useState("");
+  const searchGen = useRef(0);
+  const lastOk = useRef(0);
   const [devTick, setDevTick] = useState(0);
   const devRef = useRef<ReturnType<typeof createDevLog> | null>(null);
   if (!devRef.current) devRef.current = createDevLog();
@@ -85,6 +96,15 @@ export default function Engine() {
     }).catch(() => {});
     return () => { stop = true; };
   }, []);
+
+  useEffect(() => {
+    const running = phase || (engine === "preparando" && !liveResult);
+    if (!running) return;
+    const t0 = Date.now();
+    setSince(0);
+    const id = window.setInterval(() => setSince(Math.round((Date.now() - t0) / 1000)), 400);
+    return () => window.clearInterval(id);
+  }, [phase, engine, liveResult]);
 
   useEffect(() => {
     if (!live) { setEngine("listo"); return; }
@@ -136,13 +156,20 @@ export default function Engine() {
   const liveIds: string[] = (liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p));
   const liveName = (id: string) => { const p = (liveResult?.papers || []).find((x: any) => paperKey(x) === id); return p ? `${String(p.title || id).slice(0, 28)}${p.year ? ` ${p.year}` : ""}` : id; };
   const liveId = live && route.p && /^\d+$/.test(route.p) ? route.p : "";
+  const promoteBurst = useCallback((first?: string) => {
+    const ids = (liveResult?.papers || []).slice(0, 10).map((p: any) => p.corpusid).filter((id: any) => typeof id === "number");
+    const head = Number(first);
+    const ordered = Number.isInteger(head) ? [head, ...ids.filter((id: number) => id !== head)] : ids;
+    if (ordered.length) prepare(ordered, true).catch(() => {});
+  }, [liveResult]);
   const abrir = useCallback((id: string, porQue: string) => {
     const key = String(id || "");
     if (!key) return;
     setCamino((prev) => pushVisit(prev, key, porQue));
+    promoteBurst(key);
     if (key === liveId) return;
     go({ p: key });
-  }, [go, liveId]);
+  }, [go, liveId, promoteBurst]);
   const volver = () => {
     const next = popVisit(camino);
     setCamino(next);
@@ -193,37 +220,70 @@ export default function Engine() {
   }, [liveOn, liveQ]);
 
   useEffect(() => {
-    if (!liveId) { setOpened(null); return; }
+    if (!liveId) { setOpened(null); setOpenLine(""); return; }
     let stop = false;
+    const t0 = Date.now();
+    setOpenLine("abriendo el paper… 0 s");
+    const clock = window.setInterval(() => {
+      const sec = Math.round((Date.now() - t0) / 1000);
+      setOpenLine((cur) => (cur.startsWith("leyendo") ? `leyendo secciones… ${sec} s` : `abriendo el paper… ${sec} s`));
+    }, 400);
     let sig = "";
+    let citedRefs = -1;
+    const sectionsIn = (body: any) => ((body?.paper || {}).blocks || []).some((block: any) => block && (block.kind === "h" || (block.kind === "p" && !block.abs)));
+    const quiet = () => { window.clearInterval(clock); setOpenLine(""); };
     const apply = (body: any) => {
       const doc = body.paper || {};
       const meta = body.meta || {};
-      setOpened({
-        paper: {
-          ...doc,
-          authors: doc.authors || [],
-          refs: doc.refs || {},
-          blocks: doc.blocks || [],
-          arxivId: doc.arxivId || "",
-          title: doc.title || "",
-          date: doc.date || "",
-          full: Boolean(doc.full),
-          abstract: doc.abstract || "",
-          tldr: doc.tldr || "",
-          stage: doc.stage || meta.stage,
-          source: doc.source || meta.source,
-          upgraded_from: doc.upgraded_from || meta.upgraded_from,
-          corpusid: typeof doc.corpusid === "number" ? doc.corpusid : Number(liveId),
-        },
-        remote: {
-          status: body.status,
-          stage: doc.stage || meta.stage,
-          reason: meta.reason,
-          source: doc.source || meta.source,
-          pdf: Boolean(meta.pdf),
-        },
+      const paper = {
+        ...doc,
+        authors: doc.authors || [],
+        refs: doc.refs || {},
+        blocks: doc.blocks || [],
+        arxivId: doc.arxivId || "",
+        title: doc.title || "",
+        date: doc.date || "",
+        full: Boolean(doc.full),
+        abstract: doc.abstract || "",
+        tldr: doc.tldr || "",
+        stage: doc.stage || meta.stage,
+        source: doc.source || meta.source,
+        upgraded_from: doc.upgraded_from || meta.upgraded_from,
+        corpusid: typeof doc.corpusid === "number" ? doc.corpusid : Number(liveId),
+      };
+      setOpened((prev) => {
+        const same = prev && String(prev.paper?.corpusid) === String(paper.corpusid);
+        if (same && !paper.citeMap && prev.paper?.citeMap) {
+          paper.citeMap = prev.paper.citeMap;
+          if (!paper.graphRefs) paper.graphRefs = prev.paper.graphRefs;
+        }
+        if (same && keepOpened(prev.paper, paper) !== paper) return prev;
+        return {
+          paper,
+          remote: {
+            status: body.status,
+            stage: doc.stage || meta.stage,
+            reason: meta.reason,
+            source: doc.source || meta.source,
+            pdf: Boolean(meta.pdf),
+            oa_pdf: meta.oa_pdf || "",
+            arxiv: meta.arxiv || doc.arxivId || "",
+          },
+        };
       });
+      const n = paper.refs && typeof paper.refs === "object" ? Object.keys(paper.refs).length : 0;
+      if (body?.cites === "pending" && n > 0 && n !== citedRefs) {
+        citedRefs = n;
+        fetchPaper(liveId, { cites: true }).then((next) => { if (!stop) apply(next); }).catch(() => {});
+      }
+      if (sectionsIn({ paper }) || settled(body.status)) quiet();
+      else setOpenLine((cur) => (String(cur).startsWith("leyendo") ? cur : "leyendo secciones…"));
+      const blocks = doc.blocks || [];
+      const hasBody = Boolean(doc.full) || meta.source === "latex" || meta.source === "ocr"
+        || blocks.some((block: any) => block && (block.kind === "h" || block.kind === "eq" || (block.kind === "p" && !block.abs)));
+      if (hasBody) {
+        setRowState((prev) => ({ ...prev, [liveId]: { ...(prev[liveId] || {}), id: Number(liveId), text: true } }));
+      }
     };
     const signature = (body: any) => {
       const meta = body.meta || {};
@@ -258,40 +318,93 @@ export default function Engine() {
       }
       if (!stop) window.setTimeout(loop, 2000);
     })();
-    return () => { stop = true; };
+    return () => { stop = true; window.clearInterval(clock); };
   }, [liveId, liveQ]);
 
-  useEffect(() => {
-    if (!liveQ) labeled.current = "";
-  }, [liveQ]);
   const hasResult = Boolean(liveResult);
   useEffect(() => {
-    if (!core || !liveQ || !hasResult || labeled.current === liveQ) return;
-    labeled.current = liveQ;
+    if (pending || !core || !live || liveResult || !route.p) return;
+    let rows: any[] = [];
+    try { rows = readQuestions(localStorage); } catch { rows = []; }
+    const hit = rows.find((row) => (row?.payload?.result?.papers || []).some((p: any) => paperKey(p) === route.p));
+    if (!hit?.payload?.result) return;
+    setLiveQ(hit.q);
+    setRowState(hit.payload.states || {});
+    setLiveResult(hit.payload.result);
+    setLiveOn(true);
+  }, [core, live, liveResult, route.p, pending]);
+  useEffect(() => {
+    if (!core || !liveQ || !hasResult) return;
     let stop = false;
-    fetchLabels(liveQ).then(
+    let timer = 0;
+    const run = (attempt: number) => {
+      fetchLabels(liveQ).then(
+        (body: any) => {
+          if (stop) return;
+          if (body?.reason === "pending" && attempt < 5) {
+            setLabelNote("");
+            timer = window.setTimeout(() => run(attempt + 1), 400 * 2 ** attempt);
+            return;
+          }
+          setLabelNote(body?.reason === "network" ? (body.note || "Sin red: solo el título, sin survey.") : "");
+          setLiveResult((prev) => {
+            if (!prev) return prev;
+            const papers = mergeLabels(prev.papers || [], body);
+            const by = body?.by_id || {};
+            const similar = (prev.similar || []).map((paper: any) => {
+              const extra = by[String(paper.corpusid)] || {};
+              return {
+                ...paper,
+                abstract: extra.abstract || paper.abstract || "",
+                survey: Boolean(extra.survey),
+                retracted: extra.retracted === true,
+                retraction: extra.retraction || "",
+                ...(Array.isArray(extra.authors) && extra.authors.length ? { authors: extra.authors } : {}),
+              };
+            });
+            const layout = body?.survey_paper ? pinPoint(prev.layout, body.survey_paper) : prev.layout;
+            return { ...prev, papers, similar, layout };
+          });
+          const sid = body?.survey_paper?.corpusid;
+          if (sid) prepare([sid], false).catch(() => {});
+        },
+        (err: any) => {
+          if (stop) return;
+          if (attempt < 4) {
+            timer = window.setTimeout(() => run(attempt + 1), 400 * 2 ** attempt);
+            return;
+          }
+          setLabelNote(err?.kind === "network" ? "Sin red: solo el título, sin survey." : "");
+        },
+      );
+    };
+    run(0);
+    return () => { stop = true; window.clearTimeout(timer); };
+  }, [core, liveQ, hasResult]);
+
+  const namesKey = liveResult?.group_names && liveQ && !liveResult?.layout?.pending_vectors?.length ? liveQ : "";
+  useEffect(() => {
+    if (!namesKey || !liveResult?.layout) return;
+    const packs = groupPacks(mapPapers(liveResult), liveResult.layout);
+    if (!packs.length) return;
+    let stop = false;
+    groupNames(packs).then(
       (body: any) => {
-        if (stop) return;
-        setLabelNote(body?.note || "");
-        setLiveResult((prev) => {
-          if (!prev) return prev;
-          const papers = mergeLabels(prev.papers || [], body);
-          const layout = body?.survey_paper ? pinPoint(prev.layout, body.survey_paper) : prev.layout;
-          return { ...prev, papers, layout };
-        });
-        const sid = body?.survey_paper?.corpusid;
-        if (sid) prepare([sid], false).catch(() => {});
+        if (stop || !body?.enabled || !body?.names?.length) return;
+        setLiveResult((prev) => (prev ? applyGroupNames(prev, body.names) : prev));
       },
-      () => { if (!stop) setLabelNote("Sin red: solo el título, sin survey."); },
+      () => {},
     );
     return () => { stop = true; };
-  }, [core, liveQ, hasResult]);
+  }, [namesKey]);
 
   const onSearch = async (e: { preventDefault: () => void }) => {
     e.preventDefault();
     const q = draft.trim();
     if (!q || pending) return;
-    setLiveQ(q); setLiveOn(true); setLiveErr(""); setImpatient(false); setForced(false); setTopics(null); setAsList(false);
+    const gen = ++searchGen.current;
+    setLiveQ(q); setLiveOn(true); setLiveErr(""); setImpatient(false); setForced(false); setTopics(null); setAsList(false); setLabelNote("");
+    setPending(true);
     let cached: any = null;
     try { cached = recallQuestion(localStorage, q); } catch { cached = null; }
     if (cached?.payload?.result) {
@@ -299,23 +412,38 @@ export default function Engine() {
       setLiveResult(cached.payload.result);
       setRowState(cached.payload.states || {});
       setPending(false);
+      setPhase("");
       done(step, "ok", "caché del navegador");
       go({});
       return;
     }
-    setLiveResult(null); setRowState({}); setPending(true);
+    setLiveResult(null); setRowState({});
+    const cold = !lastOk.current || Date.now() - lastOk.current > 8 * 60 * 1000;
+    setSince(0);
+    setPhase(cold ? "wake" : "search");
     const step = note("ráfaga", q);
     try {
+      if (cold) {
+        try { await warm("burst"); } catch { /* la ráfaga dice si de verdad falló */ }
+        if (searchGen.current !== gen) return;
+        setSince(0);
+        setPhase("search");
+      }
       const body = await burst(q);
+      if (searchGen.current !== gen) return;
+      lastOk.current = Date.now();
       setLiveResult(body);
+      setPhase(body?.layout?.pending_vectors?.length ? "layout" : "");
       const bits = body?.seconds ? Object.entries(body.seconds).map(([k, v]) => `${k} ${v}s`).join(", ") : "";
       done(step, "ok", body?.cached ? `caché del servidor${bits ? ` — ${bits}` : ""}` : bits);
       go({});
     } catch (err: any) {
+      if (searchGen.current !== gen) return;
+      setPhase("");
       setLiveErr(explain(err));
       done(step, "error", explain(err));
     } finally {
-      setPending(false);
+      if (searchGen.current === gen) setPending(false);
     }
   };
   const wantThis = (id: string) => {
@@ -330,6 +458,7 @@ export default function Engine() {
     setLiveOn(false); setLiveQ(""); setLiveResult(null); setRowState({}); setTopics(null); setOpened(null); setPending(false); setLiveErr(""); setImpatient(false); setForced(false);
     go({});
   };
+  const shownQ = String(liveResult?.query || liveQ || "");
   const questions = content?.map.questions || [];
   const q = questions.find((x: any) => x.id === (route.q || questions[0]?.id)) || questions[0];
   const cluster = q?.clusters.find((c: any) => c.id === route.c);
@@ -358,21 +487,23 @@ export default function Engine() {
     <>
       <header className="topbar">
         <a className="brand" href="#/" onClick={() => window.scrollTo({ top: 0 })}><span className="lens" aria-hidden="true" />Microscopio de lectura</a>
-        <nav className="scope" aria-label="Nivel de zoom">
-          {steps.map((s, i) => (
-            <button key={s.n} className={`step ${level === s.n ? "on" : ""} ${level > s.n ? "past" : ""}`} disabled={!s.on || level === s.n} onClick={s.on} title={s.sub || ""}>
-              <span className="dot">{s.n}</span><span className="lbl">{s.label}</span>
-            </button>
-          ))}
-        </nav>
+        {!(core && (liveOn || liveId)) && (
+          <nav className="scope" aria-label="Nivel de zoom">
+            {steps.map((s) => (
+              <button key={s.n} className={`step ${level === s.n ? "on" : ""} ${level > s.n ? "past" : ""}`} disabled={!s.on || level === s.n} onClick={s.on} title={s.sub || ""}>
+                <span className="dot">{s.n}</span><span className="lbl">{s.label}</span>
+              </button>
+            ))}
+          </nav>
+        )}
         {live && !(core && !liveOn && !liveId) && (
           <form className="live-search" onSubmit={onSearch}>
-            <input aria-label="Pregunta" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Pregunta" />
+            <input aria-label="Pregunta" title={draft || undefined} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Pregunta" />
             <button type="submit">Buscar</button>
           </form>
         )}
         {!core && <button className="companion-toggle" aria-pressed={companion} onClick={() => setCompanion((v) => !v)} title="Compañero de lectura opcional: ofrece ayuda, nunca interrumpe, no guarda nada (tecla C)">Compañero {companion ? "activado" : "apagado"}</button>}
-        <span className="proto">prototipo · datos locales</span>
+        {!(live && process.env.NEXT_PUBLIC_RRM_OFFLINE !== "1") && <span className="proto">prototipo · datos locales</span>}
       </header>
 
       <main key={`${level}-${route.c}-${route.p}`} className="zoom-in">
@@ -381,14 +512,14 @@ export default function Engine() {
             {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
             {core && <button type="button" className="link" onClick={volver}>volver</button>}
             {core && camino[camino.length - 1]?.porQue && <p className="jump-why">Salto: {camino[camino.length - 1].porQue}</p>}
-            <PaperView paper={opened.paper} content={content || {}} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} showInstrument={!core} showCrops={!core} core={core} burstIds={(liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p))} map={liveResult ? { papers: liveResult.papers || [], edges: liveResult.edges || [], layout: liveResult.layout } : null} onOpenPaper={abrir} />
+            <PaperView paper={opened.paper} content={content || {}} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} showInstrument={!core} showCrops={!core} core={core} burstIds={(liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p))} map={liveResult ? { papers: mapPapers(liveResult), edges: liveResult.edges || [], layout: liveResult.layout } : null} onOpenPaper={abrir} onPromote={() => promoteBurst(liveId)} />
           </div>
         )}
         {live && (liveOn || liveId) && liveId && !opened && (
           <div className="lvl">
             {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
             {core && <button type="button" className="link" onClick={volver}>volver</button>}
-            <p className="center-msg">{liveErr ? "No se pudo cargar el paper (se sigue intentando)." : "Cargando…"}</p>
+            <p className="center-msg">{liveErr ? "No se pudo cargar el paper (se sigue intentando)." : (openLine || "abriendo el paper…")}</p>
             {liveErr && <p className="fail-reason" role="alert">{liveErr}</p>}
           </div>
         )}
@@ -397,21 +528,21 @@ export default function Engine() {
             <p className="eyebrow">Una pregunta</p>
             <h1 className="question">Qué quieres entender</h1>
             <form className="ask-box" onSubmit={onSearch}>
-              <input aria-label="Pregunta" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Una pregunta, un título, un tema" autoFocus />
+              <input aria-label="Pregunta" title={draft || undefined} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Una pregunta, un título, un tema" autoFocus />
               <button type="submit" disabled={pending || !draft.trim()}>Ver el mapa</button>
             </form>
-            {engine === "preparando" && <p className="warm" role="status">preparando el motor…</p>}
+            {(engine === "preparando" || phase === "wake") && <p className="warm" role="status">{beat(phase || "wake", since)}</p>}
             <p className="sub">Los papers aparecen como puntos en cuanto la ráfaga responde. El tamaño es el puesto. El texto completo de los 10 primeros se prepara después, sin bloquear el mapa.</p>
           </section>
         )}
         {live && liveOn && !liveId && (
           <section className={`lvl ${core ? "lvl-map" : ""}`}>
             {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
-            <h1 className="question">{liveQ}</h1>
+            <h1 className="question">{shownQ}</h1>
             {!core && topics && <p className="sub" data-subtopics>{topics.length ? <>Subtemas: {topics.join(" · ")}</> : "Esta pregunta no separó subtemas."}</p>}
-            {engine === "preparando" && !liveResult && <p className="warm" role="status">preparando el motor…</p>}
-            {core && pending && !liveResult && engine !== "preparando" && <div className="platina is-wait" role="status"><p>buscando…</p></div>}
-            {!core && pending && !liveResult && engine !== "preparando" && <p className="warm" role="status">buscando…</p>}
+            {!liveResult && <p className="warm" role="status">{beat(phase || (engine === "preparando" ? "wake" : "search"), since)}</p>}
+            {phase === "layout" && liveResult && <p className="warm" role="status">{beat("layout", since)}</p>}
+            {core && !liveResult && <div className="platina is-wait" role="status"><p>{beat(phase || "search", since)}</p></div>}
             {liveErr && <p className="fail-reason" role="alert">{liveErr}</p>}
             {core && liveErr && !liveResult && !pending && <div className="platina is-wait"><p>No se pudo armar el mapa.</p></div>}
             {core && liveResult && (liveResult.papers || []).length > 0 && (
@@ -421,9 +552,10 @@ export default function Engine() {
                   <button type="button" className={asList ? "on" : ""} onClick={() => setAsList(true)}>Lista</button>
                 </div>
                 {labelNote && <p className="muted" role="status">{labelNote}</p>}
+                {liveResult.topic_note && <p className="muted" role="status">{liveResult.topic_note}</p>}
                 {asList
                   ? <CoreList papers={liveResult.papers || []} states={rowState} onOpen={(id: string) => abrir(id, "nodo del mapa")} onWant={wantThis} />
-                  : <LiveMap papers={liveResult.papers || []} edges={liveResult.edges || []} layout={liveResult.layout} states={rowState} onOpen={(id: string) => abrir(id, "nodo del mapa")} onWant={wantThis} />}
+                  : <LiveMap papers={mapPapers(liveResult)} edges={liveResult.edges || []} layout={liveResult.layout} states={rowState} query={shownQ} onLayout={(next) => { setLiveResult((prev) => (prev ? { ...prev, layout: next } : prev)); if (!next?.pending_vectors?.length) setPhase((cur) => (cur === "layout" ? "" : cur)); }} onOpen={(id: string) => abrir(id, "nodo del mapa")} onWant={wantThis} />}
                 <p className="muted small">Datos de papers y citas: Semantic Scholar. LaTeX primero; OCR solo si el paper no tiene LaTeX.</p>
               </>
             )}
@@ -483,8 +615,7 @@ function CoreList({ papers, states, onOpen, onWant }: { papers: any[]; states: R
             <p className="authors">{[p.year, p.citationcount != null ? `${p.citationcount} citas` : null, p.venue].filter((x) => x != null && x !== "").join(" · ")}</p>
             {p.survey && <p className="survey-tag">survey</p>}
             {p.retracted && <p className="retract">retractado</p>}
-            {p.abstract ? <p className="core-blurb">{p.abstract}</p> : p.tldr ? <p className="core-blurb"><span className="chip chip-simulado">generado</span> {p.tldr}</p> : null}
-            {!p.retracted && p.retraction && <p className="authors">{p.retraction}</p>}
+            {p.abstract ? <p className="core-blurb">{p.abstract}</p> : p.tldr ? <p className="core-blurb"><span className="chip chip-simulado">generado</span> {p.tldr}</p> : <p className="small">Sin abstract en el índice.</p>}
             <button type="button" onClick={() => onWant(id)}>quiero leer este</button>
           </li>
         );

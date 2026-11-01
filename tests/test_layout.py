@@ -52,11 +52,11 @@ def test_missing_vector_does_not_invent_a_projection():
     assert "variance" not in layout
 
 
-def test_specter_pca_groups_by_cosine_and_keeps_citations():
+def test_specter_knn_groups_by_cosine_and_keeps_citations():
     papers = [
-        {"corpusid": 1, "year": 2000},
-        {"corpusid": 2, "year": 2001},
-        {"corpusid": 3, "year": 2002},
+        {"corpusid": 1, "year": 2000, "title": "in-context learning"},
+        {"corpusid": 2, "year": 2001, "title": "in-context learning prompts"},
+        {"corpusid": 3, "year": 2002, "title": "neural radiance field"},
     ]
     vectors = np.asarray([
         [1.0, 0.0, 0.0, 0.0],
@@ -64,7 +64,7 @@ def test_specter_pca_groups_by_cosine_and_keeps_citations():
         [0.0, 1.0, 0.0, 0.0],
     ], dtype=np.float64)
     layout = place_papers(papers, [{"citing": 2, "cited": 1}, {"citing": 2, "cited": 99}], vectors)
-    assert layout["method"] == "specter2-pca"
+    assert layout["method"] == "specter2-knn"
     clusters = [point["cluster"] for point in layout["points"]]
     assert clusters[0] == clusters[1]
     assert clusters[2] != clusters[0]
@@ -72,18 +72,69 @@ def test_specter_pca_groups_by_cosine_and_keeps_citations():
     assert (1, 2) in pairs
     assert (1, 3) not in pairs
     assert layout["links"] == [{"citing": 2, "cited": 1, "kind": "citation"}]
-    share = sum(layout["variance"])
-    assert 0 < share <= 1
-    assert layout["points"][0]["x"] >= WORLD_W / 2 - 0.1
+    assert layout["points"][0]["focus"] is True
+    assert layout["neighbors"]["k"] >= 1
+    names = " ".join(group["name"] for group in layout["groups"])
+    assert "context" in names
+    assert "?" not in names
 
 
-def test_identical_vectors_are_nudged_and_labeled():
+def test_knn_splits_a_neighborhood_across_the_canvas():
+    rng = np.random.default_rng(3)
+    titles = [
+        "in-context learning prompts",
+        "neural radiance field",
+        "graph neural networks",
+        "attention transformer heads",
+    ]
+    blobs = []
+    for t in range(4):
+        center = np.zeros(16)
+        center[t] = 5.0
+        blobs.append(center + rng.normal(scale=0.12, size=(18, 16)))
+    vectors = np.vstack(blobs)
+    papers = [
+        {"corpusid": i + 1, "year": 2018, "title": titles[i // 18], "abstract": titles[i // 18]}
+        for i in range(72)
+    ]
+    layout = place_papers(papers, [], vectors)
+    groups = layout["groups"]
+    assert 3 <= len(groups) <= 6
+    assert all(group["n"] >= 5 for group in groups)
+    assert "context" in " ".join(group["name"] for group in groups)
+    assert "?" not in " ".join(group["name"] for group in groups)
+    for i, a in enumerate(groups):
+        for b in groups[i + 1 :]:
+            dist = ((a["cx"] - b["cx"]) ** 2 + (a["cy"] - b["cy"]) ** 2) ** 0.5
+            assert dist > a["r"] + b["r"]
+    pts = [(p["x"], p["y"], p["cluster"]) for p in layout["points"]]
+    for i, a in enumerate(pts):
+        for b in pts[i + 1 :]:
+            if a[2] != b[2]:
+                continue
+            assert (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 >= 20 ** 2
+
+
+def test_identical_vectors_stay_apart():
     vector = np.asarray([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64)
-    layout = place_papers([{"corpusid": 1}, {"corpusid": 2}], [], vector)
-    assert layout["method"] == "specter2-pca"
-    assert any(point.get("nudged") for point in layout["points"])
+    layout = place_papers(
+        [{"corpusid": 1, "title": "alpha"}, {"corpusid": 2, "title": "beta"}],
+        [],
+        vector,
+    )
+    assert layout["method"] == "specter2-knn"
     dist = abs(layout["points"][0]["y"] - layout["points"][1]["y"]) + abs(layout["points"][0]["x"] - layout["points"][1]["x"])
     assert dist >= 28
+
+
+def test_map_rows_keeps_ranked_papers_ahead_of_faiss_hits():
+    from rrm.search.layout import map_rows
+
+    rows = map_rows({
+        "papers": [{"corpusid": 2, "title": "ranked"}],
+        "similar": [{"corpusid": 2, "title": "dup"}, {"corpusid": 9, "title": "faiss"}],
+    })
+    assert [row["corpusid"] for row in rows] == [2, 9]
 
 
 def test_offline_burst_uses_citations_not_specter(tmp_path):

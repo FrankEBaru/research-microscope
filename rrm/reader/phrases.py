@@ -1,6 +1,7 @@
 """Frases del autor para la caja. Parseo local: sin FAISS y sin modelo."""
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -44,7 +45,10 @@ def collect_phrases(paper):
             if eq and sent_i == len(sents) - 1:
                 bits = bits + [eq]
             text = plain(sent)
-            if text and bits:
+            # El abstract no trae símbolos. Sin esto, una frase literal del abstract
+            # no está en phrases.npy y el coseno cita a otro paper. RRM_PHRASE_ABSTRACT=0 lo apaga.
+            abstract = bool(block.get("abs")) and os.environ.get("RRM_PHRASE_ABSTRACT", "1") != "0"
+            if text and (bits or abstract):
                 rows.append({
                     "paper": paper.get("corpusid"),
                     "section": section,
@@ -58,7 +62,9 @@ def write_phrases(folder, paper):
     rows = collect_phrases(paper)
     path = Path(folder) / "phrases.json"
     body = {"paper": paper.get("corpusid"), "rows": rows}
-    path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+    from rrm.reader.files import atomic_write
+
+    atomic_write(path, json.dumps(body, ensure_ascii=False))
     return rows
 
 
@@ -107,25 +113,90 @@ def query_tokens(text):
     return words, chunks
 
 
+_CAP = 12
+_PER_PAPER = 3
+
+
 def _chunk_in(chunk, row):
     needle = re.sub(r"\s+", "", chunk)
-    blob = re.sub(r"\s+", "", (row.get("text") or "") + "".join(row.get("latex") or []))
-    return bool(needle) and needle.casefold() in blob.casefold()
+    blob = (row.get("text") or "") + "".join(row.get("latex") or [])
+    if not needle:
+        return False
+    if len(needle) <= 2 and needle.isalpha():
+        return re.search(rf"(?<![A-Za-z]){re.escape(needle)}(?![A-Za-z])", blob, re.I) is not None
+    flat = re.sub(r"\s+", "", blob)
+    return needle.casefold() in flat.casefold()
 
 
-def search_phrases(rows, text):
-    """Cada palabra y cada trozo LaTeX tienen que estar en la frase."""
+def rank_phrases(rows, text):
+    """Palabras y LaTeX en la misma frase. Símbolo + palabras van primero. Tope 3 por paper y 12."""
     words, chunks = query_tokens(text)
     if not words and not chunks:
-        return []
-    hits = []
+        return [], 0
+    scored = []
     for row in rows or []:
         if not isinstance(row, dict):
             continue
         flat = (row.get("text") or "").casefold()
-        if words and not all(word in flat for word in words):
+        word_hits = sum(1 for word in words if word in flat)
+        if words and word_hits != len(words):
             continue
-        if chunks and not all(_chunk_in(chunk, row) for chunk in chunks):
+        chunk_hits = sum(1 for chunk in chunks if _chunk_in(chunk, row))
+        if chunks and chunk_hits != len(chunks):
             continue
-        hits.append(row)
+        both = 1 if words and chunks else 0
+        scored.append((both, word_hits + chunk_hits, row))
+    scored.sort(key=lambda item: (-item[0], -item[1]))
+    picked, per = [], {}
+    for _both, _score, row in scored:
+        pid = row.get("paper")
+        if per.get(pid, 0) >= _PER_PAPER:
+            continue
+        per[pid] = per.get(pid, 0) + 1
+        picked.append(row)
+        if len(picked) >= _CAP:
+            break
+    return picked, len(scored)
+
+
+def search_phrases(rows, text):
+    hits, _total = rank_phrases(rows, text)
     return hits
+
+
+def append_phrase_rows(folder, extra):
+    """Agrega filas al final. El .npy viejo sigue alineado con el prefijo."""
+    current = read_phrases(folder)
+    path = Path(folder) / "phrases.json"
+    paper = None
+    if path.is_file():
+        try:
+            body = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(body, dict):
+                paper = body.get("paper")
+        except (OSError, ValueError):
+            paper = None
+    if paper is None and extra:
+        paper = extra[0].get("paper")
+    from rrm.reader.files import atomic_write
+
+    atomic_write(path, json.dumps({"paper": paper, "rows": list(current) + list(extra)}, ensure_ascii=False))
+    return list(current) + list(extra)
+
+
+def store_progress(root, ids):
+    """Papers con al menos una frase con texto. Un archivo vacío no cuenta."""
+    ready = total = 0
+    base = Path(root) if root else None
+    for raw in ids or []:
+        try:
+            cid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        total += 1
+        if not base:
+            continue
+        rows = read_phrases(base / str(cid))
+        if any(isinstance(row, dict) and str(row.get("text") or "").strip() for row in rows):
+            ready += 1
+    return {"ready": ready, "total": total}
