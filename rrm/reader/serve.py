@@ -114,6 +114,8 @@ if modal.is_local():
         "RRM_PANORAMA_TIMEOUT": os.environ.get("RRM_PANORAMA_TIMEOUT", ""),
         # Empty unless this deploy sets it. Unset = no OCR cap.
         "RRM_OCR_MAX": os.environ.get("RRM_OCR_MAX", ""),
+        # RRM-49: 0 vuelve a la caja de una sola afirmación (RRM-43).
+        "RRM_CLAIMS": os.environ.get("RRM_CLAIMS", ""),
     })
 else:
     secret = modal.Secret.from_dict({})

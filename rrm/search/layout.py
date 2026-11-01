@@ -16,6 +16,7 @@ Coordinates are in the same 1600×1000 field as the curated platina.
 from __future__ import annotations
 
 import math
+import os
 import re
 
 WORLD_W = 1600.0
@@ -745,8 +746,115 @@ def _median_groups(unit, target):
     return labels
 
 
+def _kmeans_pp(x, k, seed, iters=25):
+    """Spherical k-means, k-means++ seeds from a fixed RNG. Returns (labels, inertia).
+
+    Vectorized: a cold container builds the title index in a thread, and every
+    Python-level step here waits on that thread's GIL.
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    n = int(x.shape[0])
+    chosen = [int(rng.integers(n))]
+    for _ in range(k - 1):
+        gap = np.clip(1.0 - np.max(x @ x[chosen].T, axis=1), 0.0, None)
+        total = float(gap.sum())
+        chosen.append(int(rng.choice(n, p=gap / total)) if total > 0 else int(rng.integers(n)))
+    cents = x[np.asarray(chosen)].copy()
+    labels = np.full(n, -1, dtype=np.int64)
+    for _ in range(iters):
+        new = np.argmax(x @ cents.T, axis=1)
+        if np.array_equal(new, labels):
+            break
+        labels = new
+        sums = (labels[None, :] == np.arange(k)[:, None]).astype(x.dtype) @ x
+        norms = np.linalg.norm(sums, axis=1, keepdims=True)
+        cents = np.where(norms > 1e-9, sums / np.clip(norms, 1e-9, None), cents)
+    return labels, float(np.sum(1.0 - np.max(x @ cents.T, axis=1)))
+
+
+def _silhouette_fast(x, labels):
+    """Same value as _silhouette, without a Python loop over the points."""
+    import numpy as np
+
+    labels = np.asarray(labels)
+    kinds = np.unique(labels)
+    if len(kinds) < 2:
+        return -1.0
+    dist = np.clip(1.0 - (x @ x.T), 0.0, 2.0)
+    np.fill_diagonal(dist, 0.0)
+    onehot = (labels[:, None] == kinds[None, :]).astype(np.float64)
+    sizes = onehot.sum(axis=0)
+    sums = dist @ onehot
+    own = np.searchsorted(kinds, labels)
+    rows = np.arange(len(labels))
+    mine = sizes[own] - 1.0
+    a = sums[rows, own] / np.clip(mine, 1.0, None)
+    other = sums / sizes[None, :]
+    other[rows, own] = np.inf
+    b = other.min(axis=1)
+    score = (b - a) / np.maximum(np.maximum(a, b), 1e-9)
+    return float(np.where(mine > 0, score, 0.0).sum() / len(labels))
+
+
+GROUP_MIN = 8
+GROUP_SIL_MIN = 0.03
+FAR_CORE = 0.94
+
+
+def _proximity_groups(unit):
+    """2 to 4 groups by real proximity, k by silhouette; one group if none holds.
+
+    The FAISS ball is tight: every vector shares the query direction, so the
+    vectors are centered before k-means. No group under GROUP_MIN papers.
+    """
+    import numpy as np
+
+    n = int(unit.shape[0])
+    if n < 12:
+        return _agglomerate(unit @ unit.T)
+    floor = GROUP_MIN if n >= 5 * GROUP_MIN else max(3, n // 5)
+    x = unit - unit.mean(axis=0)
+    x = x / np.clip(np.linalg.norm(x, axis=1, keepdims=True), 1e-9, None)
+    best, score = None, GROUP_SIL_MIN
+    for k in range(2, min(4, n // floor) + 1):
+        labels = min((_kmeans_pp(x, k, seed) for seed in range(4)), key=lambda t: t[1])[0]
+        counts = np.bincount(labels, minlength=k)
+        counts = counts[counts > 0]
+        if len(counts) < 2 or int(counts.min()) < floor:
+            continue
+        got = _silhouette_fast(x, labels)
+        if got > score:
+            best, score = labels.tolist(), got
+    return _renumber(best) if best is not None else [0] * n
+
+
+def _far_groups(unit, clusters, top=10):
+    """Groups with none of the top papers and a centroid far from theirs."""
+    import numpy as np
+
+    if len(set(clusters)) < 2:
+        return set()
+    core = unit[: min(top, len(clusters))].mean(axis=0)
+    core = core / (float(np.linalg.norm(core)) or 1e-9)
+    far = set()
+    for cid in set(clusters):
+        idx = [i for i, c in enumerate(clusters) if c == cid]
+        if any(i < top for i in idx):
+            continue
+        mean = unit[np.asarray(idx)].mean(axis=0)
+        if float(mean @ core) / (float(np.linalg.norm(mean)) or 1e-9) < FAR_CORE:
+            far.add(cid)
+    return far
+
+
+def _group_mode():
+    return "median" if os.environ.get("RRM_GROUPS", "").strip().lower() == "median" else "proximity"
+
+
 def _groups_of(unit):
-    """3 to 6 groups. k by silhouette when every group has enough papers."""
+    """3 to 6 groups (RRM_GROUPS=median, the pre-RRM-49 path). k by silhouette when every group has enough papers."""
     n = int(unit.shape[0])
     if n < 12:
         return _agglomerate(unit @ unit.T)
@@ -860,13 +968,17 @@ def _knn_map(rows, edges, vectors):
     norms = np.clip(np.linalg.norm(raw, axis=1, keepdims=True), 1e-9, None)
     unit = raw / norms
     sim = unit @ unit.T
-    clusters = _groups_of(unit)
+    if _group_mode() == "median":
+        clusters, far = _groups_of(unit), set()
+    else:
+        clusters = _proximity_groups(unit)
+        far = _far_groups(unit, clusters)
     names = _cluster_names(rows, clusters)
     members = {}
     for i, cid in enumerate(clusters):
         members.setdefault(cid, []).append(i)
     axis = _pca(unit)[:, 0]
-    order = sorted(members, key=lambda cid: float(sum(axis[i] for i in members[cid]) / len(members[cid])))
+    order = sorted(members, key=lambda cid: (cid in far, float(sum(axis[i] for i in members[cid]) / len(members[cid]))))
     local = {}
     radii = []
     for cid in order:
@@ -891,6 +1003,7 @@ def _knn_map(rows, edges, vectors):
             "cx": round(sx, 2),
             "cy": round(sy, 2),
             "r": round(radius, 2),
+            **({"far": True} if cid in far else {}),
         })
     for p in world:
         p[0] = min(WORLD_W - 36, max(36, p[0]))

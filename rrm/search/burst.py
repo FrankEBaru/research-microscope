@@ -314,6 +314,20 @@ def _from_paper(seed, search, graph, cc, vector_of, n):
     return _with_qvec(_result("paper", int(seed), papers, scores, similar, edges, [], seconds), vec)
 
 
+def _boosted(graph, chosen, scores, seed, n):
+    """The title match first, then the semantic list without it, still n long."""
+    local = _locate_one(graph, seed)
+    if local < 0:
+        return chosen, scores
+    chosen = np.asarray(chosen, dtype=np.int64)
+    scores = np.asarray(scores, dtype=np.float64)
+    keep = chosen != local
+    top = float(scores.max()) if scores.size else 0.0
+    chosen = np.concatenate([[local], chosen[keep]])[: int(n)]
+    scores = np.concatenate([[top], scores[keep]])[: int(n)]
+    return chosen, scores
+
+
 def burst_query(
     query,
     encode,
@@ -325,6 +339,7 @@ def burst_query(
     vector_of=None,
     split=None,
     split_timeout=MUSE_TIMEOUT_S,
+    boost=None,
 ):
     """Rank one query.
 
@@ -333,6 +348,8 @@ def burst_query(
     count of graph.ids[i]. resolve(query) -> corpus id or None. vector_of(corpus
     id) -> stored vector or None. split(query) -> subtopic strings; it is timed
     out and discarded on failure, and it does not change the ranking.
+    boost(query) -> corpus id or None: a title match that goes first in the
+    semantic list instead of replacing it (RRM-49).
     """
     n = max(0, int(n))
     if resolve is not None:
@@ -343,6 +360,7 @@ def burst_query(
     proximity = use_proximity(query)
     pending, started, pool = _start_split(split, query)
     seconds = {}
+    seed = boost(query) if boost is not None and n > 0 else None
     t0 = time.perf_counter()
     qvec = np.asarray(encode([query]), dtype=np.float32)[0]
     seconds["encode"] = time.perf_counter() - t0
@@ -354,13 +372,15 @@ def burst_query(
     t0 = time.perf_counter()
     seed_local, dists = _align(graph, similar)
     chosen, score_arr = link_rank(seed_local, dists, graph, cc, proximity, n)
+    if seed is not None:
+        chosen, score_arr = _boosted(graph, chosen, score_arr, int(seed), n)
     papers = _ids(graph, chosen)
     seconds["rank"] = time.perf_counter() - t0
     t0 = time.perf_counter()
     edges = edges_among(graph, _edge_locals(graph, chosen, similar))
     seconds["edges"] = time.perf_counter() - t0
     subtopics, seconds["split"] = _join_split(pending, started, pool, split_timeout)
-    return _with_qvec(_result(
+    out = _with_qvec(_result(
         "long" if proximity else "short",
         None,
         papers,
@@ -370,3 +390,6 @@ def burst_query(
         subtopics,
         seconds,
     ), qvec)
+    if seed is not None:
+        out["title_first"] = int(seed)
+    return out

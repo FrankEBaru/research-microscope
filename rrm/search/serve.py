@@ -29,7 +29,7 @@ from rrm.search.twins import STUB_OF, has_stub, remap_result
 from rrm.search.qcache import CACHE_DIR, cached_burst, load_entry, normalize_question, save_entry
 from rrm.search.vecfill import fill_encoded, read_cache
 from rrm.search.prefetch import detach_queue, note_burst_top
-from rrm.search.display import IdTable, PaperLookup, is_identifier
+from rrm.search.display import IdTable, PaperLookup, is_identifier, title_hijack
 from rrm.search.encode import QueryEncoder
 from rrm.search.faissutil import ensure_direct_map, search_vectors, vector_at
 from rrm.search.graph import locate
@@ -66,6 +66,8 @@ if modal.is_local():
         "RRM_DEMO_TOKEN": os.environ.get("RRM_DEMO_TOKEN", ""),
         "RRM_FEATURES": os.environ.get("RRM_FEATURES", "core"),
         "RRM_GROUP_NAMES": os.environ.get("RRM_GROUP_NAMES", ""),
+        "RRM_GROUPS": os.environ.get("RRM_GROUPS", ""),
+        "RRM_TITLE": os.environ.get("RRM_TITLE", ""),
         "RRM_LOOKUP_SYNC": os.environ.get("RRM_LOOKUP_SYNC", ""),
     })
 else:
@@ -219,6 +221,12 @@ class BurstSearch:
             hit = None
         if hit is not None and has_stub(hit):
             hit = None  # RRM-48: stored before the NeRF twin fix; recompute once
+        if hit is not None and "title_seed" in hit:
+            hit = None  # RRM-49: a test deploy pulled FAISS toward the title's vector (medical papers); never serve it
+        if hit is not None and not title_hijack(query) and "title_first" not in hit and (
+            hit.get("mode") == "paper" or self._resolve(query) is not None
+        ):
+            hit = None  # RRM-49: stored by the old title hijack or before the title boost; recompute once
         if hit is not None:
             scored_rows = list(hit.get("papers") or []) + list(hit.get("similar") or [])
             needs_cosine = hit.get("qvec") is not None and (
@@ -384,6 +392,9 @@ class BurstSearch:
         from rrm.search.querylang import retrieval_query, topic_fields
 
         encoded, query_en = retrieval_query(query)
+        # RRM-49: a title match goes first in the semantic list. RRM_TITLE=hijack
+        # restores the old path, where the title opened that paper's own list.
+        hijack = title_hijack(encoded)
         result = burst_query(
             encoded,
             encode=self.encoder.encode,
@@ -391,7 +402,8 @@ class BurstSearch:
             graph=self.graph,
             cc=self.cc,
             n=int(n),
-            resolve=self._resolve,
+            resolve=self._resolve if hijack else None,
+            boost=None if hijack else self._resolve,
             vector_of=vector_of,
             split=None,  # papers never wait on Muse; labels come from GET /subtopics
         )
@@ -414,6 +426,8 @@ class BurstSearch:
         }
         if result.get("qvec"):
             out["qvec"] = result["qvec"]
+        if result.get("title_first") is not None:
+            out["title_first"] = int(result["title_first"])
         out.update(topic_fields(result.get("qvec"), list(papers["corpusids"]) + [row["corpusid"] for row in result["similar"]], vector_of, cosine))
         _stamp_cosines(out)
         out["seconds"]["hydrate"] = round(time.perf_counter() - t0, 4)

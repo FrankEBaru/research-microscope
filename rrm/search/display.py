@@ -1,5 +1,6 @@
 """One display table: corpusid, title, year, venue, citationcount, tldr, plus doi, arxiv, title_norm."""
 
+import os
 import re
 
 import numpy as np
@@ -250,6 +251,11 @@ def is_identifier(query):
     if not text:
         return False
     return bool(_DOI.match(text) or _DOI.match(canon_doi(text)) or "doi.org/" in text.lower() or _ARXIV.match(text) or _CORPUS.match(text))
+
+
+def title_hijack(query):
+    """Identifiers open the paper. A title does only with RRM_TITLE=hijack (pre-RRM-49)."""
+    return os.environ.get("RRM_TITLE", "").strip().lower() == "hijack" or is_identifier(query)
 
 
 class PaperLookup:

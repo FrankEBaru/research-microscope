@@ -171,3 +171,32 @@ def test_cache_merge_keeps_burst_and_papers(tmp_path):
     got = load_entry(tmp_path, "race")
     assert got["burst"]["n"] == 1
     assert got["papers"]["1"]["status"] == "done"
+
+
+def test_claims_split_by_sentence_in_one_call_and_flag_restores_one_claim(monkeypatch):
+    seen = []
+
+    def complete(body):
+        seen.append(body)
+        if len(seen) % 2 == 1:
+            raw = {
+                "afirmaciones": [
+                    {"text": "Usa atención.", "clase": "coincide", "cite": "Attention is all you need", "paper_id": "7"},
+                    {"text": "Usa un dataset secreto.", "clase": "sin_respaldo", "cite": "", "paper_id": ""},
+                ],
+                "te_falto": [{"text": "Falta el learning rate con datos.", "cite": "learning rate with data", "paper_id": "8"}],
+            }
+            return _payload(json.dumps(raw))
+        return _payload(json.dumps({"keep": [True, True, True]}))
+
+    monkeypatch.delenv("RRM_CLAIMS", raising=False)
+    parts, note, _cost = review("Usa atención. Usa un dataset secreto.", CITES, complete=complete)
+    assert len(seen) == 2 and note == ""
+    user = seen[0]["input"][1]["content"]
+    assert "1. Usa atención.\n2. Usa un dataset secreto." in user
+    assert "oraciones numeradas" in seen[0]["input"][0]["content"]
+    assert [len(parts[p]) for p in ("coincide", "contradice", "sin_respaldo", "te_falto")] == [1, 0, 1, 1]
+    monkeypatch.setenv("RRM_CLAIMS", "0")
+    review("Usa atención. Usa un dataset secreto.", CITES, complete=complete)
+    assert "una sola entrada" in seen[2]["input"][0]["content"]
+    assert "Explicación:\nUsa atención. Usa un dataset secreto." in seen[2]["input"][1]["content"]

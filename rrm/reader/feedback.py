@@ -18,6 +18,22 @@ _PROMPT = (
     "Su texto habla de lo que dice la cita, y la cita es un trozo literal de esa frase. "
     "No des un veredicto de bien o mal."
 )
+# RRM-49: la explicación llega ya cortada en oraciones numeradas; cada idea es una afirmación.
+_PROMPT_CLAIMS = (
+    "La explicación del lector viene en oraciones numeradas. Divídela en afirmaciones: "
+    "una por oración, o más si una oración une dos ideas; no juntes oraciones. "
+    "text es la afirmación con las palabras del lector. "
+    "Clasifica cada una contra las frases numeradas: "
+    "coincide si dice lo mismo que una frase (si la repite, también); "
+    "contradice si la niega o afirma lo contrario, aunque la frase no contenga la palabra «no»; "
+    "sin_respaldo si ninguna frase habla de eso. "
+    "En coincide y contradice, cite es un trozo copiado tal cual de esa frase, "
+    "sin reescribir el LaTeX, y paper_id es el de la frase. "
+    "En sin_respaldo, cite y paper_id van vacíos. "
+    "te_falto va aparte: hasta dos cosas importantes que las frases dicen y el lector no mencionó. "
+    "Su texto habla de lo que dice la cita, y la cita es un trozo literal de esa frase. "
+    "No des un veredicto de bien o mal."
+)
 _CHECK = (
     "keep[i] es true o false. "
     "Si la parte es contradice, true cuando el texto dice que la cita es falsa o afirma lo contrario. "
@@ -27,6 +43,19 @@ _CHECK = (
     "Si la parte es te_falto, true cuando la cita aporta un hecho que el texto no dijo. "
     "No uses false solo porque la cita no contiene la palabra no."
 )
+
+
+def _claims_on():
+    import os
+    return os.environ.get("RRM_CLAIMS", "").strip().lower() not in ("0", "off", "false", "no")
+
+
+def _sentences(text):
+    """Corte barato por oración; Meta afina dentro de la misma llamada."""
+    import re
+    flat = " ".join((text or "").split())
+    parts = re.split(r"(?<=[.!?;])\s+(?=[^\W\d_¿¡]|[¿¡])", flat)
+    return [part for part in (p.strip() for p in parts) if part]
 
 
 def _flat(text):
@@ -183,9 +212,13 @@ def review(explanation, citations, complete=None):
     if not (explanation or "").strip() or not citations:
         return empty, "", usage_cost(None)
     call = complete or post_responses
-    user = f"Explicación:\n{explanation.strip()}\n\nFrases:\n{_phrases(citations)}"
+    if _claims_on():
+        said = "\n".join(f"{i}. {line}" for i, line in enumerate(_sentences(explanation), 1))
+        user, prompt = f"Explicación:\n{said}\n\nFrases:\n{_phrases(citations)}", _PROMPT_CLAIMS
+    else:  # RRM_CLAIMS=0: RRM-43, una sola afirmación
+        user, prompt = f"Explicación:\n{explanation.strip()}\n\nFrases:\n{_phrases(citations)}", _PROMPT
     try:
-        first = call(_body(user, "caja", _point_schema(), 1200, _PROMPT))
+        first = call(_body(user, "caja", _point_schema(), 1600, prompt))
     except Exception:
         return empty, note_for("red"), usage_cost(None)
     cost = usage_cost(first.get("usage") if isinstance(first, dict) else None)
