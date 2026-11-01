@@ -210,7 +210,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
                   {item.cite && <> <q>{item.cite}</q></>}
                   {item.paper_id && <button type="button" className="link" onClick={() => onOpen?.(String(item.paper_id), "cita en la caja")}>{citeOf(String(item.paper_id), item.section)}</button>}
                   {item.verified && item.cite && <span className="chip chip-simulado">verificado contra la cita</span>}
-                  {id === "sin_respaldo" && <span className="small"> El paper abierto no lo dice.</span>}
+                  {id === "sin_respaldo" && <span className="small"> No encontré esto en los extractos seleccionados del paper.</span>}
                 </p>
               ))}
             </section>

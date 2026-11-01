@@ -314,6 +314,16 @@ def _from_paper(seed, search, graph, cc, vector_of, n):
     return _with_qvec(_result("paper", int(seed), papers, scores, similar, edges, [], seconds), vec)
 
 
+TITLE_STRICT_WORDS = 4  # below this a matching title is a generic phrase: boost only
+
+
+def _strict_title(query):
+    """The lookup matched the whole normalized query to a title; long enough to mean that paper."""
+    import re
+
+    return len(re.sub(r"[^a-z0-9]+", " ", str(query or "").lower()).split()) >= TITLE_STRICT_WORDS
+
+
 def _boosted(graph, chosen, scores, seed, n):
     """The title match first, then the semantic list without it, still n long."""
     local = _locate_one(graph, seed)
@@ -366,7 +376,11 @@ def burst_query(
     seconds["encode"] = time.perf_counter() - t0
     k = seed_count(proximity)
     t0 = time.perf_counter()
-    hits = list(search(qvec, k))
+    # RRM-50: a strict exact title searches from the paper's own stored vector.
+    # The index is L2 on raw SPECTER2 (norm ~21.7): the vector goes in as stored,
+    # never unit-normalized (a unit vector lands on the lowest-norm, off-topic rows).
+    pvec = vector_of(int(seed)) if seed is not None and vector_of is not None and _strict_title(query) else None
+    hits = list(search(qvec if pvec is None else np.asarray(pvec, dtype=np.float32), k))
     seconds["search"] = time.perf_counter() - t0
     similar = _trim(hits, k, None)
     t0 = time.perf_counter()
@@ -392,4 +406,5 @@ def burst_query(
     ), qvec)
     if seed is not None:
         out["title_first"] = int(seed)
+        out["title_mode"] = "neighbors" if pvec is not None else "boost"
     return out

@@ -436,3 +436,27 @@ def test_titles_hijack_only_behind_the_flag(monkeypatch):
     monkeypatch.setenv("RRM_TITLE", "hijack")
     assert title_hijack("Attention is all you need")
 
+
+
+def test_a_strict_title_searches_from_the_papers_raw_vector():
+    from rrm.search.burst import burst_query
+    from rrm.search.graph import Graph
+
+    graph = Graph.from_edges(np.array([1, 2, 3], dtype=np.int64), np.array([0]), np.array([1]))
+    seen = []
+
+    def search(vector, k):
+        seen.append(np.asarray(vector, dtype=np.float32))
+        return [(1, 0.1), (2, 0.2)]
+
+    stored = np.array([0.0, 21.7, 0.0, 0.0], dtype=np.float32)
+    args = dict(search=search, graph=graph, cc=np.array([3, 2, 1], dtype=np.int64), n=3,
+                boost=lambda query: 3, vector_of=lambda corpusid: stored)
+    encode = lambda texts: np.array([[22.0, 0.0, 0.0, 0.0]] * len(texts), dtype=np.float32)
+    out = burst_query("Attention is all you need", encode, **args)
+    # L2 index on raw SPECTER2: the stored vector goes in at its own norm, not unit length.
+    assert np.allclose(seen[-1], stored)
+    assert out["title_mode"] == "neighbors" and out["papers"]["corpusids"][0] == 3
+    short = burst_query("Layer Normalization", encode, **args)
+    assert np.allclose(seen[-1], [22.0, 0, 0, 0])
+    assert short["title_mode"] == "boost" and short["papers"]["corpusids"][0] == 3
