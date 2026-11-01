@@ -244,6 +244,14 @@ TITLE_MIN_WORDS = 4  # "speech recognition" must search, not open a 1998 paper o
 TITLE_MIN_CITES = 1000  # ...but "Layer Normalization" still opens the paper
 
 
+def is_identifier(query):
+    """DOI, arXiv id, or corpus id: the forms only PaperLookup can answer."""
+    text = " ".join(str(query or "").split())
+    if not text:
+        return False
+    return bool(_DOI.match(text) or _DOI.match(canon_doi(text)) or "doi.org/" in text.lower() or _ARXIV.match(text) or _CORPUS.match(text))
+
+
 class PaperLookup:
     """Exact DOI, arXiv, corpus id, or normalized title. First row wins."""
 

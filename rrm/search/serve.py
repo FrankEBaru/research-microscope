@@ -20,7 +20,7 @@ if len(_HERE.parents) > 2:  # local checkout; inside Modal, rrm is already impor
 
 import modal
 
-from rrm.demo_guard import check, cors_kwargs
+from rrm.demo_guard import add_error_json, check, cors_kwargs
 from rrm.demo_warm import burst_scaledown
 from rrm.features import core_mode, features_mode
 from rrm.search.burst import burst_query
@@ -28,7 +28,7 @@ from rrm.search.layout import map_rows, place_papers
 from rrm.search.qcache import CACHE_DIR, cached_burst, load_entry, normalize_question, save_entry
 from rrm.search.vecfill import fill_encoded, read_cache
 from rrm.search.prefetch import detach_queue, note_burst_top
-from rrm.search.display import IdTable, PaperLookup
+from rrm.search.display import IdTable, PaperLookup, is_identifier
 from rrm.search.encode import QueryEncoder
 from rrm.search.faissutil import ensure_direct_map, search_vectors, vector_at
 from rrm.search.graph import locate
@@ -46,6 +46,15 @@ image = (
         "MarianTokenizer.from_pretrained('Helsinki-NLP/opus-mt-es-en'); "
         "MarianMTModel.from_pretrained('Helsinki-NLP/opus-mt-es-en')\""
     )
+    # RRM-47: SPECTER2 base + both adapters live in the image, so a cold start
+    # does not download them from Hugging Face (12 s in RRM-46).
+    .run_commands(
+        "python -c \"from adapters import AutoAdapterModel; from transformers import AutoTokenizer; "
+        "AutoTokenizer.from_pretrained('allenai/specter2_base'); "
+        "m = AutoAdapterModel.from_pretrained('allenai/specter2_base'); "
+        "m.load_adapter('allenai/specter2_adhoc_query', source='hf', load_as='adhoc_query'); "
+        "m.load_adapter('allenai/specter2', source='hf', load_as='proximity')\""
+    )
     .add_local_python_source("rrm")
 )
 app = modal.App("rrm-burst")
@@ -56,6 +65,7 @@ if modal.is_local():
         "RRM_DEMO_TOKEN": os.environ.get("RRM_DEMO_TOKEN", ""),
         "RRM_FEATURES": os.environ.get("RRM_FEATURES", "core"),
         "RRM_GROUP_NAMES": os.environ.get("RRM_GROUP_NAMES", ""),
+        "RRM_LOOKUP_SYNC": os.environ.get("RRM_LOOKUP_SYNC", ""),
     })
 else:
     model_secret = modal.Secret.from_dict({})
@@ -119,13 +129,28 @@ class BurstSearch:
         self.is_cs = is_cs
         self.display = IdTable(display)
         self.display_ext = IdTable(display_ext)
-        self.lookup = PaperLookup(display)
         self.encoder = QueryEncoder()
         self.encoder.load()
         try:
             self.encoder.encode(["warm"])
         except Exception:
             pass
+        # RRM-47: PaperLookup took 66 s of a 114 s cold start (RRM-46). It is
+        # built after the encoder, in a thread; _resolve waits for it only for
+        # an exact DOI, arXiv, or corpus id. RRM_LOOKUP_SYNC=1 restores the wait.
+        self.lookup = None
+        self._lookup_ready = threading.Event()
+
+        def build_lookup():
+            try:
+                self.lookup = PaperLookup(display)
+            finally:
+                self._lookup_ready.set()
+
+        if os.environ.get("RRM_LOOKUP_SYNC") == "1":
+            build_lookup()
+        else:
+            threading.Thread(target=build_lookup, name="rrm-lookup", daemon=True).start()
         self.loaded = ["faiss", "faiss_ids", "graph", "node_meta", "display", "display_ext", "encoder"]
 
     @modal.enter()
@@ -135,6 +160,15 @@ class BurstSearch:
             vol.reload()
         except Exception:
             return
+
+    def _resolve(self, query):
+        """Title matches do not wait for the lookup; SPECTER2 answers meanwhile."""
+        ready = getattr(self, "_lookup_ready", None)
+        if ready is not None and not ready.is_set():
+            if not is_identifier(query):
+                return None
+            ready.wait(120)
+        return self.lookup.resolve(query) if self.lookup is not None else None
 
     def _rows(self, corpusids, scores):
         corpusids = [int(c) for c in corpusids]
@@ -337,7 +371,7 @@ class BurstSearch:
             graph=self.graph,
             cc=self.cc,
             n=int(n),
-            resolve=self.lookup.resolve,
+            resolve=self._resolve,
             vector_of=vector_of,
             split=None,  # papers never wait on Muse; labels come from GET /subtopics
         )
@@ -464,6 +498,7 @@ class BurstSearch:
         from fastapi.responses import Response
 
         web = FastAPI()
+        add_error_json(web)
         web.add_middleware(CORSMiddleware, **cors_kwargs())
 
         def gate(request: Request):
