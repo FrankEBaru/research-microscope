@@ -132,3 +132,28 @@ def test_reader_serves_figures_in_parallel_and_core_skips_meta():
     assert "data-live-map" in ui
     assert "Salto:" in ui and "onClick={volver}" in ui
     assert "data-devlog" in ui
+
+
+def test_error_json_keeps_cors_headers():
+    import pytest
+
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.testclient import TestClient
+
+    from rrm.demo_guard import add_error_json, cors_kwargs
+
+    web = FastAPI()
+
+    @web.get("/boom")
+    def boom():
+        raise PermissionError("/data/papers")
+
+    add_error_json(web)
+    web.add_middleware(CORSMiddleware, **cors_kwargs())
+    res = TestClient(web).get("/boom", headers={"Origin": "http://localhost:3000"})
+    assert res.status_code == 500
+    assert res.headers.get("access-control-allow-origin") == "http://localhost:3000"
+    assert "PermissionError" in res.json()["error"]

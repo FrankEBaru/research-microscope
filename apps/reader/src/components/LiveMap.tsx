@@ -273,7 +273,8 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
     let left = sx(cardShown.x) + r;
     let top = sy(cardShown.y) - 28;
     if (left + 300 > size.w) left = Math.max(8, sx(cardShown.x) - 300 - r);
-    if (top + 240 > size.h) top = Math.max(8, size.h - 248);
+    // RRM-47: the card is up to 280 px tall (CSS); 240 left «Abrir» outside the platina at 1280×800.
+    if (top + 288 > size.h) top = Math.max(8, size.h - 288);
     if (top < 8) top = 8;
     tipStyle = { left, top };
   }
@@ -445,9 +446,9 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
             {cardPaper.paper.survey && <p className="survey-tag">survey</p>}
             {cardPaper.paper.retracted && <p className="retract">retractado</p>}
             {cardPaper.paper.abstract
-              ? <p className="tldr">{short(cardPaper.paper.abstract, 320)}</p>
+              ? <p className="tldr">{short(cardPaper.paper.abstract, 220)}</p>
               : cardPaper.paper.tldr
-                ? <p className="tldr">{short(cardPaper.paper.tldr, 320)}</p>
+                ? <p className="tldr">{short(cardPaper.paper.tldr, 220)}</p>
                 : <p className="small">Sin abstract en el índice.</p>}
             <div className="map-actions">
               <button type="button" className="primary" onClick={() => onOpen(cardId!)}>Abrir</button>

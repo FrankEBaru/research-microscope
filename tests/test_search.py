@@ -368,3 +368,12 @@ def test_exact_paper_caps_refs_and_citers():
         vector_of=lambda corpusid: None,
     )
     assert short["papers"]["corpusids"] == [0] + list(range(101, 52, -1))
+
+
+def test_is_identifier_only_for_lookup_forms():
+    from rrm.search.display import is_identifier
+
+    assert is_identifier("10.1145/3528223.3530127")
+    assert is_identifier("arXiv:1706.03762") and is_identifier("CorpusId:13756489")
+    assert not is_identifier("graph neural networks for molecules")
+    assert not is_identifier("¿qué algoritmo aprende el in-context learning?")

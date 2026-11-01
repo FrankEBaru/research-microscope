@@ -22,7 +22,7 @@ from pathlib import Path
 
 import modal
 
-from rrm.demo_guard import check, cors_kwargs
+from rrm.demo_guard import add_error_json, check, cors_kwargs
 from rrm.demo_warm import scaledown_window
 from rrm.features import core_mode, features_mode
 from rrm.panorama import docs_for, parse_request, run as run_panorama
@@ -339,7 +339,7 @@ def _ocr(pdf, work):
         err.chunks = chunks
         raise err
     # Chunk images land under the MinerU out dir. /file only serves papers/{id}/figures.
-    vol.reload()
+    _reload()
     figures = Path(work).parent / "figures"
     for row, (_path, out, _start, _end) in zip(results, jobs):
         place_ocr_figures(row.get("blocks") or [], [out], figures)
@@ -358,7 +358,7 @@ def _ocr(pdf, work):
 def _run(corpusid: int) -> dict:
     token = _JOB.set(int(corpusid))
     try:
-        vol.reload()
+        _reload()
         _shared_arxiv_wait()
         return parse_corpus(int(corpusid), PAPERS, DISPLAY, sam=False, ocr=_ocr, commit=vol.commit)
     finally:
@@ -375,7 +375,7 @@ def _run(corpusid: int) -> dict:
 )
 @modal.concurrent(max_inputs=1)
 def ocr_one(pdf: str, out: str, start: int = 0, end: int = 0) -> dict:
-    vol.reload()
+    _reload()
     result = run_chunk(Path(pdf), Path(out), int(start), int(end) or None)
     result["page_count"] = pdf_page_count(Path(pdf))
     vol.commit()
@@ -435,7 +435,7 @@ def _write_stub(folder: Path, corpusid: int):
 
 
 def _prepare_ids(ids, front=False) -> dict:
-    vol.reload()
+    _reload()
     _shared_arxiv_wait()
     try:
         _fetch.s2_batch(ids)  # one Graph API request for the whole burst
@@ -544,6 +544,44 @@ def _ready_local(folder: Path):
     )
 
 
+def _ensure_folder(folder):
+    """mkdir that survives a concurrent vol.reload (RRM-46: 3 of 9 /paper hit
+    PermissionError or FileNotFoundError while /data was being remounted)."""
+    # RRM-47 re-check: /data itself can vanish for >1 s mid-reload (EPERM on
+    # /data/papers), so wait up to ~4 s before giving up.
+    for attempt in range(8):
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            return
+        except OSError:
+            if folder.is_dir():
+                return
+            if attempt == 7:
+                raise
+            time.sleep(0.5)
+
+
+def _reload():
+    """RRM-47: vol.reload() raises "open files preventing the operation" while
+    an index file (display.parquet) is open in this container; that turned
+    /paper and /prepare into 500s. A stale view is fine for one call."""
+    try:
+        vol.reload()
+    except Exception as err:
+        if "open files" not in str(err):
+            raise
+        print(f"vol.reload omitido: {type(err).__name__}", flush=True)
+
+
+def _retry_os(fn, *args, **kw):
+    """RRM-47: vol.reload() can remount /data under a running call; one retry."""
+    try:
+        return fn(*args, **kw)
+    except OSError:
+        time.sleep(0.5)
+        return fn(*args, **kw)
+
+
 def read_paper(id: str, cites: bool = False):
     """Devuelve el paper que ya está. Las citas llegan en una segunda lectura.
 
@@ -552,13 +590,13 @@ def read_paper(id: str, cites: bool = False):
     """
     cid = int(id)
     folder = PAPERS / str(cid)
-    folder.mkdir(parents=True, exist_ok=True)
+    _ensure_folder(folder)
     if not cites:
         local = _ready_local(folder)
         if local is not None:
             _kick_phrases(cid)
             return local
-    vol.reload()
+    _reload()
     _shared_arxiv_wait()
     meta = load_meta(folder)
     if meta and meta.get("status") in ("done", "abstract_only", "failed"):
@@ -590,7 +628,7 @@ def crops_for(corpusid: int, pages: list):
         return {"crops": [], "error": "RRM_SAM=off", "images": 0}
     token = _JOB.set(int(corpusid))
     try:
-        vol.reload()
+        _reload()
         _shared_arxiv_wait()
         try:
             prioritize(int(corpusid))
@@ -635,7 +673,7 @@ def read_crops(id: str, pages: str = ""):
     if core_mode():
         cid = int(id) if str(id).isdigit() else id
         return {"id": cid, "status": "skipped", "pages": [], "crops": [], "error": "core", "images": 0, "skipped": True}
-    vol.reload()
+    _reload()
     cid = int(id)
     wanted = parse_pages(pages)
     folder = PAPERS / str(cid)
@@ -837,7 +875,7 @@ def _ask_body(ids, text, stage, focus=None):
 
 def read_status(ids: str = "", pending=None, question: str = ""):
     try:
-        vol.reload()
+        _reload()
     except Exception:
         pass
     if pending is None:
@@ -938,6 +976,7 @@ def api():
                 return
 
         threading.Thread(target=_warm_phrases, name="rrm-phrase-encoder", daemon=True).start()
+    add_error_json(web)
     web.add_middleware(CORSMiddleware, **cors_kwargs())
 
     def gate(request: Request, allow_query: bool):
@@ -955,7 +994,7 @@ def api():
         denied = gate(request, True)
         if denied:
             return denied
-        return read_paper(id, cites=bool(cites))
+        return _retry_os(read_paper, id, cites=bool(cites))
 
     @web.get("/warm")
     def route_warm(request: Request):
@@ -992,7 +1031,7 @@ def api():
         else:
             with _phrase_lock:
                 try:
-                    vol.reload()
+                    _reload()
                 except Exception:
                     pass
         try:
@@ -1028,7 +1067,7 @@ def api():
             return denied
         item = await request.json()
         item = item or {}
-        return _prepare_ids(item.get("ids") or [], front=bool(item.get("front")))
+        return _retry_os(_prepare_ids, item.get("ids") or [], front=bool(item.get("front")))
 
     @web.post("/panorama")
     async def route_panorama(request: Request):
@@ -1041,7 +1080,7 @@ def api():
             question, ids = parse_request(await request.json())
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
-        vol.reload()
+        _reload()
         docs = docs_for(PAPERS, ids, load_meta, load_paper)
         try:
             return run_panorama(question, docs)
@@ -1063,7 +1102,7 @@ def api():
         path = resolve_figure(PAPERS, id, name)
         if path is None and str(id).isdigit():
             try:
-                vol.reload()
+                _reload()
                 folder = PAPERS / str(int(id))
                 if heal_cached_ocr_figures(folder, load_paper(folder)):
                     vol.commit()
@@ -1079,8 +1118,14 @@ def api():
                     headers={"Cache-Control": "public, max-age=86400", "X-Content-Type-Options": "nosniff"},
                 )
             return Response(status_code=404)
-        return FileResponse(
-            path,
+        # RRM-47: is_file() can pass and the read still fail (volume view mid-
+        # reload); FileResponse then died mid-stream as a 500. Read first: 404.
+        try:
+            data = path.read_bytes()
+        except OSError:
+            return Response(status_code=404)
+        return Response(
+            data,
             media_type=_FILE_TYPES[path.suffix.lower()],
             headers={
                 "Cache-Control": "public, max-age=86400",

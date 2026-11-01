@@ -157,7 +157,7 @@ function OneMinute({ e, p, q, go }: any) {
       <p className="authors">{p.authors.slice(0, 3).join(", ")}{p.authors.length > 3 ? " et al." : ""} · {p.date?.slice(0, 4)}</p>
       <blockquote><span className="qlab">Aporte, en palabras del abstract</span>«<Rich text={e.contribution.quote} />»</blockquote>
       <button className="primary" onClick={() => go({ q: q.id, c: e.cl.id, p: p.arxivId, b: e.contribution.anchor.blockId })}>Abrir el paper →</button>
-      {fig && <figure className="thumb"><img src={fig.images[0]} alt={plainOf(fig.caption)} /><figcaption><b>Figura 1 del paper</b></figcaption></figure>}
+      {fig && <figure className="thumb"><img src={fig.images[0]} alt={plainOf(fig.caption)} onError={(e) => { (e.currentTarget.closest("figure") || e.currentTarget).setAttribute("hidden", ""); }} /><figcaption><b>Figura 1 del paper</b></figcaption></figure>}
       {e.pending && <blockquote><span className="qlab">Pendiente declarado por el paper</span>«<Rich text={e.pending.quote} />»</blockquote>}
     </aside>
   );

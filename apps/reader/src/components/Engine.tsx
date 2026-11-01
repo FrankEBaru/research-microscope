@@ -28,7 +28,7 @@ const fmt = (r: Route) => "#/" + (["q", "c", "p", "b"] as const).filter((k) => r
 
 function beat(phase: string, since: number) {
   const tail = ` ${Math.max(0, since)} s`;
-  if (phase === "wake") return `despertando el motor (la primera vez tarda ~1–2 min)…${tail}`;
+  if (phase === "wake") return `despertando el motor de búsqueda: sube el índice de papers a memoria (la primera vez tarda ~1–2 min)…${tail}`;
   if (phase === "layout") return `acomodando el mapa…${tail}`;
   return `buscando papers…${tail}`;
 }
@@ -62,6 +62,8 @@ export default function Engine() {
   const [openLine, setOpenLine] = useState("");
   const searchGen = useRef(0);
   const lastOk = useRef(0);
+  const burstReady = useRef(0); // RRM-47: la búsqueda respondió /warm (antes «listo» venía del lector)
+  const wakeAt = useRef(Date.now());
   const [devTick, setDevTick] = useState(0);
   const devRef = useRef<ReturnType<typeof createDevLog> | null>(null);
   if (!devRef.current) devRef.current = createDevLog();
@@ -112,12 +114,12 @@ export default function Engine() {
     const burstStep = note("motor de ráfaga", "GET /warm");
     const readerStep = note("motor de lectura", "GET /warm");
     warm("burst").then(
-      () => { if (!stop) done(burstStep, "ok", "listo"); },
-      (err: any) => { if (!stop) done(burstStep, "error", explain(err)); },
+      () => { burstReady.current = Date.now(); if (!stop) { done(burstStep, "ok", "listo"); setEngine("listo"); } },
+      (err: any) => { if (!stop) { done(burstStep, "error", explain(err)); setEngine("listo"); } },
     );
     warm("reader").then(
-      () => { if (!stop) { done(readerStep, "ok", "listo"); setEngine("listo"); } },
-      (err: any) => { if (!stop) { done(readerStep, "error", explain(err)); setEngine("listo"); } },
+      () => { if (!stop) done(readerStep, "ok", "listo"); },
+      (err: any) => { if (!stop) done(readerStep, "error", explain(err)); },
     );
     return () => { stop = true; };
   }, [live, note, done]);
@@ -418,7 +420,9 @@ export default function Engine() {
       return;
     }
     setLiveResult(null); setRowState({});
-    const cold = !lastOk.current || Date.now() - lastOk.current > 8 * 60 * 1000;
+    const warmAt = Math.max(lastOk.current, burstReady.current);
+    const cold = !warmAt || Date.now() - warmAt > 8 * 60 * 1000;
+    if (cold && engine !== "preparando") wakeAt.current = Date.now();
     setSince(0);
     setPhase(cold ? "wake" : "search");
     const step = note("ráfaga", q);
@@ -459,6 +463,7 @@ export default function Engine() {
     go({});
   };
   const shownQ = String(liveResult?.query || liveQ || "");
+  const say = (p: string) => beat(p, p === "wake" ? Math.round((Date.now() - wakeAt.current) / 1000) : since);
   const questions = content?.map.questions || [];
   const q = questions.find((x: any) => x.id === (route.q || questions[0]?.id)) || questions[0];
   const cluster = q?.clusters.find((c: any) => c.id === route.c);
@@ -531,7 +536,7 @@ export default function Engine() {
               <input aria-label="Pregunta" title={draft || undefined} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Una pregunta, un título, un tema" autoFocus />
               <button type="submit" disabled={pending || !draft.trim()}>Ver el mapa</button>
             </form>
-            {(engine === "preparando" || phase === "wake") && <p className="warm" role="status">{beat(phase || "wake", since)}</p>}
+            {(engine === "preparando" || phase === "wake") && <p className="warm" role="status">{say(phase || "wake")}</p>}
             <p className="sub">Los papers aparecen como puntos en cuanto la ráfaga responde. El tamaño es el puesto. El texto completo de los 10 primeros se prepara después, sin bloquear el mapa.</p>
           </section>
         )}
@@ -540,9 +545,9 @@ export default function Engine() {
             {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
             <h1 className="question">{shownQ}</h1>
             {!core && topics && <p className="sub" data-subtopics>{topics.length ? <>Subtemas: {topics.join(" · ")}</> : "Esta pregunta no separó subtemas."}</p>}
-            {!liveResult && <p className="warm" role="status">{beat(phase || (engine === "preparando" ? "wake" : "search"), since)}</p>}
+            {!core && !liveResult && <p className="warm" role="status">{say(phase || (engine === "preparando" ? "wake" : "search"))}</p>}
             {phase === "layout" && liveResult && <p className="warm" role="status">{beat("layout", since)}</p>}
-            {core && !liveResult && <div className="platina is-wait" role="status"><p>{beat(phase || "search", since)}</p></div>}
+            {core && !liveResult && <div className="platina is-wait" role="status"><p>{say(phase || "search")}</p></div>}
             {liveErr && <p className="fail-reason" role="alert">{liveErr}</p>}
             {core && liveErr && !liveResult && !pending && <div className="platina is-wait"><p>No se pudo armar el mapa.</p></div>}
             {core && liveResult && (liveResult.papers || []).length > 0 && (
@@ -679,7 +684,7 @@ function Cluster({ q, cl, papers, go }: any) {
                 <blockquote><span className="qlab">Aporte, en palabras del abstract</span>«<Rich text={cp.contribution.quote} />»
                   <button className="link" onClick={() => go({ q: q.id, c: cl.id, p: p.arxivId, b: cp.contribution.anchor.blockId })}>ver dónde lo dice →</button></blockquote>
                 {fig && (
-                  <figure className="thumb"><img src={fig.images[0]} alt={plainOf(fig.caption)} /><figcaption><b>Figura 1 del paper</b> · {plainOf(fig.caption)}</figcaption></figure>
+                  <figure className="thumb"><img src={fig.images[0]} alt={plainOf(fig.caption)} onError={(e) => { (e.currentTarget.closest("figure") || e.currentTarget).setAttribute("hidden", ""); }} /><figcaption><b>Figura 1 del paper</b> · {plainOf(fig.caption)}</figcaption></figure>
                 )}
                 {cp.pending ? (
                   <blockquote><span className="qlab">Lo que el paper deja pendiente (no declara limitaciones)</span>«<Rich text={cp.pending.quote} />»</blockquote>

@@ -252,6 +252,7 @@ td[data-pop] { cursor: help; }
 [data-live-map] .dot-label { font-size: 12px; stroke-width: 3px; }
 [data-live-map] .minimap { position: static; width: 168px; margin: .35rem 0 0 1.4rem; box-shadow: none; }
 .map-tip { max-height: min(280px, 70%); overflow: auto; }
+.map-tip .map-actions { position: sticky; bottom: 0; background: rgba(255,253,248,.98); padding-top: .35rem; } /* RRM-47: «Abrir» siempre a la vista */
 @media (max-width: 760px) {
   .map-tip { left: 8px !important; right: 8px; top: auto !important; bottom: 8px; width: auto; max-height: 48%; }
   .region-title { font-size: 12px; }
@@ -339,7 +340,7 @@ tr.row-on td { background: rgba(39,71,107,.14) !important; }
 .read-minimap.is-big { width: 420px; height: 270px; }
 .read-minimap svg { width: 100%; height: 100%; display: block; }
 .ask-slot { position: sticky; top: 4.5rem; z-index: 16; }
-.ask-slot .ask-card { max-height: min(40vh, 20rem); overflow: auto; background: #fff; }
+.ask-slot .ask-card { max-height: min(70vh, 34rem); overflow: auto; background: #fff; } /* RRM-47: 20rem escondía la respuesta */
 @media (max-width: 480px) {
   .read-minimap, .read-minimap.is-big { position: static; width: 100%; right: auto; bottom: auto; margin: 0 0 .8rem; box-shadow: none; }
   .read-minimap { height: 92px; }
