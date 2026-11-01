@@ -24,6 +24,7 @@ from rrm.demo_guard import check, cors_kwargs
 from rrm.demo_warm import scaledown_window
 from rrm.features import core_mode, features_mode
 from rrm.search.burst import burst_query
+from rrm.search.layout import place_papers
 from rrm.search.qcache import CACHE_DIR, cached_burst, load_entry, save_entry
 from rrm.search.prefetch import detach_queue, note_burst_top
 from rrm.search.display import IdTable, PaperLookup
@@ -181,9 +182,38 @@ class BurstSearch:
                     break
             if papers and not settled:
                 _prefetch_reader([row.get("corpusid") for row in papers[:10]])
-            return hit
+            return self._with_layout(hit)
         out = self._compute(query, n)
         _store_burst(query, out)
+        return self._with_layout(out)
+
+    def _vectors_for(self, papers):
+        """Stored SPECTER2 rows, or (None, missing ids) when the index is cold or a paper has no vector."""
+        index = getattr(self, "index", None)
+        faiss_ids = getattr(self, "faiss_ids", None)
+        if index is None or faiss_ids is None:
+            return None, []
+        vecs = []
+        missing = []
+        for row in papers or []:
+            if not isinstance(row, dict) or isinstance(row.get("corpusid"), bool) or not isinstance(row.get("corpusid"), int):
+                continue
+            vec = vector_at(index, faiss_ids, int(row["corpusid"]))
+            if vec is None:
+                missing.append(int(row["corpusid"]))
+            else:
+                vecs.append(vec)
+        if missing or not vecs:
+            return None, missing
+        import numpy as np
+
+        return np.stack(vecs), []
+
+    def _with_layout(self, payload):
+        out = dict(payload)
+        papers = out.get("papers") or []
+        vectors, missing = self._vectors_for(papers)
+        out["layout"] = place_papers(papers, out.get("edges") or [], vectors, missing_vectors=missing)
         return out
 
     def _compute(self, query, n):

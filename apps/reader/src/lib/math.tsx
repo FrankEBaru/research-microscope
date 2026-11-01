@@ -1,6 +1,6 @@
 import katex from "katex";
 import { useMemo } from "react";
-import { katexSource } from "@/lib/backend.js";
+import { displayTex, katexSource } from "@/lib/backend.js";
 
 export interface Sym { id: string; latex: string; name: string; color: string }
 
@@ -37,19 +37,9 @@ export function colorize(tex: string, syms: Sym[]): string {
   return out;
 }
 
-/** Alineaciones de LaTeX sin entorno: KaTeX solo acepta & dentro de aligned. El \\tag queda fuera. */
+/** Display math goes through displayTex (alignment, split, tag). Inline stays a single run. */
 function katexInput(tex: string, display: boolean) {
-  let s = katexSource(tex);
-  if (!display || /\\begin\{/.test(s)) return s;
-  const tag = s.match(/\\tag\{[^{}]*\}$/);
-  let body = s;
-  let suffix = "";
-  if (tag && tag.index != null) {
-    body = s.slice(0, tag.index);
-    suffix = tag[0];
-  }
-  if (body.includes("&") || body.includes("\\\\")) s = `\\begin{aligned}${body}\\end{aligned}${suffix}`;
-  return s;
+  return display ? displayTex(tex) : katexSource(tex);
 }
 
 export function Tex({ tex, display = false, syms = [] as Sym[], className = "" }: { tex: string; display?: boolean; syms?: Sym[]; className?: string }) {

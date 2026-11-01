@@ -13,6 +13,7 @@ import { coreMode } from "@/lib/features.js";
 import { normalizeQuestion, phaseOf, readOverflow, recallQuestion, rememberQuestion, writeOverflow } from "@/lib/qcache.js";
 import { bindDevLog, createDevLog } from "@/lib/devlog.js";
 import { LiveCircle } from "./MapView";
+import LiveMap from "./LiveMap";
 
 type Route = { q?: string; c?: string; p?: string; b?: string };
 const parse = (h: string): Route => {
@@ -44,6 +45,7 @@ export default function Engine() {
   const [rowState, setRowState] = useState<Record<string, any>>({});
   const [opened, setOpened] = useState<any>(null);
   const [devOn, setDevOn] = useState(false);
+  const [asList, setAsList] = useState(false);
   const [devTick, setDevTick] = useState(0);
   const devRef = useRef<ReturnType<typeof createDevLog> | null>(null);
   if (!devRef.current) devRef.current = createDevLog();
@@ -244,7 +246,7 @@ export default function Engine() {
     e.preventDefault();
     const q = draft.trim();
     if (!q || pending) return;
-    setLiveQ(q); setLiveOn(true); setLiveErr(""); setImpatient(false); setForced(false); setTopics(null);
+    setLiveQ(q); setLiveOn(true); setLiveErr(""); setImpatient(false); setForced(false); setTopics(null); setAsList(false);
     let cached: any = null;
     try { cached = recallQuestion(localStorage, q); } catch { cached = null; }
     if (cached?.payload?.result) {
@@ -318,7 +320,7 @@ export default function Engine() {
             </button>
           ))}
         </nav>
-        {live && (
+        {live && !(core && !liveOn && !liveId) && (
           <form className="live-search" onSubmit={onSearch}>
             <input aria-label="Pregunta" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Pregunta" />
             <button type="submit">Buscar</button>
@@ -332,36 +334,49 @@ export default function Engine() {
         {live && (liveOn || liveId) && liveId && opened && (
           <div className="lvl">
             {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
-            {core && <button type="button" className="link" onClick={backToCurated}>volver a la lista</button>}
+            {core && <button type="button" className="link" onClick={backToCurated}>volver al mapa</button>}
             <PaperView paper={opened.paper} content={content || {}} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} showInstrument={!core} showCrops={!core} />
           </div>
         )}
         {live && (liveOn || liveId) && liveId && !opened && (
           <div className="lvl">
             {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
-            {core && <button type="button" className="link" onClick={backToCurated}>volver a la lista</button>}
+            {core && <button type="button" className="link" onClick={backToCurated}>volver al mapa</button>}
             <p className="center-msg">{liveErr ? "No se pudo cargar el paper (se sigue intentando)." : "Cargando…"}</p>
             {liveErr && <p className="fail-reason" role="alert">{liveErr}</p>}
           </div>
         )}
         {live && core && !liveOn && !liveId && (
-          <section className="lvl">
-            <h1 className="question">Una pregunta</h1>
-            <p className="sub">Título, año, citas y TLDR salen del índice. El texto completo de los 10 primeros se prepara después, en segundo plano.</p>
+          <section className="lvl ask">
+            <p className="eyebrow">Una pregunta</p>
+            <h1 className="question">Qué quieres entender</h1>
+            <form className="ask-box" onSubmit={onSearch}>
+              <input aria-label="Pregunta" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Una pregunta, un título, un tema" autoFocus />
+              <button type="submit" disabled={pending || !draft.trim()}>Ver el mapa</button>
+            </form>
             {engine === "preparando" && <p className="warm" role="status">preparando el motor…</p>}
+            <p className="sub">Los papers aparecen como puntos en cuanto la ráfaga responde. El tamaño es el puesto. El texto completo de los 10 primeros se prepara después, sin bloquear el mapa.</p>
           </section>
         )}
         {live && liveOn && !liveId && (
-          <section className="lvl">
+          <section className={`lvl ${core ? "lvl-map" : ""}`}>
             {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
             <h1 className="question">{liveQ}</h1>
             {!core && topics && <p className="sub" data-subtopics>{topics.length ? <>Subtemas: {topics.join(" · ")}</> : "Esta pregunta no separó subtemas."}</p>}
             {engine === "preparando" && !liveResult && <p className="warm" role="status">preparando el motor…</p>}
-            {pending && !liveResult && engine !== "preparando" && <p className="warm" role="status">buscando…</p>}
-            {liveErr && <p className="fail-reason">{liveErr}</p>}
-            {core && liveResult && (
+            {core && pending && !liveResult && engine !== "preparando" && <div className="platina is-wait" role="status"><p>buscando…</p></div>}
+            {!core && pending && !liveResult && engine !== "preparando" && <p className="warm" role="status">buscando…</p>}
+            {liveErr && <p className="fail-reason" role="alert">{liveErr}</p>}
+            {core && liveErr && !liveResult && !pending && <div className="platina is-wait"><p>No se pudo armar el mapa.</p></div>}
+            {core && liveResult && (liveResult.papers || []).length > 0 && (
               <>
-                <CoreList papers={liveResult.papers || []} states={rowState} onOpen={(id: string) => go({ p: id })} onWant={wantThis} />
+                <div className="view-toggle" role="tablist" aria-label="Vista">
+                  <button type="button" className={!asList ? "on" : ""} onClick={() => setAsList(false)}>Mapa</button>
+                  <button type="button" className={asList ? "on" : ""} onClick={() => setAsList(true)}>Lista</button>
+                </div>
+                {asList
+                  ? <CoreList papers={liveResult.papers || []} states={rowState} onOpen={(id: string) => go({ p: id })} onWant={wantThis} />
+                  : <LiveMap papers={liveResult.papers || []} edges={liveResult.edges || []} layout={liveResult.layout} states={rowState} onOpen={(id: string) => go({ p: id })} onWant={wantThis} />}
                 <p className="muted small">Datos de papers y citas: Semantic Scholar. LaTeX primero; OCR solo si el paper no tiene LaTeX.</p>
               </>
             )}
@@ -384,9 +399,15 @@ export default function Engine() {
       </main>
 
       <footer className="legend">
-        <span>Procedencia:</span>
-        <ProvChip kind="paper" /><ProvChip kind="curado" /><ProvChip kind="calculo" /><ProvChip kind="simulado" />
-        <span className="legend-note">Papers: arXiv (atribución en cada paper). Lo simulado es maqueta del motor, aún no conectado.</span>
+        {core && live ? (
+          <span className="legend-note">Papers y citas: Semantic Scholar.</span>
+        ) : (
+          <>
+            <span>Procedencia:</span>
+            <ProvChip kind="paper" /><ProvChip kind="curado" /><ProvChip kind="calculo" /><ProvChip kind="simulado" />
+            <span className="legend-note">Papers: arXiv (atribución en cada paper). Lo simulado es maqueta del motor, aún no conectado.</span>
+          </>
+        )}
       </footer>
       {devOn && (
         <aside className="devlog" data-devlog={devTick} aria-label="Registro de desarrollo">

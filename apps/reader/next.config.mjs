@@ -1,2 +1,2 @@
 /** @type {import('next').NextConfig} */
-export default { output: "export", images: { unoptimized: true }, reactStrictMode: true };
+export default { output: "export", images: { unoptimized: true }, reactStrictMode: true, devIndicators: false };

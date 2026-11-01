@@ -131,8 +131,8 @@ cleanup() {
       wait "$pid" 2>/dev/null || true
     fi
   done
-  modal app stop rrm-burst || true
-  modal app stop rrm-reader || true
+  modal app stop --yes rrm-burst || true
+  modal app stop --yes rrm-reader || true
   modal app list || true
   local elapsed="$SECONDS"
   echo ""
@@ -191,7 +191,10 @@ deploy_one() {
     DEPLOY_LOG=""
     return "$status"
   fi
-  url="$(grep -oE 'https://[^[:space:]]+\.modal\.run' "$log" | tail -n 1 || true)"
+  # Modal 1.6 prints the URL twice, glued with ANSI (OSC/SGR). A space-based
+  # match keeps the escape and the second copy, and the UI then calls a host
+  # that does not exist. Keep only a hostname.
+  url="$(grep -oE 'https://[A-Za-z0-9.-]+\.modal\.run' "$log" | tail -n 1 || true)"
   rm -f "$log"
   DEPLOY_LOG=""
   url="${url%/}"
