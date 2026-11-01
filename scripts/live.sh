@@ -140,6 +140,9 @@ cleanup() {
   echo "Tiempo: ${elapsed}s"
   if [[ -s "$CAP_FILE" ]]; then
     echo "Corte: RRM_MAX_MINUTES=${MAX_MIN}."
+    # RRM-48: el TERM del tope a veces llega con $?=0 (el comando cortado no
+    # había fallado aún); un corte nunca sale con 0.
+    [[ "$status" == 0 ]] && status=124
   fi
   echo "$REMINDER"
   rm -f "$CAP_FILE" "$DEPLOY_LOG"
