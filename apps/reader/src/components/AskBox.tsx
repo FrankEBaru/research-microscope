@@ -111,7 +111,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
     let tries = 0;
     setStoreDone(false);
     // RRM-47: antes seguía cada 2 s para siempre si un paper nunca tenía frases (8 de 10).
-    // Se para tras 3 lecturas sin cambio o 30 intentos (~1 min).
+    // Se para tras 8 lecturas sin cambio (~16 s) o 30 intentos (~1 min).
     const tick = async () => {
       try {
         const body = await ask(ids || [], "", "", focusId);
@@ -121,7 +121,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
         same = ready === last ? same + 1 : 0;
         last = ready;
         tries += 1;
-        if (body?.store && ready < body.store.total && same < 3 && tries < 30) timer = window.setTimeout(tick, 2000);
+        if (body?.store && ready < body.store.total && same < 8 && tries < 30) timer = window.setTimeout(tick, 2000);
         else setStoreDone(true);
       } catch { /* el envío dice si no hubo almacén */ }
     };
