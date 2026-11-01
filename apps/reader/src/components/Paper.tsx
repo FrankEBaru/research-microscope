@@ -8,8 +8,10 @@ import { bibtex } from "@/lib/bibtex.js";
 import { crops, eqTex, figureCandidates, figureUrl, paperKey, refText, sourcePdfUrl } from "@/lib/backend.js";
 import { pdfPagesOnly, polishText, presentInlines, visibleInlines } from "@/lib/prose.js";
 import { equationHover, symbolHover, tableHover } from "@/lib/hover.js";
+import { faltaText } from "@/lib/falta.js";
 import { hasConclusion, scanIds } from "@/lib/scan.js";
 import { resolveCite } from "@/lib/path.js";
+import { citeName } from "@/lib/layout.js";
 import AskBox from "./AskBox";
 import ReadMinimap from "./ReadMinimap";
 import { devBegin, devFinish } from "@/lib/devlog.js";
@@ -501,6 +503,15 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const firstHead = (paper.blocks || []).find((b) => b.kind === "h");
   const sectionNow = active.startsWith("sec-") ? (paper.blocks || []).find((b) => b.kind === "h" && b.id === active.slice(4)) : firstHead;
   const sectionLabel = sectionNow ? plainOf(sectionNow.inlines) : "inicio";
+  const abstractId = (paper.blocks || []).find((b) => b.kind === "p" && b.abs)?.id || "";
+  const nameOf = (id: string, section?: string) => citeName((map?.papers || []).find((item) => paperKey(item) === String(id)), section);
+  const askBox = core ? (
+    <div className="ask-slot">
+      {hold
+        ? <AskBox sectionLabel="la sección que cerraste" ids={burstIds} focusId={paper.corpusid != null ? String(paper.corpusid) : ""} onOpen={onOpenPaper} onPromote={onPromote} onName={nameOf} closed onSkip={() => { setHold(""); setLeft(""); }} />
+        : <AskBox sectionLabel={sectionLabel} ids={burstIds} focusId={paper.corpusid != null ? String(paper.corpusid) : ""} onOpen={onOpenPaper} onPromote={onPromote} onName={nameOf} />}
+    </div>
+  ) : null;
   const undrawn = core && (remote?.status === "abstract_only" || remote?.status === "failed");
   const arxivId = paper.arxivId || remote?.arxiv || "";
   const oaPdf = remote?.oa_pdf || paper.oaPdf || "";
@@ -531,21 +542,20 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           <div className="chips">
             <ProvChip kind="paper" text={paper.arxivId ? `arXiv:${paper.arxivId}` : `corpus:${paper.corpusid ?? ""}`} />
             {!paper.full && !remote && <ProvChip kind="curado" text="solo abstract en esta ráfaga" />}
-            {remote?.stage === "stub" && <span className="chip chip-curado">solo abstract · cargando texto completo…</span>}
+            {remote?.stage === "stub" && <span className="chip chip-curado">leyendo secciones…</span>}
             {(remote?.status === "abstract_only" || remote?.stage === "abstract_only") && <span className="chip chip-curado">solo abstract: sin LaTeX ni PDF usable</span>}
           </div>
           <h1>{polishText(paper.title)}</h1>
           {core && paper.full && <p className="meta"><button type="button" className="link" onClick={() => setReading((v) => !v)}>{reading ? "Volver al scan" : "Leer"}</button></p>}
           {core && !reading && !hasConclusion(paper.blocks) && <p className="muted">No encontré una sección de conclusión.</p>}
           {core && left && !hold && <p className="ask-offer">Cerraste una sección. <button type="button" className="link" onClick={() => setHold(left)}>Escribir</button> <button type="button" className="link" onClick={() => setLeft("")}>Seguir</button></p>}
-          {core && hold && <AskBox sectionLabel="la sección que cerraste" ids={burstIds} onOpen={onOpenPaper} onPromote={onPromote} closed onSkip={() => { setHold(""); setLeft(""); }} />}
-          {core && !hold && <AskBox sectionLabel={sectionLabel} ids={burstIds} onOpen={onOpenPaper} onPromote={onPromote} />}
-          {undrawn && <p className="fail-reason">Falta: {remote?.reason || "no se pudo dibujar el paper"}</p>}
+          {!abstractId && askBox}
+          {undrawn && <p className="fail-reason">Falta: {faltaText(remote?.reason)}</p>}
           {undrawn && pdfHref && <iframe className="source-pdf" title="PDF del paper" src={pdfHref} />}
           {undrawn && !pdfHref && honest && <p className="fail-reason"><a href={honest} target="_blank" rel="noreferrer">No hay PDF en el lector, ni en arXiv, ni un openAccessPdf. La ficha está aquí.</a></p>}
           <p className="authors">{authors}</p>
           <p className="meta">{paper.date?.slice(0, 4)}{paper.arxivId && <> · <a href={`https://arxiv.org/abs/${paper.arxivId}`} target="_blank" rel="noreferrer">ver original en arXiv</a></>}{paper.full && paper.arxivId && <> · <a href={`https://arxiv.org/pdf/${paper.arxivId}`} target="_blank" rel="noreferrer">PDF</a></>}{(remote?.status === "abstract_only" || remote?.status === "failed" || remote?.stage === "abstract_only") && !paper.arxivId && paper.corpusid != null && <> · <a href={`https://www.semanticscholar.org/paper/${paper.corpusid}`} target="_blank" rel="noreferrer">Semantic Scholar</a></>}{paper.arxivId && <> · <button className="link bib" data-bibtex={bibtex(paper)} data-copy={bibtex(paper)} title="Copiar la ficha BibTeX de arXiv">BibTeX</button></>}</p>
-          {remote?.status === "failed" && <p className="fail-reason">{remote.reason}</p>}
+          {remote?.status === "failed" && <p className="fail-reason">{faltaText(remote.reason)}</p>}
           {remote?.source === "ocr" && <p className="ocr-band">leído por OCR: puede haber errores en ecuaciones</p>}
           {remote && autoSentence(paper.abstract) && <blockquote><span className="qlab">frase del abstract (automática)</span>«{polishText(autoSentence(paper.abstract))}»</blockquote>}
           {paper.license && <p className="license">{paper.license}</p>}
@@ -596,7 +606,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           } else if (b.kind === "table") {
             el = <Table b={b} ctx={ctx} n={model.tabN[b.id]} predict={showInstrument} still={reading} />;
           }
-          return (
+          const row = (
             <div key={b.id} className="row">
               {el}
               {breakdown === b.id && b.kind === "eq" && (
@@ -612,6 +622,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               {showInstrument && att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
             </div>
           );
+          if (askBox && b.id === abstractId) return <div key={b.id}>{row}{askBox}</div>;
+          return row;
         })}
         <footer className="paper-foot">
           <p>Texto, ecuaciones, figuras y tablas son los del e-print de arXiv:{paper.arxivId}, convertidos desde LaTeX sin resumir ni parafrasear. Lo que no es del paper lleva una etiqueta de procedencia.</p>

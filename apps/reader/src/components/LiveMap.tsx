@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ProvChip } from "./Bits";
 import { mapLayout, paperKey } from "@/lib/backend.js";
 import { phaseOf } from "@/lib/qcache.js";
-import { clusterColor, layoutOf, mapCaption, statusLine } from "@/lib/layout.js";
+import { clusterColor, farGroupIds, layoutOf, mapCaption, nodeLabel, statusLine } from "@/lib/layout.js";
 import { LENSES, usePlatina, type Frame } from "./usePlatina";
 
 // Franklin (1 nov): las lentes no ayudan a leer el mapa. El código sigue; la cámara se mueve con rueda y arrastre.
@@ -25,14 +25,7 @@ function namesOf(paper: any): string[] {
 }
 
 function shortName(paper: any) {
-  const year = paper?.year ? String(paper.year) : "";
-  const first = namesOf(paper)[0];
-  if (first) {
-    const last = String(first).split(/[\s,]+/).filter(Boolean).pop();
-    return `${last || first}${year ? ` ${year}` : ""}`;
-  }
-  const bit = String(paper?.title || "").replace(/\s+/g, " ").trim().split(" ").slice(0, 2).join(" ");
-  return [bit, year].filter(Boolean).join(" ");
+  return nodeLabel(paper);
 }
 
 function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) {
@@ -73,7 +66,10 @@ function ease(t: number) {
 }
 
 function fullText(paper: any, state: any) {
-  return state?.status === "done" || Boolean(paper?.full);
+  if (paper?.full || state?.text) return true;
+  if (state?.status === "done") return true;
+  if (state?.source === "latex" || state?.source === "ocr") return true;
+  return state?.stages?.sections === "done";
 }
 
 function sceneKey(frame: Frame | null) {
@@ -193,6 +189,7 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
   const [hover, setHover] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const caption = mapCaption(model);
+  const farGroups = farGroupIds(papers, targets);
   const pendingKey = (model.pending_vectors || []).join(",");
   const onLayoutRef = useRef(onLayout);
   onLayoutRef.current = onLayout;
@@ -339,7 +336,9 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
             const inside = members(group.id);
             const screenR = group.r * view.k;
             const idsIn = inside.map((point: any) => String(point.corpusid));
+            const known = idsIn.some((id) => states[id]?.status || states[id]?.stage);
             const have = idsIn.filter((id) => fullText(byId.get(id)?.paper, states[id])).length;
+            const far = farGroups.has(String(group.id));
             const title = String(group.name || "grupo");
             const tx = sx(group.cx);
             const ty = sy(group.cy);
@@ -353,7 +352,10 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
             const titleSize = fitted.size;
             const titleText = fitted.text;
             const noun = group.n === 1 ? "paper" : "papers";
-            const subFull = `${group.n} ${noun} · texto completo de ${have}`;
+            const subFull = known
+              ? `${group.n} ${noun} · texto completo de ${have}`
+              : `${group.n} ${noun}`;
+            const farLine = "menos cercano a tu pregunta";
             const subLine = [11, 10, 9].map((size) => (subFull.length * size * 0.5 <= chord ? { size, text: subFull } : null)).find(Boolean);
             const subText = screenR < 36 ? "" : (subLine?.text || "");
             const subSize = subLine?.size || 11;
@@ -361,18 +363,20 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
             const titleY = ty - screenR - subGap - 4;
             const textW = Math.min(chord, Math.max(titleText.length, subText.length) * titleSize * 0.5);
             if (titleText || subText) taken.push({ x: tx - textW / 2, y: titleY - titleSize, w: textW, h: subGap + (subText ? subSize : 0) + 4 });
+            const note = far ? farLine : subText;
             return (
-              <g key={`g${group.id}`} className="region" opacity={groupOpacity} onClick={() => { if (!drag.current?.moved) animateTo({ k: Math.max(view.k * 1.7, kFit * 2), cx: group.cx, cy: group.cy }); }}>
-                <circle cx={tx} cy={ty} r={screenR} fill={ink} fillOpacity={0.07} stroke={ink} strokeOpacity={0.45} strokeWidth={1.5} strokeDasharray="6 6" style={{ pointerEvents: "visibleStroke" }} />
+              <g key={`g${group.id}`} className={`region${far ? " is-far" : ""}`} opacity={groupOpacity * (far ? 0.5 : 1)} onClick={() => { if (!drag.current?.moved) animateTo({ k: Math.max(view.k * 1.7, kFit * 2), cx: group.cx, cy: group.cy }); }}>
+                <title>{far ? `${subFull}. ${farLine}` : subFull}</title>
+                <circle cx={tx} cy={ty} r={screenR} fill={ink} fillOpacity={far ? 0.03 : 0.07} stroke={ink} strokeOpacity={far ? 0.28 : 0.45} strokeWidth={1.5} strokeDasharray="6 6" style={{ pointerEvents: "visibleStroke" }} />
                 <g style={{ pointerEvents: "none" }}>
                   {titleText && (
                     <text x={tx} y={titleY} textAnchor="middle" className="region-title" style={{ fontSize: titleSize }}>
                       {titleText}
                     </text>
                   )}
-                  {subText && (
-                    <text x={tx} y={titleY + subGap} textAnchor="middle" className="region-sub" style={{ fontSize: subSize }}>
-                      {subText}
+                  {note && (
+                    <text x={tx} y={titleY + subGap} textAnchor="middle" className="region-sub" style={{ fontSize: far ? Math.min(subSize, 11) : subSize }}>
+                      {note}
                     </text>
                   )}
                 </g>
@@ -444,8 +448,7 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
               ? <p className="tldr">{short(cardPaper.paper.abstract, 320)}</p>
               : cardPaper.paper.tldr
                 ? <p className="tldr">{short(cardPaper.paper.tldr, 320)}</p>
-                : <p className="authors">Sin abstract en el índice.</p>}
-            {!cardPaper.paper.retracted && cardPaper.paper.retraction && <p className="authors">{cardPaper.paper.retraction}</p>}
+                : <p className="small">Sin abstract en el índice.</p>}
             <div className="map-actions">
               <button type="button" className="primary" onClick={() => onOpen(cardId!)}>Abrir</button>
               <button type="button" className="link" onClick={() => onWant(cardId!)}>quiero leer este</button>

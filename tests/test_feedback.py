@@ -36,7 +36,7 @@ def test_layer1_drops_foreign_papers_and_loose_quotes():
         ],
         "contradice": [{"text": "Choca.", "cite": "Attention is all you need", "paper_id": "7"}],
         "sin_respaldo": [{"text": "Menciona un dataset que no está."}],
-        "te_falto": [{"text": "Falta el ritmo.", "cite": "learning rate with data", "paper_id": "8"}],
+        "te_falto": [{"text": "Falta el learning rate.", "cite": "learning rate with data", "paper_id": "8"}],
     }
     kept = layer1(raw, CITES)
     assert len(kept["coincide"]) == 1
@@ -77,7 +77,7 @@ def test_without_meta_the_box_keeps_extracts(monkeypatch):
     assert "apagado" in note
 
 
-def test_review_uses_the_mock_and_stops_when_the_check_is_garbage():
+def test_review_keeps_layer1_when_the_second_check_does_not_parse():
     calls = {"n": 0}
 
     def complete(body):
@@ -95,16 +95,44 @@ def test_review_uses_the_mock_and_stops_when_the_check_is_garbage():
 
     parts, note, cost = review("el modelo usa atención", CITES, complete=complete)
     assert calls["n"] == 2
-    assert parts["coincide"] == []
-    assert "No pude leer" in note
+    assert len(parts["coincide"]) == 1
+    assert parts["coincide"][0]["text"] == "Habla de atención."
+    assert "No pude leer" not in note
+    assert note == ""
     assert cost["input_tokens"] == 20
     assert cost["cost_usd"] > 0
 
 
-def test_store_counts_phrase_files(tmp_path):
+def test_each_claim_is_classified_and_a_loose_gap_is_dropped():
+    cites = [dict(row) for row in CITES]
+    cites[0]["section"] = "3.2 Attention"
+    raw = {
+        "afirmaciones": [
+            {"text": "Habla de atención.", "clase": "coincide", "cite": "Attention is all you need", "paper_id": "7"},
+            {"text": "Niega la atención.", "clase": "contradice", "cite": "Attention is all you need", "paper_id": "7"},
+            {"text": "Menciona un dataset que no está.", "clase": "sin_respaldo"},
+        ],
+        "te_falto": [
+            {"text": "Falta el learning rate.", "cite": "learning rate with data", "paper_id": "8"},
+            {"text": "Inventa un optimizador cuántico.", "cite": "learning rate with data", "paper_id": "8"},
+        ],
+    }
+    kept = layer1(raw, cites)
+    assert kept["coincide"][0]["text"] == "Habla de atención."
+    assert kept["coincide"][0]["section"] == "3.2 Attention"
+    assert kept["contradice"][0]["text"] == "Niega la atención."
+    assert kept["sin_respaldo"][0]["text"].startswith("Menciona")
+    assert [row["text"] for row in kept["te_falto"]] == ["Falta el learning rate."]
+
+
+def test_store_counts_phrases_with_text(tmp_path):
     (tmp_path / "7").mkdir()
-    (tmp_path / "7" / "phrases.json").write_text("{}", encoding="utf-8")
-    assert store_progress(tmp_path, [7, 8]) == {"ready": 1, "total": 2}
+    (tmp_path / "7" / "phrases.json").write_text(
+        '{"rows":[{"text":"Attention is all you need."}]}', encoding="utf-8",
+    )
+    (tmp_path / "8").mkdir()
+    (tmp_path / "8" / "phrases.json").write_text("{}", encoding="utf-8")
+    assert store_progress(tmp_path, [7, 8, 9]) == {"ready": 1, "total": 3}
 
 
 def test_bibtex_key_resolves_by_title_and_year():

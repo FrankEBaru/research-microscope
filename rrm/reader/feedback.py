@@ -6,18 +6,26 @@ from rrm.reader.metacall import MODEL
 PARTS = ("coincide", "contradice", "sin_respaldo", "te_falto")
 _QUOTED = ("coincide", "contradice", "te_falto")
 _PROMPT = (
-    "Separas la explicación del lector en cuatro listas y solo puedes usar las frases numeradas. "
-    "No des un veredicto de bien o mal. "
-    "coincide: lo que esas frases dicen, con cita textual y paper_id. "
-    "contradice: lo que choca con una frase, con esa cita y paper_id. "
-    "sin_respaldo: lo que ninguna frase menciona; cita y paper_id van vacíos. "
-    "te_falto: lo que las frases dicen y el lector no tocó, una línea, con cita y paper_id. "
-    "La cita es un trozo literal de una sola frase. paper_id es el de esa frase."
+    "La explicación del lector es una afirmación. Clasifícala contra las frases numeradas, "
+    "con una sola clase y una sola entrada en afirmaciones: "
+    "coincide si dice lo mismo que una frase (si la repite, también); "
+    "contradice si la niega, aunque la frase no contenga la palabra «no»; "
+    "sin_respaldo si ninguna frase habla de eso. "
+    "En coincide y contradice, cite es un trozo copiado tal cual de esa frase, "
+    "sin reescribir el LaTeX, y paper_id es el de la frase. "
+    "En sin_respaldo, cite y paper_id van vacíos. "
+    "te_falto va aparte: una cosa que las frases dicen y el lector no mencionó. "
+    "Su texto habla de lo que dice la cita, y la cita es un trozo literal de esa frase. "
+    "No des un veredicto de bien o mal."
 )
 _CHECK = (
-    "Para cada punto, en orden: true si la cita respalda (coincide, te_falto), "
-    "si contradice (contradice), o si ninguna frase lo respalda (sin_respaldo). "
-    "Un punto dudoso es false. Responde solo el arreglo keep."
+    "keep[i] es true o false. "
+    "Si la parte es contradice, true cuando el texto dice que la cita es falsa o afirma lo contrario. "
+    "La frase «It is false that» seguida de lo que dice la cita es true. "
+    "Si la parte es coincide, true cuando el texto repite la cita o dice lo mismo. "
+    "Si la parte es sin_respaldo, true cuando el texto habla de otra cosa. "
+    "Si la parte es te_falto, true cuando la cita aporta un hecho que el texto no dijo. "
+    "No uses false solo porque la cita no contiene la palabra no."
 )
 
 
@@ -31,18 +39,55 @@ def _schema(name, schema):
 
 
 def _point_schema():
-    point = {
+    claim = {
+        "type": "object", "additionalProperties": False,
+        "properties": {
+            "text": {"type": "string"},
+            "clase": {"type": "string", "enum": ["coincide", "contradice", "sin_respaldo"]},
+            "cite": {"type": "string"},
+            "paper_id": {"type": "string"},
+        },
+        "required": ["text", "clase", "cite", "paper_id"],
+    }
+    missed = {
         "type": "object", "additionalProperties": False,
         "properties": {"text": {"type": "string"}, "cite": {"type": "string"}, "paper_id": {"type": "string"}},
         "required": ["text", "cite", "paper_id"],
     }
-    bare = {"type": "object", "additionalProperties": False, "properties": {"text": {"type": "string"}}, "required": ["text"]}
-    props = {part: {"type": "array", "items": point if part in _QUOTED else bare} for part in PARTS}
-    return {"type": "object", "additionalProperties": False, "properties": props, "required": list(PARTS)}
+    return {
+        "type": "object", "additionalProperties": False,
+        "properties": {
+            "afirmaciones": {"type": "array", "items": claim},
+            "te_falto": {"type": "array", "items": missed},
+        },
+        "required": ["afirmaciones", "te_falto"],
+    }
 
 
 def _phrases(citations):
-    return "\n".join(f"{row.get('paper')}: {row.get('text')}" for row in citations or [] if isinstance(row, dict) and row.get("text"))
+    lines = []
+    for index, row in enumerate(citations or [], 1):
+        if isinstance(row, dict) and row.get("text"):
+            lines.append(f"{index}. paper {row.get('paper')}: {row.get('text')}")
+    return "\n".join(lines)
+
+
+def _fold_claims(data):
+    """El esquema nuevo (una clase por afirmación) entra al mismo verificador."""
+    if not isinstance(data, dict) or not isinstance(data.get("afirmaciones"), list):
+        return data
+    folded = {part: [] for part in PARTS}
+    for item in data.get("afirmaciones") or []:
+        if not isinstance(item, dict):
+            continue
+        clase = str(item.get("clase") or "")
+        if clase not in ("coincide", "contradice", "sin_respaldo"):
+            continue
+        folded[clase].append(item)
+    for item in data.get("te_falto") or []:
+        if isinstance(item, dict):
+            folded["te_falto"].append(item)
+    return folded
 
 
 def _body(user, name, schema, tokens, prompt):
@@ -53,22 +98,37 @@ def _body(user, name, schema, tokens, prompt):
     }
 
 
+def _words(text):
+    import re
+    return [word.casefold() for word in re.findall(r"[^\W\d_]{4,}", text or "", flags=re.UNICODE)]
+
+
 def _in_paper(cite, rows, paper_id):
     flat = _flat(cite)
     if len(flat) < 12:
-        return False
+        return None
     for row in rows:
         if str(row.get("paper")) != str(paper_id):
             continue
         blob = _flat((row.get("text") or "") + "".join(row.get("latex") or []))
         if flat in blob:
-            return True
-    return False
+            return row
+    return None
+
+
+def _cite_supports(text, cite):
+    words = _words(text)
+    if not words:
+        return False
+    blob = set(_words(cite))
+    hit = sum(1 for word in words if word in blob)
+    return hit >= max(1, (len(words) + 1) // 2)
 
 
 def layer1(data, citations):
     allowed = {str(row.get("paper")) for row in citations or [] if isinstance(row, dict)}
     out = {part: [] for part in PARTS}
+    data = _fold_claims(data)
     if not isinstance(data, dict):
         return out
     for part in PARTS:
@@ -85,9 +145,16 @@ def layer1(data, citations):
                 continue
             paper_id = str(item.get("paper_id") or "")
             cite = " ".join(str(item.get("cite") or "").split())
-            if paper_id not in allowed or not _in_paper(cite, citations, paper_id):
+            row = _in_paper(cite, citations, paper_id) if paper_id in allowed else None
+            if row is None:
                 continue
-            out[part].append({"text": text, "cite": cite, "paper_id": paper_id})
+            if part == "te_falto" and not _cite_supports(text, cite):
+                continue
+            kept = {"text": text, "cite": cite, "paper_id": paper_id}
+            section = " ".join(str(row.get("section") or "").split())
+            if section:
+                kept["section"] = section
+            out[part].append(kept)
     return out
 
 
@@ -141,10 +208,10 @@ def review(explanation, citations, complete=None):
     try:
         second = call(_body(f"Frases:\n{_phrases(citations)}\n\nPuntos:\n{listed}", "chequeo", check, 800, _CHECK))
     except Exception:
-        return empty, note_for("red"), cost
+        return passed, "", cost
     cost = add_usage(cost, usage_cost(second.get("usage") if isinstance(second, dict) else None))
     verdict = parse_json(response_text(second))
     kept = layer2(passed, (verdict or {}).get("keep") if isinstance(verdict, dict) else None)
     if kept is None:
-        return empty, note_for("parse"), cost
+        return passed, "", cost
     return kept, "", cost

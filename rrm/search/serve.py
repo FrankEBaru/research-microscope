@@ -21,7 +21,7 @@ if len(_HERE.parents) > 2:  # local checkout; inside Modal, rrm is already impor
 import modal
 
 from rrm.demo_guard import check, cors_kwargs
-from rrm.demo_warm import scaledown_window
+from rrm.demo_warm import burst_scaledown
 from rrm.features import core_mode, features_mode
 from rrm.search.burst import burst_query
 from rrm.search.layout import map_rows, place_papers
@@ -40,7 +40,12 @@ RELEASE = "2026-10-20"
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("torch", extra_index_url="https://download.pytorch.org/whl/cpu")
-    .pip_install("numpy", "pyarrow", "faiss-cpu", "transformers", "adapters", "fastapi[standard]")
+    .pip_install("numpy", "pyarrow", "faiss-cpu", "transformers", "adapters", "sentencepiece", "fastapi[standard]")
+    .run_commands(
+        "python -c \"from transformers import MarianTokenizer, MarianMTModel; "
+        "MarianTokenizer.from_pretrained('Helsinki-NLP/opus-mt-es-en'); "
+        "MarianMTModel.from_pretrained('Helsinki-NLP/opus-mt-es-en')\""
+    )
     .add_local_python_source("rrm")
 )
 app = modal.App("rrm-burst")
@@ -50,6 +55,7 @@ if modal.is_local():
         "MODEL_API_KEY": os.environ.get("MODEL_API_KEY", ""),
         "RRM_DEMO_TOKEN": os.environ.get("RRM_DEMO_TOKEN", ""),
         "RRM_FEATURES": os.environ.get("RRM_FEATURES", "core"),
+        "RRM_GROUP_NAMES": os.environ.get("RRM_GROUP_NAMES", ""),
     })
 else:
     model_secret = modal.Secret.from_dict({})
@@ -61,11 +67,10 @@ def _safe(name):
     return name
 
 
-# RRM_DEMO_KEEP_WARM=1 at deploy time sets scaledown_window to 20 min.
-# min_containers stays 0. See scripts/warm.sh.
-# enable_memory_snapshot captures FAISS, the graph, both display tables, and
-# the SPECTER encoder after the first deployed boot. Later cold starts restore
-# that RAM instead of reading the artifacts again. The first boot still loads them.
+# Ten minutes between questions (burst_scaledown). The demo flag still means
+# 20 minutes. min_containers stays 0. See scripts/warm.sh.
+# Memory snapshot stays off. On this 32 GB class the restore was not clearly
+# faster than a full load (128.0 s, 125.6 s, 101.0 s). memory stays 32768.
 _burst_cls = dict(
     image=image,
     volumes={MOUNT: vol},
@@ -73,18 +78,16 @@ _burst_cls = dict(
     memory=32768,
     timeout=900,
     secrets=[model_secret],
-    enable_memory_snapshot=True,
+    scaledown_window=burst_scaledown(),
 )
-if scaledown_window() is not None:
-    _burst_cls["scaledown_window"] = scaledown_window()
 
 
 @app.cls(**_burst_cls)
 @modal.concurrent(max_inputs=8)  # /subtopics waits seconds on Muse; /burst must not queue behind it
 class BurstSearch:
-    @modal.enter(snap=True)
+    @modal.enter()
     def load(self):
-        """Read the index into RAM before Modal snapshots the container.
+        """Read the index into RAM when the container starts.
 
         What this loads, from the volume (sizes from the RRM-3 build): FAISS
         index (~999 MB) plus faiss_ids, the citation graph (~2.13 GB of npy),
@@ -125,9 +128,9 @@ class BurstSearch:
             pass
         self.loaded = ["faiss", "faiss_ids", "graph", "node_meta", "display", "display_ext", "encoder"]
 
-    @modal.enter(snap=False)
+    @modal.enter()
     def resume(self):
-        """The volume mount does not survive the snapshot. Reopen it for cache writes."""
+        """Reopen the volume so a cache write sees the latest commit."""
         try:
             vol.reload()
         except Exception:
@@ -166,7 +169,18 @@ class BurstSearch:
             hit = cached_burst(load_entry(root, query), n)
         except Exception:
             hit = None
+        from rrm.search.querylang import cache_miss_spanish
+
+        if hit is not None and cache_miss_spanish(query, hit):
+            hit = None
         if hit is not None:
+            scored_rows = list(hit.get("papers") or []) + list(hit.get("similar") or [])
+            needs_cosine = hit.get("qvec") is not None and (
+                hit.get("topic_cosine") is None
+                or any(isinstance(row, dict) and row.get("query_cosine") is None for row in scored_rows)
+            )
+            if needs_cosine:
+                self._fill_topic(hit)
             papers = hit.get("papers") or []
             saved = {}
             try:
@@ -289,6 +303,22 @@ class BurstSearch:
             self._refine_layout(key, rows, edges, slots)
         return out
 
+    def _fill_topic(self, payload):
+        from rrm.search.labels import cosine
+        from rrm.search.querylang import topic_fields
+
+        ids = []
+        for key in ("papers", "similar"):
+            for row in payload.get(key) or []:
+                if isinstance(row, dict) and row.get("corpusid") is not None:
+                    ids.append(row.get("corpusid"))
+
+        def vector_of(corpusid):
+            return vector_at(self.index, self.faiss_ids, corpusid)
+
+        payload.update(topic_fields(payload.get("qvec"), ids, vector_of, cosine))
+        _stamp_cosines(payload)
+
     def _compute(self, query, n):
         def search(vector, k):
             return search_vectors(self.index, self.faiss_ids, vector, k)
@@ -296,8 +326,12 @@ class BurstSearch:
         def vector_of(corpusid):
             return vector_at(self.index, self.faiss_ids, corpusid)
 
+        from rrm.search.labels import cosine
+        from rrm.search.querylang import retrieval_query, topic_fields
+
+        encoded, query_en = retrieval_query(query)
         result = burst_query(
-            query,
+            encoded,
             encode=self.encoder.encode,
             search=search,
             graph=self.graph,
@@ -314,6 +348,7 @@ class BurstSearch:
         t0 = time.perf_counter()
         out = {
             "query": query,
+            "query_en": query_en,
             "mode": result["mode"],
             "first": first,
             "papers": self._rows(papers["corpusids"], papers["scores"]),
@@ -324,6 +359,8 @@ class BurstSearch:
         }
         if result.get("qvec"):
             out["qvec"] = result["qvec"]
+        out.update(topic_fields(result.get("qvec"), list(papers["corpusids"]) + [row["corpusid"] for row in result["similar"]], vector_of, cosine))
+        _stamp_cosines(out)
         out["seconds"]["hydrate"] = round(time.perf_counter() - t0, 4)
         out["n"] = int(n)
         out["cached"] = False
@@ -348,7 +385,7 @@ class BurstSearch:
 
             return pending_payload([])
         ids = candidate_ids(burst)
-        meta = lookup_meta(ids, Path(MOUNT) / "label_cache", timeout=2.5)
+        meta = lookup_meta(ids, Path(MOUNT) / "label_cache", timeout=6)
         encode = getattr(getattr(self, "encoder", None), "encode", None)
         index = getattr(self, "index", None)
         faiss_ids = getattr(self, "faiss_ids", None)
@@ -448,6 +485,23 @@ class BurstSearch:
                 return denied
             return {"ready": True, "features": features_mode(), "loaded": list(getattr(self, "loaded", []))}
 
+        @web.post("/group-names")
+        async def route_group_names(request: Request):
+            """Un nombre por grupo, después de pintar. Apagado si el flag no está."""
+            denied = gate(request)
+            if denied:
+                return denied
+            from rrm.search.groupnames import enabled, name_groups
+
+            if not enabled():
+                return {"enabled": False, "names": []}
+            try:
+                item = await request.json()
+            except Exception:
+                item = {}
+            names, meta = name_groups((item or {}).get("groups") or [])
+            return {"enabled": True, "names": names, "meta": meta}
+
         @web.get("/labels")
         def route_labels(request: Request, q: str):
             """Abstract, survey y retractación. No bloquea /burst ni vuelve a correr FAISS."""
@@ -474,7 +528,12 @@ class BurstSearch:
             denied = gate(request)
             if denied:
                 return denied
-            return self._answer(q, n)
+            body = self._answer(q, n)
+            if isinstance(body, dict):
+                from rrm.search.groupnames import enabled
+
+                body["group_names"] = enabled()
+            return body
 
         @web.get("/subtopics")
         def route_subtopics(request: Request, q: str):
@@ -500,6 +559,22 @@ class BurstSearch:
             }
 
         return web
+
+
+def _stamp_cosines(payload):
+    """Copia query_cosines a cada paper y lo quita del cuerpo suelto."""
+    if not isinstance(payload, dict):
+        return
+    scores = payload.pop("query_cosines", None) or {}
+    if not isinstance(scores, dict):
+        return
+    for key in ("papers", "similar"):
+        for row in payload.get(key) or []:
+            if not isinstance(row, dict):
+                continue
+            score = scores.get(str(row.get("corpusid")))
+            if isinstance(score, (int, float)):
+                row["query_cosine"] = float(score)
 
 
 def _store_burst(query, payload):

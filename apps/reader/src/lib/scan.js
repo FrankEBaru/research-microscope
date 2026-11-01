@@ -10,7 +10,7 @@ function textOf(nodes) {
 }
 
 export function conclusionTitle(text) {
-  return /^\s*(?:\d+(?:\.\d+)*\.?\s+)?(conclusions?|concluding remarks|conclusiones|conclusión)\b/i.test(text || "");
+  return /^\s*(?:\d+(?:\.\d+)*\.?\s+)?(conclusions?|concluding remarks|conclusiones|conclusión|discussion|summary|resumen)\b/i.test(text || "");
 }
 
 export function hasConclusion(blocks) {

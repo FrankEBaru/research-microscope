@@ -31,6 +31,52 @@ def _paper():
     }
 
 
+def test_commit_survives_a_reload_that_drops_uncommitted_files(tmp_path):
+    import json
+    import numpy as np
+    from rrm.reader.similar import commit_phrases, read_vectors, text_rows
+    from rrm.reader.phrases import read_phrases
+
+    folder = tmp_path / "7"
+    remote = tmp_path / "remote"
+    folder.mkdir()
+    remote.mkdir()
+    (folder / "paper.json").write_text(json.dumps(_paper()), encoding="utf-8")
+
+    def reload():
+        for path in list(folder.iterdir()):
+            if path.name == "paper.json":
+                continue
+            if not (remote / path.name).is_file():
+                path.unlink()
+        for path in remote.iterdir():
+            if path.is_file():
+                (folder / path.name).write_bytes(path.read_bytes())
+
+    def commit():
+        for name in ("phrases.json", "phrases.npy"):
+            src = folder / name
+            if src.is_file():
+                (remote / name).write_bytes(src.read_bytes())
+
+    def encode(texts):
+        return np.ones((len(list(texts)), 4), dtype=np.float32)
+
+    # Sin commit, el reload se lleva el archivo. Es el fallo que vio /ask.
+    from rrm.reader.phrases import write_phrases
+    write_phrases(folder, _paper())
+    reload()
+    assert not (folder / "phrases.json").is_file()
+
+    out = commit_phrases(folder, reload, commit, encode=encode)
+    assert out["had_phrases"] is False and out["had_vectors"] is False
+    assert out["ready"] is True and out["rows"] >= 1
+    (folder / "phrases.npy").unlink()
+    reload()
+    rows = text_rows(read_phrases(folder))
+    assert read_vectors(folder, len(rows)) is not None
+
+
 def test_collect_keeps_symbol_and_equation_sentence():
     rows = collect_phrases(_paper())
     texts = [row["text"] for row in rows]
@@ -113,6 +159,25 @@ def test_similar_does_not_encode_papers_outside_the_store():
     assert "Photosynthesis" not in blob
 
 
+def test_stored_vectors_encode_only_the_query():
+    from rrm.reader.similar import local_encode, rank_similar
+
+    rows = [
+        {"paper": 7, "text": "Attention is all you need for this model."},
+        {"paper": 8, "text": "We scale the learning rate with data."},
+    ]
+    stored = local_encode([row["text"] for row in rows])
+    seen = []
+
+    def encode(texts):
+        seen.extend(texts)
+        return local_encode(texts)
+
+    hits, _total = rank_similar(rows, "attention model", encode, vectors=stored)
+    assert seen == ["attention model"]
+    assert hits[0]["paper"] == 7
+
+
 def test_phrase_stage_skips_meta(monkeypatch):
     def explode(*_args, **_kwargs):
         raise AssertionError("meta")
@@ -139,3 +204,113 @@ def test_linea_final_is_empty_and_does_not_touch_the_network(monkeypatch):
     assert body["empty"] is False
     assert body["parts"]["coincide"] == []
     assert "Sin retroalimentación" in body["note"]
+
+
+def test_open_paper_is_the_only_phrase_pool(monkeypatch):
+    from rrm.reader.similar import phrase_ids
+
+    monkeypatch.delenv("RRM_PHRASE_NEIGHBORS", raising=False)
+    assert phrase_ids([13756489, 215737171, 220831004], 13756489) == [13756489]
+    assert phrase_ids([7, 8], None) == [7, 8]
+    monkeypatch.setenv("RRM_PHRASE_NEIGHBORS", "1")
+    assert phrase_ids([7, 8, 9], 7) == [7, 8, 9]
+
+
+def test_abstract_sentence_is_stored_unless_the_flag_is_off(monkeypatch):
+    monkeypatch.delenv("RRM_PHRASE_ABSTRACT", raising=False)
+    paper = _paper()
+    paper["blocks"].insert(0, {
+        "kind": "p", "abs": True,
+        "sents": [[{"t": "text", "v": "We propose a new simple network architecture, the Transformer."}]],
+    })
+    texts = [row["text"] for row in collect_phrases(paper)]
+    assert "We propose a new simple network architecture, the Transformer." in texts
+    monkeypatch.setenv("RRM_PHRASE_ABSTRACT", "0")
+    skipped = [row["text"] for row in collect_phrases(paper)]
+    assert "We propose a new simple network architecture, the Transformer." not in skipped
+
+
+def test_literal_abstract_beats_a_closer_neighbor():
+    import numpy as np
+    from rrm.reader.similar import rank_similar
+
+    abstract = "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms."
+    rows = [
+        {"paper": 7, "text": abstract},
+        {"paper": 8, "text": "Longformer attends with a sliding window over the sequence."},
+    ]
+    stored = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float32)
+
+    def encode(texts):
+        assert texts == [abstract]
+        return np.array([[1.0, 0.0]], dtype=np.float32)
+
+    hits, _total = rank_similar(rows, abstract, encode, vectors=stored)
+    assert hits[0]["paper"] == 7
+    assert abstract in hits[0]["text"]
+
+
+def test_folder_id_fills_a_missing_paper_id(tmp_path):
+    import json
+    import numpy as np
+    from rrm.reader.similar import load_aligned
+
+    folder = tmp_path / "7"
+    folder.mkdir()
+    (folder / "phrases.json").write_text(json.dumps({
+        "rows": [{"text": "We propose a new simple network architecture, the Transformer."}],
+    }), encoding="utf-8")
+    np.save(folder / "phrases.npy", np.ones((1, 4), dtype=np.float32))
+    rows, _vecs, missing = load_aligned(tmp_path, [7])
+    assert missing is False
+    assert rows[0]["paper"] == 7
+
+
+def test_commit_appends_the_abstract_without_reencoding_the_rest(tmp_path):
+    import json
+    import numpy as np
+    from rrm.reader.phrases import read_phrases
+    from rrm.reader.similar import commit_phrases, read_vectors, text_rows
+
+    folder = tmp_path / "7"
+    folder.mkdir()
+    abstract = "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms."
+    paper = {
+        "corpusid": 7,
+        "blocks": [
+            {"kind": "p", "abs": True, "sents": [[{"t": "text", "v": abstract}]]},
+            {"kind": "p", "sents": [[{"t": "text", "v": "We scale with "}, {"t": "math", "v": r"\alpha"}, {"t": "text", "v": "."}]]},
+        ],
+    }
+    (folder / "paper.json").write_text(json.dumps(paper), encoding="utf-8")
+    (folder / "phrases.json").write_text(json.dumps({
+        "paper": 7,
+        "rows": [{"paper": 7, "text": r"We scale with $\alpha$.", "latex": [r"\alpha"], "section": ""}],
+    }), encoding="utf-8")
+    np.save(folder / "phrases.npy", np.ones((1, 4), dtype=np.float32))
+    seen = []
+
+    def encode(texts):
+        seen.extend(texts)
+        return np.full((len(list(texts)), 4), 0.5, dtype=np.float32)
+
+    out = commit_phrases(folder, lambda: None, lambda: None, encode=encode)
+    assert out["ready"] is True
+    assert seen == [abstract]
+    rows = text_rows(read_phrases(folder))
+    assert rows[-1]["text"] == abstract
+    assert read_vectors(folder, len(rows)).shape[0] == 2
+
+
+def test_review_failure_is_not_an_empty_200(monkeypatch):
+    from rrm.reader.verify import ask_error_text, ask_http
+
+    monkeypatch.setenv("MODEL_API_KEY", "sekret-no-log")
+    assert "sekret" not in ask_error_text("muse http 500: sekret-no-log Bearer abc https://api.meta.ai/v1")
+    code, payload = ask_http(
+        {"note": "Sin retroalimentación: no hubo red.", "parts": {"coincide": [], "contradice": [], "sin_respaldo": [], "te_falto": []}},
+        "revisar",
+    )
+    assert code == 502 and payload["error"].startswith("Sin retroalimentación")
+    ok, body = ask_http({"note": "", "parts": {"sin_respaldo": [{"text": "x"}]}}, "revisar")
+    assert ok == 200 and body["parts"]["sin_respaldo"]
