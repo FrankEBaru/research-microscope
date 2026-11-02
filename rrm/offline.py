@@ -1,9 +1,14 @@
 """Servidor local de las consultas grabadas. Misma API, sin Modal.
 
-Lee un directorio (el Release ``offline-fixtures-v1``) y responde
-``/burst``, ``/status``, ``/paper``, ``/file``, ``/crops``, ``/subtopics``
-y ``POST /panorama``. Si la consulta no está en la grabación, responde
+Lee un directorio con ``manifest.json`` (grabado o sintético) y responde
+``/burst``, ``/status``, ``/paper``, ``/file``, ``/crops``, ``/subtopics``,
+``/labels``, ``POST /ask``, ``POST /notes``, ``POST /phrases`` y
+``POST /panorama``. Si la consulta no está en la grabación, responde
 ``consulta no grabada``. La autenticación es opcional: no hace falta token.
+
+Réplica opcional: ``labels/<slug>.json``, ``notes/<id>.json`` y
+``ask/index.json`` (filas ``{focus, text, stage, file}`` con ``file`` dentro de
+``ask/``). Sin fila, ``/labels``, ``/notes`` y ``/ask`` calculan en local.
 
 Por defecto ``/panorama`` y ``/crops`` reproducen el JSON grabado y no llaman
 a Meta. ``RRM_OFFLINE_PANORAMA=meta`` hace que ``POST /panorama`` llame a Muse
@@ -38,10 +43,22 @@ def safe_name(name: str) -> bool:
     return isinstance(name, str) and bool(_NAME.fullmatch(name)) and ".." not in name and Path(name).suffix.lower() in _TYPES
 
 
+def safe_json_name(name) -> bool:
+    return isinstance(name, str) and bool(_NAME.fullmatch(name)) and ".." not in name and name.endswith(".json")
+
+
 def _load(path: Path):
     if not path.is_file():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _norm(text) -> str:
+    return " ".join(str(text or "").split())
+
+
+def _ask_key(focus, text, stage):
+    return (str(focus or "").strip(), _norm(text), str(stage or "").strip() or "todo")
 
 
 class Store:
@@ -59,6 +76,7 @@ class Store:
                 "burst": _load(self.root / "burst" / f"{slug}.json"),
                 "subtopics": _load(self.root / "subtopics" / f"{slug}.json"),
                 "panorama": _load(self.root / "panorama" / f"{slug}.json"),
+                "labels": _load(self.root / "labels" / f"{slug}.json"),
             }
         self.status = {}
         status_dir = self.root / "status"
@@ -80,6 +98,21 @@ class Store:
             for path in crops.glob("*.json"):
                 if path.stem.isdigit():
                     self.crops[str(int(path.stem))] = _load(path)
+        self.notes = {}
+        notes = self.root / "notes"
+        if notes.is_dir():
+            for path in notes.glob("*.json"):
+                if path.stem.isdigit():
+                    self.notes[str(int(path.stem))] = _load(path)
+        self.asks = {}
+        index = _load(self.root / "ask" / "index.json")
+        rows = index.get("rows") if isinstance(index, dict) else index
+        for row in rows if isinstance(rows, list) else []:
+            if not isinstance(row, dict) or not safe_json_name(row.get("file")):
+                continue
+            body = _load(self.root / "ask" / row["file"])
+            if isinstance(body, dict):
+                self.asks[_ask_key(row.get("focus"), row.get("text"), row.get("stage"))] = body
         self.files = {}
         files = self.root / "files"
         if files.is_dir():
@@ -146,6 +179,17 @@ def _json_body(handler):
     return item, None
 
 
+def _meta_off() -> bool:
+    """Core replays or computes locally. Meta is reachable only in `all`, never from the recording."""
+    from rrm.reader.metacall import meta_status
+
+    return core_mode() and not meta_status()
+
+
+def _no_meta(*_a, **_k):
+    raise RuntimeError("meta off in core")
+
+
 def _ask(store: Store, item):
     from rrm.reader.phrases import collect_phrases
     from rrm.reader.similar import encode_texts
@@ -167,6 +211,13 @@ def _ask(store: Store, item):
             doc["corpusid"] = int(cid)
         rows.extend(collect_phrases(doc))
     stage = item.get("stage") if isinstance(item, dict) else ""
+    if _meta_off():
+        from rrm.reader.metacall import note_for
+
+        out = answer(rows, text or "", ids=ids, encode=encode_texts, stage="frases")
+        if (text or "").strip() and not out.get("note"):
+            out["note"] = note_for("apagado")
+        return out
     return answer(rows, text or "", ids=ids, encode=encode_texts, stage=stage or "todo")
 
 
@@ -189,7 +240,7 @@ def _notes(store: Store, item):
         doc = dict(doc)
         doc["corpusid"] = int(cid)
     try:
-        return answer_notes(doc, collect_phrases(doc))
+        return answer_notes(doc, collect_phrases(doc), complete=_no_meta if _meta_off() else None)
     except Exception:
         return empty
 
@@ -324,6 +375,12 @@ def build_handler(store: Store):
                 return
             if path == "/labels":
                 from rrm.search.labels import OFFLINE_NOTE
+
+                hit = store.question(one("q"))
+                recorded = None if hit is None else hit.get("labels")
+                if isinstance(recorded, dict):
+                    self._json(200, recorded)
+                    return
                 self._json(200, {"ok": False, "reason": "network", "note": OFFLINE_NOTE, "by_id": {}, "survey_paper": None})
                 return
             if path == "/file":
@@ -348,6 +405,11 @@ def build_handler(store: Store):
                 if err:
                     self._json(400, {"error": err})
                     return
+                if isinstance(item, dict):
+                    recorded = store.asks.get(_ask_key(item.get("focus"), item.get("text"), item.get("stage")))
+                    if recorded is not None:
+                        self._json(200, recorded)
+                        return
                 self._json(200, _ask(store, item))
                 return
             if path == "/notes":
@@ -355,7 +417,17 @@ def build_handler(store: Store):
                 if err:
                     self._json(400, {"error": err})
                     return
-                self._json(200, _notes(store, item))
+                recorded = None
+                if isinstance(item, dict) and str(item.get("id", "")).strip().isdigit():
+                    recorded = store.notes.get(str(int(str(item["id"]).strip())))
+                self._json(200, recorded if recorded is not None else _notes(store, item))
+                return
+            if path == "/phrases":
+                _item, err = _json_body(self)
+                if err:
+                    self._json(400, {"error": err})
+                    return
+                self._json(200, {"ok": True, "offline": True})
                 return
             if path == "/prepare":
                 length = int(self.headers.get("Content-Length") or "0")
