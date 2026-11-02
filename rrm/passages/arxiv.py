@@ -1,7 +1,10 @@
 """Cliente de arXiv para esta corrida. No es el BurstGate del lector.
 
 Una sola conexión, nunca en paralelo entre máquinas. Al menos 3.5 s entre
-el inicio de una petición y el de la siguiente. Host `export.arxiv.org`.
+el inicio de una petición y el de la siguiente, sea e-print o licencia: las
+dos pasan por el mismo gate. Host `export.arxiv.org`. La licencia sale de
+OAI-PMH GetRecord (metadataPrefix=arXiv), que trae `<license>`; la API de
+búsqueda no la trae. Cada petición queda en `client.log` con su hora.
 User-Agent con contacto en `RRM_ARXIV_CONTACT`. Ante 429 o 503 se espera
 (backoff) y, si se repite, se para. No se sube la velocidad.
 """
@@ -24,6 +27,27 @@ _LICENSE_TEXT = re.compile(r"<(?:[\w.-]+:)?license\b[^>]*>([^<]+)</(?:[\w.-]+:)?
 
 class ArxivStopped(RuntimeError):
     """429 o 503 repetidos. La etapa se detiene y se avisa."""
+
+
+class LicenseLookupError(RuntimeError):
+    """OAI respondió sin licencia o con error. El motivo va en el resultado."""
+
+
+_OAI_ERROR = re.compile(r"<error\b[^>]*code=\"([^\"]+)\"[^>]*>([^<]*)</error>", re.I)
+
+
+def parse_oai_license(body) -> str:
+    """`<license>` del registro OAI. Error OAI o registro sin licencia: LicenseLookupError."""
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", "replace")
+    body = body or ""
+    err = _OAI_ERROR.search(body)
+    if err:
+        raise LicenseLookupError(f"oai {err.group(1)}: {err.group(2).strip()}"[:200])
+    found = parse_license(body)
+    if not found:
+        raise LicenseLookupError("oai sin <license>")
+    return found
 
 
 class ArxivHTTPError(RuntimeError):
@@ -87,6 +111,8 @@ class ArxivClient:
         self.stop_after = max(1, int(stop_after))
         self._streak = 0
         self._lock = threading.Lock()
+        self.log = []
+        self.now = time.time
 
     def get(self, url) -> bytes:
         with self._lock:
@@ -97,12 +123,19 @@ class ArxivClient:
         last = None
         for _attempt in range(self.tries):
             self.gate.wait()
+            entry = {"url": url, "start": self.now()}
+            self.log.append(entry)
             try:
                 body = self.opener(url, user_agent())
             except urllib.error.HTTPError as err:
                 last = err
+                entry.update(status=int(err.code), seconds=round(self.now() - entry["start"], 3))
+            except Exception as err:
+                entry.update(status=0, error=type(err).__name__, seconds=round(self.now() - entry["start"], 3))
+                raise
             else:
                 self._streak = 0
+                entry.update(status=200, bytes=len(body or b""), seconds=round(self.now() - entry["start"], 3))
                 return body
             if last.code in (429, 503):
                 self._streak += 1
@@ -119,10 +152,18 @@ class ArxivClient:
         return f"{HOST}/e-print/{canon_arxiv(arxiv_id)}"
 
     def license_url(self, arxiv_id) -> str:
-        return f"{HOST}/api/query?id_list={canon_arxiv(arxiv_id)}"
+        return (
+            f"{HOST}/oai2?verb=GetRecord&metadataPrefix=arXiv"
+            f"&identifier=oai:arXiv.org:{canon_arxiv(arxiv_id)}"
+        )
 
     def fetch_eprint(self, arxiv_id) -> bytes:
         return self.get(self.eprint_url(arxiv_id))
 
     def fetch_license(self, arxiv_id) -> str:
-        return parse_license(self.get(self.license_url(arxiv_id)))
+        return parse_oai_license(self.get(self.license_url(arxiv_id)))
+
+    def gaps(self):
+        """Segundos entre inicios de peticiones seguidas, para probar el gate."""
+        starts = [entry["start"] for entry in self.log]
+        return [round(b - a, 3) for a, b in zip(starts, starts[1:])]

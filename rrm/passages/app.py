@@ -20,6 +20,9 @@ Al terminar, Modal queda parado: estas funciones no dejan un contenedor caliente
 `RRM_PASSAGES_IGNORE_STOP=1` sigue después de un top parecido a las citas globales.
 `RRM_PASSAGES_BREAK_LOCK=1` levanta un harvest.lock viejo. Una sola máquina.
 `RRM_PASSAGES_RETRY=1` rehace las filas de los ids de la etapa aunque ya existan.
+`RRM_PASSAGES_SKIP_CACHED=1` toma los primeros `n` de la unión que no están en
+el caché del lector y tienen arxiv id (prueba de descarga real).
+`RRM_PASSAGES_EXTRA_IDS=1,2` suma ids que ya están en el caché latex (sin e-print).
 """
 
 import json
@@ -71,6 +74,8 @@ _STAGE_KEYS = (
     "RRM_PASSAGES_IGNORE_STOP",
     "RRM_PASSAGES_BREAK_LOCK",
     "RRM_PASSAGES_RETRY",
+    "RRM_PASSAGES_SKIP_CACHED",
+    "RRM_PASSAGES_EXTRA_IDS",
     "RRM_PASSAGES_ANCHORS",
     "RRM_ARXIV_CONTACT",
 )
@@ -272,15 +277,46 @@ def harvest_run(stage: str, n: int):
     except RuntimeError as err:
         raise SystemExit(str(err)) from err
     (dest / "union.json").write_text(json.dumps(union), encoding="utf-8")
-    ids = union["ids"][: int(n)]
     display_path = _root() / "index" / "display.parquet"
     ext_path = _root() / "index_ext" / "display_ext.parquet"
-    metas = {cid: meta_from_files(cid, display_path, ext_path) for cid in ids}
-    budget = _budget()
     papers_root = Path(MOUNT) / "papers"
+    metas = {}
+    if os.environ.get("RRM_PASSAGES_SKIP_CACHED") == "1":
+        # Prueba de descarga real: los primeros `n` de la unión sin carpeta en
+        # el caché del lector y con arxiv id. No se borra nada del caché.
+        ids = []
+        for cid in union["ids"]:
+            if (papers_root / str(cid)).exists():
+                continue
+            meta = meta_from_files(cid, display_path, ext_path)
+            if not meta.get("arxiv_id"):
+                continue
+            metas[cid] = meta
+            ids.append(cid)
+            if len(ids) >= int(n):
+                break
+    else:
+        ids = union["ids"][: int(n)]
+    # Ids extra solo si ya están en el caché latex: rehacen filas y licencia, sin e-print.
+    from rrm.passages.cache import latex_cache_ready
+
+    extra = []
+    for part in os.environ.get("RRM_PASSAGES_EXTRA_IDS", "").split(","):
+        if part.strip().isdigit() and latex_cache_ready(papers_root / part.strip()) and int(part) not in ids:
+            extra.append(int(part))
+    ids = extra + ids
+    for cid in ids:
+        if cid not in metas:
+            metas[cid] = meta_from_files(cid, display_path, ext_path)
+    budget = _budget()
     client = ArxivClient()
+    downloads = {"n": 0}
 
     def on_paper(result):
+        if result.get("downloaded"):
+            downloads["n"] += 1
+        if downloads["n"] > int(n):
+            raise StageBudget(f"{stage} pasó de {n} e-prints")
         if over_budget(time.time() - started, 1, budget):
             raise StageBudget(f"{stage} llegó al tope RRM_PASSAGES_BUDGET_USD={budget}")
         return result
@@ -302,7 +338,11 @@ def harvest_run(stage: str, n: int):
         raise SystemExit(f"{stage} se detiene: {err}") from err
     manifest = compile_store(dest, quota_source=union.get("quota_source"))
     vol.commit()
-    return _report(stage, started, cpu=1, extra={"n": len(ids), "results": done, "rows": manifest["counts"]})
+    return _report(stage, started, cpu=1, extra={
+        "n": len(ids), "extra_ids": extra, "results": done, "rows": manifest["counts"],
+        "arxiv_requests": client.log, "arxiv_gaps_s": client.gaps(),
+        "min_gap_s": min(client.gaps()) if client.gaps() else None,
+    })
 
 
 @app.function(image=gpu_image, gpu="L4", volumes={MOUNT: vol}, secrets=[stage_env], cpu=2, memory=16384, timeout=3600, max_containers=1)

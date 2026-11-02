@@ -8,6 +8,7 @@ baja. Sin arxiv id o sin TeX anota la falla y no inventa el pasaje.
 
 import json
 import os
+import time
 from pathlib import Path
 
 from rrm.passages.arxiv import ArxivHTTPError, ArxivStopped
@@ -43,6 +44,18 @@ def release_harvest_lock(dest):
         path.unlink()
 
 
+def _license(client, arxiv_id):
+    """(licencia, motivo de falla). No se traga el error: el motivo va al resultado y al log."""
+    try:
+        return client.fetch_license(arxiv_id), None
+    except ArxivStopped:
+        raise
+    except Exception as err:
+        reason = _reason(err)
+        print(f"licencia {arxiv_id}: {reason}", flush=True)
+        return "", reason
+
+
 def _reason(err) -> str:
     if isinstance(err, ArxivHTTPError):
         return err.reason
@@ -63,6 +76,8 @@ def harvest_one(meta, *, client, papers_root, dest, retry=False):
     folder = Path(papers_root) / str(cid)
     arxiv_id = meta.get("arxiv_id") or ""
     license_url = meta.get("license") or ""
+    license_error = None
+    eprint = None
     downloaded = False
     if latex_cache_ready(folder):
         paper = cached_paper(folder)
@@ -73,23 +88,14 @@ def harvest_one(meta, *, client, papers_root, dest, retry=False):
             # arXiv (misma conexión, mismo gate de 3.5 s); el e-print no se baja.
             license_url = (load_meta(folder) or {}).get("license") or (paper or {}).get("license") or ""
         if not license_url and arxiv_id:
-            try:
-                license_url = client.fetch_license(arxiv_id)
-            except ArxivStopped:
-                raise
-            except Exception:
-                license_url = ""
+            license_url, license_error = _license(client, arxiv_id)
     else:
         if not arxiv_id:
             save_failure(dest, cid, "sin arxiv id")
             return {"corpusid": cid, "skipped": False, "reason": "sin arxiv id", "rows": 0}
         if not license_url:
-            try:
-                license_url = client.fetch_license(arxiv_id)
-            except ArxivStopped:
-                raise
-            except Exception:
-                license_url = ""
+            license_url, license_error = _license(client, arxiv_id)
+        started = time.time()
         try:
             blob = client.fetch_eprint(arxiv_id)
         except ArxivStopped:
@@ -97,12 +103,15 @@ def harvest_one(meta, *, client, papers_root, dest, retry=False):
         except Exception as err:
             reason = _reason(err)
             save_failure(dest, cid, reason)
-            return {"corpusid": cid, "skipped": False, "reason": reason, "rows": 0}
+            return {"corpusid": cid, "skipped": False, "reason": reason, "rows": 0,
+                    "license": license_url, "license_error": license_error}
         downloaded = True
+        eprint = {"bytes": len(blob or b""), "seconds": round(time.time() - started, 3)}
         kind = unpack_eprint(blob, folder / "src")
         if kind != "tex":
             save_failure(dest, cid, "sin TeX")
-            return {"corpusid": cid, "skipped": False, "reason": "sin TeX", "rows": 0}
+            return {"corpusid": cid, "skipped": False, "reason": "sin TeX", "rows": 0,
+                    "eprint": eprint, "eprint_kind": kind, "license": license_url, "license_error": license_error}
         parsed = parse_tree(folder / "src", arxiv_id=arxiv_id)
         paper = parsed.get("paper") if parsed.get("route") == "latex" else None
         if not paper:
@@ -111,7 +120,8 @@ def harvest_one(meta, *, client, papers_root, dest, retry=False):
             if detail and reason == "parseo":
                 reason = f"parseo: {detail}"[:200]
             save_failure(dest, cid, reason)
-            return {"corpusid": cid, "skipped": False, "reason": reason, "rows": 0}
+            return {"corpusid": cid, "skipped": False, "reason": reason, "rows": 0,
+                    "eprint": eprint, "license": license_url, "license_error": license_error}
         paper["corpusid"] = cid
         paper["arxivId"] = arxiv_id
         store_reader_cache(folder, paper, license_url=license_url)
@@ -127,12 +137,22 @@ def harvest_one(meta, *, client, papers_root, dest, retry=False):
     title = meta.get("title") or (paper or {}).get("title") or ""
     rows = extract_rows(paper, arxiv_id=arxiv_id, license=license_url, url=url, title=title)
     save_paper_rows(dest, filled, rows)
+    by = {"eq": 0, "p": 0, "def": 0}
+    for row in rows:
+        by[row["kind"]] = by.get(row["kind"], 0) + 1
     return {
         "corpusid": cid,
         "skipped": False,
         "downloaded": downloaded,
         "reason": None,
         "rows": len(rows),
+        "by_kind": by,
+        "eq_with_refs": sum(1 for row in rows if row["kind"] == "eq" and row.get("ctx_refs")),
+        "title": filled.get("title") or (paper or {}).get("title"),
+        "arxiv_id": arxiv_id,
+        "license": license_url,
+        "license_error": license_error,
+        "eprint": eprint,
     }
 
 

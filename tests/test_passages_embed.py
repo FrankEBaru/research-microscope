@@ -237,7 +237,7 @@ def test_cached_paper_without_license_asks_only_the_license(tmp_path):
     out = harvest_one({"corpusid": 7, "arxiv_id": "9999.00007", "title": "Attention Is All You Need"},
                       client=client, papers_root=tmp_path / "papers", dest=tmp_path / "passages")
     assert out["downloaded"] is False and out["rows"] > 0
-    assert len(urls) == 1 and "/api/query?id_list=9999.00007" in urls[0]
+    assert len(urls) == 1 and "/oai2?verb=GetRecord" in urls[0] and "oai:arXiv.org:9999.00007" in urls[0]
     import json
 
     saved = json.loads((tmp_path / "passages" / "papers" / "7.json").read_text(encoding="utf-8"))
@@ -245,3 +245,26 @@ def test_cached_paper_without_license_asks_only_the_license(tmp_path):
     again = harvest_one({"corpusid": 7, "arxiv_id": "9999.00007"}, client=client,
                         papers_root=tmp_path / "papers", dest=tmp_path / "passages", retry=True)
     assert again["rows"] == out["rows"] and len(urls) == 2
+
+
+def test_oai_license_parse_errors_are_reported_and_gate_is_shared(tmp_path):
+    from rrm.passages.arxiv import ArxivClient, HarvestGate, LicenseLookupError, parse_oai_license
+    from rrm.passages.harvest import harvest_one
+
+    ok = b'<OAI-PMH><GetRecord><record><metadata><arXiv><id>1706.03762</id><license>http://arxiv.org/licenses/nonexclusive-distrib/1.0/</license></arXiv></metadata></record></GetRecord></OAI-PMH>'
+    assert parse_oai_license(ok) == "http://arxiv.org/licenses/nonexclusive-distrib/1.0/"
+    with pytest.raises(LicenseLookupError, match="idDoesNotExist"):
+        parse_oai_license(b'<OAI-PMH><error code="idDoesNotExist">No matching identifier</error></OAI-PMH>')
+    with pytest.raises(LicenseLookupError, match="sin <license>"):
+        parse_oai_license(b"<OAI-PMH><GetRecord><record><metadata><arXiv><id>x</id></arXiv></metadata></record></GetRecord></OAI-PMH>")
+
+    clock = {"t": 0.0}
+    gate = HarvestGate(sleep=lambda d: clock.__setitem__("t", clock["t"] + d), now=lambda: clock["t"])
+    client = ArxivClient(opener=lambda url, ua: b"<error code=\"badArgument\">x</error>" if "oai2" in url else b"not a tarball",
+                         gate=gate, sleep=lambda d: None)
+    client.now = lambda: clock["t"]
+    out = harvest_one({"corpusid": 21, "arxiv_id": "9999.00021"}, client=client,
+                      papers_root=tmp_path / "papers", dest=tmp_path / "passages")
+    assert out["license"] == "" and out["license_error"].startswith("oai badArgument")
+    assert [e["url"].split("/")[3][:5] for e in client.log] == ["oai2?", "e-pri"]
+    assert client.gaps() and min(client.gaps()) >= 3.5
