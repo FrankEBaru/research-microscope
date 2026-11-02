@@ -73,6 +73,7 @@ export default function MapScreen({
   }
 
   const papers = liveResult?.papers || [];
+  const onMap = (atlasCtx.papers || []).length;
   const groups = liveResult?.layout?.groups || [];
   const refining = Boolean(liveResult?.layout?.pending_vectors?.length);
   const full = papers.filter((paper: any) => isFull(paper, rowState[paperKey(paper)])).length;
@@ -86,7 +87,7 @@ export default function MapScreen({
           <h1>{shownQ}</h1>
           {papers.length > 0 && (
             <p className="map-stats tnum">
-              {papers.length} papers · {groups.length} groups · full text of {full}
+              {papers.length} in the list · {onMap} on the map · {groups.length} groups · full text of {full}
               {refining ? " · refining groups" : ""}
             </p>
           )}
@@ -113,7 +114,7 @@ export default function MapScreen({
           ? <Boundary name="core-list"><CoreList papers={papers} states={rowState} onOpen={(id: string) => atlasCtx.onOpen(id, "desde el mapa")} onWant={atlasCtx.onWant} /></Boundary>
           : <Boundary name="map-body"><MapBody atlasCtx={atlasCtx} onLayout={onLayout} /></Boundary>
       )}
-      <p className="foot"><span>Papers and citations: <a href="https://www.semanticscholar.org/">Semantic Scholar</a></span></p>
+      <p className="b1-foot"><span>Papers and citations: <a href="https://www.semanticscholar.org/">Semantic Scholar</a></span></p>
     </section>
   );
 }

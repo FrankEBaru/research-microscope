@@ -133,9 +133,9 @@ export default function BootPanel({ engine, phase, pending, compact }: {
     <section className={compact ? "boot boot--compact" : "boot"} aria-live="polite" aria-label="Starting up">
       <header className="boot-h">
         <h2>Starting up</h2>
-        <p className="clock tnum">{clock(clockOn && now ? (now - started.current) / 1000 : 0)}</p>
+        <p className="b1-clock tnum">{clock(clockOn && now ? (now - started.current) / 1000 : 0)}</p>
       </header>
-      <ol className="steps">
+      <ol className="b1-steps">
         {rows.map((row) => {
           const index = order.indexOf(row.id);
           const state = index < at ? "done" : index === at ? "run" : "wait";

@@ -34,12 +34,12 @@ export default function StartScreen({ draft, setDraft, onSearch, pending, engine
           <form className="ask-field" onSubmit={(e) => onSearch(e)}>
             <label className="sr-only" htmlFor="rrm-ask">A question, a title or a topic</label>
             <input id="rrm-ask" aria-label="Pregunta" title={draft || undefined} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="A question, a title or a topic" autoFocus autoComplete="off" />
-            <button className="go press" type="submit" aria-label="Search" disabled={pending || !draft.trim()}>
+            <button className="b1-go press" type="submit" aria-label="Search" disabled={pending || !draft.trim()}>
               <Icon name="search" size={22} />
             </button>
           </form>
           {recent.length > 0 && (
-            <p className="try">
+            <p className="b1-try">
               {recent.map((q) => (
                 <button key={q} type="button" className="press" onClick={() => onSearch({ preventDefault() {}, query: q })}>{q}</button>
               ))}
@@ -50,7 +50,7 @@ export default function StartScreen({ draft, setDraft, onSearch, pending, engine
           <BootPanel engine={engine} phase={phase} pending={pending} />
         </div>
       </div>
-      <footer className="foot"><span>Papers and citations: <a href="https://www.semanticscholar.org/">Semantic Scholar</a></span></footer>
+      <footer className="b1-foot"><span>Papers and citations: <a href="https://www.semanticscholar.org/">Semantic Scholar</a></span></footer>
     </section>
   );
 }

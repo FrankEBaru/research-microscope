@@ -29,12 +29,24 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
   back?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const [shortcut, setShortcut] = useState("Ctrl+K");
   const barSearch = Boolean(core && live && (liveOn || liveId));
   const offline = process.env.NEXT_PUBLIC_RRM_OFFLINE === "1";
 
   useEffect(() => {
+    const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+    const platform = nav.userAgentData?.platform || navigator.platform || "";
+    setShortcut(/mac/i.test(platform) ? "⌘K" : "Ctrl+K");
+  }, []);
+
+  useEffect(() => {
     if (!core) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && open) {
+        e.preventDefault();
+        setOpen(false);
+        return;
+      }
       if (!(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== "k") return;
       e.preventDefault();
       const ask = document.getElementById("rrm-ask");
@@ -46,7 +58,7 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [core]);
+  }, [core, open]);
 
   useEffect(() => {
     if (open) document.getElementById("rrm-bar-q")?.focus();
@@ -84,7 +96,7 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
   };
 
   return (
-    <header className="top">
+    <header className="b1-top">
       <div className="top-brand">
         {back}
         <a className="wm" href="#/" aria-label="Reading Microscope, home" onClick={(e) => { e.preventDefault(); onHome ? onHome() : window.scrollTo({ top: 0 }); }}>
@@ -119,19 +131,32 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
       <div className="top-tools">
         {offline && <Cap>local data</Cap>}
         {barSearch ? (
-          <form className={`live-search search ${open ? "is-open" : ""}`} onSubmit={onSearch}>
-            <button type="button" className="search-hit press" aria-label="Search" onClick={focusAsk}>
+          <form className={`live-search b1-search ${open ? "is-open" : ""}`} onSubmit={onSearch}>
+            <button type="button" className="b1-search-hit press" aria-label="Search" onClick={focusAsk}>
               <Icon name="search" size={18} />
-              {!open && <span className="search-label">Search</span>}
+              {!open && <span className="b1-search-label">Search</span>}
             </button>
-            {!open && <kbd aria-hidden="true">⌘K</kbd>}
-            {open && <input id="rrm-bar-q" aria-label="Pregunta" title={draft || undefined} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Search" />}
+            {!open && <kbd aria-hidden="true">{shortcut}</kbd>}
+            {open && (
+              <input
+                id="rrm-bar-q"
+                aria-label="Pregunta"
+                title={draft || undefined}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Search"
+                onBlur={(e) => {
+                  if (e.currentTarget.form?.contains(e.relatedTarget as Node)) return;
+                  if (!draft.trim()) setOpen(false);
+                }}
+              />
+            )}
           </form>
         ) : (
-          <button type="button" className="search press" aria-label="Search" onClick={focusAsk}>
+          <button type="button" className="b1-search press" aria-label="Search" onClick={focusAsk}>
             <Icon name="search" size={18} />
-            <span className="search-label">Search</span>
-            <kbd>⌘K</kbd>
+            <span className="b1-search-label">Search</span>
+            <kbd>{shortcut}</kbd>
           </button>
         )}
       </div>

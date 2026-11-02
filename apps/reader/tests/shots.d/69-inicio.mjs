@@ -16,7 +16,7 @@ export default async function (page, { base, shot, fixtures }) {
   await page.waitForSelector("[data-live-map]", { timeout: 90000 });
   await page.waitForTimeout(400);
   await page.locator("a.wm").click();
-  await page.waitForSelector('[data-screen="start"] .try button', { timeout: 15000 });
+  await page.waitForSelector('[data-screen="start"] .b1-try button', { timeout: 15000 });
   await page.waitForTimeout(300);
   await shot("69-inicio-reciente");
   await page.keyboard.press("Control+k");

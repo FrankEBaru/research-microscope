@@ -12,10 +12,6 @@ const PHASE_EN: Record<string, string> = {
   encontrado: "Found",
 };
 
-function rememberRead(id: string) {
-  try { sessionStorage.setItem(`rrm.read.${id}`, "1"); } catch { /* la pestaña no guarda */ }
-}
-
 export default function CoreList({ papers, states, onOpen, onWant }: { papers: any[]; states: Record<string, any>; onOpen: (id: string) => void; onWant: (id: string) => void }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const ordered = [...papers].sort((a, b) => Number(Boolean(a.retracted)) - Number(Boolean(b.retracted)));
@@ -58,7 +54,7 @@ export default function CoreList({ papers, states, onOpen, onWant }: { papers: a
             </div>
             <div className="row-actions">
               <Button variant="line" size="sm" onClick={() => onOpen(id)}>Scan</Button>
-              <Button variant="primary" size="sm" onClick={() => { onWant(id); rememberRead(id); onOpen(id); }}>Read in full</Button>
+              <Button variant="primary" size="sm" onClick={() => { onWant(id); onOpen(id); }}>Read in full</Button>
             </div>
           </li>
         );
