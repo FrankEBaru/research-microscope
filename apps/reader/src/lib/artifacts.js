@@ -366,6 +366,18 @@ function casesOf(latex) {
   }).filter((row) => row.expr || row.cond);
 }
 
+function dropLoose(text) {
+  let depth = 0, out = "";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "\\" && i + 1 < text.length) { out += ch + text[i + 1]; i += 1; continue; }
+    if (ch === "{") { depth += 1; out += ch; continue; }
+    if (ch === "}") { if (depth > 0) { depth -= 1; out += ch; } continue; }
+    out += ch;
+  }
+  return out.trim();
+}
+
 function tidy(text) {
   return String(text || "")
     .replace(/\\(?:small|normalsize|bfseries|bf|displaystyle)\b/g, "")
@@ -422,10 +434,12 @@ export function stepsOf(text) {
   const steps = kept
     .split(/\\\\|\\(?:State|STATE|For|FOR|While|WHILE|If|IF|lIf|uIf|Else|Repeat|Until)\b/)
     .map((part) => tidy(part
-      .replace(/\\(?:End(?:For|If|While)|ENDFOR|ENDIF|ENDWHILE|Return)\b/g, "")
+      .replace(/\\(?:End(?:For|If|While)|ENDFOR|ENDIF|ENDWHILE|Do|Od|Return)\b/g, "")
       .replace(/\\(?:mbox|emph|textbf|textit)\{([^{}]*)\}/g, "$1")
-      .replace(/\{\s*(?:\\bfseries\s*)?to\s*\}/g, " to ")))
-    .map((part) => part.replace(/\s+/g, " ").replace(/^\{/, "").trim())
+      .replace(/\{\s*(?:\\bfseries\s*)?to\s*\}/g, " to ")
+      .replace(/\\[{}]/g, "")
+      .replace(/\}\s*\{\s+/g, " ")))
+    .map((part) => dropLoose(part.replace(/\s+/g, " ").replace(/^[{}]+/, "").trim()))
     .filter((part) => part.length > 1 && /[A-Za-z0-9\\]/.test(part))
     .slice(0, 8);
   if (steps.length < 2) return null;
@@ -538,7 +552,7 @@ export function collectV2(items, flag) {
       const label = shapeLabel(shape[1]);
       if (label) {
         seenShape.add(row.section);
-        artifacts.push({ block_id: row.id, type: "forma", kind: "forma", label });
+        artifacts.push({ block_id: row.id, type: "forma", kind: "forma", label, body: !appendixSection(row.section) });
       }
     }
     if (row.kind === "eq" && !seenScale.has(row.section)) {
@@ -586,6 +600,7 @@ export function collectV2(items, flag) {
       }
     }
     if (!host) continue;
+    const hostRow = rows.find((other) => other.id === host) || row;
     artifacts.push({
       block_id: host,
       type: "pasos",
@@ -593,6 +608,7 @@ export function collectV2(items, flag) {
       title: parsed.title,
       inputs: parsed.inputs,
       steps: parsed.steps,
+      body: !appendixSection(hostRow.section),
     });
   }
   const notes = [];
@@ -618,5 +634,15 @@ export function collectV2(items, flag) {
       kind: "supuesto",
     });
   }
-  return { notes, artifacts };
+  return { notes, artifacts: capPaper(artifacts) };
+}
+
+function capPaper(list) {
+  const keep = new Set();
+  for (const [type, limit] of [["forma", 3], ["pasos", 4]]) {
+    const hits = list.filter((item) => item.type === type);
+    const ranked = hits.filter((item) => item.body !== false).concat(hits.filter((item) => item.body === false));
+    ranked.slice(0, limit).forEach((item) => keep.add(item));
+  }
+  return list.filter((item) => (item.type !== "forma" && item.type !== "pasos") || keep.has(item));
 }

@@ -45,6 +45,8 @@ test("XGBoost parte el algoritmo y el del apéndice de Informer no se muestra", 
   assert.match(step.title, /Exact Greedy/);
   assert.ok(step.inputs.length >= 1);
   assert.ok(step.steps.length >= 2);
+  assert.match(step.steps[2], /to \$m\$ \$G_L/);
+  assert.equal(step.steps.some((line) => /\\Do\b|\\EndFor\b|\\[{}]/.test(line)), false);
   const informer = collectV2(load(229156802).rows);
   assert.equal(informer.artifacts.filter((item) => item.type === "pasos").length, 0);
   assert.ok(informer.artifacts.some((item) => item.type === "forma" && /×/.test(item.label)));
@@ -65,6 +67,8 @@ test("Boyd tiene a lo más una forma por sección; el inversor muestra ramas", {
   }
   assert.ok(per.size > 0);
   assert.ok([...per.values()].every((n) => n === 1));
+  assert.ok(boyd.artifacts.filter((row) => row.type === "forma").length <= 3);
+  assert.ok(boyd.artifacts.filter((row) => row.type === "pasos").length <= 4);
   const flow = collectV2(load(15216093).rows);
   const branch = flow.artifacts.find((item) => item.type === "casos");
   assert.ok(branch);
