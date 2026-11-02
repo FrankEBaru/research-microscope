@@ -47,9 +47,14 @@ test("XGBoost parte el algoritmo y el del apéndice de Informer no se muestra", 
   assert.ok(step.steps.length >= 2);
   assert.match(step.steps[2], /to \$m\$ \$G_L/);
   assert.equal(step.steps.some((line) => /\\Do\b|\\EndFor\b|\\[{}]/.test(line)), false);
+  const assumed = boost.notes.find((item) => /I_L/.test(item.note));
+  assert.equal(assumed.block_id, "4650265:44");
+  assert.ok(boost.notes.length <= 3);
+  assert.equal(boost.notes.some((item) => item.block_id === "4650265:45"), false);
   const informer = collectV2(load(229156802).rows);
   assert.equal(informer.artifacts.filter((item) => item.type === "pasos").length, 0);
   assert.ok(informer.artifacts.some((item) => item.type === "forma" && /×/.test(item.label)));
+  assert.equal(informer.artifacts.some((item) => item.type === "forma" && String(item.block_id).endsWith(":81")), false);
 });
 
 test("Boyd tiene a lo más una forma por sección; el inversor muestra ramas", { skip: !live }, () => {
@@ -74,6 +79,11 @@ test("Boyd tiene a lo más una forma por sección; el inversor muestra ramas", {
   assert.ok(branch);
   assert.ok(branch.branches.length >= 2);
   assert.match(branch.branches.map((row) => row.cond).join(" "), /leq|otherwise|if/i);
+  const traffic = collectV2(load(1085798).rows);
+  const flow2 = traffic.artifacts.find((item) => item.type === "casos");
+  assert.ok(flow2);
+  assert.match(flow2.branches.map((row) => row.cond).join(" "), /if l\(t\)<L/);
+  assert.equal(flow2.branches.some((row) => /\\text\{/.test(`${row.expr} ${row.cond}`)), false);
 });
 
 test("la DCT dibuja rejilla y Layer Norm no pasa por el softmax", { skip: !live }, () => {

@@ -216,7 +216,7 @@ export function compareOf(tex) {
 // Default encendido. No clasifica con Muse: si el dibujo no sale, no hay artefacto.
 
 const SHAPE = /\\mathbb\s*\{\s*R\s*\}\s*\^\{([^{}]+)\}/;
-const ASSUME = /we assume that|assume that|assuming that|suppose that|under the assumption that|without loss of generality/i;
+const ASSUME = /\b(?:we assume|assume that|assuming that|suppose that|supposing that|under the assumption that|without loss of generality|w\.l\.o\.g\.|given that)\b|\blet\s+\$[^$]{0,80}\$[^.]{0,40}\bbe\b/i;
 
 export function artifactsV2(env = process.env.NEXT_PUBLIC_RRM_ARTIFACTS_V2) {
   if (env == null || env === "") return true;
@@ -252,6 +252,7 @@ function rowsOf(items) {
       section: item.section || section,
       latex: String(item.latex || item.tex || ""),
       text: String(text || ""),
+      raw: Boolean(item.raw),
     });
   }
   return out;
@@ -359,11 +360,19 @@ function casesOf(latex) {
   if (branches.length < 2) return null;
   return branches.map((row) => {
     const bits = row.split("&");
-    return {
-      expr: (bits[0] || "").replace(/,\s*$/, "").trim(),
-      cond: (bits[1] || "").replace(/,\s*$/, "").trim(),
-    };
+    return { expr: unwrapText(bits[0] || ""), cond: unwrapText(bits[1] || "") };
   }).filter((row) => row.expr || row.cond);
+}
+
+function unwrapText(src) {
+  let text = String(src || "").replace(/,\s*$/, "").trim();
+  let prev = "";
+  while (prev !== text) {
+    prev = text;
+    text = text.replace(/\\(?:text|mbox|mathrm)\{([^{}]*)\}/g, "$1");
+  }
+  if (!text.includes("\\")) text = text.replace(/\$([^$]+)\$/g, "$1");
+  return text.trim();
 }
 
 function dropLoose(text) {
@@ -509,7 +518,7 @@ export function collectV2(items, flag) {
   const seenGrid = new Set();
   const seenCase = new Set();
   let dctDone = false;
-  const quote = whyQuote(rows);
+  const quote = whyQuote(rows.filter((row) => !row.raw));
   const bySec = new Map();
   for (const row of rows) {
     if (row.kind !== "eq") continue;
@@ -545,10 +554,12 @@ export function collectV2(items, flag) {
     else if (row.kind === "p") flushRun();
   }
   flushRun();
+  let pastAppendix = false;
   for (const row of rows) {
     const blob = `${row.latex}\n${row.text}`;
+    if (appendixSection(row.section) || /\\begin\{appendices\}|\\appendix\b/.test(blob)) pastAppendix = true;
     const shape = SHAPE.exec(row.latex) || SHAPE.exec(row.text);
-    if (shape && !seenShape.has(row.section)) {
+    if (!row.raw && !pastAppendix && shape && !seenShape.has(row.section)) {
       const label = shapeLabel(shape[1]);
       if (label) {
         seenShape.add(row.section);
@@ -612,29 +623,41 @@ export function collectV2(items, flag) {
     });
   }
   const notes = [];
-  const assumed = new Set();
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    if (assumed.has(row.section)) continue;
+  const assumed = new Map();
+  const strong = /\b(?:assume|assuming|suppose|supposing|without loss of generality|w\.l\.o\.g\.|given that)\b/i;
+  for (const row of rows) {
+    if (row.raw || row.kind === "eq" || row.kind === "h") continue;
     const sentence = assumption(row.text);
-    if (!sentence) continue;
-    assumed.add(row.section);
-    let host = row.id;
-    for (let j = i + 1; j < rows.length; j++) {
-      if (rows[j].section !== row.section) break;
-      if (rows[j].kind === "eq") { host = rows[j].id; break; }
-    }
-    notes.push({
-      block_id: host,
+    if (!sentence || !ASSUME.test(sentence)) continue;
+    const note = {
+      block_id: row.id,
       sent_index: 0,
       note: sentence,
       cite: "",
       generated: false,
       section: row.section,
       kind: "supuesto",
-    });
+      body: !appendixSection(row.section) && !/\\begin\{appendices\}|\\appendix\b/.test(row.text),
+    };
+    const prev = assumed.get(row.section);
+    if (!prev) { assumed.set(row.section, note); notes.push(note); continue; }
+    if (!strong.test(prev.note) && strong.test(sentence)) {
+      notes[notes.indexOf(prev)] = note;
+      assumed.set(row.section, note);
+    }
   }
-  return { notes, artifacts: capPaper(artifacts) };
+  return { notes: capNotes(notes), artifacts: capPaper(artifacts) };
+}
+
+function capNotes(list) {
+  const strong = /\b(?:assume|assuming|suppose|supposing|without loss of generality|w\.l\.o\.g\.|given that)\b/i;
+  const hits = list.filter((item) => item.kind === "supuesto");
+  const ranked = hits
+    .map((item, i) => ({ item, i, s: (item.body === false ? 2 : 0) + (strong.test(item.note) ? 0 : 1) }))
+    .sort((a, b) => a.s - b.s || a.i - b.i)
+    .map((row) => row.item);
+  const keep = new Set(ranked.slice(0, 3));
+  return list.filter((item) => item.kind !== "supuesto" || keep.has(item));
 }
 
 function capPaper(list) {

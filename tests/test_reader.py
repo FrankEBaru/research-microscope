@@ -1373,3 +1373,20 @@ baseline & 1 \\
     assert for_katex(r"\mbox{\boldmath{$\tilde{h}$}}") == r"\mathbf{\tilde{h}}"
     assert for_katex(r"\begin{split} {i\choose{k}} \end{split}") == r"\begin{split} \binom{i}{k} \end{split}"
     assert for_katex(r"i~$odd$") == r"i~\text{odd}"
+
+
+def test_parser_drops_iffalse_and_skips():
+    from rrm.reader.latex import parse_tex, plain
+
+    doc = parse_tex(r"""
+\documentclass{article}
+\begin{document}
+Softmax, \iffalse hidden draft \fi where $Q\in\mathbb{R}^{n}$.
+A line \vskip-.1in after the skip and \vspace{-.1in} done.
+\fi leftover stays out.
+\end{document}
+""")
+    prose = " ".join(plain(b.get("inlines") or []) for b in doc["blocks"] if b["kind"] == "p")
+    assert "hidden draft" not in prose
+    assert "\\fi" not in prose and "\\vskip" not in prose and "\\vspace" not in prose
+    assert "where" in prose and "after the skip" in prose

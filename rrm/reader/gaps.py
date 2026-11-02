@@ -2,7 +2,7 @@
 
 import re
 
-from rrm.reader.latex import plain
+from rrm.reader.latex import _drop_noise, plain
 
 _TOKEN = re.compile(r"\\[A-Za-z]+|[A-Za-z](?:_[A-Za-z0-9]+)+")
 _KEEP = ("introduc", "method", "result", "conclusion", "approach", "model", "método", "resultado")
@@ -123,8 +123,10 @@ def _sents(block):
 
 def _sent_text(sent):
     if isinstance(sent, str):
-        return " ".join(sent.split())
-    return plain(sent)
+        text = sent
+    else:
+        text = plain(sent)
+    return " ".join(_drop_noise(text).split())
 
 
 def _words(text):
@@ -164,7 +166,7 @@ def _nearest_p(blocks, start, step):
     i = start + step
     while 0 <= i < len(blocks):
         block = blocks[i]
-        if isinstance(block, dict) and block.get("kind") == "p":
+        if isinstance(block, dict) and block.get("kind") == "p" and not block.get("raw"):
             return i
         i += step
     return None
@@ -174,7 +176,7 @@ def _citing(blocks, eq_index, skip):
     labs, number, bid = _eq_keys(blocks[eq_index])
     found = []
     for i, block in enumerate(blocks):
-        if i in skip or not isinstance(block, dict) or block.get("kind") != "p":
+        if i in skip or not isinstance(block, dict) or block.get("kind") != "p" or block.get("raw"):
             continue
         refs, targets = _refs(block)
         hit = bool(labs & refs) or (bid and bid in targets)
@@ -188,7 +190,7 @@ def _citing(blocks, eq_index, skip):
 
 def _same_subsection(blocks, eq_index, heading_at):
     start = heading_at + 1 if heading_at is not None else 0
-    return [i for i in range(start, eq_index) if isinstance(blocks[i], dict) and blocks[i].get("kind") == "p"]
+    return [i for i in range(start, eq_index) if isinstance(blocks[i], dict) and blocks[i].get("kind") == "p" and not blocks[i].get("raw")]
 
 
 def _token_missing(token, blobs):
@@ -327,8 +329,9 @@ def _reminders(blocks, sections):
     first = {}
     out = []
     seen = set()
+    told = set()
     for i, block in enumerate(blocks):
-        if block.get("kind") != "p":
+        if block.get("kind") != "p" or block.get("raw"):
             continue
         sec = sections[i][0]
         for sent_i, sent in enumerate(_sents(block)):
@@ -352,7 +355,11 @@ def _reminders(blocks, sections):
                     continue
                 if token not in _flat(normalize_math(origin["text"])):
                     continue
+                slot = (origin["block_id"], origin["sent_index"])
+                if slot in told:
+                    continue
                 seen.add(token)
+                told.add(slot)
                 out.append(dict(origin))
     return out
 
@@ -360,7 +367,7 @@ def _reminders(blocks, sections):
 def _sentences(blocks, sections):
     rows = []
     for i, block in enumerate(blocks):
-        if block.get("kind") != "p":
+        if block.get("kind") != "p" or block.get("raw"):
             continue
         sec = sections[i][0]
         low = sec.lower()

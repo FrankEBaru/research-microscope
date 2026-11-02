@@ -84,8 +84,8 @@ function ArtifactView({ drawn }: { drawn: any }) {
     return (
       <div className="gap-art" data-artifact="matriz">
         <p className="gap-tag">{drawn.tag || "Nota de IA"}</p>
-        <table className="gap-matrix"><tbody>{drawn.rows.map((row: any) => (
-          <tr key={row.i}>{row.cells.map((v: number, i: number) => {
+        <table className="gap-matrix"><tbody>{drawn.rows.map((row: any, ri: number) => (
+          <tr key={ri}>{row.cells.map((v: number, i: number) => {
             const t = Math.max(0, Math.min(1, (v + 1) / 2));
             const color = `rgb(${Math.round(255 + (29 - 255) * t)},${Math.round(255 + (78 - 255) * t)},${Math.round(255 + (137 - 255) * t)})`;
             return <td key={i} style={{ background: color }} />;
@@ -775,7 +775,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         </header>
 
         {pdfPagesOnly(paper.blocks) && <p className="pdf-only">Este e-print no trae el texto: las páginas vienen insertadas de un PDF.</p>}
-        {paper.blocks.map((b) => {
+        {paper.blocks.map((b, bi) => {
           if (scan && !scan.has(b.id)) return null;
           const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, refLabels: paper.refLabels, xref: model.xref, figs: model.figs, counter: { n: model.noteBase[b.id] }, core, block: b.id };
           let el: any = null;
@@ -786,7 +786,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           } else if (b.kind === "p") {
             if (!b.abs && !visibleInlines(b.inlines)) return null;
             const nb = countNotes(b.inlines);
-            el = (
+            const prose = (
               <div id={`blk-${b.id}`} className={`blk ${b.abs ? "abstract" : ""} ${b.raw ? "raw" : ""}`}>
                 {b.abs && <div className="abs-label">Resumen</div>}
                 <p>{(b.sents || [b.inlines]).map((s: Inline[], i: number) => <span key={i} className="sent" data-pop={`s|${b.id}|${i}`}><Inlines inls={s} ctx={{ ...ctx, sent: i }} /></span>)}</p>
@@ -794,6 +794,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
                 {nb > 0 && <ol className="notes" start={model.noteBase[b.id] + 1}>{model.notes.slice(model.noteBase[b.id], model.noteBase[b.id] + nb).map((n, i) => <li key={i} value={model.noteBase[b.id] + i + 1}><Inlines inls={n.blocks.flatMap((x: Block) => x.inlines || [])} ctx={{ ...ctx, counter: { n: 999 } }} /></li>)}</ol>}
               </div>
             );
+            const stepped = core && b.raw && artsAt(b.id, pack, local).some((a) => a.type === "pasos");
+            el = stepped ? <details className="raw-tex"><summary>ver LaTeX</summary>{prose}</details> : prose;
           } else if (b.kind === "eq") {
             el = (
               <div id={`blk-${b.id}`} className="eq blk" {...(core ? { "data-pop": `e|${b.id}`, tabIndex: 0 } : {})}>
@@ -816,7 +818,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             el = <Table b={b} ctx={ctx} n={model.tabN[b.id]} predict={showInstrument} still={reading} />;
           }
           const row = (
-            <div key={b.id} className="row">
+            <div key={`${b.id}-${bi}`} className="row">
               {el}
               {breakdown === b.id && b.kind === "eq" && (
                 <aside id={`bd-${b.id}`} className="breakdown" aria-label="Desglose de la ecuación">
@@ -830,21 +832,21 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               )}
               {showInstrument && att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
               {core && <ShapePill arts={artsAt(b.id, pack, local)} />}
-              {core && b.kind === "p" && notesAt(b.id, pack, local).map((n: any) => (
-                <GapView key={`${n.block_id}-${n.sent_index}-${n.kind || "n"}`} note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
+              {core && b.kind === "p" && notesAt(b.id, pack, local).map((n: any, i: number) => (
+                <GapView key={`${n.block_id}-${n.sent_index}-${n.kind || "n"}-${i}`} note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
               ))}
               {core && b.kind === "p" && artsAt(b.id, pack, local).filter((a) => a.type !== "forma").map((a, i) => (
                 <GapView key={`a-${b.id}-${i}`} art={a} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
               ))}
-              {core && b.kind === "eq" && notesAt(b.id, pack, local).map((n: any) => (
-                <GapView key={`n-${n.block_id}-${n.sent_index}-${n.kind || "n"}`} note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
+              {core && b.kind === "eq" && notesAt(b.id, pack, local).map((n: any, i: number) => (
+                <GapView key={`n-${n.block_id}-${n.sent_index}-${n.kind || "n"}-${i}`} note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
               ))}
               {core && b.kind === "eq" && artsAt(b.id, pack, local).filter((a) => a.type !== "forma").map((a, i) => (
                 <GapView key={`a-${b.id}-${i}`} art={a} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
               ))}
             </div>
           );
-          if (askBox && b.id === abstractId) return <div key={b.id}>{row}{askBox}</div>;
+          if (askBox && b.id === abstractId) return <div key={`${b.id}-${bi}`}>{row}{askBox}</div>;
           return row;
         })}
         <footer className="paper-foot">

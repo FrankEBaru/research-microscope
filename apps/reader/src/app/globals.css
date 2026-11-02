@@ -125,6 +125,8 @@ blockquote .link { display: block; margin-top: .45rem; font: 500 .84rem var(--sa
 .math-fail { color: #a11; background: #fdecec; padding: .1rem .3rem; border-radius: 4px; font-size: .85em; }
 .math-hint { display: block; font: .78rem var(--sans); color: var(--muted); margin-top: .3rem; }
 .raw { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); font-size: .92em; }
+details.raw-tex { margin: .2rem 0 .4rem; }
+details.raw-tex > summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
 .fig-loading, .fig-missing { min-height: 8rem; display: grid; place-items: center; background: var(--bg); color: var(--muted); border: 1px dashed var(--line-2); border-radius: 8px; font: .85rem var(--sans); padding: 1rem; text-align: center; }
 .pdf-only { font: .95rem/1.5 var(--sans); color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1.1rem; margin: 0 0 1.4rem; }
 .fig-slot { position: relative; display: inline-block; max-width: 100%; min-width: 8rem; min-height: 6rem; background: var(--bg); }
