@@ -108,13 +108,16 @@ export function TableChart({ model, n, predict = true, tableId }: { model: any; 
   );
 }
 
-export function Table({ b, ctx, n, predict = true, still = false }: { b: Block; ctx: Ctx; n: number; predict?: boolean; still?: boolean }) {
+export function Table({ b, ctx, n, predict = true }: { b: Block; ctx: Ctx; n: number; predict?: boolean; [extra: string]: unknown }) {
   const [hc, setHc] = useState<number | null>(null);
   const [showChart, setShowChart] = useState(false);
   const [hl, setHl] = useState("");
   const [filter, setFilter] = useState("");
+  const [forceChart, setForceChart] = useState(false);
   const model = b.an;
   const chartable = model.numericCols.length > 0 && bars(model, model.numericCols[0]).length >= 3;
+  const withChart = chartable && (!ctx.core || forceChart);
+  useEffect(() => { if ((window as unknown as { __RRM_FORCE_CHART?: number }).__RRM_FORCE_CHART) setForceChart(true); }, []);
   useEffect(() => {
     const f = (e: any) => { const d = e.detail; if (!d || d.id !== b.id) return; setHl(d.label || ""); };
     window.addEventListener("rrm-row", f);
@@ -122,9 +125,9 @@ export function Table({ b, ctx, n, predict = true, still = false }: { b: Block; 
   }, [b.id]);
   return (
     <figure className="table-fig" id={b.label || undefined} data-tab={b.id}>
-      {chartable && !ctx.core && <div className="tchart-bar"><button type="button" className="tchart-toggle press" aria-pressed={showChart} onClick={() => setShowChart((v) => !v)}>{showChart ? "Hide chart" : "Show as chart"}</button></div>}
+      {withChart && <div className="tchart-bar"><button type="button" className="tchart-toggle press" aria-pressed={showChart} onClick={() => setShowChart((v) => !v)}>{showChart ? "Hide chart" : "Show as chart"}</button></div>}
       {ctx.core && <input className="table-filter" aria-label="Filter rows" value={filter} placeholder="Filter rows" onChange={(e) => setFilter(e.target.value)} />}
-      {showChart && !ctx.core && <TableChart model={model} n={n} predict={predict} tableId={b.id} />}
+      {showChart && withChart && <TableChart model={model} n={n} predict={predict || forceChart} tableId={b.id} />}
       <div className="table-wrap" onMouseLeave={() => setHc(null)}>
         <table data-hc={hc ?? undefined}>
           <thead>{model.headRows.map((hr: any[], ri: number) => (
