@@ -114,7 +114,8 @@ def harvest_one(meta, *, client, papers_root, dest, retry=False):
     filled["arxiv_id"] = arxiv_id
     filled["license"] = license_url
     filled["url"] = url
-    rows = extract_rows(paper, arxiv_id=arxiv_id, license=license_url, url=url)
+    title = meta.get("title") or (paper or {}).get("title") or ""
+    rows = extract_rows(paper, arxiv_id=arxiv_id, license=license_url, url=url, title=title)
     save_paper_rows(dest, filled, rows)
     return {
         "corpusid": cid,

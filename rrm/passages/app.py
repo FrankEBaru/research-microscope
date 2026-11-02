@@ -188,18 +188,34 @@ def e0_run():
     def meta_of(cid):
         return meta_from_files(cid, display_path, ext_path)
 
+    def text_neighbors(text):
+        nonlocal encoder
+        if encoder is None:
+            encoder = QueryEncoder()
+            encoder.load()
+        from rrm.search.faissutil import search_vectors
+
+        vec = encoder.encode_proximity([text.strip() + "\n"])[0]
+        return [cid for cid, _dist in search_vectors(index, faiss_ids, vec, 201)]
+
+    def text_of(cid):
+        # Solo el título: display no trae abstract. El vector de papers es título+abstract.
+        return ((meta_of(cid) or {}).get("title") or "").strip()
+
     for spec in themes:
         seeds = resolve_seeds(
             spec,
             neighbors_of=lambda anchor: _neighbors(index, faiss_ids, anchor, 200),
             first_hit=first_hit,
             title_hit=title_hit,
+            text_neighbors=text_neighbors,
+            text_of=text_of,
         )
         if not seeds["seeds"]:
             reports.append({**seeds, "top": [], "by_citations": [], "ranked_ids": [], "same_order": False, "overlap": 0})
             continue
         report = theme_report(graph, cc, seeds["seeds"], meta_of, field=field, field_names=names)
-        report.update({key: seeds[key] for key in ("name", "anchor", "seeds", "neighbors", "how", "error")})
+        report.update({key: seeds.get(key) for key in ("name", "anchor", "seeds", "neighbors", "how", "via", "error")})
         report["seeds"] = len(seeds["seeds"])
         reports.append(report)
 
@@ -209,7 +225,11 @@ def e0_run():
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "e0.json").write_text(json.dumps(body), encoding="utf-8")
     vol.commit()
-    return _report("e0", started, cpu=2, extra={"stop": flags["stop"], "close": flags["close"], "themes": len(reports)})
+    return _report("e0", started, cpu=2, extra={
+        "stop": flags["stop"], "close": flags["close"], "errors": flags["errors"], "themes": len(reports),
+        "via": {item.get("name"): item.get("via") for item in reports},
+        "neighbors": {item.get("name"): item.get("neighbors") for item in reports},
+    })
 
 
 @app.function(image=cpu_image, volumes={MOUNT: vol}, secrets=[stage_env], cpu=1, memory=2048, timeout=8 * 3600, max_containers=1)
@@ -230,8 +250,11 @@ def harvest_run(stage: str, n: int):
         raise SystemExit("falta passages/e0.json; E0 no corrió")
     e0 = json.loads(e0_path.read_text(encoding="utf-8"))
     ignore = os.environ.get("RRM_PASSAGES_IGNORE_STOP") == "1"
-    if (e0.get("stop") or e0.get("close")) and not ignore:
-        raise SystemExit("E0 marcó stop o close. No se bajan e-prints. RRM_PASSAGES_IGNORE_STOP=1 si Franklin sigue.")
+    if (e0.get("stop") or e0.get("close") or e0.get("errors")) and not ignore:
+        raise SystemExit(
+            "E0 marcó stop, close o temas sin semillas "
+            f"(errors={e0.get('errors')}). No se bajan e-prints. RRM_PASSAGES_IGNORE_STOP=1 si Franklin sigue."
+        )
     counts_path = dest / "burst_counts.json"
     counts = None
     if counts_path.is_file():

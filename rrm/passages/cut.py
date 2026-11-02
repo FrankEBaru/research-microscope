@@ -51,8 +51,15 @@ def apply_anchor_overrides(themes, raw):
     return out
 
 
-def resolve_seeds(spec, *, neighbors_of, first_hit, title_hit, k=NEIGHBOR_K):
-    """Arma las semillas. `neighbors_of` son los vecinos del vector ya guardado."""
+def resolve_seeds(spec, *, neighbors_of, first_hit, title_hit, k=NEIGHBOR_K, text_neighbors=None, text_of=None):
+    """Arma las semillas. `neighbors_of` son los vecinos del vector ya guardado.
+
+    Un ancla sin vector en FAISS (p. ej. GCN, 3144218, que no está en
+    faiss_ids.npy) no tiene vecinos. Entonces se embebe su título con el
+    adapter de proximidad (`text_neighbors(texto)`) y se buscan vecinos con
+    ese vector. Si tampoco hay, la semilla queda con error "ancla sin vecinos"
+    y la unión se niega a seguir (ver cut_flags).
+    """
     anchor = spec.get("anchor")
     how = "given"
     if anchor is None and spec.get("title"):
@@ -71,6 +78,22 @@ def resolve_seeds(spec, *, neighbors_of, first_hit, title_hit, k=NEIGHBOR_K):
             "error": "sin ancla",
         }
     neighbors = list(neighbors_of(int(anchor)) or []) if neighbors_of else []
+    via = "vector"
+    if not neighbors and text_neighbors is not None:
+        text = (text_of(int(anchor)) if text_of else None) or spec.get("title") or spec.get("question") or ""
+        if text:
+            neighbors = [cid for cid in (text_neighbors(text) or []) if int(cid) != int(anchor)][: int(k)]
+            via = "text"
+    if not neighbors:
+        return {
+            "name": spec.get("name"),
+            "anchor": int(anchor),
+            "seeds": [],
+            "neighbors": 0,
+            "how": how,
+            "via": "none",
+            "error": "ancla sin vecinos",
+        }
     seeds = assemble_seeds(anchor, neighbors, k=k)
     return {
         "name": spec.get("name"),
@@ -78,6 +101,7 @@ def resolve_seeds(spec, *, neighbors_of, first_hit, title_hit, k=NEIGHBOR_K):
         "seeds": seeds,
         "neighbors": max(0, len(seeds) - 1),
         "how": how,
+        "via": via,
         "error": None,
     }
 
@@ -133,12 +157,18 @@ def cut_flags(themes):
     """
     stop = any(item.get("same_order") and len(item.get("top") or []) >= 5 for item in themes or [])
     close = any(len(item.get("top") or []) >= 10 and int(item.get("overlap") or 0) >= 8 for item in themes or [])
-    return {"stop": bool(stop), "close": bool(close)}
+    errors = [item.get("name") for item in themes or [] if item.get("error")]
+    return {"stop": bool(stop), "close": bool(close), "errors": errors}
 
 
 def union_from_reports(reports, burst_counts=None, limit=2000, ignore_stop=False):
     """Arma la lista de ids. No baja nada. Rechaza el corte si `stop` o `close`."""
     flags = cut_flags(reports)
+    if flags["errors"] and not ignore_stop:
+        raise RuntimeError(
+            f"E0 dejó temas sin semillas: {', '.join(map(str, flags['errors']))}. "
+            "No se arma la unión. Corrige el ancla (RRM_PASSAGES_ANCHORS) o RRM_PASSAGES_IGNORE_STOP=1."
+        )
     if (flags["stop"] or flags["close"]) and not ignore_stop:
         raise RuntimeError(
             "E0 marcó el top parecido al de citas globales "

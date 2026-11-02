@@ -11,8 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
-from rrm.passages.embed import l2_normalize, proximity_name
-from rrm.passages.rows import excluded_headings
+from rrm.passages.embed import embed_policy, l2_normalize, proximity_name
+from rrm.passages.rows import excluded_headings, generic_headings
 from rrm.passages.union import title_notes
 
 ROWS_SCHEMA_FIELDS = (
@@ -25,6 +25,11 @@ ROWS_SCHEMA_FIELDS = (
     "latex",
     "license",
     "url",
+    "title",
+    "head",
+    "ctx_before",
+    "ctx_after",
+    "ctx_refs",
 )
 
 
@@ -41,6 +46,11 @@ def _schema():
         ("latex", pa.string()),
         ("license", pa.string()),
         ("url", pa.string()),
+        ("title", pa.string()),
+        ("head", pa.string()),
+        ("ctx_before", pa.string()),
+        ("ctx_after", pa.string()),
+        ("ctx_refs", pa.list_(pa.string())),
     ])
 
 
@@ -50,6 +60,8 @@ def _clean_row(row):
         value = row.get(name)
         if name == "corpusid":
             out[name] = int(value)
+        elif name == "ctx_refs":
+            out[name] = [str(item) for item in value or []]
         else:
             out[name] = "" if value is None else str(value)
     return out
@@ -208,6 +220,8 @@ def build_manifest(papers, failures, *, quota_source=None, index_built=False, co
         "counts": counts,
         "failures": list(failures or []),
         "excluded_headings": excluded_headings(),
+        "generic_headings": generic_headings(),
+        "embed_text": embed_policy(),
         "quota_source": quota_source,
         "index": {
             "type": "IndexFlatIP",
