@@ -3,33 +3,68 @@ import { useEffect, useRef, useState } from "react";
 import { Rich } from "@/lib/math";
 import { ask, explain, preparePhrases } from "@/lib/backend.js";
 import { cleanExtract, markMidStart, storeLine } from "@/lib/extract.js";
+import { draftKey, loadDraft, migrateLegacy, saveDraft } from "@/lib/draft.js";
+import { storageFault } from "@/lib/faults.js";
+import { Button, Cap, Icon, Prov } from "@/components/ui";
+import Notice from "@/components/faults/Notice";
+import "@/styles/box.css";
 
 const PARTS = [
-  ["coincide", "Coincide"],
-  ["contradice", "Contradice"],
-  ["sin_respaldo", "Sin respaldo"],
-  ["te_falto", "Te faltó"],
+  ["coincide", "Matches"],
+  ["contradice", "Contradicts"],
+  ["sin_respaldo", "No support"],
+  ["te_falto", "You missed"],
 ] as const;
 
-function boxKey(id?: string) {
-  return id ? `rrm-ask:${id}` : "";
+const NO_SUPPORT = "I didn't find this in the selected extracts from the paper.";
+const EMPTY_PHRASES = "No saved sentences for these papers.";
+const ASK_FAULT = "I couldn't review your explanation just now. The extracts stay below.";
+const ASK_SLOW = "The quote check is still running. Review again if it does not appear.";
+
+function sigOf(snap: { text: string; result: any; err: string; store: any }) {
+  try { return JSON.stringify(snap); } catch { return String(snap.text || ""); }
 }
 
-function loadBox(id?: string) {
-  const key = boxKey(id);
-  if (!key || typeof sessionStorage === "undefined") return null;
-  try {
-    const raw = sessionStorage.getItem(key);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
+function memory() {
+  try { return typeof localStorage === "undefined" ? null : localStorage; } catch { return null; }
+}
+
+function tab() {
+  try { return typeof sessionStorage === "undefined" ? null : sessionStorage; } catch { return null; }
+}
+
+function normSent(value: string) {
+  return String(value || "")
+    .replace(/^…/, "")
+    .replace(/\$([^$]*)\$/g, (_, inner) => String(inner).replace(/[{}_\\]/g, ""))
+    .replace(/[\u200b\u200c\u200d\ufeff]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Texto que se ve: sin MathML, que repite el LaTeX al lado del glifo. */
+function visibleSent(node: Element) {
+  let out = "";
+  const walk = (cur: Node) => {
+    if (cur.nodeType === 3) { out += cur.nodeValue || ""; return; }
+    if (cur.nodeType !== 1) return;
+    const el = cur as Element;
+    if (el.matches("math, annotation, .katex-mathml")) return;
+    for (const child of el.childNodes) walk(child);
+  };
+  walk(node);
+  return normSent(out);
+}
+
+function sentEl(text: string) {
+  if (typeof document === "undefined") return null;
+  const want = normSent(text);
+  if (!want) return null;
+  const nodes = document.querySelectorAll(".sent");
+  for (const node of nodes) {
+    if (visibleSent(node) === want) return node as HTMLElement;
   }
-}
-
-function saveBox(id: string | undefined, snap: any) {
-  const key = boxKey(id);
-  if (!key || typeof sessionStorage === "undefined") return;
-  try { sessionStorage.setItem(key, JSON.stringify(snap)); } catch { /* el paper sigue; la caja lo dice */ }
+  return null;
 }
 
 function group(rows: any[]) {
@@ -43,7 +78,30 @@ function group(rows: any[]) {
   return [...map.entries()];
 }
 
-export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onSkip, onPromote, onName }: {
+function absenceNote(note: string) {
+  const text = String(note || "");
+  if (/no hay clave/i.test(text)) return "No feedback: there is no key.";
+  if (/apagado/i.test(text)) return "No feedback: Meta is off.";
+  if (/no hubo red/i.test(text)) return "No feedback: there was no network.";
+  if (/Sin retroalimentación/i.test(text)) return "No feedback for this review.";
+  return "";
+}
+
+function storeCopy(store: any, done: boolean) {
+  const line = storeLine(store, done);
+  if (!line) return "";
+  const ready = Number(store?.ready || 0);
+  const total = Number(store?.total || 0);
+  if (ready >= total) return `Sentences ready from all ${total} papers.`;
+  const rest = total - ready;
+  if (done) {
+    const other = rest === 1 ? "The other has" : `The other ${rest} have`;
+    return `Sentences ready from ${ready} of ${total} papers. ${other} no text available right now.`;
+  }
+  return `Preparing sentences: ${ready} of ${total} papers…`;
+}
+
+export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onSkip, onPromote, onName, sectionId, variant = "slot" }: {
   sectionLabel: string;
   ids?: string[];
   focusId?: string;
@@ -60,34 +118,79 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
   const [result, setResult] = useState<any>(null);
   const [store, setStore] = useState<any>(null);
   const [err, setErr] = useState("");
-  const owner = useRef<string | undefined>(undefined);
   const [progress, setProgress] = useState("");
   const [phraseLine, setPhraseLine] = useState("");
-  const phrases = useRef<Promise<unknown> | null>(null);
-  const answer = useRef<HTMLDivElement | null>(null);
+  const [slow, setSlow] = useState(false);
   const [shown, setShown] = useState(0);
   const [storeDone, setStoreDone] = useState(false);
+  const [savedOn, setSavedOn] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const [jumps, setJumps] = useState<string[]>([]);
+  const phrases = useRef<Promise<unknown> | null>(null);
+  const answer = useRef<HTMLDivElement | null>(null);
+  const baseline = useRef("");
   const key = (ids || []).join(",");
+
   useEffect(() => {
-    if (!focusId) return;
-    if (owner.current !== focusId) {
-      owner.current = focusId;
-      const next = loadBox(focusId);
-      setText(next?.text || "");
-      setResult(next?.result ?? null);
-      setErr(next?.err || "");
-      setStore(next?.store ?? null);
+    const box = memory();
+    let snap = box && focusId ? loadDraft(box, draftKey(focusId, sectionId)) : null;
+    if (box && focusId && !snap) snap = migrateLegacy(box, focusId, sectionId);
+    if (!snap && focusId) {
+      const old = loadDraft(tab(), `rrm-ask:${focusId}`);
+      if (old && box) {
+        snap = {
+          text: old.text || "",
+          result: old.result ?? null,
+          err: old.err || "",
+          store: old.store ?? null,
+          at: typeof old.at === "number" ? old.at : Date.now(),
+        };
+        if (saveDraft(box, draftKey(focusId, sectionId), snap)) {
+          try { tab()?.removeItem(`rrm-ask:${focusId}`); } catch { /* la copia nueva ya quedó */ }
+        }
+      }
+    }
+    const next = {
+      text: snap?.text || "",
+      result: snap?.result ?? null,
+      err: snap?.err || "",
+      store: snap?.store ?? null,
+    };
+    baseline.current = sigOf(next);
+    setText(next.text);
+    setResult(next.result);
+    setErr(next.err);
+    setStore(next.store);
+    setSavedOn(Boolean(next.text.trim()));
+    setHydrated(true);
+  }, [focusId, sectionId]);
+
+  const snapSig = hydrated ? sigOf({ text, result, err, store }) : "";
+  useEffect(() => {
+    if (!hydrated || !focusId) return;
+    if (snapSig === baseline.current) {
+      if (text.trim()) setSavedOn(true);
       return;
     }
-    saveBox(focusId, { text, result, err, store });
-  }, [focusId, text, result, err, store]);
+    setSavedOn(false);
+    let show = 0;
+    const wait = window.setTimeout(() => {
+      const snap = { text, result, err, store, at: Date.now() };
+      const ok = saveDraft(memory(), draftKey(focusId, sectionId), snap);
+      if (!ok) { storageFault(new Error("draft"), "askbox"); return; }
+      baseline.current = snapSig;
+      show = window.setTimeout(() => setSavedOn(true), 1200);
+    }, 400);
+    return () => { window.clearTimeout(wait); window.clearTimeout(show); };
+  }, [hydrated, focusId, sectionId, snapSig]);
+
   useEffect(() => {
     if (!focusId) { setPhraseLine(""); phrases.current = null; return; }
     let stop = false;
     const t0 = Date.now();
-    setPhraseLine("preparando frases de este paper… 0 s");
+    setPhraseLine("Preparing sentences from this paper… 0 s");
     const clock = window.setInterval(() => {
-      setPhraseLine(`preparando frases de este paper… ${Math.round((Date.now() - t0) / 1000)} s`);
+      setPhraseLine(`Preparing sentences from this paper… ${Math.round((Date.now() - t0) / 1000)} s`);
     }, 400);
     const job = preparePhrases(focusId).then(
       () => { if (!stop) { window.clearInterval(clock); setPhraseLine(""); } },
@@ -96,6 +199,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
     phrases.current = job;
     return () => { stop = true; window.clearInterval(clock); };
   }, [focusId]);
+
   const keepStore = (body: any) => {
     const next = body?.store;
     if (!next) return;
@@ -104,6 +208,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
       return { ...next, ready: Math.max(prev.ready || 0, next.ready || 0) };
     });
   };
+
   useEffect(() => {
     if (!key) return;
     let stop = false;
@@ -112,7 +217,6 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
     let last = -1;
     let tries = 0;
     setStoreDone(false);
-    // RRM-47: antes seguía cada 2 s para siempre si un paper nunca tenía frases (8 de 10).
     // Se para tras 8 lecturas sin cambio (~16 s) o 30 intentos (~1 min).
     const tick = async () => {
       try {
@@ -130,107 +234,164 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
     tick();
     return () => { stop = true; window.clearTimeout(timer); };
   }, [key]);
+
   const send = async (event: { preventDefault: () => void }) => {
     event.preventDefault();
     if (!text.trim() || busy) return;
     setBusy(true);
     setErr("");
+    setSlow(false);
     onPromote?.();
-    let held = "";
     try {
       if (phrases.current) await phrases.current;
       setPhraseLine("");
-      setProgress("buscando frases en los papers…");
+      setProgress("Looking for sentences in the papers…");
       let ranked: any = null;
       for (let attempt = 0; attempt < 60; attempt++) {
         ranked = await ask(ids || [], text, "frases", focusId);
         setResult(ranked);
         keepStore(ranked);
         if (!/Preparando los vectores/.test(ranked?.note || "")) break;
-        setProgress("preparando frases de este paper…");
+        setProgress("Preparing sentences from this paper…");
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
       }
       if (ranked?.empty) return;
-      setProgress("revisando cada cita…");
+      setProgress("Checking each quote…");
       const body = await ask(ids || [], text, "revisar", focusId);
-      if (body?.empty) setErr(body.note || "La revisión volvió vacía.");
+      if (body?.empty) setResult(body);
       else { setResult(body); keepStore(body); setShown((n) => n + 1); }
-    } catch (err: any) {
-      const timed = err?.kind === "timeout" || err?.name === "AbortError";
-      if (timed) held = "Sigue la revisión de las citas. Vuelve a enviar si no aparece.";
-      else setErr(explain(err));
+    } catch (caught: any) {
+      const timed = caught?.kind === "timeout" || caught?.name === "AbortError" || caught?.code === "F-ASK-SLOW";
+      if (timed) setSlow(true);
+      else setErr(explain(caught) || "F-ASK");
     } finally {
       setBusy(false);
-      setProgress(held);
+      setProgress("");
     }
   };
+
   useEffect(() => {
-    // RRM-47: la caja tiene scroll propio; sin esto la respuesta quedaba abajo, sin verse.
-    // Tras el layout: el scroll interno de la caja pone arriba el resultado (Coincide
-    // primero) y luego la página lo trae a la vista; si no cabe, se ve su comienzo.
     if (!shown) return;
     const frame = requestAnimationFrame(() => {
-      const el = answer.current;
-      const card = el?.closest("form.ask-card") as HTMLElement | null;
-      if (!el) return;
-      if (card) card.scrollTop += el.getBoundingClientRect().top - card.getBoundingClientRect().top - 8;
-      el.scrollIntoView({ block: el.offsetHeight > window.innerHeight ? "start" : "nearest" });
+      answer.current?.scrollIntoView({ block: "start" });
     });
     return () => cancelAnimationFrame(frame);
   }, [shown]);
+
   const groups = group(result?.extracts || []);
+  useEffect(() => {
+    const scan = () => {
+      const next: string[] = [];
+      for (const [id, rows] of group(result?.extracts || [])) {
+        if (String(id) !== String(focusId || "")) continue;
+        rows.forEach((row, index) => {
+          const shownText = markMidStart(cleanExtract(row.text));
+          if (sentEl(shownText)) next.push(`${id}:${index}`);
+        });
+      }
+      setJumps((prev) => (prev.join("|") === next.join("|") ? prev : next));
+    };
+    scan();
+    const root = document.querySelector(".paper");
+    if (!root) return;
+    const obs = new MutationObserver(scan);
+    obs.observe(root, { childList: true, subtree: true });
+    return () => obs.disconnect();
+  }, [result, focusId]);
+
+  const jumpTo = (shownText: string) => {
+    const el = sentEl(shownText);
+    if (!el) return;
+    el.scrollIntoView({ block: "center" });
+    el.classList.remove("flash");
+    void el.offsetWidth;
+    el.classList.add("flash");
+  };
+
   const parts = result?.parts || {};
   const hasParts = PARTS.some(([id]) => (parts[id] || []).length);
   const listed = (result?.extracts || []).length;
   const citeOf = (id: string, section?: string) => onName?.(String(id), section) || "paper";
+  const openPaper = String(focusId || "");
+  const linked = (id: string) => String(id || "") === openPaper;
+  const missing = absenceNote(result?.note || "");
+  const storeText = store && store.total > 0 ? storeCopy(store, storeDone) : "";
+  const live = phraseLine || progress;
+
   return (
-    <form className="ask-card" onSubmit={send}>
-      {closed && (
-        <p className="ask-offer">Cerraste una sección. Puedes escribir o seguir.
-          <button type="button" className="link" onClick={onSkip}>Seguir</button>
+    <form className="ask-card box" data-variant={variant} aria-label="Your words" onSubmit={send}>
+      {closed && variant !== "section" && (
+        <p className="box-offer">You closed a section. You can write or keep going.{" "}
+          <button type="button" className="link" onClick={onSkip}>Continue</button>
         </p>
       )}
-      <p className="small">Sección: {sectionLabel}. Se puede seguir sin llenar la caja.</p>
-      {store && store.total > 0 && <p className="small" role="status">{storeLine(store, storeDone)}</p>}
-      <textarea aria-label="Qué entendiste" value={text} onChange={(event) => setText(event.target.value)} placeholder="En tus palabras. El LaTeX va entre $." />
-      {text.includes("$") && <div className="ask-preview" aria-hidden="true"><Rich text={text} /></div>}
-      <button type="submit" className="primary" disabled={busy || !text.trim()}>Enviar</button>
-      {(phraseLine || progress) && <p className="small" role="status">{phraseLine || progress}</p>}
-      {err && <p className="fail-reason">{err}</p>}
-      {result?.empty && <p role="status">{result.note || "No hay frases guardadas de estos papers."}</p>}
-      <div className="ask-result" ref={answer}>
-      {!result?.empty && (result?.note || hasParts) && (
-        <div className="feedback generated">
-          <p><span className="chip chip-simulado">generado</span></p>
-          {result?.note && <p>{result.note}</p>}
-          {PARTS.map(([id, label]) => (parts[id] || []).length ? (
-            <section key={id}>
-              <h3>{label}</h3>
-              {(parts[id] || []).map((item: any, index: number) => (
-                <p key={index}>
-                  {item.text}
-                  {item.cite && <> <q>{markMidStart(item.cite)}</q></>}
-                  {item.paper_id && <button type="button" className="link" onClick={() => onOpen?.(String(item.paper_id), "cita en la caja")}>{citeOf(String(item.paper_id), item.section)}</button>}
-                  {item.verified && item.cite && <span className="chip chip-simulado">verificado contra la cita</span>}
-                  {id === "sin_respaldo" && <span className="small"> No encontré esto en los extractos seleccionados del paper.</span>}
-                </p>
-              ))}
-            </section>
-          ) : null)}
-        </div>
-      )}
-      {result && !result.empty && (
-        <div className="extracts">
-          <p className="ask-label">{result.papers === 1 ? "El paper dice" : `Estos papers dicen (${result.papers})`}</p>
-          {result.matched > listed && <p className="small">Encontré {result.matched} frases cercanas. Aquí van las {listed} más próximas a lo que escribiste.</p>}
-          {groups.map(([id, rows]) => (
-            <section key={id} className="extract">
-              <button type="button" className="link" onClick={() => onOpen?.(id, "cita en la caja")}>{citeOf(id, rows[0]?.section)}</button>
-              {rows.map((row: any, index: number) => <blockquote key={index}><Rich text={markMidStart(cleanExtract(row.text))} /></blockquote>)}
-            </section>
-          ))}
-        </div>
-      )}
+      <header className="box-h">
+        <Icon name="pen" />
+        <h3>Your words · {sectionLabel}</h3>
+        {savedOn && <span className="saved"><Icon name="check" size={14} />Draft saved</span>}
+      </header>
+      {storeText && <Notice kind="absence">{storeText}</Notice>}
+      <textarea className="you" aria-label="Your words" value={text} onChange={(event) => setText(event.target.value)} placeholder="In your words. Put LaTeX between $." />
+      {text.includes("$") && <div className="ask-preview box-preview" aria-hidden="true"><Rich text={text} /></div>}
+      <div className="box-act">
+        <Button variant="primary" type="submit" disabled={busy || !text.trim()}>Review</Button>
+      </div>
+      {live && <p className="box-status tnum" aria-live="polite">{live}</p>}
+      {slow && <Notice kind="fault" code="F-ASK-SLOW">{ASK_SLOW}</Notice>}
+      {err && <Notice kind="fault" code="F-ASK">{ASK_FAULT}</Notice>}
+      {result?.empty && <Notice kind="absence">{result.note || EMPTY_PHRASES}</Notice>}
+      {missing && <Notice kind="absence">{missing}</Notice>}
+      <div className="ask-result feedback" ref={answer}>
+        {hasParts && <p className="box-prov"><Prov kind="simulado" text="Generated review" /></p>}
+        {!result?.empty && PARTS.map(([id, label]) => (parts[id] || []).length ? (
+          <section key={id}>
+            <Cap>{label}</Cap>
+            {(parts[id] || []).map((item: any, index: number) => (
+              <div className="claim" key={index}>
+                <p>{item.text}</p>
+                {item.cite && (
+                  <blockquote className={linked(item.paper_id) ? "ex is-linked" : "ex"}>
+                    <p><Rich text={markMidStart(item.cite)} /></p>
+                    <footer>
+                      {item.verified && <Prov kind="calculo" text="quotes checked" />}
+                      {item.paper_id && (
+                        <button type="button" className="box-jump" onClick={() => onOpen?.(String(item.paper_id), "cita en la caja")}>{citeOf(String(item.paper_id), item.section)}</button>
+                      )}
+                    </footer>
+                  </blockquote>
+                )}
+                {id === "sin_respaldo" && <p className="claim-miss">{NO_SUPPORT}</p>}
+              </div>
+            ))}
+          </section>
+        ) : null)}
+        {result && !result.empty && (
+          <>
+            <Cap gap>{result.papers === 1 ? "The paper says" : `These papers say (${result.papers})`}</Cap>
+            {result.matched > listed && (
+              <p className="box-note tnum">Found {result.matched} nearby sentences. Here are the {listed} closest to what you wrote.</p>
+            )}
+            {groups.map(([id, rows]) => rows.map((row: any, index: number) => {
+              const shownText = markMidStart(cleanExtract(row.text));
+              const canJump = jumps.includes(`${id}:${index}`);
+              return (
+                <blockquote key={`${id}-${index}`} className={linked(id) ? "ex is-linked" : "ex"}>
+                  <p><Rich text={shownText} /></p>
+                  <footer>
+                    <Prov kind="paper" text={row.section || "paper"} />
+                    {!linked(id) && (
+                      <button type="button" className="box-jump" onClick={() => onOpen?.(id, "cita en la caja")}>{citeOf(id, row.section)}</button>
+                    )}
+                    {canJump && (
+                      <button type="button" className="box-jump" onClick={() => jumpTo(shownText)}>Go to sentence →</button>
+                    )}
+                  </footer>
+                </blockquote>
+              );
+            }))}
+          </>
+        )}
+        {result?.note && !missing && !result.empty && <p className="box-note">{result.note}</p>}
       </div>
     </form>
   );
