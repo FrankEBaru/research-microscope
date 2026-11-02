@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { recordVisit } from "../src/lib/explore.js";
+import { pickExplore, recordVisit } from "../src/lib/explore.js";
 
 function mem() {
   const box = new Map();
@@ -41,6 +41,20 @@ test("el mismo paper no agrega nodo ni arista, y el tope tira lo viejo", () => {
   assert.ok(last.nodes.length <= 200);
   assert.ok(!last.nodes.some((node) => node.id === "A"));
   assert.ok(last.nodes.some((node) => node.id === "n200"));
+});
+
+test("sin pregunta, el deep link recupera el grafo que contiene el paper", () => {
+  const all = {
+    "how does self-attention replace recurrence": {
+      q: "how does self-attention replace recurrence",
+      nodes: [{ id: "13756489", title: "Attention", at: 2 }, { id: "bleu", title: "BLEU", at: 3 }],
+      edges: [{ from: "13756489", to: "bleu", porQue: "cita", at: 3 }],
+    },
+  };
+  const picked = pickExplore(all, "", "13756489");
+  assert.equal(picked.nodes.length, 2);
+  assert.equal(picked.edges[0].porQue, "cita");
+  assert.equal(pickExplore(all, "otra", "").nodes.length, 0);
 });
 
 test("si localStorage tira, el overflow recibe el json", () => {

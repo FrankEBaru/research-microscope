@@ -12,7 +12,7 @@ import { burst, explain, groupNames, keepOpened, labels as fetchLabels, liveEnab
 import { coreMode } from "@/lib/features.js";
 import { applyGroupNames, groupPacks, mapPapers, pinPoint } from "@/lib/layout.js";
 import { mergeLabels, popVisit, pushVisit } from "@/lib/path.js";
-import { EXPLORE_KEY, readExplore, recordVisit } from "@/lib/explore.js";
+import { EXPLORE_KEY, pickExplore, readExploreFor, recordVisit } from "@/lib/explore.js";
 import { normalizeQuestion, phaseOf, readOverflow, readQuestions, recallQuestion, rememberQuestion, writeOverflow } from "@/lib/qcache.js";
 import { bindDevLog, createDevLog } from "@/lib/devlog.js";
 import { LiveCircle } from "./MapView";
@@ -201,19 +201,18 @@ export default function Engine() {
   useEffect(() => {
     let stop = false;
     try {
-      const local = readExplore(localStorage, liveQ);
+      const local = readExploreFor(localStorage, liveQ, liveId);
       if ((local.nodes || []).length) { setExplore(local); return; }
     } catch { /* sigue con IndexedDB */ }
     readOverflow(indexedDB, EXPLORE_KEY).then((json) => {
       if (stop || !json) return;
       try {
-        const all = JSON.parse(json);
-        const key = normalizeQuestion(liveQ) || "_solo";
-        if (all && all[key]) setExplore(all[key]);
+        const picked = pickExplore(JSON.parse(json), liveQ, liveId);
+        if (picked.nodes.length) setExplore(picked);
       } catch { /* el grafo de esta página sigue vacío */ }
     }).catch(() => {});
     return () => { stop = true; };
-  }, [liveQ]);
+  }, [liveQ, liveId]);
 
   useEffect(() => {
     if (!liveOn || !liveResult) return;

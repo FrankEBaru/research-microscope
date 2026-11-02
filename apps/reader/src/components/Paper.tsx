@@ -671,7 +671,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
 
   return (
     <div className="paper-layout">
-      {core && map && <ReadMinimap papers={map.papers} edges={map.edges} layout={map.layout} explore={explore} openId={openId} onOpen={(id) => onOpenPaper?.(id, "nodo del minimapa")} />}
+      {core && (map || (explore?.nodes || []).length > 0) && <ReadMinimap papers={map?.papers || []} edges={map?.edges || []} layout={map?.layout || null} explore={explore} openId={openId} onOpen={(id) => onOpenPaper?.(id, "nodo del minimapa")} />}
       {model.toc.length > 0 && (
         <nav className="toc" aria-label="Secciones">
           {model.toc.map((t) => (

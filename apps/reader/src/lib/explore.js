@@ -21,15 +21,41 @@ function readAll(storage) {
   }
 }
 
-export function readExplore(storage, question) {
-  const q = normalizeQuestion(question) || "_solo";
-  const row = readAll(storage)[q];
-  if (!row || typeof row !== "object") return empty(q);
+function pack(row, q) {
   return {
     q,
-    nodes: Array.isArray(row.nodes) ? row.nodes : [],
-    edges: Array.isArray(row.edges) ? row.edges : [],
+    nodes: Array.isArray(row?.nodes) ? row.nodes : [],
+    edges: Array.isArray(row?.edges) ? row.edges : [],
   };
+}
+
+export function readExplore(storage, question) {
+  const q = normalizeQuestion(question) || "_solo";
+  return pack(readAll(storage)[q], q);
+}
+
+/** Si esta pregunta no tiene visitas, usa el grafo guardado que contiene el paper. */
+export function pickExplore(all, question, paperId) {
+  const q = normalizeQuestion(question) || "_solo";
+  const bag = all && typeof all === "object" && !Array.isArray(all) ? all : {};
+  const own = pack(bag[q], q);
+  if (own.nodes.length) return own;
+  const id = String(paperId || "");
+  if (!id) return own;
+  let best = null;
+  let bestAt = -1;
+  let bestKey = q;
+  for (const [key, row] of Object.entries(bag)) {
+    if (!row || !Array.isArray(row.nodes) || !row.nodes.length) continue;
+    if (!row.nodes.some((node) => String(node.id) === id)) continue;
+    const at = Math.max(0, ...row.nodes.map((node) => node.at || 0), ...(row.edges || []).map((edge) => edge.at || 0));
+    if (!best || at >= bestAt) { best = row; bestAt = at; bestKey = key; }
+  }
+  return best ? pack(best, bestKey) : own;
+}
+
+export function readExploreFor(storage, question, paperId) {
+  return pickExplore(readAll(storage), question, paperId);
 }
 
 function trim(entry, current) {
