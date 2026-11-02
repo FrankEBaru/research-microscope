@@ -16,6 +16,7 @@ from rrm.passages.rows import extract_rows
 from rrm.passages.store import failure_dir, paper_dir, save_failure, save_paper_rows
 from rrm.reader.fetch import unpack_eprint
 from rrm.reader.latex import parse_tree
+from rrm.reader.pipeline import load_meta
 
 
 class StageBudget(RuntimeError):
@@ -68,7 +69,16 @@ def harvest_one(meta, *, client, papers_root, dest, retry=False):
         if not arxiv_id:
             arxiv_id = (paper or {}).get("arxivId") or ""
         if not license_url:
-            license_url = ""
+            # El caché viejo del lector no guarda licencia. Se pide a la API de
+            # arXiv (misma conexión, mismo gate de 3.5 s); el e-print no se baja.
+            license_url = (load_meta(folder) or {}).get("license") or (paper or {}).get("license") or ""
+        if not license_url and arxiv_id:
+            try:
+                license_url = client.fetch_license(arxiv_id)
+            except ArxivStopped:
+                raise
+            except Exception:
+                license_url = ""
     else:
         if not arxiv_id:
             save_failure(dest, cid, "sin arxiv id")

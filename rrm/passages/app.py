@@ -19,6 +19,7 @@ E4 consulta desde BurstSearch, que carga `passages/` solo con el flag.
 Al terminar, Modal queda parado: estas funciones no dejan un contenedor caliente.
 `RRM_PASSAGES_IGNORE_STOP=1` sigue después de un top parecido a las citas globales.
 `RRM_PASSAGES_BREAK_LOCK=1` levanta un harvest.lock viejo. Una sola máquina.
+`RRM_PASSAGES_RETRY=1` rehace las filas de los ids de la etapa aunque ya existan.
 """
 
 import json
@@ -69,6 +70,7 @@ _STAGE_KEYS = (
     "RRM_PASSAGES_BUDGET_USD",
     "RRM_PASSAGES_IGNORE_STOP",
     "RRM_PASSAGES_BREAK_LOCK",
+    "RRM_PASSAGES_RETRY",
     "RRM_PASSAGES_ANCHORS",
     "RRM_ARXIV_CONTACT",
 )
@@ -291,6 +293,7 @@ def harvest_run(stage: str, n: int):
             papers_root=papers_root,
             dest=dest,
             break_lock=os.environ.get("RRM_PASSAGES_BREAK_LOCK") == "1",
+            retry=os.environ.get("RRM_PASSAGES_RETRY") == "1",
             on_paper=on_paper,
         )
     except (ArxivStopped, StageBudget) as err:

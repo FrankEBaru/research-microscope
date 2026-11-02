@@ -213,3 +213,35 @@ def test_anchor_without_vector_falls_back_to_text_then_fails_loudly():
     with pytest.raises(RuntimeError, match="sin semillas"):
         union_from_reports([{**dead, "top": [], "ranked_ids": []}])
     assert union_from_reports([{**dead, "top": [], "ranked_ids": []}], ignore_stop=True)["ids"] == []
+
+
+def test_cached_paper_without_license_asks_only_the_license(tmp_path):
+    from rrm.passages.arxiv import ArxivClient
+    from rrm.passages.cache import store_reader_cache
+    from rrm.passages.harvest import harvest_one
+    from rrm.reader.pipeline import load_meta, save_meta
+
+    paper = _paper()
+    folder = tmp_path / "papers" / "7"
+    store_reader_cache(folder, dict(paper, source="latex"))
+    meta = load_meta(folder)
+    meta["license"] = ""  # como el caché viejo del lector
+    save_meta(folder, meta)
+    urls = []
+
+    def opener(url, ua):
+        urls.append(url)
+        return b'<entry><arxiv:license>http://creativecommons.org/licenses/by/4.0/</arxiv:license></entry>'
+
+    client = ArxivClient(opener=opener, sleep=lambda s: None)
+    out = harvest_one({"corpusid": 7, "arxiv_id": "9999.00007", "title": "Attention Is All You Need"},
+                      client=client, papers_root=tmp_path / "papers", dest=tmp_path / "passages")
+    assert out["downloaded"] is False and out["rows"] > 0
+    assert len(urls) == 1 and "/api/query?id_list=9999.00007" in urls[0]
+    import json
+
+    saved = json.loads((tmp_path / "passages" / "papers" / "7.json").read_text(encoding="utf-8"))
+    assert saved["paper"]["license"] == "http://creativecommons.org/licenses/by/4.0/"
+    again = harvest_one({"corpusid": 7, "arxiv_id": "9999.00007"}, client=client,
+                        papers_root=tmp_path / "papers", dest=tmp_path / "passages", retry=True)
+    assert again["rows"] == out["rows"] and len(urls) == 2
