@@ -1049,6 +1049,32 @@ def api():
             payload["phrase_prep"] = prep
         return payload
 
+    @web.post("/notes")
+    async def route_notes(request: Request):
+        """Una nota por paper. No escribe la clave ni el tex en el log."""
+        denied = gate(request, False)
+        if denied:
+            return denied
+        item = await request.json()
+        item = item or {}
+        empty = {"notes": [], "artifacts": [], "usage": {"model": "", "license": "", "cost_usd": 0.0}}
+        try:
+            cid = int(item.get("id"))
+        except (TypeError, ValueError):
+            return empty
+        try:
+            folder = PAPERS / str(cid)
+            paper = load_paper(folder) or {}
+            if paper.get("corpusid") is None:
+                paper = dict(paper)
+                paper["corpusid"] = cid
+            from rrm.reader.notes import answer_notes
+            from rrm.reader.phrases import read_phrases
+
+            return answer_notes(paper, read_phrases(folder))
+        except Exception:
+            return empty
+
     @web.post("/phrases")
     async def route_phrases(request: Request):
         """Un paper abierto: frases y vectores ahora, y commit antes de responder."""

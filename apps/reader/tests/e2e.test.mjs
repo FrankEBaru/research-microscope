@@ -173,7 +173,14 @@ test("compañero: aceptar lleva a la definición; alternar personaje; se oculta 
 
 test("gráficas vivas: la Tabla 2 de Attention se ve como barras con los números del paper", async () => {
   const p = await page("#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".paper");
-  const toggles = await p.$$(".tchart-toggle"); assert.ok(toggles.length >= 1, "al menos una tabla numérica es graficable");
+  if (!(await p.$(".companion-toggle"))) {
+    assert.equal(await p.$(".tchart-toggle"), null, "en core no está Ver como gráfica");
+    assert.equal(await p.$(".tp-result"), null, "en core no se ve Acertaste");
+    assert.ok(await p.$(".table-filter"), "en core la tabla se filtra");
+    assert.deepEqual(p.errs, []); await p.close();
+    return;
+  }
+  const toggles = await p.$$(".tchart-toggle"); assert.ok(toggles.length >= 1, "en all al menos una tabla numérica es graficable");
   const fig = (await p.$$(".table-fig"))[1]; await fig.evaluate((e) => e.scrollIntoView({ block: "center" }));
   await (await fig.$(".tchart-toggle")).click(); await p.waitForSelector(".tchart .tbar-row");
   assert.match(await p.$eval(".tchart .chips", (e) => e.textContent), /sin cambiar/);
@@ -237,6 +244,12 @@ test("Panorama simulado: cualquier pregunta, llegada progresiva, predicción opc
 
 test("gráfica: predecir antes de ver oculta las barras hasta elegir y luego revela el valor más alto", async () => {
   const p = await page("#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".paper");
+  if (!(await p.$(".companion-toggle"))) {
+    assert.equal(await p.$(".tchart-toggle"), null, "en core no está Ver como gráfica");
+    assert.equal((await p.$eval("body", (e) => e.textContent)).includes("Acertaste"), false);
+    assert.deepEqual(p.errs, []); await p.close();
+    return;
+  }
   const fig = (await p.$$(".table-fig"))[1]; await fig.evaluate((e) => e.scrollIntoView({ block: "center" }));
   await (await fig.$(".tchart-toggle")).click(); await p.waitForSelector(".tchart .tbar-row");
   await p.check(".tpredict input"); assert.equal(await p.$$eval(".tbar-row.hid .tb-val", (n) => n.every((e) => e.textContent === "?")), true);
