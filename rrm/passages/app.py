@@ -62,6 +62,18 @@ gpu_image = (
 app = modal.App("rrm-passages")
 vol = modal.Volume.from_name("rrm-data", create_if_missing=True)
 
+# Modal no pasa el entorno local al contenedor. Estas variables viajan como
+# Secret.from_dict, tomadas del shell que lanza `modal run`. No son claves.
+_STAGE_KEYS = (
+    "RRM_PASSAGES_STAGE",
+    "RRM_PASSAGES_BUDGET_USD",
+    "RRM_PASSAGES_IGNORE_STOP",
+    "RRM_PASSAGES_BREAK_LOCK",
+    "RRM_PASSAGES_ANCHORS",
+    "RRM_ARXIV_CONTACT",
+)
+stage_env = modal.Secret.from_dict({key: os.environ[key] for key in _STAGE_KEYS if os.environ.get(key)})
+
 
 def _require(stage):
     allowed = os.environ.get("RRM_PASSAGES_STAGE", "").strip()
@@ -128,7 +140,7 @@ def _neighbors(index, faiss_ids, anchor, k):
     return [cid for cid, _dist in hits if int(cid) != int(anchor)][: int(k)]
 
 
-@app.function(image=index_image, volumes={MOUNT: vol}, cpu=2, memory=32768, timeout=1800, max_containers=1)
+@app.function(image=index_image, volumes={MOUNT: vol}, secrets=[stage_env], cpu=2, memory=32768, timeout=1800, max_containers=1)
 def e0_run():
     """Tres vecindarios. Solo lectura. Escribe passages/e0.json."""
     _require("e0")
@@ -200,7 +212,7 @@ def e0_run():
     return _report("e0", started, cpu=2, extra={"stop": flags["stop"], "close": flags["close"], "themes": len(reports)})
 
 
-@app.function(image=cpu_image, volumes={MOUNT: vol}, cpu=1, memory=2048, timeout=8 * 3600, max_containers=1)
+@app.function(image=cpu_image, volumes={MOUNT: vol}, secrets=[stage_env], cpu=1, memory=2048, timeout=8 * 3600, max_containers=1)
 def harvest_run(stage: str, n: int):
     """Baja y parsea los primeros `n` de la unión. Reanudable. Sin GPU."""
     _require(stage)
@@ -267,7 +279,7 @@ def harvest_run(stage: str, n: int):
     return _report(stage, started, cpu=1, extra={"n": len(ids), "results": done, "rows": manifest["counts"]})
 
 
-@app.function(image=gpu_image, gpu="L4", volumes={MOUNT: vol}, cpu=2, memory=16384, timeout=3600, max_containers=1)
+@app.function(image=gpu_image, gpu="L4", volumes={MOUNT: vol}, secrets=[stage_env], cpu=2, memory=16384, timeout=3600, max_containers=1)
 def embed_run(stage: str):
     """Un job corto. Embed de las filas ya parseadas y IndexFlatIP. Luego se apaga."""
     _require(stage)
