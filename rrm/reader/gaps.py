@@ -96,8 +96,14 @@ def _has_cos(flat):
 
 
 def _blob(block):
-    parts = [plain(block.get("inlines") or []), block.get("tex") or "", block.get("text") or ""]
-    return "\n".join(parts)
+    inlines = block.get("inlines") or []
+    notes = []
+    for node in inlines:
+        if isinstance(node, dict) and node.get("t") == "note":
+            for sub in node.get("blocks") or []:
+                notes.append(plain(sub.get("inlines") or []))
+    parts = [plain(inlines), block.get("tex") or "", block.get("text") or "", " ".join(notes)]
+    return "\n".join(p for p in parts if p)
 
 
 def _heading(block):
@@ -298,13 +304,15 @@ def _context_blobs(blocks, index, sections):
 def _para_text(blocks, index):
     prev = _nearest_p(blocks, index, -1)
     nxt = _nearest_p(blocks, index, 1)
-    parts = []
-    if prev is not None:
-        parts.append(_blob(blocks[prev]))
-    parts.append(str(blocks[index].get("tex") or ""))
+    idxs = [i for i in (prev, nxt) if i is not None]
     if nxt is not None:
-        parts.append(_blob(blocks[nxt]))
-    return "\n".join(parts)
+        nxt2 = _nearest_p(blocks, nxt, 1)
+        inls = (blocks[nxt2].get("inlines") or []) if nxt2 is not None else []
+        if any(isinstance(n, dict) and n.get("t") == "note" for n in inls):
+            idxs.append(nxt2)
+    parts = [_blob(blocks[i]) for i in idxs]
+    parts.insert(1 if prev is not None else 0, str(blocks[index].get("tex") or ""))
+    return "\n".join(p for p in parts if p)
 
 
 def _occupy(blocks, index):
