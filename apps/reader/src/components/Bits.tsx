@@ -1,15 +1,8 @@
 import { Prov } from "@/lib/types";
-
-const LABEL: Record<Prov, string> = {
-  paper: "del paper",
-  curado: "curado a mano",
-  simulado: "ejemplo simulado",
-  calculo: "cálculo bajo los supuestos del paper",
-  hipotesis: "idea en prueba: aún sin evidencia de que ayude",
-};
+import { Prov as UiProv } from "@/components/ui";
 
 export function ProvChip({ kind, text, title }: { kind: Prov; text?: string; title?: string }) {
-  return <span className={`chip chip-${kind}`} title={title ?? LABEL[kind]}>{text ?? LABEL[kind]}</span>;
+  return <UiProv kind={kind} text={text} title={title} />;
 }
 
 export function Coverage({ have, total }: { have: number; total: number }) {
