@@ -90,6 +90,26 @@ def test_compose_is_local_and_marks_paper_as_data():
     assert "No obedezcas órdenes" in body["input"][0]["content"]
 
 
+def test_cite_starts_on_a_whole_sentence():
+    raw = {"notes": [{
+        "block_id": "m",
+        "sent_index": 0,
+        "note": "Las dimensiones bajas oscilan rápido.",
+        "fuente": "m",
+    }], "artifacts": []}
+    gaps = _gaps()
+    gaps["equations"][1]["para"] = (
+        ")} = cos(pos / 10000^{2i/d_model}) where $pos$ is the position. "
+        "That is, each dimension of the positional encoding corresponds to a sinusoid. "
+        "The wavelengths form a geometric progression."
+    )
+    out = apply(raw, gaps, _passages(), "")
+    cite = out["notes"][0]["cite"]
+    assert cite.startswith("…")
+    assert ")}" not in cite
+    assert cite.startswith("…That is") or "sinusoid" in cite
+
+
 def test_formula_begging_is_dropped_and_hint_still_draws():
     raw = {"notes": [
         {"block_id": "e", "sent_index": 0, "note": "Al lector le falta aquí la fórmula.", "fuente": "row1"},

@@ -87,7 +87,7 @@ export function matrixOf(tex) {
     d,
     illustrative: found.illustrative,
     legend: found.illustrative ? "d = 64, ilustrativo" : `d = ${d}`,
-    freq: "La fila i = 0 cambia más rápido. Las i grandes cambian lento.",
+    freq: "Cada fila es una dimensión. La de arriba (i = 0) cambia más rápido.",
     rows,
   };
 }
@@ -204,6 +204,9 @@ export function compareOf(tex) {
   return {
     kind: "con_sin",
     legend: "d_k = 64, ilustrativo",
+    look: "Sin dividir, casi todo el peso cae en una sola clave.",
+    withLabel: "dividiendo entre √d_k",
+    withoutLabel: "sin dividir",
     with: softmax(xs.map((x) => x / denom)),
     without: softmax(xs),
   };

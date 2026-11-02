@@ -342,6 +342,7 @@ tr.row-on td { background: rgba(39,71,107,.14) !important; }
 .gap-card { margin: .35rem 0 .9rem; padding: .35rem .6rem; border-left: 3px solid #6b5420; }
 .gap-tag { margin: 0; font: 600 .72rem var(--sans); color: #6b5420; }
 .gap-cite { color: #3d5a47; margin: .25rem 0; }
+.gap-cite .katex { color: inherit; }
 .gap-src { color: var(--muted); font-size: .78rem; }
 .gap-matrix { border-collapse: collapse; margin: .3rem 0; }
 .gap-matrix td { width: 7px; height: 7px; padding: 0; }

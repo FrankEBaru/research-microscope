@@ -10,8 +10,8 @@ test("la matriz de PE usa d = 64 ilustrativo y la fila 0 cambia más", () => {
   const drawn = matrixOf(PE);
   assert.ok(drawn);
   assert.equal(drawn.legend, "d = 64, ilustrativo");
-  assert.match(drawn.freq, /i = 0 cambia más rápido/);
-  assert.match(drawn.freq, /i grandes cambian lento/);
+  assert.match(drawn.freq, /Cada fila es una dimensión/);
+  assert.match(drawn.freq, /i = 0\) cambia más rápido/);
   assert.equal(drawn.rows.length, 16);
   assert.equal(drawn.rows[0].cells.length, 32);
   const speed = (row) => {
@@ -28,6 +28,9 @@ test("softmax sin la raíz pica más, y un tex que no calza no dibuja", () => {
   const drawn = compareOf(ATTN);
   assert.ok(drawn);
   assert.equal(drawn.legend, "d_k = 64, ilustrativo");
+  assert.equal(drawn.withLabel, "dividiendo entre √d_k");
+  assert.equal(drawn.withoutLabel, "sin dividir");
+  assert.match(drawn.look, /casi todo el peso cae en una sola clave/);
   assert.equal(drawn.with.length, 8);
   assert.ok(Math.max(...drawn.without) > Math.max(...drawn.with));
   assert.equal(compareOf(String.raw`\frac{Q}{\sqrt{n}}`), null);

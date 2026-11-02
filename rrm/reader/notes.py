@@ -29,6 +29,26 @@ _BAD_VETO = re.compile(r"fórmula|formula|ecuaci|expresi", re.I)
 
 def _asks_formula(note, tex):
     return bool(str(tex or "").strip()) and bool(_ASKS.search(note or ""))
+
+
+def _clip_cite(text, symbols):
+    """Oraciones completas. El resto de un align cortado no entra; si se recorta, va «…»."""
+    raw = " ".join(str(text or "").split())
+    body, cut = raw, False
+    if raw[:1] in ")}]\\" or raw.startswith("\\"):
+        mark = re.search(r"\)\s+(?=[A-Za-z])", raw) or re.search(r"(?<=[.!?])\s+(?=[A-Z])", raw)
+        if mark:
+            body, cut = raw[mark.end():], True
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+(?=[A-Z])", body) if p.strip()]
+    whole = [i for i, p in enumerate(parts) if p[:1].isupper() and p[-1:] in ".?!"]
+    if not whole:
+        return ("…" + body) if cut else raw
+    start = whole[0]  # primera oración completa; el símbolo, si va después, se queda
+    end = len(parts)
+    while end > start and parts[end - 1][-1:] not in ".?!":
+        end -= 1
+    chosen = " ".join(parts[start:end] or parts[start:start + 1])
+    return ("…" + chosen) if cut or start else chosen
 _HINT = {
     "con_sin": "Explica por qué se escala: si q y k tienen componentes de varianza 1, q·k tiene varianza d_k; sin dividir, el softmax se satura y los gradientes se hacen chicos. Si una FUENTE lo dice (la nota al pie), cítala.",
     "matriz": "Explica cómo leer PE como matriz posición × dimensión: las dimensiones bajas oscilan rápido y las altas lento.",
@@ -284,6 +304,8 @@ def apply(raw, gaps, passages, paper_text):
                 cite = row["text"]
             if not _numbers_ok(note, cite, tex):
                 continue
+            if not _substring():
+                cite = _clip_cite(cite, tokens_of(tex))
             paper = str((row or {}).get("paper") or "")
             section = str((row or {}).get("section") or eq.get("section") or "")
             sent = item.get("sent_index")

@@ -40,16 +40,15 @@ function ArtifactView({ drawn }: { drawn: any }) {
     return (
       <div className="gap-art">
         <p className="gap-tag">Nota de IA</p>
-        {drawn.why && <p>{drawn.why}</p>}
-        <table className="gap-matrix">{drawn.rows.map((row: any) => (
+        <table className="gap-matrix"><tbody>{drawn.rows.map((row: any) => (
           <tr key={row.i}>{row.cells.map((v: number, i: number) => {
             const t = Math.max(0, Math.min(1, (v + 1) / 2));
             const color = `rgb(${Math.round(255 + (29 - 255) * t)},${Math.round(255 + (78 - 255) * t)},${Math.round(255 + (137 - 255) * t)})`;
             return <td key={i} style={{ background: color }} />;
           })}</tr>
-        ))}</table>
-        <p className="gap-src">{drawn.legend}</p>
+        ))}</tbody></table>
         {drawn.freq && <p className="gap-src">{drawn.freq}</p>}
+        <p className="gap-src">{drawn.legend}</p>
       </div>
     );
   }
@@ -58,9 +57,9 @@ function ArtifactView({ drawn }: { drawn: any }) {
   return (
     <div className="gap-art">
       <p className="gap-tag">Nota de IA</p>
-      {drawn.why && <p>{drawn.why}</p>}
-      <p>con el término</p>{bars(drawn.with)}
-      <p>sin el término</p>{bars(drawn.without)}
+      <p>{drawn.withLabel}</p>{bars(drawn.with)}
+      <p>{drawn.withoutLabel}</p>{bars(drawn.without)}
+      <p className="gap-src">{drawn.look}</p>
       <p className="gap-src">{drawn.legend}</p>
     </div>
   );
@@ -74,7 +73,7 @@ export function GapView({ note, art, self, onOpen }: { note?: any; art?: any; se
     <aside className="gap-card">
       {note && note.generated !== false && <p className="gap-tag">Nota de IA</p>}
       {note && <p>{note.note}</p>}
-      {note && note.generated !== false && note.cite && <p className="gap-cite">{note.cite}</p>}
+      {note && note.generated !== false && note.cite && <p className="gap-cite"><Rich text={note.cite} /></p>}
       {note && (note.section || note.paper) && (
         <p className="gap-src">
           {note.section || ""}{note.paper ? ` · ${note.paper}` : ""}
