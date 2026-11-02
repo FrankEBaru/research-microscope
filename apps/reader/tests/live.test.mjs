@@ -41,7 +41,7 @@ async function live({ statuses, burstStatus = 200, ids = [1, 2, 3, 4], burstBody
     if (u.pathname === "/paper") { const doc = JSON.parse(readFileSync(join(PUB, `${ARX[u.searchParams.get("id")]}.json`))); return r.fulfill({ json: { status: "done", paper: doc, meta: {} }, headers: H }); }
     r.fulfill({ status: 404, headers: H });
   });
-  await p.goto(base + hash); if (!search) return p;
+  await p.goto(base + "?debug=1" + hash); if (!search) return p;
   await p.fill('input[aria-label="Pregunta"]', "attention scaling laws"); await p.click('button:has-text("Buscar")');
   return p;
 }

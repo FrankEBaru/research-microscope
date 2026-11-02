@@ -2,6 +2,7 @@ import katex from "katex";
 import { useMemo } from "react";
 import { displayTex, katexSource } from "@/lib/backend.js";
 import { splitRich } from "@/lib/richtext.js";
+import { reportFault } from "@/lib/faults.js";
 
 export interface Sym { id: string; latex: string; name: string; color: string }
 
@@ -48,6 +49,7 @@ export function Tex({ tex, display = false, syms = [] as Sym[], className = "" }
     try {
       return { ok: true, h: katex.renderToString(colorize(katexInput(tex, display), syms), { displayMode: display, throwOnError: true, trust: true, strict: "ignore" }) };
     } catch {
+      reportFault({ code: "F-KATEX", where: "Tex", detail: String(tex ?? "").slice(0, 120) });
       return { ok: false, h: "" };
     }
   }, [tex, display, syms]);

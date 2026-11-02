@@ -52,6 +52,8 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
   onSkip?: () => void;
   onPromote?: () => void;
   onName?: (id: string, section?: string) => string;
+  sectionId?: string;
+  variant?: "section" | "slot";
 }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);

@@ -5,10 +5,9 @@ import { Tex, Rich, Sym } from "@/lib/math";
 import { ProvChip } from "./Bits";
 import Instrument from "./Instrument";
 import { bibtex } from "@/lib/bibtex.js";
-import { crops, eqTex, fetchNotes, figureCandidates, figureUrl, paperKey, refText, sourcePdfUrl } from "@/lib/backend.js";
-import { collectV2, compareOf, matrixOf } from "@/lib/artifacts.js";
+import { eqTex, fetchNotes, paperKey, refText, sourcePdfUrl } from "@/lib/backend.js";
+import { collectV2 } from "@/lib/artifacts.js";
 import { pdfPagesOnly, polishText, presentInlines, visibleInlines } from "@/lib/prose.js";
-import { equationHover, symbolHover, tableHover } from "@/lib/hover.js";
 import { faltaText } from "@/lib/falta.js";
 import { hasConclusion, scanIds } from "@/lib/scan.js";
 import { resolveCite } from "@/lib/path.js";
@@ -18,10 +17,19 @@ import AskBox from "./AskBox";
 // Pop de oración con la maqueta «ejemplo simulado… no está conectado». Apagado en core; NEXT_PUBLIC_RRM_SENTENCE_MOCK=1 lo vuelve a mostrar.
 const SENTENCE_MOCK = process.env.NEXT_PUBLIC_RRM_SENTENCE_MOCK === "1";
 import ReadMinimap from "./ReadMinimap";
-import { devBegin, devFinish } from "@/lib/devlog.js";
 import { createTracker } from "@/lib/companion.js";
-import { analyze, bars } from "@/lib/tablechart.js";
+import { analyze } from "@/lib/tablechart.js";
 import Companion, { Offer } from "./Companion";
+import { Ctx, plainOf } from "./paper/inline";
+import { GapView, ShapePill, artsAt, notesAt, repeatsBlock } from "./paper/GapNotes";
+import Popover, { PopState } from "./paper/Popover";
+import { Table } from "./paper/TableFig";
+import { CropStrip, FigImg, ZoneFig } from "./paper/Figures";
+import { Boundary } from "./faults";
+import type { AtlasCtx } from "./screens/types";
+
+export { plainOf } from "./paper/inline";
+export { GapView } from "./paper/GapNotes";
 
 /* ---------- utilidades ---------- */
 const countNotes = (inls: Inline[]): number =>
@@ -29,141 +37,7 @@ const countNotes = (inls: Inline[]): number =>
 
 const noteCache = new Map<string, any>();
 
-function drawnOf(art: any) {
-  if (!art) return null;
-  if (art.kind === "pasos" || art.kind === "casos") return art;
-  const drawn = art.type === "matriz"
-    ? (matrixOf(art.tex) || art.grid || null)
-    : art.type === "con_sin"
-      ? (art.preferScale ? art.scale : (compareOf(art.tex) || art.scale || null))
-      : null;
-  return drawn ? { ...drawn, tag: art.tag || drawn.tag, why: art.why_look || "", quote: art.quote || drawn.quote || "" } : null;
-}
-
-function MathBit({ text }: { text: string }) {
-  const raw = String(text || "").trim();
-  if (!raw) return null;
-  if (/\\|_|\^/.test(raw)) return <Tex tex={raw} />;
-  return <>{raw}</>;
-}
-
-function Stepper({ drawn }: { drawn: any }) {
-  const [i, setI] = useState(0);
-  const n = drawn.steps.length;
-  const cur = Math.min(i, Math.max(0, n - 1));
-  return (
-    <div className="gap-art" data-artifact="pasos">
-      <p className="gap-tag">ilustrativo</p>
-      {drawn.title && <p>{drawn.title}</p>}
-      {drawn.inputs?.length > 0 && <p className="gap-src">{drawn.inputs.map((line: string, k: number) => <span key={k}>{k ? " · " : ""}<Rich text={line} /></span>)}</p>}
-      <ol className="step-list">{drawn.steps.map((line: string, k: number) => (
-        <li key={k} className={k === cur ? "on" : ""}><Rich text={line} /></li>
-      ))}</ol>
-      <p className="gap-src">
-        <button type="button" className="link" onClick={() => setI((v) => Math.max(0, v - 1))}>anterior</button>
-        {" "}paso {cur + 1}/{n}{" "}
-        <button type="button" className="link" onClick={() => setI((v) => Math.min(n - 1, v + 1))}>siguiente</button>
-      </p>
-    </div>
-  );
-}
-
-function ArtifactView({ drawn }: { drawn: any }) {
-  if (drawn.kind === "pasos") return <Stepper drawn={drawn} />;
-  if (drawn.kind === "casos") {
-    return (
-      <div className="gap-art" data-artifact="casos">
-        <p className="gap-tag">ramas del paper</p>
-        <ul className="case-list">{drawn.branches.map((row: any, i: number) => (
-          <li key={i} className="case-row"><span><MathBit text={row.expr} /></span>{row.cond && <span className="case-cond"><MathBit text={row.cond} /></span>}</li>
-        ))}</ul>
-      </div>
-    );
-  }
-  if (drawn.kind === "matriz") {
-    return (
-      <div className="gap-art" data-artifact="matriz">
-        <p className="gap-tag">{drawn.tag || "Nota de IA"}</p>
-        <table className="gap-matrix"><tbody>{drawn.rows.map((row: any, ri: number) => (
-          <tr key={ri}>{row.cells.map((v: number, i: number) => {
-            const t = Math.max(0, Math.min(1, (v + 1) / 2));
-            const color = `rgb(${Math.round(255 + (29 - 255) * t)},${Math.round(255 + (78 - 255) * t)},${Math.round(255 + (137 - 255) * t)})`;
-            return <td key={i} style={{ background: color }} />;
-          })}</tr>
-        ))}</tbody></table>
-        {drawn.freq && <p className="gap-src">{drawn.freq}</p>}
-        <p className="gap-src">{drawn.legend}</p>
-        {drawn.quote && <p className="gap-src"><Rich text={drawn.quote} /></p>}
-      </div>
-    );
-  }
-  const max = Math.max(...drawn.with, ...drawn.without, 0.01);
-  const bars = (xs: number[]) => xs.map((v, i) => <div key={i} className="gap-bar"><i style={{ width: `${(v / max) * 100}%` }} /></div>);
-  return (
-    <div className="gap-art" data-artifact="con_sin">
-      <p className="gap-tag">{drawn.tag || "Nota de IA"}</p>
-      <p>{drawn.withLabel}</p>{bars(drawn.with)}
-      <p>{drawn.withoutLabel}</p>{bars(drawn.without)}
-      <p className="gap-src">{drawn.look}</p>
-      <p className="gap-src">{drawn.legend}</p>
-      {drawn.quote && <p className="gap-src"><Rich text={drawn.quote} /></p>}
-    </div>
-  );
-}
-
-function ShapePill({ arts }: { arts: any[] }) {
-  const hit = (arts || []).find((item) => item.type === "forma" && item.label);
-  if (!hit) return null;
-  return <span className="shape-pill" data-artifact="forma">{hit.tex ? <Tex tex={hit.tex} /> : hit.label}</span>;
-}
-
-function repeatsBlock(note: any, block: any, arts: any[]) {
-  if (!(arts || []).some((item) => item.type === "forma")) return false;
-  const quote = String(note?.cite || note?.note || "").replace(/\s+/g, " ").trim();
-  const host = plainOf(block?.inlines || []);
-  return quote.length > 24 && (host === quote || host.includes(quote));
-}
-
-function artsAt(id: string, pack: any, local: any) {
-  const mine = (local?.artifacts || []).filter((item: any) => item.block_id === id);
-  const remote = (pack?.artifacts || []).filter((item: any) => item.block_id === id);
-  return [...mine, ...remote.filter((item: any) => !mine.some((got: any) => got.type === item.type))];
-}
-
-function notesAt(id: string, pack: any, local: any) {
-  const remote = (pack?.notes || []).filter((item: any) => item.block_id === id);
-  const mine = (local?.notes || []).filter((item: any) => item.block_id === id && !remote.some((got: any) => got.note === item.note));
-  return [...mine, ...remote];
-}
-
-export function GapView({ note, art, self, onOpen }: { note?: any; art?: any; self: string; onOpen?: (id: string, why: string) => void }) {
-  const drawn = drawnOf(art);
-  if (!note && !drawn) return null;
-  const other = Boolean(note && note.paper && String(note.paper) !== self);
-  return (
-    <aside className="gap-card">
-      {note && note.kind === "supuesto" && <p className="gap-tag">frase del paper</p>}
-      {note && note.generated !== false && note.kind !== "supuesto" && <p className="gap-tag">Nota de IA</p>}
-      {note && note.note && <p><Rich text={note.note} /></p>}
-      {note && note.generated !== false && note.cite && <p className="gap-cite"><Rich text={note.cite} /></p>}
-      {note && (note.section || note.paper) && (
-        <p className="gap-src">
-          {note.section || ""}{note.paper ? ` · ${note.paper}` : ""}
-          {other && onOpen && <button type="button" className="link" onClick={() => onOpen(String(note.paper), "nota")}>abrir</button>}
-        </p>
-      )}
-      {drawn && <ArtifactView drawn={drawn} />}
-    </aside>
-  );
-}
-
-export function plainOf(inls: Inline[]): string {
-  return (inls || []).map((x) => x.t === "text" ? x.v : x.t === "math" ? `$${x.v}$` : x.t === "cite" ? "" : x.t === "note" ? "" : Array.isArray(x.c) ? plainOf(x.c) : x.v || "").join("").replace(/\s+/g, " ").trim();
-}
-
-interface Ctx { figs?: Set<string>; syms: Sym[]; refIndex: Record<string, number>; refLabels?: Record<string, string>; xref?: Record<string, string>; counter: { n: number }; core?: boolean; block?: string; sent?: number }
-
-function Inlines({ inls, ctx }: { inls: Inline[]; ctx: Ctx }) {
+export function Inlines({ inls, ctx }: { inls: Inline[]; ctx: Ctx }) {
   const shown = presentInlines(inls);
   return <>{shown.map((x, i) => <One key={i} x={x} ctx={ctx} prev={i ? plainOf([shown[i - 1]]) : ""} />)}</>;
 }
@@ -207,221 +81,6 @@ function One({ x, ctx, prev = "" }: { x: Inline; ctx: Ctx; prev?: string }) {
     }
     default: return null;
   }
-}
-
-/* ---------- popover ---------- */
-type PopState = { key: string; rect: DOMRect } | null;
-
-function Popover({ pop, paper, model, content, core, pack, onOpen }: { pop: NonNullable<PopState>; paper: Paper; model: any; content: any; core?: boolean; pack?: any; onOpen?: (id: string, why: string) => void }) {
-  const [kind, ...r] = pop.key.split("|");
-  const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, counter: { n: 0 } };
-  let body: any = null;
-  if (kind === "c") {
-    body = r[0].split(",").map((k) => <p key={k} className="pop-ref"><b>[{paper.refLabels?.[k] ?? model.refIndex[k] ?? "?"}]</b> {paper.refs[k] || "referencia no encontrada en el paper"}</p>);
-    body = <>{body}<div className="pop-meta"><ProvChip kind="paper" text="bibliografía del paper" /></div></>;
-  } else if (kind === "m" && core) {
-    let tex = r[2] || "";
-    try { tex = decodeURIComponent(tex); } catch { /* el LaTeX se muestra igual */ }
-    const hit = symbolHover(paper.blocks, tex, { block: r[0], index: Number(r[1]) });
-    body = <><p className="pop-quote">{hit.text}</p><div className="pop-meta"><ProvChip kind="paper" text="frase del autor" /></div></>;
-  } else if (kind === "e" && core) {
-    const card = (pack?.notes || []).find((n: any) => n.block_id === r[0]);
-    const art = (pack?.artifacts || []).find((n: any) => n.block_id === r[0]);
-    if (card || art) {
-      body = <GapView note={card} art={art} self={String(paper.corpusid ?? "")} onOpen={onOpen} />;
-    } else {
-    const hit = equationHover(paper.blocks, r[0]);
-    body = <><p className="pop-title">De dónde sale</p>{hit.texts.map((text: string, i: number) => <p key={i} className="pop-quote">{text}</p>)}{!hit.texts.length && <p className="pop-quote">el paper no lo define</p>}<div className="pop-meta"><ProvChip kind="paper" text="frase del autor" /></div></>;
-    }
-  } else if (kind === "s" && core && pack) {
-    const card = (pack.notes || []).find((n: any) => n.block_id === r[0] && n.sent_index === +r[1]);
-    if (card) body = <GapView note={card} self={String(paper.corpusid ?? "")} onOpen={onOpen} />;
-  } else if (kind === "y") {
-    const s = content.attention.symbols.find((s: any) => s.id === r[0]);
-    body = (
-      <>
-        <p className="pop-title"><Tex tex={s.latex} /> · {s.name}</p>
-        <p className="pop-quote">Definido en el paper: «<Rich text={s.def.quote} />»</p>
-        <div className="pop-meta"><ProvChip kind="curado" text="símbolo y color curados" /><span>clic: ir a la definición</span></div>
-      </>
-    );
-  } else if (kind === "n") {
-    const note = model.notes[+r[0] - 1];
-    body = <><p className="pop-title">Nota al pie {r[0]}</p><p><Inlines inls={note.blocks.flatMap((b: Block) => b.inlines || [])} ctx={ctx} /></p><div className="pop-meta"><ProvChip kind="paper" /></div></>;
-  } else if (kind === "s") {
-    const b = model.byId[r[0]]; const s = b.sents[+r[1]];
-    const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const symsIn = model.syms.filter((y: Sym) => s.some((x: Inline) => x.t === "math" && new RegExp(`(^|[^A-Za-z\\\\^_])${esc(y.latex)}`).test(x.v)));
-    const cites = s.filter((x: Inline) => x.t === "cite").flatMap((x: Inline) => x.keys);
-    body = (
-      <>
-        <p className="pop-title">§{model.secOf[b.id] || "—"} · oración {+r[1] + 1} de {b.sents.length}</p>
-        {symsIn.length > 0 && <p className="pop-line">Símbolos: {symsIn.map((y: Sym) => <span key={y.id} className="sym-pill" style={{ color: y.color }}><Tex tex={y.latex} /></span>)}</p>}
-        {cites.length > 0 && <p className="pop-line">Cita: {cites.slice(0, 2).map((k: string) => paper.refs[k]?.split(".")[0] + "…").join(" · ")}</p>}
-        <div className="pop-sim"><ProvChip kind="simulado" /><span>Aquí el motor mostrará de qué otros papers sale esta oración y quién la apoya o la matiza. Todavía no está conectado.</span></div>
-      </>
-    );
-  } else if (kind === "f") {
-    const f = model.byLabel[r[0]];
-    body = (
-      <>
-        <div className="pop-figs">{f.images.slice(0, 2).map((src: string) => <FigImg key={src} paper={paper} name={src} alt={plainOf(f.caption)} />)}</div>
-        <p className="pop-line"><b>Figura {model.figN[f.id]}.</b> <Inlines inls={f.caption} ctx={ctx} /></p>
-        <div className="pop-meta"><ProvChip kind="paper" text="figura original, sin redibujar" /><span>clic: ir a la figura</span></div>
-      </>
-    );
-  } else if (kind === "t") {
-    const t = model.byId[r[0]]; const an = t.an; const ri = +r[1], col = +r[2];
-    const row = an.bodyRows[ri]; const cell = row.find((c: any) => c.col === col) || row[0];
-    const told = core ? tableHover(paper.blocks, r[0]) : null;
-    body = core ? (
-      <>
-        <p className="pop-title">Tabla</p>
-        {told.caption && <p className="pop-quote">{told.caption}</p>}
-        {told.sentence ? <p className="pop-quote">{told.sentence}</p> : <p className="pop-line">El paper no la discute en una frase.</p>}
-        <div className="pop-meta"><ProvChip kind="paper" text="pie y frase del autor" /></div>
-      </>
-    ) : (
-      <>
-        <p className="pop-title">Tabla · fila «<Inlines inls={row[0].c} ctx={ctx} />»</p>
-        <p className="pop-line">Columna «{an.headers[col] || "—"}»: <b><Inlines inls={cell.c} ctx={ctx} /></b></p>
-        <div className="pop-sim"><ProvChip kind="simulado" /><span>Lectura simulada: el motor explicará qué mide esta celda y con qué texto del paper se relaciona.</span></div>
-      </>
-    );
-  }
-  const above = pop.rect.bottom > window.innerHeight * 0.6;
-  const left = Math.min(Math.max(12, pop.rect.left), window.innerWidth - 372);
-  const style: any = { left, ...(above ? { top: pop.rect.top - 8, transform: "translateY(-100%)" } : { top: pop.rect.bottom + 8 }) };
-  return <div className="popover" style={style} role="tooltip">{body}</div>;
-}
-
-/* ---------- tabla (+ gráfica viva) ---------- */
-function TableChart({ model, n, predict = true }: { model: any; n: number; predict?: boolean }) {
-  const [col, setCol] = useState<number>(model.numericCols[0]);
-  const [sort, setSort] = useState<"original" | "desc" | "asc">("original");
-  const [log, setLog] = useState(false);
-  const data = useMemo(() => bars(model, col, { sort, log }), [model, col, sort, log]);
-  const [ask, setAsk] = useState(false);               // hipótesis: predecir antes de ver
-  const [guess, setGuess] = useState<string | null>(null);
-  const top = useMemo(() => bars(model, col, { sort: "desc" })[0], [model, col]);
-  const hide = ask && guess === null;
-  useEffect(() => setGuess(null), [col, ask]);
-  return (
-    <div className="tchart" role="group" aria-label={`Gráfica de la Tabla ${n}`}>
-      <div className="chips"><ProvChip kind="paper" text={`gráfica de la Tabla ${n}: valores del paper, sin cambiar`} /></div>
-      <div className="tchart-tools">
-        <div className="pills" role="tablist" aria-label="Columna">{model.numericCols.map((c: number) => <button key={c} role="tab" aria-selected={c === col} className={c === col ? "on" : ""} onClick={() => setCol(c)}>{model.headers[c] || `col. ${c + 1}`}</button>)}</div>
-        <label>orden <select value={sort} onChange={(e) => setSort(e.target.value as any)}><option value="original">como en la tabla</option><option value="desc">mayor a menor</option><option value="asc">menor a mayor</option></select></label>
-        <label className="chk"><input type="checkbox" checked={log} onChange={(e) => setLog(e.target.checked)} /> escala logarítmica</label>
-      </div>
-      {predict && <div className="tpredict">
-        <label className="chk"><input type="checkbox" checked={ask} onChange={(e) => setAsk(e.target.checked)} /> predecir antes de ver <ProvChip kind="hipotesis" text="hipótesis" /></label>
-        {hide && <span role="status">¿Cuál crees que tiene el valor más alto en «{model.headers[col]}»? Haz clic en una fila.</span>}
-        {ask && guess !== null && top && <span role="status" className="tp-result">{guess === top.label ? `Acertaste: ${top.label} (${top.raw}).` : `Elegiste ${guess}; el más alto es ${top.label} (${top.raw}).`}</span>}
-      </div>}
-      <div className="tbars">
-        {data.map((d: any) => (
-          <div key={d.row} className={`tbar-row ${hide ? "hid" : ""} ${ask && guess === d.label ? "guess" : ""} ${ask && guess !== null && top && d.label === top.label ? "truth" : ""}`} data-row-label={d.label} onClick={hide ? () => setGuess(d.label) : undefined} onMouseEnter={() => window.dispatchEvent(new CustomEvent("rrm-row", { detail: d.label }))} onMouseLeave={() => window.dispatchEvent(new CustomEvent("rrm-row", { detail: "" }))}>
-            <span className="tb-label" title={d.label}>{d.label}</span>
-            <span className="tb-track"><i style={{ width: hide ? 0 : `${Math.max(1.5, d.frac * 100)}%` }} /></span>
-            <span className="tb-val">{hide ? "?" : <Rich text={d.raw} />}</span>
-          </div>
-        ))}
-      </div>
-      <p className="small">{log ? "Escala logarítmica: la longitud no es proporcional al valor." : "Longitud proporcional al valor."} Se omiten las filas sin valor en esta columna. Para ver todo, la tabla sigue debajo.</p>
-    </div>
-  );
-}
-
-function Table({ b, ctx, n, predict = true, still = false }: { b: Block; ctx: Ctx; n: number; predict?: boolean; still?: boolean }) {
-  const [hc, setHc] = useState<number | null>(null);
-  const [showChart, setShowChart] = useState(false);
-  const [hl, setHl] = useState("");
-  const [filter, setFilter] = useState("");
-  const model = b.an;
-  const chartable = model.numericCols.length > 0 && bars(model, model.numericCols[0]).length >= 3;
-  useEffect(() => { const f = (e: any) => setHl(e.detail || ""); window.addEventListener("rrm-row", f); return () => window.removeEventListener("rrm-row", f); }, []);
-  return (
-    <figure className="table-fig" id={b.label || undefined} data-tab={b.id}>
-      {chartable && !ctx.core && <div className="tchart-bar"><button className="tchart-toggle" aria-pressed={showChart} onClick={() => setShowChart((v) => !v)}>{showChart ? "Ocultar gráfica" : "Ver como gráfica"}</button></div>}
-      {ctx.core && <input className="table-filter" aria-label="Filtrar filas" value={filter} placeholder="Filtrar filas" onChange={(e) => setFilter(e.target.value)} />}
-      {showChart && !ctx.core && <TableChart model={model} n={n} predict={predict} />}
-      <div className="table-wrap" onMouseLeave={() => setHc(null)}>
-        <table data-hc={hc ?? undefined}>
-          <thead>{model.headRows.map((hr: any[], ri: number) => (
-            <tr key={ri}>{hr.map((c: any, ci: number) => <th key={ci} colSpan={c.span} data-c={c.col} className={hc !== null && hc >= c.col && hc < c.col + c.span ? "col-on" : ""} onMouseEnter={() => setHc(c.col)}><Inlines inls={c.c} ctx={ctx} /></th>)}</tr>
-          ))}</thead>
-          <tbody>
-            {model.bodyRows.filter((r: any[]) => {
-              const needle = filter.trim().toLowerCase();
-              return !needle || r.some((c: any) => plainOf(c.c).toLowerCase().includes(needle));
-            }).map((r: any[], ri: number) => (
-              <tr key={ri} className={hl && plainOf(r[0].c).replace(/\[cite\]/g, "").trim() === hl ? "row-on" : ""} style={still ? undefined : { animationDelay: `${ri * 35}ms` }}>
-                {r.map((c: any, ci: number) => <td key={ci} colSpan={c.span} data-c={c.col} className={hc !== null && hc >= c.col && hc < c.col + c.span ? "col-on" : ""} onMouseEnter={() => setHc(c.col)} data-pop={`t|${b.id}|${ri}|${c.col}`} tabIndex={0}><Inlines inls={c.c} ctx={ctx} /></td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <figcaption><b>Tabla {n}.</b> <Inlines inls={b.caption} ctx={ctx} /></figcaption>
-    </figure>
-  );
-}
-
-/** Figura con zonas: cajas sobre la figura ORIGINAL (marcadas a mano) que enlazan cada parte con la frase del paper que la explica. */
-function ZoneFig({ paper, name, alt, zones, onGo }: { paper: Paper; name: string; alt: string; zones: any[]; onGo: (blockId: string) => void }) {
-  const [on, setOn] = useState<string | null>(null);
-  const z = zones.find((x) => x.id === on);
-  return (
-    <div className="zonefig">
-      <div className="zone-box" onMouseLeave={() => setOn(null)}>
-        <FigImg paper={paper} name={name} alt={alt} />
-        {zones.map((x) => (
-          <button key={x.id} className={`zone ${on === x.id ? "on" : ""}`} data-zone={x.id} aria-label={x.label} onMouseEnter={() => setOn(x.id)} onFocus={() => setOn(x.id)} onClick={() => setOn(x.id)}
-            style={{ left: `${x.box[0] * 100}%`, top: `${x.box[1] * 100}%`, width: `${(x.box[2] - x.box[0]) * 100}%`, height: `${(x.box[3] - x.box[1]) * 100}%` }} />
-        ))}
-      </div>
-      <div className="zone-card" role="status" aria-live="polite">
-        {z ? (<><b>{z.label}</b><blockquote>«{z.quote}»</blockquote><button className="link" onClick={() => onGo(z.anchor.blockId)}>ver dónde lo dice →</button></>)
-          : <span className="muted">Pasa el cursor por una parte de la figura para ver qué dice el paper de ella.</span>}
-      </div>
-      <div className="chips"><ProvChip kind="curado" text="zonas marcadas a mano, sin modelo; la figura no se modifica" /></div>
-    </div>
-  );
-}
-
-function FigImg({ paper, name, alt, eager }: { paper: Paper; name: string; alt: string; eager?: boolean }) {
-  const names = figureCandidates(name);
-  const [idx, setIdx] = useState(0);
-  const [loaded, setLoaded] = useState(false);
-  const step = useRef(0);
-  const src = names[idx] ? figureUrl(paperKey(paper), names[idx]) : "";
-  const missing = paper.stage === "sections" || !src;
-  useEffect(() => { setIdx(0); setLoaded(false); }, [name, paper.stage]);
-  useEffect(() => {
-    if (missing) return;
-    step.current = devBegin("figura", names[idx] || name);
-  }, [name, paper.stage, missing, src]);
-  // RRM-47: si ningún nombre cargó (404), la figura se oculta sin hueco ni ícono roto.
-  if (missing) return idx > 0 ? null : <div className="fig-missing">figura no disponible</div>;
-  return (
-    <span className={`fig-slot ${loaded ? "in" : ""}`}>
-      {!loaded && <span className="fig-ph">figura</span>}
-      <img
-        src={src}
-        alt={alt}
-        loading={eager ? "eager" : "lazy"}
-        decoding="async"
-        fetchPriority={eager ? "high" : "low"}
-        onLoad={() => { setLoaded(true); devFinish(step.current, "ok"); }}
-        onError={() => {
-          devFinish(step.current, "error", "no cargó");
-          setLoaded(false);
-          setIdx((n) => n + 1);
-        }}
-      />
-    </span>
-  );
 }
 
 function autoSentence(text: string) {
@@ -468,26 +127,7 @@ export function mountKey(paper: Paper) {
 }
 
 /* ---------- vista principal ---------- */
-function CropStrip({ id }: { id: string }) {
-  const [rows, setRows] = useState<{ page?: number; file?: string }[] | null>(null);
-  useEffect(() => {
-    let stop = false;
-    crops(id, "0,1,2").then(
-      (body: any) => { if (!stop) setRows(Array.isArray(body?.crops) ? body.crops : []); },
-      () => { if (!stop) setRows([]); },
-    );
-    return () => { stop = true; };
-  }, [id]);
-  if (!rows?.length) return null;
-  return (
-    <section className="crops" aria-label="Recortes de página" data-crops>
-      <p className="small">Recortes de las páginas grabadas</p>
-      <div className="fig-imgs">{rows.map((row) => row.file ? <img key={row.file} src={figureUrl(id, row.file)} alt={`recorte, página ${row.page ?? ""}`} loading="lazy" decoding="async" onError={(e) => e.currentTarget.setAttribute("hidden", "")} /> : null)}</div>
-    </section>
-  );
-}
-
-export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote, showInstrument = true, showCrops = true, core = false, burstIds, map, explore, openId, onOpenPaper, onPromote }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string; pdf?: boolean; oa_pdf?: string; arxiv?: string } | null; showInstrument?: boolean; showCrops?: boolean; core?: boolean; burstIds?: string[]; map?: { papers: any[]; edges: any[]; layout: any } | null; explore?: { nodes?: any[]; edges?: any[] } | null; openId?: string; onOpenPaper?: (id: string, why: string) => void; onPromote?: () => void }) {
+export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote, showInstrument = true, showCrops = true, core = false, burstIds, map, explore, openId, onOpenPaper, onPromote, atlasCtx }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string; pdf?: boolean; oa_pdf?: string; arxiv?: string } | null; showInstrument?: boolean; showCrops?: boolean; core?: boolean; burstIds?: string[]; map?: { papers: any[]; edges: any[]; layout: any } | null; explore?: { nodes?: any[]; edges?: any[] } | null; openId?: string; onOpenPaper?: (id: string, why: string) => void; onPromote?: () => void; atlasCtx?: AtlasCtx }) {
   const art = useRef<HTMLElement>(null);
   const [pop, setPop] = useState<PopState>(null);
   const [pack, setPack] = useState<any>(null);
@@ -722,11 +362,11 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const abstractId = (paper.blocks || []).find((b) => b.kind === "p" && b.abs)?.id || "";
   const nameOf = (id: string, section?: string) => citeName((map?.papers || []).find((item) => paperKey(item) === String(id)), section);
   const askBox = core ? (
-    <div className="ask-slot">
+    <Boundary name="askbox"><div className="ask-slot">
       {hold
         ? <AskBox sectionLabel="la sección que cerraste" ids={burstIds} focusId={paper.corpusid != null ? String(paper.corpusid) : ""} onOpen={onOpenPaper} onPromote={onPromote} onName={nameOf} closed onSkip={() => { setHold(""); setLeft(""); }} />
         : <AskBox sectionLabel={sectionLabel} ids={burstIds} focusId={paper.corpusid != null ? String(paper.corpusid) : ""} onOpen={onOpenPaper} onPromote={onPromote} onName={nameOf} />}
-    </div>
+    </div></Boundary>
   ) : null;
   const undrawn = core && (remote?.status === "abstract_only" || remote?.status === "failed");
   const arxivId = paper.arxivId || remote?.arxiv || "";
@@ -744,7 +384,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
 
   return (
     <div className="paper-layout">
-      {core && (map || (explore?.nodes || []).length > 0) && <ReadMinimap papers={map?.papers || []} edges={map?.edges || []} layout={map?.layout || null} explore={explore} openId={openId} onOpen={(id) => onOpenPaper?.(id, "salto desde el minimapa")} />}
+      {core && (map || (explore?.nodes || []).length > 0) && <Boundary name="minimap"><ReadMinimap papers={map?.papers || []} edges={map?.edges || []} layout={map?.layout || null} explore={explore} openId={openId} onOpen={(id) => onOpenPaper?.(id, "salto desde el minimapa")} atlasCtx={atlasCtx} /></Boundary>}
       {model.toc.length > 0 && (
         <nav className="toc" aria-label="Secciones">
           {model.toc.map((t) => (
@@ -754,7 +394,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         </nav>
       )}
       <article key={mountKey(paper)} ref={art} className={`paper${reading ? " is-read" : ""}`} onTouchStart={() => (touched.current = Date.now())} onMouseOver={onOver} onMouseOut={onOut} onFocus={onOver} onBlur={onOut} onClick={onClick}>
-        <header className="paper-head">
+        <Boundary name="header"><header className="paper-head">
           <div className="chips">
             <ProvChip kind="paper" text={paper.arxivId ? `arXiv:${paper.arxivId}` : `corpus:${paper.corpusid ?? ""}`} />
             {!paper.full && !remote && <ProvChip kind="curado" text="solo abstract en esta ráfaga" />}
@@ -779,7 +419,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             <details className="author-notes"><summary>Notas de autoría del paper</summary>{paper.authorNotes.map((n: string, i: number) => <p key={i}>{polishText(n)}</p>)}</details>
           )}
           {showCrops && remote && paper.corpusid != null && /^\d+$/.test(String(paper.corpusid)) && <CropStrip id={String(paper.corpusid)} />}
-        </header>
+        </header></Boundary>
 
         {pdfPagesOnly(paper.blocks) && <p className="pdf-only">Este e-print no trae el texto: las páginas vienen insertadas de un PDF.</p>}
         {paper.blocks.map((b, bi) => {
@@ -822,10 +462,10 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               </figure>
             );
           } else if (b.kind === "table") {
-            el = <Table b={b} ctx={ctx} n={model.tabN[b.id]} predict={showInstrument} still={reading} />;
+            el = <Boundary name="table"><Table b={b} ctx={ctx} n={model.tabN[b.id]} predict={showInstrument} still={reading} /></Boundary>;
           }
           const row = (
-            <div key={`${b.id}-${bi}`} className="row">
+            <Boundary key={`${b.id}-${bi}`} name="row"><div className="row">
               {el}
               {breakdown === b.id && b.kind === "eq" && (
                 <aside id={`bd-${b.id}`} className="breakdown" aria-label="Desglose de la ecuación">
@@ -840,18 +480,18 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               {showInstrument && att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
               {core && <ShapePill arts={artsAt(b.id, pack, local)} />}
               {core && b.kind === "p" && notesAt(b.id, pack, local).filter((n: any) => !repeatsBlock(n, b, artsAt(b.id, pack, local))).map((n: any, i: number) => (
-                <GapView key={`${n.block_id}-${n.sent_index}-${n.kind || "n"}-${i}`} note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
+                <Boundary key={`${n.block_id}-${n.sent_index}-${n.kind || "n"}-${i}`} name="gap"><GapView note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} /></Boundary>
               ))}
               {core && b.kind === "p" && artsAt(b.id, pack, local).filter((a) => a.type !== "forma").map((a, i) => (
-                <GapView key={`a-${b.id}-${i}`} art={a} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
+                <Boundary key={`a-${b.id}-${i}`} name="gap"><GapView art={a} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} /></Boundary>
               ))}
               {core && b.kind === "eq" && notesAt(b.id, pack, local).filter((n: any) => !repeatsBlock(n, b, artsAt(b.id, pack, local))).map((n: any, i: number) => (
-                <GapView key={`n-${n.block_id}-${n.sent_index}-${n.kind || "n"}-${i}`} note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
+                <Boundary key={`n-${n.block_id}-${n.sent_index}-${n.kind || "n"}-${i}`} name="gap"><GapView note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} /></Boundary>
               ))}
               {core && b.kind === "eq" && artsAt(b.id, pack, local).filter((a) => a.type !== "forma").map((a, i) => (
-                <GapView key={`a-${b.id}-${i}`} art={a} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
+                <Boundary key={`a-${b.id}-${i}`} name="gap"><GapView art={a} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} /></Boundary>
               ))}
-            </div>
+            </div></Boundary>
           );
           if (askBox && b.id === abstractId) return <div key={`${b.id}-${bi}`}>{row}{askBox}</div>;
           return row;
@@ -860,7 +500,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           <p>Texto, ecuaciones, figuras y tablas son los del e-print de arXiv:{paper.arxivId}, convertidos desde LaTeX sin resumir ni parafrasear. Lo que no es del paper lleva una etiqueta de procedencia.</p>
         </footer>
       </article>
-      {pop && <Popover pop={pop} paper={paper} model={model} content={content} core={core} pack={pack} onOpen={onOpenPaper} />}
+      {pop && <Boundary name="popover" resetKeys={[pop.key]}><Popover pop={pop} paper={paper} model={model} content={content} core={core} pack={pack} onOpen={onOpenPaper} /></Boundary>}
       {companion && <Companion offer={offer} target={point} onAnswer={() => setOffer(null)} onHide={() => onHideCompanion?.()} />}
     </div>
   );
