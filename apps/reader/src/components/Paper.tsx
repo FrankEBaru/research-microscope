@@ -6,7 +6,7 @@ import { ProvChip } from "./Bits";
 import Instrument from "./Instrument";
 import { bibtex } from "@/lib/bibtex.js";
 import { crops, eqTex, fetchNotes, figureCandidates, figureUrl, paperKey, refText, sourcePdfUrl } from "@/lib/backend.js";
-import { compareOf, matrixOf } from "@/lib/artifacts.js";
+import { collectV2, compareOf, matrixOf } from "@/lib/artifacts.js";
 import { pdfPagesOnly, polishText, presentInlines, visibleInlines } from "@/lib/prose.js";
 import { equationHover, symbolHover, tableHover } from "@/lib/hover.js";
 import { faltaText } from "@/lib/falta.js";
@@ -31,15 +31,59 @@ const noteCache = new Map<string, any>();
 
 function drawnOf(art: any) {
   if (!art) return null;
-  const drawn = art.type === "matriz" ? matrixOf(art.tex) : art.type === "con_sin" ? compareOf(art.tex) : null;
-  return drawn ? { ...drawn, why: art.why_look || "" } : null;
+  if (art.kind === "pasos" || art.kind === "casos") return art;
+  const drawn = art.type === "matriz"
+    ? (matrixOf(art.tex) || art.grid || null)
+    : art.type === "con_sin"
+      ? (art.preferScale ? art.scale : (compareOf(art.tex) || art.scale || null))
+      : null;
+  return drawn ? { ...drawn, tag: art.tag || drawn.tag, why: art.why_look || "", quote: art.quote || drawn.quote || "" } : null;
+}
+
+function MathBit({ text }: { text: string }) {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  if (/\\|_|\^/.test(raw)) return <Tex tex={raw} />;
+  return <>{raw}</>;
+}
+
+function Stepper({ drawn }: { drawn: any }) {
+  const [i, setI] = useState(0);
+  const n = drawn.steps.length;
+  const cur = Math.min(i, Math.max(0, n - 1));
+  return (
+    <div className="gap-art" data-artifact="pasos">
+      <p className="gap-tag">ilustrativo</p>
+      {drawn.title && <p>{drawn.title}</p>}
+      {drawn.inputs?.length > 0 && <p className="gap-src">{drawn.inputs.map((line: string, k: number) => <span key={k}>{k ? " · " : ""}<Rich text={line} /></span>)}</p>}
+      <ol className="step-list">{drawn.steps.map((line: string, k: number) => (
+        <li key={k} className={k === cur ? "on" : ""}><Rich text={line} /></li>
+      ))}</ol>
+      <p className="gap-src">
+        <button type="button" className="link" onClick={() => setI((v) => Math.max(0, v - 1))}>anterior</button>
+        {" "}paso {cur + 1}/{n}{" "}
+        <button type="button" className="link" onClick={() => setI((v) => Math.min(n - 1, v + 1))}>siguiente</button>
+      </p>
+    </div>
+  );
 }
 
 function ArtifactView({ drawn }: { drawn: any }) {
+  if (drawn.kind === "pasos") return <Stepper drawn={drawn} />;
+  if (drawn.kind === "casos") {
+    return (
+      <div className="gap-art" data-artifact="casos">
+        <p className="gap-tag">ramas del paper</p>
+        <ul className="case-list">{drawn.branches.map((row: any, i: number) => (
+          <li key={i} className="case-row"><span><MathBit text={row.expr} /></span>{row.cond && <span className="case-cond"><MathBit text={row.cond} /></span>}</li>
+        ))}</ul>
+      </div>
+    );
+  }
   if (drawn.kind === "matriz") {
     return (
-      <div className="gap-art">
-        <p className="gap-tag">Nota de IA</p>
+      <div className="gap-art" data-artifact="matriz">
+        <p className="gap-tag">{drawn.tag || "Nota de IA"}</p>
         <table className="gap-matrix"><tbody>{drawn.rows.map((row: any) => (
           <tr key={row.i}>{row.cells.map((v: number, i: number) => {
             const t = Math.max(0, Math.min(1, (v + 1) / 2));
@@ -49,20 +93,40 @@ function ArtifactView({ drawn }: { drawn: any }) {
         ))}</tbody></table>
         {drawn.freq && <p className="gap-src">{drawn.freq}</p>}
         <p className="gap-src">{drawn.legend}</p>
+        {drawn.quote && <p className="gap-src"><Rich text={drawn.quote} /></p>}
       </div>
     );
   }
   const max = Math.max(...drawn.with, ...drawn.without, 0.01);
   const bars = (xs: number[]) => xs.map((v, i) => <div key={i} className="gap-bar"><i style={{ width: `${(v / max) * 100}%` }} /></div>);
   return (
-    <div className="gap-art">
-      <p className="gap-tag">Nota de IA</p>
+    <div className="gap-art" data-artifact="con_sin">
+      <p className="gap-tag">{drawn.tag || "Nota de IA"}</p>
       <p>{drawn.withLabel}</p>{bars(drawn.with)}
       <p>{drawn.withoutLabel}</p>{bars(drawn.without)}
       <p className="gap-src">{drawn.look}</p>
       <p className="gap-src">{drawn.legend}</p>
+      {drawn.quote && <p className="gap-src"><Rich text={drawn.quote} /></p>}
     </div>
   );
+}
+
+function ShapePill({ arts }: { arts: any[] }) {
+  const hit = (arts || []).find((item) => item.type === "forma" && item.label);
+  if (!hit) return null;
+  return <span className="shape-pill" data-artifact="forma">{hit.label}</span>;
+}
+
+function artsAt(id: string, pack: any, local: any) {
+  const mine = (local?.artifacts || []).filter((item: any) => item.block_id === id);
+  const remote = (pack?.artifacts || []).filter((item: any) => item.block_id === id);
+  return [...mine, ...remote.filter((item: any) => !mine.some((got: any) => got.type === item.type))];
+}
+
+function notesAt(id: string, pack: any, local: any) {
+  const remote = (pack?.notes || []).filter((item: any) => item.block_id === id);
+  const mine = (local?.notes || []).filter((item: any) => item.block_id === id && !remote.some((got: any) => got.note === item.note));
+  return [...mine, ...remote];
 }
 
 export function GapView({ note, art, self, onOpen }: { note?: any; art?: any; self: string; onOpen?: (id: string, why: string) => void }) {
@@ -71,7 +135,8 @@ export function GapView({ note, art, self, onOpen }: { note?: any; art?: any; se
   const other = Boolean(note && note.paper && String(note.paper) !== self);
   return (
     <aside className="gap-card">
-      {note && note.generated !== false && <p className="gap-tag">Nota de IA</p>}
+      {note && note.kind === "supuesto" && <p className="gap-tag">frase del paper</p>}
+      {note && note.generated !== false && note.kind !== "supuesto" && <p className="gap-tag">Nota de IA</p>}
       {note && note.note && <p><Rich text={note.note} /></p>}
       {note && note.generated !== false && note.cite && <p className="gap-cite"><Rich text={note.cite} /></p>}
       {note && (note.section || note.paper) && (
@@ -435,6 +500,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const [breakdown, setBreakdown] = useState<string | null>(null); // bloque `eq` cuyo desglose está abierto
   useEffect(() => { tracker.current.reset(); setOffer(null); }, [paper.arxivId, paper.stage, paper.upgraded_from, companion]);
 
+  const local = useMemo(() => collectV2(paper.blocks || []), [paper]);
   const att = content.attention?.paper === paper.arxivId ? content.attention : null;
   const model = useMemo(() => {
     const syms: Sym[] = att ? att.symbols : [];
@@ -763,12 +829,19 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
                 </aside>
               )}
               {showInstrument && att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
-              {core && b.kind === "p" && (pack?.notes || []).filter((n: any) => n.block_id === b.id).map((n: any) => (
-                <GapView key={`${n.block_id}-${n.sent_index}`} note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
+              {core && <ShapePill arts={artsAt(b.id, pack, local)} />}
+              {core && b.kind === "p" && notesAt(b.id, pack, local).map((n: any) => (
+                <GapView key={`${n.block_id}-${n.sent_index}-${n.kind || "n"}`} note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
               ))}
-              {core && b.kind === "eq" && (
-                <GapView note={(pack?.notes || []).find((n: any) => n.block_id === b.id)} art={(pack?.artifacts || []).find((n: any) => n.block_id === b.id)} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
-              )}
+              {core && b.kind === "p" && artsAt(b.id, pack, local).filter((a) => a.type !== "forma").map((a, i) => (
+                <GapView key={`a-${b.id}-${i}`} art={a} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
+              ))}
+              {core && b.kind === "eq" && notesAt(b.id, pack, local).map((n: any) => (
+                <GapView key={`n-${n.block_id}-${n.sent_index}-${n.kind || "n"}`} note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
+              ))}
+              {core && b.kind === "eq" && artsAt(b.id, pack, local).filter((a) => a.type !== "forma").map((a, i) => (
+                <GapView key={`a-${b.id}-${i}`} art={a} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
+              ))}
             </div>
           );
           if (askBox && b.id === abstractId) return <div key={b.id}>{row}{askBox}</div>;
