@@ -1,0 +1,225 @@
+{
+  "census": {
+    "pdf": 55,
+    "vector_text": 36,
+    "raster": 6,
+    "silent_vector": 13,
+    "tikz_envs": 12
+  },
+  "clicks": {
+    "resnet_shortcut": {
+      "at": {
+        "x": 600,
+        "y": 160
+      },
+      "nearest": [
+        {
+          "t": "identity",
+          "x": 626,
+          "y": 218,
+          "x2": 736,
+          "y2": 254
+        },
+        {
+          "t": "x",
+          "x": 666,
+          "y": 165,
+          "x2": 690,
+          "y2": 205
+        },
+        {
+          "t": "relu",
+          "x": 424,
+          "y": 143,
+          "x2": 481,
+          "y2": 179
+        },
+        {
+          "t": "layer",
+          "x": 424,
+          "y": 202,
+          "x2": 487,
+          "y2": 234
+        }
+      ],
+      "code_hits": [
+        {
+          "id": "206594692:33",
+          "overlap": 2,
+          "text": "The form of the residual function $\\mathcal{F}$ is flexible. Experiments in this paper involve a function $\\mathcal{F}$ that has two or three layers (Fig.~fig:block_deeper), while more layers are possible. But if $\\mathcal{F}$ has only a single layer, Eqn.(eq:identity) is similar"
+        },
+        {
+          "id": "206594692:84",
+          "overlap": 2,
+          "text": "Analysis of Layer Responses. Fig.~fig:std shows the standard deviations (std) of the layer responses. The responses are the outputs of each 3$\\times$3 layer, after BN and before other nonlinearity (ReLU/addition). For ResNets, this analysis reveals the response strength of the re"
+        },
+        {
+          "id": "206594692:0",
+          "overlap": 1,
+          "text": "Deeper neural networks are more difficult to train. We present a residual learning framework to ease the training of networks that are substantially deeper than those used previously. We explicitly reformulate the layers as learning residual functions with reference to the layer "
+        },
+        {
+          "id": "206594692:8",
+          "overlap": 1,
+          "text": "The degradation (of training accuracy) indicates that not all systems are similarly easy to optimize. Let us consider a shallower architecture and its deeper counterpart that adds more layers onto it. There exists a solution by construction to the deeper model: the added layers a"
+        }
+      ],
+      "citing_ids": [
+        "206594692:10",
+        "206594692:26",
+        "206594692:28",
+        "206594692:33",
+        "206594692:64",
+        "206594692:65"
+      ]
+    },
+    "resnet_plus": {
+      "at": {
+        "x": 409,
+        "y": 298
+      },
+      "nearest": [
+        {
+          "t": "relu",
+          "x": 424,
+          "y": 316,
+          "x2": 481,
+          "y2": 351
+        },
+        {
+          "t": "x",
+          "x": 332,
+          "y": 287,
+          "x2": 356,
+          "y2": 327
+        },
+        {
+          "t": "layer",
+          "x": 424,
+          "y": 202,
+          "x2": 487,
+          "y2": 234
+        },
+        {
+          "t": "+",
+          "x": 292,
+          "y": 287,
+          "x2": 323,
+          "y2": 327
+        }
+      ],
+      "code_hits": [
+        {
+          "id": "206594692:84",
+          "overlap": 2,
+          "text": "Analysis of Layer Responses. Fig.~fig:std shows the standard deviations (std) of the layer responses. The responses are the outputs of each 3$\\times$3 layer, after BN and before other nonlinearity (ReLU/addition). For ResNets, this analysis reveals the response strength of the re"
+        },
+        {
+          "id": "206594692:0",
+          "overlap": 1,
+          "text": "Deeper neural networks are more difficult to train. We present a residual learning framework to ease the training of networks that are substantially deeper than those used previously. We explicitly reformulate the layers as learning residual functions with reference to the layer "
+        },
+        {
+          "id": "206594692:18",
+          "overlap": 1,
+          "text": "Shortcut Connections. Practices and theories that lead to shortcut connections [cite] have been studied for a long time. An early practice of training multi-layer perceptrons (MLPs) is to add a linear layer connected from the network input to the output [cite]. In [cite], a few i"
+        },
+        {
+          "id": "206594692:28",
+          "overlap": 1,
+          "text": "Here $\\mathbf{x}$ and $\\mathbf{y}$ are the input and output vectors of the layers considered. The function $\\mathcal{F}(\\mathbf{x}, \\{W_{i}\\})$ represents the residual mapping to be learned. For the example in Fig.~fig:block that has two layers, $\\mathcal{F}=W_{2}\\sigma(W_{1}\\mat"
+        }
+      ],
+      "citing_ids": [
+        "206594692:10",
+        "206594692:26",
+        "206594692:28",
+        "206594692:33",
+        "206594692:64",
+        "206594692:65"
+      ]
+    },
+    "unet_upconv": {
+      "at": {
+        "x": 684,
+        "y": 254
+      },
+      "nearest": [
+        {
+          "t": "128",
+          "x": 648,
+          "y": 276,
+          "x2": 671,
+          "y2": 292
+        },
+        {
+          "t": "256",
+          "x": 617,
+          "y": 277,
+          "x2": 640,
+          "y2": 292
+        },
+        {
+          "t": "390",
+          "x": 694,
+          "y": 183,
+          "x2": 710,
+          "y2": 206
+        },
+        {
+          "t": "392",
+          "x": 663,
+          "y": 183,
+          "x2": 679,
+          "y2": 206
+        }
+      ],
+      "code_hits": [],
+      "citing_ids": [
+        "3719281:8",
+        "3719281:15"
+      ]
+    },
+    "unet_white": {
+      "at": {
+        "x": 442,
+        "y": 514
+      },
+      "nearest": [
+        {
+          "t": "1024",
+          "x": 441,
+          "y": 485,
+          "x2": 472,
+          "y2": 501
+        },
+        {
+          "t": "56\u00b2",
+          "x": 413,
+          "y": 505,
+          "x2": 428,
+          "y2": 525
+        },
+        {
+          "t": "54\u00b2",
+          "x": 489,
+          "y": 524,
+          "x2": 505,
+          "y2": 544
+        },
+        {
+          "t": "28\u00b2",
+          "x": 428,
+          "y": 567,
+          "x2": 444,
+          "y2": 587
+        }
+      ],
+      "code_hits": [],
+      "citing_ids": [
+        "3719281:8",
+        "3719281:15"
+      ]
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "results": {
+    "spark_vision_resnet_plus": {
+      "status": 200,
+      "s": 4.573,
+      "usd": 0.0001096,
+      "text": "{\"name\":\"addition\",\"what\":\"The circled plus adds the weight-layer output F(x) to the identity x to produce F(x) + x before relu.\",\"beyond_caption\":false}",
+      "error": null
+    },
+    "spark_vision_dann_loss": {
+      "status": 200,
+      "s": 7.065,
+      "usd": 0.0003418,
+      "text": "",
+      "error": null
+    },
+    "muse_image_dct": {
+      "status": 200,
+      "s": 12.797,
+      "usd": 0.01,
+      "meta": {
+        "created": 1793634018,
+        "output_format": "png",
+        "background": "opaque",
+        "usage": {
+          "input_tokens": 4066,
+          "output_tokens": 1357,
+          "total_tokens": 5423
+        },
+        "n_images": 1
+      },
+      "error": null
+    }
+  },
+  "spent_usd": 0.0427585
+}

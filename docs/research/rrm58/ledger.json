@@ -1,0 +1,131 @@
+[
+  {
+    "name": "sam_points_resnet",
+    "model": "sam-3.1",
+    "status": 200,
+    "s": 1.706,
+    "usd": 0.0025,
+    "n_boxes": 3
+  },
+  {
+    "name": "sam_points_unet",
+    "model": "sam-3.1",
+    "status": 200,
+    "s": 1.499,
+    "usd": 0.0025,
+    "n_boxes": 3
+  },
+  {
+    "name": "sam_concept_unet_arrow",
+    "model": "sam-3.1",
+    "status": 200,
+    "s": 1.797,
+    "usd": 0.0025,
+    "n_boxes": 36
+  },
+  {
+    "name": "sam_concept_resnet_arrow",
+    "model": "sam-3.1",
+    "status": 200,
+    "s": 0.601,
+    "usd": 0.0025,
+    "n_boxes": 5
+  },
+  {
+    "name": "spark_resnet_shortcut",
+    "model": "muse-spark-1.3-contributor",
+    "status": 200,
+    "s": 11.27,
+    "usd": 0.0006929,
+    "usage": {
+      "input_tokens": 6021,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 454,
+      "output_tokens_details": {
+        "reasoning_tokens": 275
+      },
+      "total_tokens": 6475
+    }
+  },
+  {
+    "name": "spark_unet_upconv",
+    "model": "muse-spark-1.3-contributor",
+    "status": 200,
+    "s": 6.99,
+    "usd": 0.0004982,
+    "usage": {
+      "input_tokens": 3824,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 579,
+      "output_tokens_details": {
+        "reasoning_tokens": 394
+      },
+      "total_tokens": 4403
+    }
+  },
+  {
+    "name": "wonder_unet_upconv",
+    "model": "muse-wonder-1.0",
+    "status": 200,
+    "s": 2.619,
+    "usd": 0.021116,
+    "usage": {
+      "input_tokens": 3824,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 291,
+      "output_tokens_details": {
+        "reasoning_tokens": 130
+      },
+      "total_tokens": 4115
+    }
+  },
+  {
+    "name": "spark_vision_resnet_plus",
+    "model": "muse-spark-1.3-contributor",
+    "status": 200,
+    "s": 4.573,
+    "usd": 0.0001096,
+    "usage": {
+      "input_tokens": 484,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 306,
+      "output_tokens_details": {
+        "reasoning_tokens": 258
+      },
+      "total_tokens": 790
+    }
+  },
+  {
+    "name": "spark_vision_dann_loss",
+    "model": "muse-spark-1.3-contributor",
+    "status": 200,
+    "s": 7.065,
+    "usd": 0.0003418,
+    "usage": {
+      "input_tokens": 2418,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 500,
+      "output_tokens_details": {
+        "reasoning_tokens": 498
+      },
+      "total_tokens": 2918
+    }
+  },
+  {
+    "name": "muse_image_dct",
+    "model": "muse-image-1.0",
+    "status": 200,
+    "s": 12.797,
+    "usd": 0.01
+  }
+]

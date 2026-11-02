@@ -1,0 +1,559 @@
+{
+  "live": {
+    "sam_points_resnet": {
+      "status": 200,
+      "s": 1.706,
+      "usd": 0.0025,
+      "boxes": [
+        {
+          "x1": 289,
+          "y1": 35,
+          "x2": 614,
+          "y2": 317,
+          "c": 0.27734375,
+          "id": 1
+        },
+        {
+          "x1": 389,
+          "y1": 279,
+          "x2": 426,
+          "y2": 315,
+          "c": 0.7890625,
+          "id": 2
+        },
+        {
+          "x1": 379,
+          "y1": 102,
+          "x2": 400,
+          "y2": 116,
+          "c": 0.2353515625,
+          "id": 3
+        }
+      ],
+      "chars": 1679,
+      "error": null
+    },
+    "sam_points_unet": {
+      "status": 200,
+      "s": 1.499,
+      "usd": 0.0025,
+      "boxes": [
+        {
+          "x1": 678,
+          "y1": 222,
+          "x2": 689,
+          "y2": 275,
+          "c": 0.88671875,
+          "id": 1
+        },
+        {
+          "x1": 426,
+          "y1": 502,
+          "x2": 456,
+          "y2": 525,
+          "c": 0.81640625,
+          "id": 2
+        },
+        {
+          "x1": 234,
+          "y1": 419,
+          "x2": 250,
+          "y2": 475,
+          "c": 0.92578125,
+          "id": 3
+        }
+      ],
+      "chars": 411,
+      "error": null
+    },
+    "sam_concept_unet_arrow": {
+      "status": 200,
+      "s": 1.797,
+      "usd": 0.0025,
+      "boxes": [
+        {
+          "x1": 169,
+          "y1": 394,
+          "x2": 180,
+          "y2": 413,
+          "c": 0.8672199249267578,
+          "id": 0
+        },
+        {
+          "x1": 180,
+          "y1": 441,
+          "x2": 197,
+          "y2": 452,
+          "c": 0.8518518805503845,
+          "id": 1
+        },
+        {
+          "x1": 689,
+          "y1": 122,
+          "x2": 705,
+          "y2": 133,
+          "c": 0.8632478713989258,
+          "id": 2
+        },
+        {
+          "x1": 126,
+          "y1": 327,
+          "x2": 143,
+          "y2": 338,
+          "c": 0.8552036285400391,
+          "id": 3
+        },
+        {
+          "x1": 225,
+          "y1": 328,
+          "x2": 586,
+          "y2": 337,
+          "c": 0.8787879347801208,
+          "id": 4
+        },
+        {
+          "x1": 743,
+          "y1": 122,
+          "x2": 759,
+          "y2": 133,
+          "c": 0.8632478713989258,
+          "id": 5
+        },
+        {
+          "x1": 573,
+          "y1": 441,
+          "x2": 590,
+          "y2": 452,
+          "c": 0.8552036285400391,
+          "id": 6
+        },
+        {
+          "x1": 299,
+          "y1": 508,
+          "x2": 316,
+          "y2": 520,
+          "c": 0.827957034111023,
+          "id": 7
+        },
+        {
+          "x1": 729,
+          "y1": 531,
+          "x2": 739,
+          "y2": 551,
+          "c": 0.859649121761322,
+          "id": 8
+        },
+        {
+          "x1": 678,
+          "y1": 223,
+          "x2": 689,
+          "y2": 275,
+          "c": 0.8827838897705078,
+          "id": 9
+        },
+        {
+          "x1": 717,
+          "y1": 446,
+          "x2": 738,
+          "y2": 457,
+          "c": 0.8750000596046448,
+          "id": 10
+        },
+        {
+          "x1": 425,
+          "y1": 554,
+          "x2": 440,
+          "y2": 564,
+          "c": 0.8552036285400391,
+          "id": 11
+        },
+        {
+          "x1": 153,
+          "y1": 327,
+          "x2": 169,
+          "y2": 338,
+          "c": 0.859649121761322,
+          "id": 12
+        },
+        {
+          "x1": 118,
+          "y1": 250,
+          "x2": 128,
+          "y2": 269,
+          "c": 0.8632478713989258,
+          "id": 13
+        },
+        {
+          "x1": 714,
+          "y1": 122,
+          "x2": 731,
+          "y2": 133,
+          "c": 0.8632478713989258,
+          "id": 14
+        },
+        {
+          "x1": 711,
+          "y1": 472,
+          "x2": 736,
+          "y2": 483,
+          "c": 0.8787879347801208,
+          "id": 15
+        },
+        {
+          "x1": 486,
+          "y1": 509,
+          "x2": 503,
+          "y2": 519,
+          "c": 0.859649121761322,
+          "id": 16
+        },
+        {
+          "x1": 466,
+          "y1": 529,
+          "x2": 476,
+          "y2": 548,
+          "c": 0.8632478713989258,
+          "id": 17
+        },
+        {
+          "x1": 326,
+          "y1": 530,
+          "x2": 337,
+          "y2": 549,
+          "c": 0.859649121761322,
+          "id": 18
+        },
+        {
+          "x1": 366,
+          "y1": 509,
+          "x2": 407,
+          "y2": 519,
+          "c": 0.8827838897705078,
+          "id": 19
+        },
+        {
+          "x1": 170,
+          "y1": 122,
+          "x2": 638,
+          "y2": 133,
+          "c": 0.8476190567016602,
+          "id": 20
+        },
+        {
+          "x1": 718,
+          "y1": 565,
+          "x2": 739,
+          "y2": 576,
+          "c": 0.8632478713989258,
+          "id": 21
+        },
+        {
+          "x1": 215,
+          "y1": 441,
+          "x2": 232,
+          "y2": 452,
+          "c": 0.859649121761322,
+          "id": 22
+        },
+        {
+          "x1": 628,
+          "y1": 380,
+          "x2": 638,
+          "y2": 418,
+          "c": 0.8476190567016602,
+          "id": 23
+        },
+        {
+          "x1": 347,
+          "y1": 554,
+          "x2": 363,
+          "y2": 564,
+          "c": 0.8518518805503845,
+          "id": 24
+        },
+        {
+          "x1": 728,
+          "y1": 502,
+          "x2": 739,
+          "y2": 521,
+          "c": 0.8709677457809448,
+          "id": 25
+        },
+        {
+          "x1": 664,
+          "y1": 327,
+          "x2": 680,
+          "y2": 338,
+          "c": 0.859649121761322,
+          "id": 26
+        },
+        {
+          "x1": 559,
+          "y1": 471,
+          "x2": 569,
+          "y2": 498,
+          "c": 0.8750000596046448,
+          "id": 27
+        },
+        {
+          "x1": 236,
+          "y1": 477,
+          "x2": 248,
+          "y2": 496,
+          "c": 0.859649121761322,
+          "id": 28
+        },
+        {
+          "x1": 286,
+          "y1": 442,
+          "x2": 502,
+          "y2": 452,
+          "c": 0.8787879347801208,
+          "id": 29
+        },
+        {
+          "x1": 103,
+          "y1": 122,
+          "x2": 120,
+          "y2": 133,
+          "c": 0.8518518805503845,
+          "id": 30
+        },
+        {
+          "x1": 79,
+          "y1": 122,
+          "x2": 95,
+          "y2": 133,
+          "c": 0.8518518805503845,
+          "id": 31
+        },
+        {
+          "x1": 533,
+          "y1": 509,
+          "x2": 549,
+          "y2": 519,
+          "c": 0.8518518805503845,
+          "id": 32
+        },
+        {
+          "x1": 608,
+          "y1": 441,
+          "x2": 625,
+          "y2": 451,
+          "c": 0.8476190567016602,
+          "id": 33
+        },
+        {
+          "x1": 638,
+          "y1": 327,
+          "x2": 654,
+          "y2": 338,
+          "c": 0.8552036285400391,
+          "id": 34
+        },
+        {
+          "x1": 252,
+          "y1": 509,
+          "x2": 268,
+          "y2": 519,
+          "c": 0.8439024686813354,
+          "id": 35
+        }
+      ],
+      "chars": 5425,
+      "error": null
+    },
+    "sam_concept_resnet_arrow": {
+      "status": 200,
+      "s": 0.601,
+      "usd": 0.0025,
+      "boxes": [
+        {
+          "x1": 401,
+          "y1": 317,
+          "x2": 416,
+          "y2": 349,
+          "c": 0.8400000333786011,
+          "id": 0
+        },
+        {
+          "x1": 409,
+          "y1": 49,
+          "x2": 612,
+          "y2": 304,
+          "c": 0.8632478713989258,
+          "id": 1
+        },
+        {
+          "x1": 401,
+          "y1": 244,
+          "x2": 416,
+          "y2": 278,
+          "c": 0.8160918951034546,
+          "id": 2
+        },
+        {
+          "x1": 401,
+          "y1": 32,
+          "x2": 415,
+          "y2": 84,
+          "c": 0.8552036285400391,
+          "id": 3
+        },
+        {
+          "x1": 401,
+          "y1": 140,
+          "x2": 416,
+          "y2": 190,
+          "c": 0.8632478713989258,
+          "id": 4
+        }
+      ],
+      "chars": 987,
+      "error": null
+    },
+    "spark_resnet_shortcut": {
+      "status": 200,
+      "s": 11.27,
+      "usd": 0.0006929,
+      "usage": {
+        "input_tokens": 6021,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 454,
+        "output_tokens_details": {
+          "reasoning_tokens": 275
+        },
+        "total_tokens": 6475
+      },
+      "text": "{\"what\": \"The clicked \\\"identity\\\" arrow is the shortcut path that bypasses the stacked layers. In this block \\\"the shortcut connections simply perform identity mapping\\\" passing x through unchanged, and \\\"their outputs are added to the outputs of the stacked layers\\\" to form F(x)+x. \\\"Identity shortcut connections add neither extra parameter nor computational complexity.\\\"\", \"quotes\": [{\"id\": \"206594692:10\", \"quote\": \"the shortcut connections simply perform identity mapping\"}, {\"id\": \"206594692:10\", \"quote\": \"their outputs are added to the outputs of the stacked layers\"}, {\"id\": \"206594692:10\", \"quote\": \"Identity shortcut connections add neither extra parameter nor computational complexity\"}], \"beyond\": false, \"why\": \"Caption plus citing passages already state identity mapping and addition.\"}",
+      "error": null
+    },
+    "spark_unet_upconv": {
+      "status": 200,
+      "s": 6.99,
+      "usd": 0.0004982,
+      "usage": {
+        "input_tokens": 3824,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 579,
+        "output_tokens_details": {
+          "reasoning_tokens": 394
+        },
+        "total_tokens": 4403
+      },
+      "text": "{\"what\": \"The clicked 'up-conv 2x2' marks an expansive-path upsampling step, where \\\"pooling operators are replaced by upsampling operators\\\" [3719281:8]. Each such step is \\\"an upsampling of the feature map followed by a 2x2 convolution (``up-convolution'') that halves the number of feature channels\\\" [3719281:15].\", \"quotes\": [{\"id\": \"3719281:8\", \"quote\": \"where pooling operators are replaced by upsampling operators\"}, {\"id\": \"3719281:15\", \"quote\": \"an upsampling of the feature map followed by a 2x2 convolution (``up-convolution'') that halves the number of feature channels\"}], \"beyond\": false, \"why\": \"caption plus citing passages already describe the up-convolution operation\"}",
+      "error": null
+    },
+    "wonder_unet_upconv": {
+      "status": 200,
+      "s": 2.619,
+      "usd": 0.021116,
+      "usage": {
+        "input_tokens": 3824,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 291,
+        "output_tokens_details": {
+          "reasoning_tokens": 130
+        },
+        "total_tokens": 4115
+      },
+      "text": "{\"what\":\"The \u201cup-conv 2x2\u201d is in the expansive path: \u201cEvery step in the expansive path consists of an upsampling of the feature map followed by a 2x2 convolution (``up-convolution'') that halves the number of feature channels\u201d [3719281:15].\",\"quotes\":[{\"id\":\"3719281:15\",\"quote\":\"Every step in the expansive path consists of an upsampling of the feature map followed by a 2x2 convolution (``up-convolution'') that halves the number of feature channels\"}],\"beyond\":false,\"why\":\"The passages citing the figure directly define the up-convolution, its 2x2 size, position after upsampling, and channel-halving effect.\"}",
+      "error": null
+    }
+  },
+  "spent_usd": 0.0323071,
+  "ledger": [
+    {
+      "name": "sam_points_resnet",
+      "model": "sam-3.1",
+      "status": 200,
+      "s": 1.706,
+      "usd": 0.0025,
+      "n_boxes": 3
+    },
+    {
+      "name": "sam_points_unet",
+      "model": "sam-3.1",
+      "status": 200,
+      "s": 1.499,
+      "usd": 0.0025,
+      "n_boxes": 3
+    },
+    {
+      "name": "sam_concept_unet_arrow",
+      "model": "sam-3.1",
+      "status": 200,
+      "s": 1.797,
+      "usd": 0.0025,
+      "n_boxes": 36
+    },
+    {
+      "name": "sam_concept_resnet_arrow",
+      "model": "sam-3.1",
+      "status": 200,
+      "s": 0.601,
+      "usd": 0.0025,
+      "n_boxes": 5
+    },
+    {
+      "name": "spark_resnet_shortcut",
+      "model": "muse-spark-1.3-contributor",
+      "status": 200,
+      "s": 11.27,
+      "usd": 0.0006929,
+      "usage": {
+        "input_tokens": 6021,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 454,
+        "output_tokens_details": {
+          "reasoning_tokens": 275
+        },
+        "total_tokens": 6475
+      }
+    },
+    {
+      "name": "spark_unet_upconv",
+      "model": "muse-spark-1.3-contributor",
+      "status": 200,
+      "s": 6.99,
+      "usd": 0.0004982,
+      "usage": {
+        "input_tokens": 3824,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 579,
+        "output_tokens_details": {
+          "reasoning_tokens": 394
+        },
+        "total_tokens": 4403
+      }
+    },
+    {
+      "name": "wonder_unet_upconv",
+      "model": "muse-wonder-1.0",
+      "status": 200,
+      "s": 2.619,
+      "usd": 0.021116,
+      "usage": {
+        "input_tokens": 3824,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 291,
+        "output_tokens_details": {
+          "reasoning_tokens": 130
+        },
+        "total_tokens": 4115
+      }
+    }
+  ]
+}
