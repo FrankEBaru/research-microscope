@@ -38,6 +38,16 @@ function beat(phase: string, since: number) {
   return `buscando papers…${tail}`;
 }
 
+function openGroup(result: any, id: string) {
+  const point = (result?.layout?.points || []).find((item: any) => String(item.corpusid) === String(id));
+  if (!point || point.cluster == null) return null;
+  const found = (result?.layout?.groups || []).find((group: any) => String(group.id) === String(point.cluster));
+  if (!found) return null;
+  const n = ((Number(point.cluster) % 6) + 6) % 6 + 1;
+  const name = String(found.name || "").trim();
+  return { n, name: name || "Group" };
+}
+
 export default function Engine() {
   const [route, setRoute] = useState<Route>({});
   const [content, setContent] = useState<any>(null);
@@ -207,6 +217,15 @@ export default function Engine() {
     if (next.length) go({ p: next[next.length - 1].id });
     else go({});
   };
+  const home = () => {
+    setLiveOn(false);
+    setPending(false);
+    setPhase("");
+    setLiveErr("");
+    setLiveCode("");
+    setDraft("");
+    go({});
+  };
 
   useEffect(() => {
     let stop = false;
@@ -271,10 +290,10 @@ export default function Engine() {
     if (!liveId) { setOpened(null); setOpenLine(""); return; }
     let stop = false;
     const t0 = Date.now();
-    setOpenLine("abriendo el paper… 0 s");
+    setOpenLine("Opening the paper… 0 s");
     const clock = window.setInterval(() => {
       const sec = Math.round((Date.now() - t0) / 1000);
-      setOpenLine((cur) => (cur.startsWith("leyendo") ? `leyendo secciones… ${sec} s` : `abriendo el paper… ${sec} s`));
+      setOpenLine((cur) => (cur.startsWith("Reading sections") ? `Reading sections… ${sec} s` : `Opening the paper… ${sec} s`));
     }, 400);
     let sig = "";
     let citedRefs = -1;
@@ -325,7 +344,7 @@ export default function Engine() {
         fetchPaper(liveId, { cites: true }).then((next) => { if (!stop) apply(next); }).catch(() => {});
       }
       if (sectionsIn({ paper }) || settled(body.status)) quiet();
-      else setOpenLine((cur) => (String(cur).startsWith("leyendo") ? cur : "leyendo secciones…"));
+      else setOpenLine((cur) => (String(cur).startsWith("Reading sections") ? cur : "Reading sections…"));
       const blocks = doc.blocks || [];
       const hasBody = Boolean(doc.full) || meta.source === "latex" || meta.source === "ocr"
         || blocks.some((block: any) => block && (block.kind === "h" || block.kind === "eq" || (block.kind === "p" && !block.abs)));
@@ -446,12 +465,12 @@ export default function Engine() {
     return () => { stop = true; };
   }, [namesKey]);
 
-  const onSearch = async (e: { preventDefault: () => void }) => {
+  const onSearch = async (e: { preventDefault: () => void; query?: string }) => {
     e.preventDefault();
-    const q = draft.trim();
+    const q = String(e.query || draft).trim();
     if (!q || pending) return;
     const gen = ++searchGen.current;
-    setLiveQ(q); setLiveOn(true); setLiveErr(""); setImpatient(false); setForced(false); setTopics(null); setAsList(false); setLabelNote("");
+    setLiveQ(q); setLiveOn(true); setLiveErr(""); setLiveCode(""); setImpatient(false); setForced(false); setTopics(null); setAsList(false); setLabelNote("");
     setPending(true);
     let cached: any = null;
     try { cached = recallQuestion(localStorage, q); } catch (e) { storageFault(e, "localStorage"); cached = null; }
@@ -546,8 +565,21 @@ export default function Engine() {
     onWant: wantThis,
   };
   const onLayout = (next: any) => { setLiveResult((prev) => (prev ? { ...prev, layout: next } : prev)); if (!next?.pending_vectors?.length) setPhase((cur) => (cur === "layout" ? "" : cur)); };
-  const back = <>{!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}{core && <button type="button" className="link" onClick={volver}>volver</button>}</>;
-  const jump = core && (() => { const top = camino[camino.length - 1]; const why = top && String(top.id) === liveId ? whyLabel(top.porQue) : ""; return why ? <p className="jump-why">Salto: {why}</p> : null; })();
+  const back = !core ? <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button> : null;
+  const backBtn = core && liveId && camino.length > 1
+    ? <button type="button" className="top-back press" aria-label="Back" onClick={volver}>←</button>
+    : null;
+  const jump = (() => {
+    const top = camino[camino.length - 1];
+    const why = top?.padre ? whyLabel(top.porQue) : "";
+    return why ? <p className="jump-why">Salto: {why}</p> : null;
+  })();
+  const crumb = core && (liveOn || liveId) ? {
+    question: shownQ,
+    onAtlas: () => go({}),
+    group: liveId ? openGroup(liveResult, liveId) : null,
+    paper: liveId ? titleFor(liveId) : "",
+  } : null;
   const frame = {
     back, openLine, liveErr, liveCode, debug,
     content, focus: route.b, companion, onHideCompanion: () => setCompanion(false), core,
@@ -558,16 +590,16 @@ export default function Engine() {
 
   return (
     <>
-      <TopBar core={core} live={live} liveOn={liveOn} liveId={liveId} steps={steps} level={level} draft={draft} setDraft={setDraft} onSearch={onSearch} companion={companion} setCompanion={setCompanion} />
+      <TopBar core={core} live={live} liveOn={liveOn} liveId={liveId} steps={steps} level={level} draft={draft} setDraft={setDraft} onSearch={onSearch} companion={companion} setCompanion={setCompanion} onHome={home} crumb={crumb} back={backBtn} />
 
       <main key={`${level}-${route.c}-${route.p}`} className="zoom-in">
-        {live && (liveOn || liveId) && liveId && opened && <Boundary name="reader"><ReaderFrame {...frame} opened={opened} jump={jump} /></Boundary>}
+        {live && (liveOn || liveId) && liveId && opened && <Boundary name="reader"><ReaderFrame {...frame} opened={opened} /></Boundary>}
         {live && (liveOn || liveId) && liveId && !opened && <Boundary name="reader"><ReaderFrame {...frame} opened={null} /></Boundary>}
         {live && core && !liveOn && !liveId && (
-          <Boundary name="start"><StartScreen draft={draft} setDraft={setDraft} onSearch={onSearch} pending={pending} engine={engine} phase={phase} since={since} say={say} /></Boundary>
+          <Boundary name="start"><StartScreen draft={draft} setDraft={setDraft} onSearch={onSearch} pending={pending} engine={engine} phase={phase} /></Boundary>
         )}
         {live && liveOn && !liveId && (
-          <Boundary name="map"><MapScreen core={core} shownQ={shownQ} topics={topics} liveResult={liveResult} phase={phase} engine={engine} say={say} liveErr={liveErr} liveCode={liveCode} debug={debug} pending={pending} asList={asList} setAsList={setAsList} labelNote={labelNote} liveIds={liveIds} impatient={impatient} forced={forced} setForced={setForced} liveQ={liveQ} liveName={liveName} go={go} backToCurated={backToCurated} atlasCtx={atlasCtx} onLayout={onLayout} /></Boundary>
+          <Boundary name="map"><MapScreen core={core} shownQ={shownQ} topics={topics} liveResult={liveResult} phase={phase} engine={engine} say={say} liveErr={liveErr} liveCode={liveCode} debug={debug} pending={pending} asList={asList} setAsList={setAsList} labelNote={labelNote} liveIds={liveIds} impatient={impatient} forced={forced} setForced={setForced} liveQ={liveQ} liveName={liveName} go={go} backToCurated={backToCurated} atlasCtx={atlasCtx} onLayout={onLayout} jump={jump} /></Boundary>
         )}
         {!(live && core) && !(live && (liveOn || liveId)) && level === 1 && <Area q={q} questions={questions} papers={papers} go={go} content={content} core={core} />}
         {!(live && core) && !(live && (liveOn || liveId)) && level === 2 && cluster && <Cluster q={q} cl={cluster} papers={papers} go={go} />}
@@ -575,17 +607,13 @@ export default function Engine() {
         {!(live && (liveOn || liveId)) && level === 3 && !paper && <p className="center-msg">Paper no encontrado.</p>}
       </main>
 
-      <footer className="legend">
-        {core && live ? (
-          <span className="legend-note">Papers y citas: Semantic Scholar.</span>
-        ) : (
-          <>
-            <span>Procedencia:</span>
-            <ProvChip kind="paper" /><ProvChip kind="curado" /><ProvChip kind="calculo" /><ProvChip kind="simulado" />
-            <span className="legend-note">Papers: arXiv (atribución en cada paper). Lo simulado es maqueta del motor, aún no conectado.</span>
-          </>
-        )}
-      </footer>
+      {!(core && live) && (
+        <footer className="legend">
+          <span>Procedencia:</span>
+          <ProvChip kind="paper" /><ProvChip kind="curado" /><ProvChip kind="calculo" /><ProvChip kind="simulado" />
+          <span className="legend-note">Papers: arXiv (atribución en cada paper). Lo simulado es maqueta del motor, aún no conectado.</span>
+        </footer>
+      )}
       <DiagPanel dev={dev} data-devlog={devTick} />
     </>
   );

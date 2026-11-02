@@ -1,16 +1,26 @@
 "use client";
-import { paper as fetchPaper, settled } from "@/lib/backend.js";
+import type { ReactNode } from "react";
+import "@/styles/inicio.css";
+import { paper as fetchPaper, paperKey, settled } from "@/lib/backend.js";
 import { LiveCoverage } from "../Panorama";
 import SimPanorama from "../SimPanorama";
 import { LiveCircle } from "../MapView";
 import { Boundary, Notice } from "../faults";
 import MapBody from "./MapBody";
 import CoreList from "./CoreList";
+import BootPanel from "./BootPanel";
 import type { AtlasCtx } from "./types";
+
+function isFull(paper: any, state: any) {
+  if (paper?.full || state?.text) return true;
+  if (state?.status === "done") return true;
+  if (state?.source === "latex" || state?.source === "ocr") return true;
+  return state?.stages?.sections === "done";
+}
 
 export default function MapScreen({
   core, shownQ, topics, liveResult, phase, engine, say, liveErr, liveCode, debug, pending, asList, setAsList, labelNote,
-  liveIds, impatient, forced, setForced, liveQ, liveName, go, backToCurated, atlasCtx, onLayout,
+  liveIds, impatient, forced, setForced, liveQ, liveName, go, backToCurated, atlasCtx, onLayout, jump,
 }: {
   core: boolean;
   shownQ: string;
@@ -36,43 +46,74 @@ export default function MapScreen({
   backToCurated: () => void;
   atlasCtx: AtlasCtx;
   onLayout: (next: any) => void;
+  jump?: ReactNode;
 }) {
   const rowState = atlasCtx.states;
+  if (!core) {
+    return (
+      <section className={`lvl ${core ? "lvl-map" : ""}`} data-screen="map">
+        <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>
+        <h1 className="question">{shownQ}</h1>
+        {topics && <p className="sub" data-subtopics>{topics.length ? <>Subtemas: {topics.join(" · ")}</> : "Esta pregunta no separó subtemas."}</p>}
+        {!liveResult && <p className="warm" role="status">{say(phase || (engine === "preparando" ? "wake" : "search"))}</p>}
+        {phase === "layout" && liveResult && <p className="warm" role="status">{say("layout")}</p>}
+        {liveErr && <Notice kind="fault" code={liveCode} />}
+        {liveErr && debug && <p className="fail-reason">{liveErr}</p>}
+        {liveResult && <LiveCoverage ids={liveIds} states={rowState} />}
+        {liveResult && liveIds.length === 0 && <p className="muted" role="status">La ráfaga no encontró papers para esta pregunta. Prueba con otras palabras.</p>}
+        {liveResult && liveIds.length > 0 && !liveIds.every((id: string) => settled(rowState[id]?.status)) && impatient && !forced && (
+          <p className="muted small" role="status">Algunos papers siguen en cola o leyéndose. <button type="button" className="link" onClick={() => setForced(true)}>Armar el Panorama con los ya leídos</button> (los que faltan no cuentan como «no lo dice»).</p>
+        )}
+        {liveResult && liveIds.length > 0 && (forced || liveIds.every((id: string) => settled(rowState[id]?.status))) && (
+          <SimPanorama key={`${liveQ}|${forced}`} autorun question={liveQ} ids={liveIds} states={rowState} getDoc={async (id: string) => { try { return (await fetchPaper(id)).paper; } catch { return null; } }} nameOf={liveName} open={(id, b) => go({ p: id, b })} />
+        )}
+        {liveResult && <LiveCircle papers={liveResult.papers || []} edges={liveResult.edges || []} states={rowState} onOpen={(id) => go({ p: id })} />}
+      </section>
+    );
+  }
+
+  const papers = liveResult?.papers || [];
+  const groups = liveResult?.layout?.groups || [];
+  const refining = Boolean(liveResult?.layout?.pending_vectors?.length);
+  const full = papers.filter((paper: any) => isFull(paper, rowState[paperKey(paper)])).length;
+  const empty = Boolean(liveResult) && papers.length === 0 && !pending;
+  const waiting = !liveErr && !empty && papers.length === 0;
+
   return (
-    <section className={`lvl ${core ? "lvl-map" : ""}`} data-screen="map">
-      {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
-      <h1 className="question">{shownQ}</h1>
-      {!core && topics && <p className="sub" data-subtopics>{topics.length ? <>Subtemas: {topics.join(" · ")}</> : "Esta pregunta no separó subtemas."}</p>}
-      {!core && !liveResult && <p className="warm" role="status">{say(phase || (engine === "preparando" ? "wake" : "search"))}</p>}
-      {phase === "layout" && liveResult && <p className="warm" role="status">{say("layout")}</p>}
-      {core && !liveResult && <div className="platina is-wait" role="status"><p>{say(phase || "search")}</p></div>}
-      {liveErr && <Notice kind="fault" code={liveCode} />}
-      {liveErr && debug && <p className="fail-reason">{liveErr}</p>}
-      {core && liveErr && !liveResult && !pending && <div className="platina is-wait"><p>No se pudo armar el mapa.</p></div>}
-      {core && liveResult && (liveResult.papers || []).length > 0 && (
-        <>
-          <div className="view-toggle" role="tablist" aria-label="Vista">
-            <button type="button" className={!asList ? "on" : ""} onClick={() => setAsList(false)}>Mapa</button>
-            <button type="button" className={asList ? "on" : ""} onClick={() => setAsList(true)}>Lista</button>
+    <section className="s-map" data-screen="map">
+      <header className="map-head">
+        <div>
+          <h1>{shownQ}</h1>
+          {papers.length > 0 && (
+            <p className="map-stats tnum">
+              {papers.length} papers · {groups.length} groups · full text of {full}
+              {refining ? " · refining groups" : ""}
+            </p>
+          )}
+        </div>
+        {papers.length > 0 && (
+          <div className="tabs" role="tablist" aria-label="View">
+            <button type="button" className="press" aria-selected={!asList} onClick={() => setAsList(false)}>Atlas</button>
+            <button type="button" className="press" aria-selected={asList} onClick={() => setAsList(true)}>Lista</button>
           </div>
-          {labelNote && <p className="muted" role="status">{labelNote}</p>}
-          {liveResult.topic_note && <p className="muted" role="status">{liveResult.topic_note}</p>}
-          {asList
-            ? <Boundary name="core-list"><CoreList papers={liveResult.papers || []} states={rowState} onOpen={(id: string) => atlasCtx.onOpen(id, "desde el mapa")} onWant={atlasCtx.onWant} /></Boundary>
-            : <Boundary name="map-body"><MapBody atlasCtx={atlasCtx} onLayout={onLayout} /></Boundary>}
-          <p className="muted small">Datos de papers y citas: Semantic Scholar. LaTeX primero; OCR solo si el paper no tiene LaTeX.</p>
-        </>
+        )}
+      </header>
+      {jump}
+      {labelNote && <Notice kind="absence">{labelNote}</Notice>}
+      {liveResult?.topic_note && <Notice kind="absence">{liveResult.topic_note}</Notice>}
+      {waiting && <BootPanel engine={engine} phase={phase} pending={pending} compact />}
+      {liveErr && <Notice kind="fault" code={liveCode} />}
+      {empty && (
+        <div data-screen="vacio">
+          <Notice kind="absence">The burst found no papers for this question.</Notice>
+        </div>
       )}
-      {!core && liveResult && <LiveCoverage ids={liveIds} states={rowState} />}
-      {!core && liveResult && liveIds.length === 0 && <p className="muted" role="status">La ráfaga no encontró papers para esta pregunta. Prueba con otras palabras.</p>}
-      {core && liveResult && (liveResult.papers || []).length === 0 && <p className="muted" role="status">La ráfaga no encontró papers para esta pregunta. Prueba con otras palabras.</p>}
-      {!core && liveResult && liveIds.length > 0 && !liveIds.every((id: string) => settled(rowState[id]?.status)) && impatient && !forced && (
-        <p className="muted small" role="status">Algunos papers siguen en cola o leyéndose. <button type="button" className="link" onClick={() => setForced(true)}>Armar el Panorama con los ya leídos</button> (los que faltan no cuentan como «no lo dice»).</p>
+      {papers.length > 0 && (
+        asList
+          ? <Boundary name="core-list"><CoreList papers={papers} states={rowState} onOpen={(id: string) => atlasCtx.onOpen(id, "desde el mapa")} onWant={atlasCtx.onWant} /></Boundary>
+          : <Boundary name="map-body"><MapBody atlasCtx={atlasCtx} onLayout={onLayout} /></Boundary>
       )}
-      {!core && liveResult && liveIds.length > 0 && (forced || liveIds.every((id: string) => settled(rowState[id]?.status))) && (
-        <SimPanorama key={`${liveQ}|${forced}`} autorun question={liveQ} ids={liveIds} states={rowState} getDoc={async (id: string) => { try { return (await fetchPaper(id)).paper; } catch { return null; } }} nameOf={liveName} open={(id, b) => go({ p: id, b })} />
-      )}
-      {!core && liveResult && <LiveCircle papers={liveResult.papers || []} edges={liveResult.edges || []} states={rowState} onOpen={(id) => go({ p: id })} />}
+      <p className="foot"><span>Papers and citations: <a href="https://www.semanticscholar.org/">Semantic Scholar</a></span></p>
     </section>
   );
 }
