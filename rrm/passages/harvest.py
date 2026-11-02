@@ -83,6 +83,7 @@ def harvest_one(meta, *, client, papers_root, dest, retry=False, license_lookup=
     license_error = None
     eprint = None
     downloaded = False
+    parse_seconds = None
     if latex_cache_ready(folder):
         paper = cached_paper(folder)
         if not arxiv_id:
@@ -111,12 +112,15 @@ def harvest_one(meta, *, client, papers_root, dest, retry=False, license_lookup=
                     "license": license_url, "license_error": license_error}
         downloaded = True
         eprint = {"bytes": len(blob or b""), "seconds": round(time.time() - started, 3)}
+        t_parse = time.time()
         kind = unpack_eprint(blob, folder / "src")
         if kind != "tex":
             save_failure(dest, cid, "sin TeX")
-            return {"corpusid": cid, "skipped": False, "reason": "sin TeX", "rows": 0,
+            return {"corpusid": cid, "skipped": False, "reason": "sin TeX", "rows": 0, "tex": False,
+                    "parse_seconds": round(time.time() - t_parse, 3),
                     "eprint": eprint, "eprint_kind": kind, "license": license_url, "license_error": license_error}
         parsed = parse_tree(folder / "src", arxiv_id=arxiv_id)
+        parse_seconds = round(time.time() - t_parse, 3)
         paper = parsed.get("paper") if parsed.get("route") == "latex" else None
         if not paper:
             reason = "sin TeX" if parsed.get("route") != "latex" else "parseo"
@@ -124,7 +128,8 @@ def harvest_one(meta, *, client, papers_root, dest, retry=False, license_lookup=
             if detail and reason == "parseo":
                 reason = f"parseo: {detail}"[:200]
             save_failure(dest, cid, reason)
-            return {"corpusid": cid, "skipped": False, "reason": reason, "rows": 0,
+            return {"corpusid": cid, "skipped": False, "reason": reason, "rows": 0, "tex": True,
+                    "parse_seconds": parse_seconds,
                     "eprint": eprint, "license": license_url, "license_error": license_error}
         paper["corpusid"] = cid
         paper["arxivId"] = arxiv_id
@@ -157,6 +162,8 @@ def harvest_one(meta, *, client, papers_root, dest, retry=False, license_lookup=
         "license": license_url,
         "license_error": license_error,
         "eprint": eprint,
+        "tex": True,
+        "parse_seconds": parse_seconds,
     }
 
 

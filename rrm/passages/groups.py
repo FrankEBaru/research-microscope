@@ -31,8 +31,9 @@ PROBES = (
     {
         "name": "icl-linear",
         "corpusid": None,
-        "title": None,
-        "question": "in-context learning linear models",
+        "arxiv": "2211.15661",
+        "title": "What learning algorithm is in-context learning? Investigations with linear models",
+        "question": None,
     },
 )
 
@@ -185,12 +186,11 @@ def in_sorted(ids, sorted_ids):
     return sorted_ids[pos] == ids
 
 
-def select_donors(corpus_ordered, display_sorted, extra, keep=DONORS_PER_GROUP, depth=DONOR_DEPTH):
-    """Mejores `keep` con arxiv id, en el orden del ranking, mirando `depth`.
+def select_donors(corpus_ordered, display_sorted, extra, keep=DONORS_PER_GROUP, depth=DONOR_DEPTH, titled=None):
+    """Mejores `keep` con arxiv id y con título, en el orden del ranking.
 
-    `extra` es un set de corpusid que el dataset papers confirmó con arxiv.
-    El segundo valor son los que hay que buscar ahí: aparecen antes de
-    completar `keep` con los de display y todavía no se sabe si tienen id.
+    Sin título no dona y no entra a `pending`: es ruido de metadata.
+    `extra` son corpusid que el dataset papers confirmó con arxiv.
     """
     ids = np.asarray(corpus_ordered, dtype=np.int64).reshape(-1)[: int(depth)]
     extra = extra or set()
@@ -199,7 +199,10 @@ def select_donors(corpus_ordered, display_sorted, extra, keep=DONORS_PER_GROUP, 
     if ids.size == 0:
         return donors, pending
     known = in_sorted(ids, display_sorted)
-    for cid, is_known in zip(ids.tolist(), known.tolist()):
+    has_title = in_sorted(ids, titled) if titled is not None else np.ones(ids.size, dtype=bool)
+    for cid, is_known, titled_ok in zip(ids.tolist(), known.tolist(), has_title.tolist()):
+        if not titled_ok:
+            continue
         cid = int(cid)
         if is_known or cid in extra:
             donors.append(cid)
@@ -208,6 +211,35 @@ def select_donors(corpus_ordered, display_sorted, extra, keep=DONORS_PER_GROUP, 
             continue
         pending.append(cid)
     return donors, pending
+
+
+def keep_titled(corpus, *rest, titled):
+    """Quita ids sin título. `rest` sigue el mismo orden que `corpus`."""
+    corpus = np.asarray(corpus)
+    if titled is None or corpus.size == 0:
+        return (corpus, *rest)
+    mask = in_sorted(corpus, titled)
+    return (corpus[mask], *(np.asarray(col)[mask] for col in rest))
+
+
+def citation_like(corpus, citations, n=PROBE_N):
+    """¿El top por score es el top por citas? `corpus` ya viene ordenado por score."""
+    corpus = np.asarray(corpus, dtype=np.int64).reshape(-1)
+    citations = np.asarray(citations).reshape(-1)
+    n_have = int(min(int(n), corpus.size))
+    if n_have == 0:
+        return False, 0, 0
+    order = np.lexsort((corpus, -citations.astype(np.int64, copy=False)))
+    top = corpus[:n_have]
+    by_cc = corpus[order][:n_have]
+    overlap = len(set(top.tolist()) & set(by_cc.tolist()))
+    same = n_have >= 5 and np.array_equal(top, by_cc)
+    return bool(same), int(overlap), n_have
+
+
+def would_split_group(same, overlap, n_have):
+    """La regla del ticket: el top parece el de citas globales."""
+    return (bool(same) and int(n_have) >= 5) or (int(n_have) >= 10 and int(overlap) >= 8)
 
 
 def seeds_of(ordered_ids, starts, sizes, group):
@@ -219,7 +251,7 @@ def seeds_of(ordered_ids, starts, sizes, group):
     return np.asarray(ordered_ids[start:start + size], dtype=np.int64)
 
 
-def _finish_donors(ranked, display_sorted, extra, keep, depth):
+def _finish_donors(ranked, display_sorted, extra, keep, depth, titled=None):
     lists = []
     pending = []
     seen_pending = set()
@@ -230,7 +262,7 @@ def _finish_donors(ranked, display_sorted, extra, keep, depth):
             lists.append([])
             empty_local += 1
             continue
-        donors, need = select_donors(corpus, display_sorted, extra, keep=keep, depth=depth)
+        donors, need = select_donors(corpus, display_sorted, extra, keep=keep, depth=depth, titled=titled)
         lists.append(donors)
         if donors:
             with_donor += 1
@@ -249,13 +281,14 @@ def _finish_donors(ranked, display_sorted, extra, keep, depth):
     }
 
 
-def donor_lists(graph, cc, ordered_ids, starts, sizes, display_sorted, extra, keep=DONORS_PER_GROUP, depth=DONOR_DEPTH):
-    """Una lista de corpusid por grupo, solo con arxiv, mejor primero.
+def donor_lists(graph, cc, ordered_ids, starts, sizes, display_sorted, extra, keep=DONORS_PER_GROUP, depth=DONOR_DEPTH, titled=None):
+    """Una lista de corpusid por grupo, solo con arxiv y con título.
 
-    `ranked` guarda el top `depth` para no volver a leer el CSR si después
-    aparece el arxiv id en el dataset papers.
+    `would_split` cuenta grupos cuyo top, ya sin nodos sin título, parece
+    el top por citas globales. No parte la partición.
     """
     ranked = []
+    would = 0
     k = int(len(starts))
     for group in range(k):
         if group and group % 250 == 0:
@@ -264,14 +297,20 @@ def donor_lists(graph, cc, ordered_ids, starts, sizes, display_sorted, extra, ke
         if seeds.size == 0:
             ranked.append(np.zeros(0, dtype=np.int64))
             continue
-        corpus, _counts, _scores, _citations, _nodes = rank_group_arrays(graph, seeds, cc)
+        corpus, _counts, _scores, citations, _nodes = rank_group_arrays(graph, seeds, cc)
+        corpus, citations = keep_titled(corpus, citations, titled=titled)
+        same, overlap, n_have = citation_like(corpus, citations)
+        if would_split_group(same, overlap, n_have):
+            would += 1
         ranked.append(np.asarray(corpus[: int(depth)], dtype=np.int64))
-    return _finish_donors(ranked, display_sorted, extra, keep, depth)
+    out = _finish_donors(ranked, display_sorted, extra, keep, depth, titled=titled)
+    out["would_split"] = would
+    return out
 
 
-def donors_from_ranked(ranked, display_sorted, extra, keep=DONORS_PER_GROUP, depth=DONOR_DEPTH):
+def donors_from_ranked(ranked, display_sorted, extra, keep=DONORS_PER_GROUP, depth=DONOR_DEPTH, titled=None):
     """Misma donación, sin tocar el grafo. Sirve tras el lookup de arxiv id."""
-    return _finish_donors(ranked, display_sorted, extra, keep, depth)
+    return _finish_donors(ranked, display_sorted, extra, keep, depth, titled=titled)
 
 
 def field_name(field, names, node):
@@ -307,9 +346,15 @@ def _pack(corpus, counts, scores, citations, nodes, n, meta_of, field, names):
     return rows
 
 
-def probe_group(graph, cc, seed_ids, meta_of, field=None, field_names=None, n=PROBE_N):
-    """Top n del grupo y, al lado, el top n por citas globales de esos candidatos."""
+def probe_group(graph, cc, seed_ids, meta_of, field=None, field_names=None, n=PROBE_N, titled=None):
+    """Top n del grupo y, al lado, el top n por citas globales de esos candidatos.
+
+    Un candidato sin título no entra en ninguno de los dos tops.
+    """
     corpus, counts, scores, citations, nodes = rank_group_arrays(graph, seed_ids, cc)
+    corpus, counts, scores, citations, nodes = keep_titled(
+        corpus, counts, scores, citations, nodes, titled=titled,
+    )
     top = _pack(corpus, counts, scores, citations, nodes, n, meta_of, field, field_names)
     if corpus.size == 0:
         by_cc = []
@@ -357,6 +402,103 @@ def union_from_lists(lists, limit=LIMIT):
     body["groups"] = len(list(lists or []))
     body["groups_that_donate"] = sum(1 for ids in (lists or []) if ids)
     return body
+
+
+def titled_ids_from_table(table):
+    """corpusid ordenados con título no vacío. Sin fila o sin título no entran."""
+    import pyarrow.compute as pc
+
+    if table is None or "title" not in table.column_names:
+        return None
+    if table.num_rows == 0:
+        return np.zeros(0, dtype=np.int64)
+    filled = pc.fill_null(table.column("title"), "")
+    mask = pc.not_equal(filled, "")
+    ids = table.column("corpusid").filter(mask)
+    if ids.length() == 0:
+        return np.zeros(0, dtype=np.int64)
+    return np.unique(np.asarray(ids.to_numpy(zero_copy_only=False), dtype=np.int64))
+
+
+def corpus_by_arxiv(table, arxiv_id):
+    """corpusid de un arXiv id en la columna `arxiv`. None si no está.
+
+    Acepta el id con o sin versión (`2211.15661v2`).
+    """
+    import pyarrow.compute as pc
+
+    from rrm.search.display import canon_arxiv
+
+    want = canon_arxiv(arxiv_id)
+    if not want or table is None or table.num_rows == 0 or "arxiv" not in table.column_names:
+        return None
+    filled = pc.fill_null(table.column("arxiv"), "")
+    exact = table.column("corpusid").filter(pc.equal(filled, want))
+    if exact.length():
+        return int(exact[0].as_py())
+    rough = pc.match_substring(filled, want)
+    if not pc.any(rough).as_py():
+        return None
+    subset = table.filter(rough)
+    for cid, raw in zip(subset.column("corpusid").to_pylist(), subset.column("arxiv").to_pylist()):
+        if canon_arxiv(raw) == want:
+            return int(cid)
+    return None
+
+
+def corpus_by_title(table, title):
+    """Primer corpusid cuyo título contiene el texto, ya en minúsculas."""
+    import pyarrow.compute as pc
+
+    needle = " ".join((title or "").lower().split())
+    if len(needle) < 12 or table is None or table.num_rows == 0 or "title" not in table.column_names:
+        return None
+    low = pc.utf8_lower(pc.fill_null(table.column("title"), ""))
+    ids = table.column("corpusid").filter(pc.match_substring(low, needle))
+    if ids.length() == 0:
+        return None
+    return int(ids[0].as_py())
+
+
+def resolve_corpus(table, *, corpusid=None, arxiv=None, title=None):
+    """Id dado, si no el arXiv, si no el título. No usa FAISS."""
+    if corpusid:
+        return int(corpusid), "given"
+    found = corpus_by_arxiv(table, arxiv) if arxiv else None
+    if found is not None:
+        return found, "arxiv"
+    found = corpus_by_title(table, title) if title else None
+    if found is not None:
+        return found, "title"
+    return None, "none"
+
+
+def corpus_from_s2(arxiv_id):
+    """Un corpusId por arXiv en la API de Semantic Scholar. None si no hay llave o falla.
+
+    Una petición. La llave va en el header y no se imprime.
+    """
+    import json
+    import os
+    import urllib.request
+
+    from rrm.search.display import canon_arxiv
+
+    want = canon_arxiv(arxiv_id)
+    key = os.environ.get("S2_API_KEY", "").strip()
+    if not want or not key:
+        return None
+    url = f"https://api.semanticscholar.org/graph/v1/paper/ARXIV:{want}?fields=corpusId"
+    req = urllib.request.Request(url, headers={"x-api-key": key, "User-Agent": "research-microscope"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+    except Exception as err:
+        status = getattr(err, "code", None)
+        print(json.dumps({"s2": "fail", "status": status}), flush=True)
+        return None
+    cid = body.get("corpusId") if isinstance(body, dict) else None
+    return int(cid) if cid else None
 
 
 def arxiv_ids_from_table(table):

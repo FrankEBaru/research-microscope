@@ -5,11 +5,16 @@ import pyarrow as pa
 
 from rrm.passages.groups import (
     assign_vectors,
+    citation_like,
+    corpus_by_arxiv,
     ivf_labels,
     partition_stats,
+    probe_group,
     reservoir_extend,
     select_donors,
     select_mode,
+    titled_ids_from_table,
+    would_split_group,
 )
 from rrm.passages.score import rank_group
 from rrm.passages.union import layer_union
@@ -113,6 +118,37 @@ def test_kmeans_separates_two_blobs_and_ivf_lists_cover_every_row():
     got = ivf_labels(index)
     assert got.shape == (60,) and (got >= 0).all()
     assert len(set(got.tolist())) >= 2
+
+
+def test_untitled_is_skipped_and_citation_order_is_only_counted():
+    display = np.array([11], dtype=np.int64)
+    titled = np.array([11, 12], dtype=np.int64)
+    donors, pending = select_donors([99, 11, 12, 10], display, set(), keep=3, depth=10, titled=titled)
+    assert donors == [11]
+    assert pending == [12]
+    same, overlap, n_have = citation_like(np.arange(10), np.arange(10, 0, -1))
+    assert same is True and overlap == 10 and n_have == 10
+    assert would_split_group(same, overlap, n_have) is True
+    shuffled = np.array([3, 1, 4, 0, 2], dtype=np.int64)
+    cites = np.array([1, 2, 3, 9, 0], dtype=np.int64)
+    same2, overlap2, n2 = citation_like(shuffled, cites, n=5)
+    assert same2 is False and n2 == 5
+    assert would_split_group(same2, overlap2, n2) is False
+    graph, cc = _graph()
+    report = probe_group(graph, cc, [10, 20], meta_of=lambda _cid: {}, titled=np.array([40, 50]), n=10)
+    assert [row["corpusid"] for row in report["top"]] == [40, 50]
+    assert [row["corpusid"] for row in report["by_citations"]] == [40, 50]
+
+
+def test_title_table_drops_blanks_and_arxiv_version_matches():
+    table = pa.table({
+        "corpusid": pa.array([1, 2, 3], type=pa.int64()),
+        "arxiv": ["2211.15661v2", None, "1706.03762"],
+        "title": ["What learning algorithm is in-context learning?", "", "Attention Is All You Need"],
+    })
+    assert titled_ids_from_table(table).tolist() == [1, 3]
+    assert corpus_by_arxiv(table, "2211.15661") == 1
+    assert titled_ids_from_table(pa.table({"corpusid": [1]})) is None
 
 
 def test_arxiv_column_and_external_ids():

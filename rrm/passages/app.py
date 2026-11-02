@@ -25,6 +25,7 @@ el caché del lector y tienen arxiv id (prueba de descarga real).
 `RRM_PASSAGES_LICENSE=1` pide la licencia por OAI (apagado por defecto).
 `RRM_PASSAGES_SELECT=anchors` usa el corte viejo. El default es k-means y capas.
 `RRM_PASSAGES_REUSE_GROUPS=1` reusa group_ids.npy si ya se entrenó.
+`RRM_PASSAGES_SPLIT=1` parte de verdad un grupo cuyo top parece el de citas. Sin eso solo se cuenta.
 `RRM_PASSAGES_EXTRA_IDS=1,2` suma ids que ya están en el caché latex (sin e-print).
 """
 
@@ -70,7 +71,8 @@ app = modal.App("rrm-passages")
 vol = modal.Volume.from_name("rrm-data", create_if_missing=True)
 
 # Modal no pasa el entorno local al contenedor. Estas variables viajan como
-# Secret.from_dict, tomadas del shell que lanza `modal run`. No son claves.
+# Secret.from_dict, tomadas del shell que lanza `modal run`.
+# S2_API_KEY, si está, va solo en el header de una petición y no se imprime.
 _STAGE_KEYS = (
     "RRM_PASSAGES_STAGE",
     "RRM_PASSAGES_BUDGET_USD",
@@ -83,9 +85,11 @@ _STAGE_KEYS = (
     "RRM_PASSAGES_ANCHORS",
     "RRM_PASSAGES_SELECT",
     "RRM_PASSAGES_REUSE_GROUPS",
+    "RRM_PASSAGES_SPLIT",
     "RRM_PASSAGES_K",
     "RRM_PASSAGES_TRAIN_N",
     "RRM_ARXIV_CONTACT",
+    "S2_API_KEY",
 )
 stage_env = modal.Secret.from_dict({key: os.environ[key] for key in _STAGE_KEYS if os.environ.get(key)})
 
@@ -314,6 +318,7 @@ def _e0_groups():
         arxiv_from_external,
         arxiv_ids_from_table,
         assign_vectors,
+        corpus_from_s2,
         dedupe_labels,
         donor_lists,
         donors_from_ranked,
@@ -323,13 +328,14 @@ def _e0_groups():
         nearest_centroid,
         partition_stats,
         probe_group,
+        resolve_corpus,
         rows_of_list,
         seeds_of,
+        titled_ids_from_table,
         train_centroids,
         union_from_lists,
     )
     from rrm.passages.meta import meta_from_files
-    from rrm.search.faissutil import search_vectors
     from rrm.search.store import load_faiss, part_names, read_capped
 
     started = time.time()
@@ -417,11 +423,27 @@ def _e0_groups():
     def encode(text):
         return _encoder().encode_proximity([text.strip() + "\n"])[0]
 
-    def _encode_raw(text):
-        return _encoder().encode_proximity([text])[0]
-
     display_path = root / "index" / "display.parquet"
     ext_path = root / "index_ext" / "display_ext.parquet"
+    import pyarrow.parquet as pq
+
+    def _table(path, columns):
+        if not path.is_file():
+            return None
+        have = [col for col in columns if col in pq.read_schema(path).names]
+        if "corpusid" not in have:
+            return None
+        return pq.read_table(path, columns=have)
+
+    display = _table(display_path, ["corpusid", "arxiv", "title"])
+    ext = _table(ext_path, ["corpusid", "title"])
+    titled_parts = [part for part in (titled_ids_from_table(display), titled_ids_from_table(ext)) if part is not None]
+    titled = np.unique(np.concatenate(titled_parts)) if titled_parts else None
+    display_sorted = arxiv_ids_from_table(display) if display is not None else np.zeros(0, dtype=np.int64)
+    print(json.dumps({
+        "titled": None if titled is None else int(titled.size),
+        "arxiv_known": int(display_sorted.size),
+    }), flush=True)
 
     def meta_of(cid):
         return meta_from_files(cid, display_path, ext_path)
@@ -429,13 +451,18 @@ def _e0_groups():
     specs = []
     for spec in PROBES:
         item = dict(spec)
-        if item.get("corpusid") is None and item.get("question"):
-            hits = search_vectors(index, faiss_ids, _encode_raw(item["question"]), 1)
-            item["corpusid"] = int(hits[0][0]) if hits else None
-            item["how"] = "faiss"
-        else:
-            item["how"] = "given"
+        cid, how = resolve_corpus(
+            display, corpusid=item.get("corpusid"), arxiv=item.get("arxiv"), title=item.get("title"),
+        )
+        if cid is None:
+            cid, how = resolve_corpus(ext, arxiv=item.get("arxiv"), title=item.get("title"))
+        if cid is None and item.get("arxiv"):
+            cid = corpus_from_s2(item["arxiv"])
+            how = "s2" if cid else "none"
+        item["corpusid"] = cid
+        item["how"] = how
         specs.append(item)
+    del display, ext
 
     def locate(spec):
         cid = spec.get("corpusid")
@@ -478,7 +505,7 @@ def _e0_groups():
 
     def one_probe(spec, group, via):
         seeds = seeds_of(ordered_ids, starts, sizes, group) if group is not None else np.zeros(0, dtype=np.int64)
-        report = probe_group(graph, cc, seeds, meta_of, field=field, field_names=names_f)
+        report = probe_group(graph, cc, seeds, meta_of, field=field, field_names=names_f, titled=titled)
         report.update({
             "name": spec["name"],
             "corpusid": spec.get("corpusid"),
@@ -490,7 +517,9 @@ def _e0_groups():
         })
         ivf_info = ivf_seeds.get(spec["name"])
         if ivf_info:
-            ivf_rep = probe_group(graph, cc, ivf_info["seeds"], meta_of, field=field, field_names=names_f, n=5)
+            ivf_rep = probe_group(
+                graph, cc, ivf_info["seeds"], meta_of, field=field, field_names=names_f, n=5, titled=titled,
+            )
             km_ids = [row["corpusid"] for row in report["top"][:5]]
             ivf_ids = [row["corpusid"] for row in ivf_rep["top"]]
             report["ivf"] = {
@@ -520,7 +549,10 @@ def _e0_groups():
 
     split_notes = []
     flags = cut_flags(probes)
-    if (flags["stop"] or flags["close"]) and os.environ.get("RRM_PASSAGES_IGNORE_STOP") != "1":
+    # Sin RRM_PASSAGES_SPLIT la regla del ticket solo se cuenta en would_split.
+    # No se reentrena ni se reetiqueta la partición guardada.
+    do_split = os.environ.get("RRM_PASSAGES_SPLIT") == "1"
+    if do_split and (flags["stop"] or flags["close"]) and os.environ.get("RRM_PASSAGES_IGNORE_STOP") != "1":
         from rrm.passages.groups import in_sorted
 
         for probe in list(probes):
@@ -570,11 +602,11 @@ def _e0_groups():
                 })
             flags = cut_flags(probes)
 
-    import pyarrow.parquet as pq
-
-    display_sorted = arxiv_ids_from_table(pq.read_table(display_path, columns=["corpusid", "arxiv"])) if display_path.is_file() else np.zeros(0, dtype=np.int64)
     _guard("donantes")
-    donated = donor_lists(graph, cc, ordered_ids, starts, sizes, display_sorted, set())
+    donated = donor_lists(
+        graph, cc, ordered_ids, starts, sizes, display_sorted, set(), titled=titled,
+    )
+    would_split = int(donated.get("would_split") or 0)
     found = {}
     papers_dir = root / "papers"
     if donated["pending"] and papers_dir.is_dir():
@@ -585,11 +617,22 @@ def _e0_groups():
             found.update(arxiv_from_external(table, needed))
             if len(found) >= needed.size:
                 break
-        donated = donors_from_ranked(donated["ranked"], display_sorted, set(found))
+        donated = donors_from_ranked(
+            donated["ranked"], display_sorted, set(found), titled=titled,
+        )
     elif donated["pending"]:
         found = {}
+    donated["would_split"] = would_split
+    for probe in probes:
+        group = probe.get("group")
+        donors = donated["lists"][group] if group is not None and 0 <= int(group) < len(donated["lists"]) else []
+        probe["arxiv_donor"] = bool(donors)
 
     ignore = os.environ.get("RRM_PASSAGES_IGNORE_STOP") == "1"
+    # Contar grupos parecidos a las citas no vacía la unión. Partir sí puede pararla.
+    probe_flags = dict(flags)
+    if not do_split:
+        flags = {"stop": False, "close": False, "errors": flags["errors"]}
     blocked = bool(flags["stop"] or flags["close"] or flags["errors"]) and not ignore
     if blocked:
         union = {
@@ -612,6 +655,8 @@ def _e0_groups():
         "groups_without_local": donated["groups_without_local"],
         "pending_arxiv_lookup": len(donated["pending"]),
         "arxiv_from_papers": len(found),
+        "would_split": would_split,
+        "probe_flags": probe_flags,
         "layers_used": union.get("layers_used"),
         "union_n": len(union.get("ids") or []),
         "split": split_notes,
@@ -641,6 +686,20 @@ def _e0_groups():
         "train_seconds": train_s,
         "assign_seconds": assign_s,
         "groups_with_arxiv_donor": donated["groups_with_donor"],
+        "would_split": would_split,
+        "probe_flags": probe_flags,
+        "probes": [
+            {
+                "name": item.get("name"), "corpusid": item.get("corpusid"), "how": item.get("how"),
+                "group": item.get("group"), "group_size": item.get("group_size"),
+                "arxiv_donor": item.get("arxiv_donor"),
+                "top5": [
+                    {k: row.get(k) for k in ("title", "local", "citationcount", "score")}
+                    for row in (item.get("top") or [])[:5]
+                ],
+            }
+            for item in probes
+        ],
         "size_min": stats["min"],
         "size_median": stats["median"],
         "size_max": stats["max"],
@@ -782,10 +841,25 @@ def harvest_run(stage: str, n: int):
         vol.commit()
     if error:
         raise SystemExit(f"{stage} se detiene: {error}")
+    fetched = [item for item in done if item.get("downloaded")]
+    with_tex = [item for item in fetched if item.get("tex")]
+    download_s = [float(item["eprint"]["seconds"]) for item in fetched if (item.get("eprint") or {}).get("seconds") is not None]
+    parse_s = [float(item["parse_seconds"]) for item in fetched if item.get("parse_seconds") is not None]
+    row_counts = [int(item.get("rows") or 0) for item in done if not item.get("skipped")]
     return _report(stage, started, cpu=1, extra={
         "n": len(ids), "extra_ids": extra, "results": done, "rows": manifest["counts"],
         "arxiv_requests": client.log, "arxiv_gaps_s": client.gaps(),
         "min_gap_s": min(client.gaps()) if client.gaps() else None,
+        "pace": {
+            "fetched": len(fetched),
+            "with_tex": len(with_tex),
+            "tex_pct": round(100.0 * len(with_tex) / len(fetched), 1) if fetched else None,
+            "download_s_sum": round(sum(download_s), 3),
+            "download_s_per_paper": round(sum(download_s) / len(download_s), 3) if download_s else None,
+            "parse_s_sum": round(sum(parse_s), 3),
+            "parse_s_per_paper": round(sum(parse_s) / len(parse_s), 3) if parse_s else None,
+            "rows_per_paper": round(sum(row_counts) / len(row_counts), 2) if row_counts else None,
+        },
     })
 
 
@@ -805,16 +879,41 @@ def embed_run(stage: str):
     encoder = QueryEncoder()
     encoder.load()
     vectors = embed_rows(rows, encoder.encode_proximity, batch=16)
-    write_faiss(dest, vectors)
+    _index, unit = write_faiss(dest, vectors)
     manifest = compile_store(dest)
+    gpu_s = round(time.time() - started, 3)
+    extra = {
+        "rows": len(rows),
+        "dim": int(unit.shape[1]) if unit.ndim == 2 else 0,
+        "index": manifest["index"],
+    }
+    if stage == "e2":
+        from rrm.passages.cost import L4_USD_PER_S
+        from rrm.passages.query import query_rows
+
+        symbol = r"\sqrt{d_k}"
+        query = encoder.encode_proximity([symbol + "\n"])[0]
+        hits = query_rows(rows, unit, {"symbol": symbol, "vector": query}, k=3)
+        extra["symbol_query"] = {
+            "symbol": symbol,
+            "n": len(hits),
+            "hits": [
+                {
+                    "id": hit.get("id"),
+                    "corpusid": hit.get("corpusid"),
+                    "kind": hit.get("kind"),
+                    "section": hit.get("section"),
+                    "latex": (hit.get("latex") or "")[:180],
+                    "text": (hit.get("text") or "")[:180],
+                    "cosine": hit.get("cosine"),
+                    "url": hit.get("url"),
+                }
+                for hit in hits
+            ],
+        }
+        extra["embed_usd_l4"] = round(gpu_s * L4_USD_PER_S, 6)
     vol.commit()
-    return _report(
-        stage,
-        started,
-        cpu=2,
-        gpu_l4_seconds=round(time.time() - started, 3),
-        extra={"rows": len(rows), "dim": int(vectors.shape[1]) if vectors.ndim == 2 else 0, "index": manifest["index"]},
-    )
+    return _report(stage, started, cpu=2, gpu_l4_seconds=gpu_s, extra=extra)
 
 
 @app.local_entrypoint()
