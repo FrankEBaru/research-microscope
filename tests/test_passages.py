@@ -319,15 +319,19 @@ def test_arxiv_gap_backoff_and_resume(tmp_path, monkeypatch):
 
     burst = _Clock()
     codes = [429, 429, 429]
+    calls = {"n": 0}
 
     def reject(url, ua):
-        raise urllib.error.HTTPError(url, codes.pop(0), "slow", {}, None)
+        calls["n"] += 1
+        raise urllib.error.HTTPError(url, codes.pop(0), "slow", {"Retry-After": "10"}, None)
 
     client = ArxivClient(reject, gate=HarvestGate(sleep=burst.sleep, now=burst.now), sleep=burst.sleep)
+    client.now = burst.now
     with pytest.raises(ArxivStopped):
         client.get("https://export.arxiv.org/e-print/1")
-    assert burst.sleeps == sorted(burst.sleeps)
-    assert burst.sleeps[-1] > burst.sleeps[0]
+    assert calls["n"] == 2
+    assert max(burst.sleeps) >= 300
+    assert client.log[0]["status"] == 429 and client.log[0]["backoff_s"] >= 300
 
     entered = []
     shared = _Clock()

@@ -10,16 +10,16 @@ L4_USD_PER_S = 0.000222
 # Plan de máquina, no una corrida. Segundos y GPU son [I].
 STAGE_PLAN = {
     "e0": {
-        "seconds": 300,
-        "cpu": 2,
+        "seconds": 3600,
+        "cpu": 4,
         "gpu_l4_seconds": 0,
-        "why": "mmap del grafo y FAISS, 3 vecindarios, sin e-prints",
+        "why": "k-means en muestra, asignar 8.8 M en CPU, puntaje y sonda; sin e-prints",
     },
     "e1": {
-        "seconds": 80,
+        "seconds": 120,
         "cpu": 1,
         "gpu_l4_seconds": 0,
-        "why": "5 papers: licencia y e-print a 3.5 s, parseo en CPU",
+        "why": "5 papers: e-print a ≥8 s, licencia apagada, parseo en CPU",
     },
     "e2": {
         "seconds": 400,
@@ -31,7 +31,7 @@ STAGE_PLAN = {
         "seconds": 18000,
         "cpu": 1,
         "gpu_l4_seconds": 900,
-        "why": "2,000 papers, dos peticiones a 3.5 s, parseo y embed en L4",
+        "why": "2,000 papers por capas a ≥8 s, licencia apagada, parseo y embed en L4",
     },
     "e4": {
         "seconds": 180,

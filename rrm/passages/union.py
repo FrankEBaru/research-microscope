@@ -1,4 +1,10 @@
-"""Unión de temas hasta 2,000 papers únicos, con un cupo por tema."""
+"""Unión hasta 2,000 papers únicos.
+
+`union_papers` es el método de anclas: un cupo por tema.
+`layer_union` es el default: capa 1 = el primer candidato nuevo de cada
+grupo, capa 2 = el siguiente, y así. Un id ya tomado se salta y el grupo
+dona el que sigue, en la misma capa.
+"""
 
 import re
 
@@ -39,6 +45,52 @@ def quotas_for(counts, limit=LIMIT):
     for i in range(max(0, left)):
         floors[order[i]] += 1
     return floors, "bursts"
+
+
+def layer_union(ranked, limit=LIMIT):
+    """Ids en orden de capa. Cada grupo dona como mucho un paper por capa.
+
+    `ranked` ya trae solo candidatos con arxiv id, el mejor primero.
+    Un grupo sin más ids nuevos no dona esa capa. La unión para en `limit`.
+    """
+    lists = [list(ids or []) for ids in (ranked or [])]
+    pointers = [0] * len(lists)
+    picked = []
+    layers = []
+    seen = set()
+    donors = []
+    layer = 1
+    limit = int(limit)
+    while len(picked) < limit:
+        got = 0
+        for i, ids in enumerate(lists):
+            if len(picked) >= limit:
+                break
+            ptr = pointers[i]
+            while ptr < len(ids) and int(ids[ptr]) in seen:
+                ptr += 1
+            pointers[i] = ptr
+            if ptr >= len(ids):
+                continue
+            cid = int(ids[ptr])
+            pointers[i] = ptr + 1
+            seen.add(cid)
+            picked.append(cid)
+            layers.append(layer)
+            got += 1
+        if got == 0:
+            break
+        donors.append(got)
+        layer += 1
+    return {
+        "ids": picked,
+        "layers": layers,
+        "layer_donors": donors,
+        "layers_used": len(donors),
+        "reached": len(picked) >= limit and limit > 0,
+        "quota_source": "layers",
+        "method": "layers",
+    }
 
 
 def union_papers(ranked, quotas, limit=LIMIT):

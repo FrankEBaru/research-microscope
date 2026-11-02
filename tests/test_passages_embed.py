@@ -250,7 +250,7 @@ def test_cached_paper_without_license_asks_only_the_license(tmp_path):
 
 
 def test_oai_license_parse_errors_are_reported_and_gate_is_shared(tmp_path):
-    from rrm.passages.arxiv import ArxivClient, HarvestGate, LicenseLookupError, parse_oai_license
+    from rrm.passages.arxiv import MIN_INTERVAL, ArxivClient, HarvestGate, LicenseLookupError, parse_oai_license
     from rrm.passages.harvest import harvest_one
 
     ok = b'<OAI-PMH><GetRecord><record><metadata><arXiv><id>1706.03762</id><license>http://arxiv.org/licenses/nonexclusive-distrib/1.0/</license></arXiv></metadata></record></GetRecord></OAI-PMH>'
@@ -269,14 +269,14 @@ def test_oai_license_parse_errors_are_reported_and_gate_is_shared(tmp_path):
                       papers_root=tmp_path / "papers", dest=tmp_path / "passages", license_lookup=True)
     assert out["license"] == "" and out["license_error"].startswith("oai badArgument")
     assert [e["url"].split("/")[3][:5] for e in client.log] == ["oai2?", "e-pri"]
-    assert client.gaps() and min(client.gaps()) >= 3.5
+    assert client.gaps() and min(client.gaps()) >= MIN_INTERVAL
 
 
 
 def test_license_off_by_default_and_retry_after_is_honored(tmp_path):
     import urllib.error
 
-    from rrm.passages.arxiv import ArxivClient, HarvestGate, retry_after
+    from rrm.passages.arxiv import MIN_INTERVAL, ArxivClient, ArxivStopped, HarvestGate, retry_after
     from rrm.passages.harvest import harvest_one
 
     urls = []
@@ -299,4 +299,14 @@ def test_license_off_by_default_and_retry_after_is_honored(tmp_path):
 
     client = ArxivClient(flaky, gate=HarvestGate(sleep=sleeps.append, now=lambda: 0.0), sleep=sleeps.append)
     assert client.get("https://export.arxiv.org/e-print/1") == b"ok"
-    assert 20.0 in sleeps and client.log[0]["status"] == 429 and client.log[0]["retry_after"] == 20.0
+    assert max(sleeps) >= 300 and client.log[0]["status"] == 429 and client.log[0]["retry_after"] == 20.0
+    sleeps.clear()
+    client = ArxivClient(
+        lambda url, ua: (_ for _ in ()).throw(urllib.error.HTTPError(url, 429, "slow", {"Retry-After": "400"}, None)),
+        gate=HarvestGate(sleep=sleeps.append, now=lambda: 0.0),
+        sleep=sleeps.append,
+        stop_after=2,
+    )
+    with pytest.raises(ArxivStopped):
+        client.get("https://export.arxiv.org/e-print/1")
+    assert any(item >= 400 for item in sleeps)

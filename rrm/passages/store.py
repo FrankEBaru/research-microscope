@@ -207,7 +207,7 @@ def versions():
     }
 
 
-def build_manifest(papers, failures, *, quota_source=None, index_built=False, commit=None):
+def build_manifest(papers, failures, *, quota_source=None, index_built=False, commit=None, layer_donors=None):
     counts = {"papers": len(papers or []), "rows": 0, "eq": 0, "p": 0, "def": 0}
     for paper in papers or []:
         by = paper.get("rows") or {}
@@ -223,6 +223,7 @@ def build_manifest(papers, failures, *, quota_source=None, index_built=False, co
         "generic_headings": generic_headings(),
         "embed_text": embed_policy(),
         "quota_source": quota_source,
+        "layer_donors": None if layer_donors is None else list(layer_donors),
         "index": {
             "type": "IndexFlatIP",
             "dtype": "float32",
@@ -250,16 +251,19 @@ def read_manifest(dest):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def compile_store(dest, *, quota_source=None, commit=None):
+def compile_store(dest, *, quota_source=None, commit=None, layer_donors=None):
     """Junta los JSON por paper en rows.parquet y reescribe el manifest."""
     existing = read_manifest(dest) or {}
     if quota_source is None:
         quota_source = existing.get("quota_source")
+    if layer_donors is None:
+        layer_donors = existing.get("layer_donors")
     papers, rows, failures = load_saved(dest)
     write_rows_parquet(dest, rows)
     built = (Path(dest) / "faiss.index").is_file()
     manifest = build_manifest(
         papers, failures, quota_source=quota_source, index_built=built, commit=commit,
+        layer_donors=layer_donors,
     )
     write_manifest(dest, manifest)
     return manifest

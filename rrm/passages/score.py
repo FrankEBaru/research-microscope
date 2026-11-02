@@ -1,8 +1,13 @@
-"""Puntaje de un vecindario sobre el CSR de salida.
+"""Puntaje sobre el CSR de salida.
 
-score(c) suma 1 por cada semilla distinta que cita a c. Una arista que no
-sale de una semilla no entra. El ancla entra solo si otra semilla la cita.
-Orden: puntaje descendente, citationcount descendente, corpusid ascendente.
+Anclas (`rank_neighborhood`, `RRM_PASSAGES_SELECT=anchors`): score(c) suma 1
+por cada semilla distinta que cita a c. Orden: puntaje, citationcount
+descendente, corpusid ascendente.
+
+Grupos (`rank_group`, el default): local(c) es ese conteo y
+score(c) = local(c) / log(2 + citationcount(c)). Orden: score descendente,
+local descendente, corpusid ascendente. Una arista que no sale de una
+semilla no entra. Se descarta local 0.
 """
 
 import numpy as np
@@ -86,6 +91,42 @@ def rank_neighborhood(graph, seed_ids, citation_counts, n=None):
             "corpusid": int(graph.ids[local_i]),
             "score": int(round(float(score))),
             "citationcount": int(cc[local_i]),
+        })
+    return rows
+
+
+def rank_group_arrays(graph, seed_ids, citation_counts):
+    """Vectores ya ordenados: corpus, local, score, citationcount, node.
+
+    `node` es el índice en el grafo. `local` es el conteo de semillas.
+    Log natural: otra base no cambia el orden. Vacío si nadie cita.
+    """
+    empty = np.zeros(0, dtype=np.int64)
+    empty_f = np.zeros(0, dtype=np.float64)
+    local_idx = seed_locals(graph, seed_ids)
+    nodes, counts = score_cited(graph, local_idx)
+    if nodes.size == 0:
+        return empty, empty_f, empty_f, empty, empty
+    cc = np.asarray(citation_counts)
+    citations = np.maximum(cc[nodes].astype(np.int64, copy=False), 0)
+    counts = np.asarray(counts, dtype=np.float64)
+    scores = counts / np.log(2.0 + citations.astype(np.float64))
+    corpus = np.asarray(graph.ids, dtype=np.int64)[nodes]
+    order = np.lexsort((corpus, -counts, -scores))
+    return corpus[order], counts[order], scores[order], citations[order], nodes[order]
+
+
+def rank_group(graph, seed_ids, citation_counts):
+    """Filas del grupo, mejor score primero. No es el orden de las anclas."""
+    corpus, counts, scores, citations, nodes = rank_group_arrays(graph, seed_ids, citation_counts)
+    rows = []
+    for i in range(corpus.size):
+        rows.append({
+            "corpusid": int(corpus[i]),
+            "local": int(counts[i]),
+            "score": float(scores[i]),
+            "citationcount": int(citations[i]),
+            "node": int(nodes[i]),
         })
     return rows
 

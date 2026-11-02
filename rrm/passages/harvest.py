@@ -89,7 +89,7 @@ def harvest_one(meta, *, client, papers_root, dest, retry=False, license_lookup=
             arxiv_id = (paper or {}).get("arxivId") or ""
         if not license_url:
             # El caché viejo del lector no guarda licencia. Se pide a la API de
-            # arXiv (misma conexión, mismo gate de 3.5 s); el e-print no se baja.
+            # arXiv (misma conexión, mismo gate de 8 s); el e-print no se baja.
             license_url = (load_meta(folder) or {}).get("license") or (paper or {}).get("license") or ""
         if license_lookup and not license_url and arxiv_id:
             license_url, license_error = _license(client, arxiv_id)

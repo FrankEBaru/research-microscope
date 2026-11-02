@@ -1,12 +1,12 @@
 """Cliente de arXiv para esta corrida. No es el BurstGate del lector.
 
-Una sola conexión, nunca en paralelo entre máquinas. Al menos 3.5 s entre
-el inicio de una petición y el de la siguiente, sea e-print o licencia: las
-dos pasan por el mismo gate. Host `export.arxiv.org`. La licencia sale de
-OAI-PMH GetRecord (metadataPrefix=arXiv), que trae `<license>`; la API de
-búsqueda no la trae. Cada petición queda en `client.log` con su hora.
-User-Agent con contacto en `RRM_ARXIV_CONTACT`. Ante 429 o 503 se espera
-(backoff) y, si se repite, se para. No se sube la velocidad.
+Una sola conexión, nunca en paralelo entre máquinas. Al menos 8 s entre
+el inicio de una petición y el de la siguiente, sea e-print, API u OAI:
+todas pasan por el mismo gate. Host `export.arxiv.org`. La licencia sale de
+OAI-PMH GetRecord (metadataPrefix=arXiv) y está apagada por defecto.
+Cada petición queda en `client.log` con hora, código y pausa real.
+User-Agent con contacto en `RRM_ARXIV_CONTACT`. Se respeta `Retry-After`.
+Ante 429 se espera al menos 5 min; si se repite, se para. No se sube la velocidad.
 """
 
 import os
@@ -19,7 +19,9 @@ import urllib.request
 from rrm.reader.fetch import canon_arxiv
 
 HOST = "https://export.arxiv.org"
-MIN_INTERVAL = 3.5
+MIN_INTERVAL = 8.0
+# Ante 429: nunca menos de 5 min, aunque Retry-After pida menos.
+RETRY_429_S = 300.0
 
 _LICENSE_HREF = re.compile(r"<(?:[\w.-]+:)?license\b[^>]*href=\"([^\"]+)\"", re.I)
 _LICENSE_TEXT = re.compile(r"<(?:[\w.-]+:)?license\b[^>]*>([^<]+)</(?:[\w.-]+:)?license>", re.I)
@@ -77,7 +79,7 @@ def parse_license(body) -> str:
 
 
 class HarvestGate:
-    """Reloj de una sola conexión. El intervalo nunca baja de 3.5 s."""
+    """Reloj de una sola conexión. El intervalo nunca baja de 8 s."""
 
     def __init__(self, interval=MIN_INTERVAL, sleep=time.sleep, now=time.time):
         self.interval = max(MIN_INTERVAL, float(interval))
@@ -119,6 +121,9 @@ class ArxivClient:
         self.tries = max(1, int(tries))
         self.stop_after = max(1, int(stop_after))
         self._streak = 0
+        self._streak_429 = 0
+        self._backoff = MIN_INTERVAL
+        self._prev_start = None
         self._lock = threading.Lock()
         self.log = []
         self.now = time.time
@@ -128,34 +133,48 @@ class ArxivClient:
             return self._get(url)
 
     def _get(self, url) -> bytes:
-        delay = max(self.gate.interval, MIN_INTERVAL)
         last = None
         for _attempt in range(self.tries):
             self.gate.wait()
-            entry = {"url": url, "start": self.now()}
+            now = self.now()
+            pause = None if self._prev_start is None else round(now - self._prev_start, 3)
+            self._prev_start = now
+            entry = {"url": url, "start": now, "pause_s": pause}
             self.log.append(entry)
             try:
                 body = self.opener(url, user_agent())
             except urllib.error.HTTPError as err:
                 last = err
-                entry.update(status=int(err.code), seconds=round(self.now() - entry["start"], 3))
+                entry.update(status=int(err.code), seconds=round(self.now() - now, 3))
             except Exception as err:
-                entry.update(status=0, error=type(err).__name__, seconds=round(self.now() - entry["start"], 3))
+                entry.update(status=0, error=type(err).__name__, seconds=round(self.now() - now, 3))
                 raise
             else:
                 self._streak = 0
-                entry.update(status=200, bytes=len(body or b""), seconds=round(self.now() - entry["start"], 3))
+                self._streak_429 = 0
+                entry.update(status=200, bytes=len(body or b""), seconds=round(self.now() - now, 3))
                 return body
-            if last.code in (429, 503):
+            if last.code == 429:
+                self._streak_429 += 1
+                hinted = retry_after(getattr(last, "headers", None))
+                wait = max(RETRY_429_S, hinted or 0.0)
+                entry["retry_after"] = hinted
+                entry["backoff_s"] = wait
+                if self._streak_429 >= 2:
+                    raise ArxivStopped("arXiv http 429 repeated")
+                self.sleep(wait)
+                continue
+            if last.code == 503:
                 self._streak += 1
+                hinted = retry_after(getattr(last, "headers", None))
+                wait = max(self._backoff, hinted or 0.0)
+                if hinted is not None:
+                    entry["retry_after"] = hinted
+                entry["backoff_s"] = wait
                 if self._streak >= self.stop_after:
-                    raise ArxivStopped(f"arXiv http {last.code} repeated")
-                wait = retry_after(getattr(last, "headers", None))
-                if wait is not None:
-                    self.log[-1]["retry_after"] = wait
-                    delay = max(delay, min(wait, 600.0))
-                self.sleep(delay)
-                delay = min(delay * 2, 120.0)
+                    raise ArxivStopped("arXiv http 503 repeated")
+                self.sleep(wait)
+                self._backoff = min(wait * 2, 120.0)
                 continue
             raise ArxivHTTPError(last.code, url) from last
         code = last.code if last is not None else 0
