@@ -1,6 +1,10 @@
 // Client for the live burst and reader. Plain JS so `node --test` can import it.
 // NEXT_PUBLIC_* is inlined by the static export. Empty URLs keep the curated mock.
 
+import { classify, reportFault } from "./faults.js";
+
+export { friendly } from "./faults.js";
+
 const BURST = process.env.NEXT_PUBLIC_BURST_URL || "";
 const READER = process.env.NEXT_PUBLIC_READER_URL || "";
 const TOKEN = process.env.NEXT_PUBLIC_RRM_DEMO_TOKEN || "";
@@ -233,6 +237,7 @@ export class BackendError extends Error {
     this.name = "BackendError";
     this.kind = kind;
     this.status = status;
+    this.code = "";
   }
 }
 
@@ -289,9 +294,20 @@ function authed(url, method) {
   return { url, headers: { "X-RRM-Demo": TOKEN } };
 }
 
+const pathOf = (url) => String(url).replace(/^[a-z]+:\/\/[^/]+/i, "").split("?")[0];
+
+/** Último intento fallido: código en `err.code` y una fila en el registro de fallas. */
+function giveUp(err, url, t0) {
+  const path = pathOf(url);
+  err.code = classify(err, path);
+  reportFault({ code: err.code, route: path, kind: err.kind, status: err.status, ms: Date.now() - t0, detail: err.message, where: "backend" });
+  return err;
+}
+
 async function request(route, url, init = {}) {
   const retries = RETRIES[route];
   const auth = authed(url, init.method);
+  const t0 = Date.now();
   for (let attempt = 0; ; attempt++) {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), override() ?? TIMEOUT[route]);
@@ -308,12 +324,34 @@ async function request(route, url, init = {}) {
       try { return await res.json(); } catch { throw new BackendError("http", res.status, "la respuesta no es JSON"); }
     } catch (e) {
       const err = e instanceof BackendError ? e : new BackendError(ctl.signal.aborted ? "timeout" : "network", 0);
-      if (attempt >= retries || !RETRYABLE.has(err.kind)) throw err;
+      if (attempt >= retries || !RETRYABLE.has(err.kind)) throw giveUp(err, url, t0);
       await sleep((override() ? 5 : 400) * 2 ** attempt);
     } finally {
       clearTimeout(timer);
     }
   }
+}
+
+/** Datos curados del export estático (`public/papers/`). Misma URL que antes; la falla queda registrada. */
+async function curated(url) {
+  const t0 = Date.now();
+  try {
+    return await (await fetch(url)).json();
+  } catch (e) {
+    const kind = e?.name === "SyntaxError" ? "json" : "network";
+    const code = classify(e?.name === "SyntaxError" ? e : { kind: "network" }, url);
+    try { e.code = code; } catch { /* error congelado */ }
+    reportFault({ code, route: url, kind, ms: Date.now() - t0, detail: e?.message, where: "curated" });
+    throw e;
+  }
+}
+
+export function curatedContent() {
+  return curated("/papers/_content.json");
+}
+
+export function curatedPaper(id) {
+  return curated(`/papers/${id}.json`);
 }
 
 export function warm(which = "burst") {
