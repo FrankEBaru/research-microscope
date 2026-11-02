@@ -125,6 +125,8 @@ blockquote .link { display: block; margin-top: .45rem; font: 500 .84rem var(--sa
 .math-fail { color: #a11; background: #fdecec; padding: .1rem .3rem; border-radius: 4px; font-size: .85em; }
 .math-hint { display: block; font: .78rem var(--sans); color: var(--muted); margin-top: .3rem; }
 .raw { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); font-size: .92em; }
+details.raw-tex { margin: .2rem 0 .4rem; }
+details.raw-tex > summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
 .fig-loading, .fig-missing { min-height: 8rem; display: grid; place-items: center; background: var(--bg); color: var(--muted); border: 1px dashed var(--line-2); border-radius: 8px; font: .85rem var(--sans); padding: 1rem; text-align: center; }
 .pdf-only { font: .95rem/1.5 var(--sans); color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1.1rem; margin: 0 0 1.4rem; }
 .fig-slot { position: relative; display: inline-block; max-width: 100%; min-width: 8rem; min-height: 6rem; background: var(--bg); }
@@ -350,6 +352,13 @@ tr.row-on td { background: rgba(39,71,107,.14) !important; }
 .gap-matrix td { width: 7px; height: 7px; padding: 0; }
 .gap-bar { height: 8px; background: #efeae2; margin: 2px 0; }
 .gap-bar i { display: block; height: 100%; background: #1d4e89; }
+.shape-pill { display: inline-block; margin: .2rem 0 .2rem .5rem; padding: .05rem .5rem; border: 1px solid #1d4e89; border-radius: 999px; color: #1d4e89; font: 600 .78rem/1.5 var(--sans); vertical-align: middle; }
+.shape-pill .katex { color: inherit; font-size: 1em; }
+.step-list { margin: .35rem 0; padding-left: 1.2rem; }
+.step-list li.on { background: #fff3c4; }
+.case-list { list-style: none; margin: .3rem 0; padding: 0; }
+.case-row { display: flex; flex-wrap: wrap; gap: .8rem; align-items: baseline; margin: .2rem 0; }
+.case-cond { color: #6d675f; }
 .sym-mark { background: #d9e8f8; border-radius: 2px; }
 .table-filter { width: 100%; margin: .35rem 0; font: inherit; }
 .read-minimap svg { width: 100%; height: 100%; display: block; }

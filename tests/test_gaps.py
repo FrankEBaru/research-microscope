@@ -97,3 +97,19 @@ def test_reminder_and_references():
     ])
     assert len(intro["sentences"]) == 1
     assert intro["sentences"][0]["block_id"] == "p"
+
+
+def test_raw_block_is_not_a_reminder():
+    raw = {"id": "b52", "kind": "p", "raw": True, "inlines": [{"t": "text", "v": r"\begin{algorithm}\KwIn{d_k}\For{k}"}], "sents": [[{"t": "text", "v": r"\begin{algorithm}\KwIn{d_k}\For{k}"}]]}
+    later = _p("b90", "Otra sección usa d_k otra vez en el texto.")
+    got = find_gaps([
+        _h("h1", "Method"),
+        raw,
+        _h("h2", "Results"),
+        later,
+    ])
+    assert all(row["block_id"] != "b52" for row in got["reminders"])
+    assert all("\\begin{algorithm}" not in row["text"] for row in got["reminders"])
+    dirty = find_gaps([_h("h", "Intro"), _p("p", r"vemos d_k \vskip-.1in y sigue."), _h("h2", "Out"), _p("q", "aquí d_k de nuevo en otra sección.")])
+    assert dirty["reminders"]
+    assert "\\vskip" not in dirty["reminders"][0]["text"]

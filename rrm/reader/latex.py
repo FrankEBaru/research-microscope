@@ -119,7 +119,24 @@ def split_sentences(inls):
 
 
 
+def _drop_noise(tex: str) -> str:
+    """Quita \\iffalse…\\fi (con lo de adentro), \\fi sueltos y saltos \\vskip/\\vspace."""
+    prev = None
+    while prev != tex:
+        prev = tex
+        tex = re.sub(r"\\iffalse\b[\s\S]*?\\fi\b", "", tex)
+    tex = re.sub(r"\\fi\b", "", tex)
+    tex = re.sub(
+        r"\\vskip\s*-?(?:\d+(?:\.\d*)?|\.\d+)\s*(?:pt|em|ex|mm|cm|in|bp|pc|sp)?"
+        r"|\\vspace\*?\s*(?:\[[^\]]*\])?\s*\{[^{}]*\}",
+        "",
+        tex,
+    )
+    return tex
+
+
 def parse_inlines(s: str, macros: dict) -> list:
+    s = _drop_noise(s)
     out = []
     buf = []
 
@@ -485,6 +502,7 @@ def _prose_names(tex: str) -> set:
 
 
 def parse_body(body: str, macros: dict, prose: set | None = None) -> list:
+    body = _drop_noise(body)
     blocks = []
     counters = [0, 0, 0, 0]
     appendix = False
