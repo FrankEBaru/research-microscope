@@ -216,7 +216,7 @@ export function compareOf(tex) {
 // Default encendido. No clasifica con Muse: si el dibujo no sale, no hay artefacto.
 
 const SHAPE = /\\mathbb\s*\{\s*R\s*\}\s*\^\{([^{}]+)\}/;
-const ASSUME = /\b(?:we assume|assume that|assuming that|suppose that|supposing that|under the assumption that|without loss of generality|w\.l\.o\.g\.|given that)\b|\blet\s+\$[^$]{0,80}\$[^.]{0,40}\bbe\b/i;
+const ASSUME = /\b(?:we assume|assume that|assuming that|suppose that|supposing that|under the assumption that|without loss of generality|w\.l\.o\.g\.|we require|require that|given that)\b/i;
 
 export function artifactsV2(env = process.env.NEXT_PUBLIC_RRM_ARTIFACTS_V2) {
   if (env == null || env === "") return true;
@@ -268,6 +268,10 @@ function shapeLabel(inner) {
     .replace(/\s+/g, " ")
     .trim();
   return label;
+}
+
+function shapeTex(inner) {
+  return String(inner || "").replace(/\\(?:mathbf|mathrm|boldsymbol|text)\{([^{}]*)\}/g, "$1").trim();
 }
 
 function escalaKind(latex) {
@@ -395,6 +399,43 @@ function tidy(text) {
     .trim();
 }
 
+function peelLoops(src) {
+  const re = /\\(ForEach|foreach|For|While)\b/g;
+  let out = "", i = 0, mark;
+  while ((mark = re.exec(src))) {
+    out += src.slice(i, mark.index);
+    let k = mark.index + mark[0].length;
+    while (src[k] === " " || src[k] === "\n") k += 1;
+    const head = takeBrace(src, k);
+    if (!head) { i = mark.index; break; }
+    let n = head[1];
+    while (src[n] === " " || src[n] === "\n") n += 1;
+    const body = takeBrace(src, n);
+    const word = /While/i.test(mark[1]) ? "mientras" : "para";
+    out += body ? `\\\\ ${word} ${head[0]}: \\\\ ${peelLoops(body[0])}` : `\\\\ ${word} ${head[0]}: `;
+    i = body ? body[1] : head[1];
+    re.lastIndex = i;
+  }
+  return out + src.slice(i);
+}
+
+function plainMacros(text, macros) {
+  let out = String(text || "");
+  for (const [name, body] of macros || []) out = out.replace(new RegExp(`\\\\${name}(?![A-Za-z])`, "g"), body);
+  return out.replace(/\\([A-Za-z]{1,2})(?![A-Za-z])/g, (all, name) => /^(in|to|ln|mu|pi|nu|xi|Re|Im|ge|le|ne|ll|gg|wp|wr)$/.test(name) ? all : name);
+}
+
+function macrosOf(rows) {
+  const map = [];
+  const re = /\\(?:newcommand|renewcommand|providecommand)\*?\s*\{\s*\\([A-Za-z]+)\s*\}\s*(?:\[[^\]]*\])?\s*\{([^{}]*)\}|\\def\s*\\([A-Za-z]+)\s*\{([^{}]*)\}/g;
+  for (const row of rows || []) {
+    const src = `${row.text || ""}\n${row.latex || ""}`;
+    let m;
+    while ((m = re.exec(src))) map.push([m[1] || m[3], m[2] || m[4]]);
+  }
+  return map;
+}
+
 function takeBrace(text, i) {
   if (text[i] !== "{") return null;
   let depth = 0;
@@ -409,7 +450,7 @@ function takeBrace(text, i) {
   return null;
 }
 
-export function stepsOf(text) {
+export function stepsOf(text, macros) {
   const src = String(text || "");
   const start = src.search(/\\begin\{algorithm\*?\}/);
   if (start < 0) return null;
@@ -440,14 +481,14 @@ export function stepsOf(text) {
     } else last = k;
   }
   kept += inner.slice(last);
-  const steps = kept
+  const steps = peelLoops(kept)
     .split(/\\\\|\\(?:State|STATE|For|FOR|While|WHILE|If|IF|lIf|uIf|Else|Repeat|Until)\b/)
-    .map((part) => tidy(part
+    .map((part) => plainMacros(tidy(part
       .replace(/\\(?:End(?:For|If|While)|ENDFOR|ENDIF|ENDWHILE|Do|Od|Return)\b/g, "")
       .replace(/\\(?:mbox|emph|textbf|textit)\{([^{}]*)\}/g, "$1")
       .replace(/\{\s*(?:\\bfseries\s*)?to\s*\}/g, " to ")
       .replace(/\\[{}]/g, "")
-      .replace(/\}\s*\{\s+/g, " ")))
+      .replace(/\}\s*\{\s+/g, " ")), macros))
     .map((part) => dropLoose(part.replace(/\s+/g, " ").replace(/^[{}]+/, "").trim()))
     .filter((part) => part.length > 1 && /[A-Za-z0-9\\]/.test(part))
     .slice(0, 8);
@@ -555,6 +596,7 @@ export function collectV2(items, flag) {
   }
   flushRun();
   let pastAppendix = false;
+  const macros = macrosOf(rows);
   for (const row of rows) {
     const blob = `${row.latex}\n${row.text}`;
     if (appendixSection(row.section) || /\\begin\{appendices\}|\\appendix\b/.test(blob)) pastAppendix = true;
@@ -563,7 +605,7 @@ export function collectV2(items, flag) {
       const label = shapeLabel(shape[1]);
       if (label) {
         seenShape.add(row.section);
-        artifacts.push({ block_id: row.id, type: "forma", kind: "forma", label, body: !appendixSection(row.section) });
+        artifacts.push({ block_id: row.id, type: "forma", kind: "forma", label, tex: shapeTex(shape[1]), body: !appendixSection(row.section) });
       }
     }
     if (row.kind === "eq" && !seenScale.has(row.section)) {
@@ -599,7 +641,7 @@ export function collectV2(items, flag) {
       }
     }
     if (!row.text.includes("\\begin{algorithm}") && !row.latex.includes("\\begin{algorithm}")) continue;
-    const parsed = stepsOf(blob);
+    const parsed = stepsOf(blob, macros);
     if (!parsed) continue;
     let host = row.id;
     const buried = parsed.appendix || appendixSection(row.section);
@@ -624,7 +666,7 @@ export function collectV2(items, flag) {
   }
   const notes = [];
   const assumed = new Map();
-  const strong = /\b(?:assume|assuming|suppose|supposing|without loss of generality|w\.l\.o\.g\.|given that)\b/i;
+  const strong = /\b(?:assume|assuming|suppose|supposing|without loss of generality|w\.l\.o\.g\.|we require|require that|given that)\b/i;
   for (const row of rows) {
     if (row.raw || row.kind === "eq" || row.kind === "h") continue;
     const sentence = assumption(row.text);
@@ -650,7 +692,7 @@ export function collectV2(items, flag) {
 }
 
 function capNotes(list) {
-  const strong = /\b(?:assume|assuming|suppose|supposing|without loss of generality|w\.l\.o\.g\.|given that)\b/i;
+  const strong = /\b(?:assume|assuming|suppose|supposing|without loss of generality|w\.l\.o\.g\.|we require|require that|given that)\b/i;
   const hits = list.filter((item) => item.kind === "supuesto");
   const ranked = hits
     .map((item, i) => ({ item, i, s: (item.body === false ? 2 : 0) + (strong.test(item.note) ? 0 : 1) }))

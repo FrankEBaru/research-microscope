@@ -114,7 +114,14 @@ function ArtifactView({ drawn }: { drawn: any }) {
 function ShapePill({ arts }: { arts: any[] }) {
   const hit = (arts || []).find((item) => item.type === "forma" && item.label);
   if (!hit) return null;
-  return <span className="shape-pill" data-artifact="forma">{hit.label}</span>;
+  return <span className="shape-pill" data-artifact="forma">{hit.tex ? <Tex tex={hit.tex} /> : hit.label}</span>;
+}
+
+function repeatsBlock(note: any, block: any, arts: any[]) {
+  if (!(arts || []).some((item) => item.type === "forma")) return false;
+  const quote = String(note?.cite || note?.note || "").replace(/\s+/g, " ").trim();
+  const host = plainOf(block?.inlines || []);
+  return quote.length > 24 && (host === quote || host.includes(quote));
 }
 
 function artsAt(id: string, pack: any, local: any) {
@@ -810,7 +817,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             el = (
               <figure id={b.label || `blk-${b.id}`} className="fig blk">
                 {imgs.length > 0 && <div className="fig-imgs">{imgs.map((src: string, i: number) => { const zs = i === 0 && b.label ? (content.zones?.figures || []).find((f: any) => f.paper === paper.arxivId && f.fig === b.label)?.zones : null;
-                  return zs ? <ZoneFig key={src} paper={paper} name={src} alt={plainOf(b.caption)} zones={zs} onGo={goTo} /> : <FigImg key={src} paper={paper} name={src} alt={plainOf(b.caption)} eager={i === 0} />; })}</div>}
+                  return zs ? <ZoneFig key={`${i}-${src}`} paper={paper} name={src} alt={plainOf(b.caption)} zones={zs} onGo={goTo} /> : <FigImg key={`${i}-${src}`} paper={paper} name={src} alt={plainOf(b.caption)} eager={i === 0} />; })}</div>}
                 <figcaption><b>Figura {model.figN[b.id]}.</b> <Inlines inls={b.caption} ctx={ctx} /> <ProvChip kind="paper" text="figura original, sin redibujar" /></figcaption>
               </figure>
             );
@@ -832,13 +839,13 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               )}
               {showInstrument && att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
               {core && <ShapePill arts={artsAt(b.id, pack, local)} />}
-              {core && b.kind === "p" && notesAt(b.id, pack, local).map((n: any, i: number) => (
+              {core && b.kind === "p" && notesAt(b.id, pack, local).filter((n: any) => !repeatsBlock(n, b, artsAt(b.id, pack, local))).map((n: any, i: number) => (
                 <GapView key={`${n.block_id}-${n.sent_index}-${n.kind || "n"}-${i}`} note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
               ))}
               {core && b.kind === "p" && artsAt(b.id, pack, local).filter((a) => a.type !== "forma").map((a, i) => (
                 <GapView key={`a-${b.id}-${i}`} art={a} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
               ))}
-              {core && b.kind === "eq" && notesAt(b.id, pack, local).map((n: any, i: number) => (
+              {core && b.kind === "eq" && notesAt(b.id, pack, local).filter((n: any) => !repeatsBlock(n, b, artsAt(b.id, pack, local))).map((n: any, i: number) => (
                 <GapView key={`n-${n.block_id}-${n.sent_index}-${n.kind || "n"}-${i}`} note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
               ))}
               {core && b.kind === "eq" && artsAt(b.id, pack, local).filter((a) => a.type !== "forma").map((a, i) => (

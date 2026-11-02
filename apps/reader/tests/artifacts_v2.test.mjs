@@ -45,7 +45,12 @@ test("XGBoost parte el algoritmo y el del apéndice de Informer no se muestra", 
   assert.match(step.title, /Exact Greedy/);
   assert.ok(step.inputs.length >= 1);
   assert.ok(step.steps.length >= 2);
-  assert.match(step.steps[2], /to \$m\$ \$G_L/);
+  const head = step.steps.find((line) => /para/.test(line) && /to \$m\$/.test(line)) || "";
+  assert.match(head, /para/);
+  assert.equal(/G_L/.test(head), false);
+  assert.ok(step.steps.some((line) => /G_L\\leftarrow 0/.test(line)));
+  assert.equal(step.steps.some((line) => /\\x(?![A-Za-z])/.test(line)), false);
+  assert.ok(step.steps.some((line) => /x_\{jk\}/.test(line)));
   assert.equal(step.steps.some((line) => /\\Do\b|\\EndFor\b|\\[{}]/.test(line)), false);
   const assumed = boost.notes.find((item) => /I_L/.test(item.note));
   assert.equal(assumed.block_id, "4650265:44");
@@ -53,7 +58,10 @@ test("XGBoost parte el algoritmo y el del apéndice de Informer no se muestra", 
   assert.equal(boost.notes.some((item) => item.block_id === "4650265:45"), false);
   const informer = collectV2(load(229156802).rows);
   assert.equal(informer.artifacts.filter((item) => item.type === "pasos").length, 0);
-  assert.ok(informer.artifacts.some((item) => item.type === "forma" && /×/.test(item.label)));
+  const pill = informer.artifacts.find((item) => item.type === "forma" && /×/.test(item.label));
+  assert.ok(pill);
+  assert.match(pill.tex, /L_Q/);
+  assert.match(pill.tex, /\\times/);
   assert.equal(informer.artifacts.some((item) => item.type === "forma" && String(item.block_id).endsWith(":81")), false);
 });
 
@@ -92,6 +100,7 @@ test("la DCT dibuja rejilla y Layer Norm no pasa por el softmax", { skip: !live 
   assert.ok(grid?.grid);
   assert.match(grid.grid.freq, /Cada fila es un k/);
   assert.match(grid.grid.legend, /ilustrativo/);
+  assert.equal(dct.notes.some((item) => /let\b/i.test(item.note) && /x\(n\)/.test(item.note)), false);
   const norm = collectV2(load(8236317).rows);
   const drawn = norm.artifacts.find((item) => item.type === "con_sin");
   assert.ok(drawn?.preferScale);
@@ -104,7 +113,7 @@ test("un recorte del paper alcanza para forma, ramas y algoritmo", () => {
     { id: "h", kind: "h", section: "Modelos", text: "Modelos" },
     { id: "e", kind: "eq", section: "Modelos", latex: String.raw`\mathbf{x}\in \mathbb{R}^{N \times 1}`, text: "" },
     { id: "c", kind: "eq", section: "Modelos", latex: String.raw`\text{Constr}_{j}[q] = \begin{cases} q, & |q| \leq q_j^{max} \\ (q/|q|)q_j^{max}, & \text{otherwise} \end{cases}`, text: "" },
-    { id: "a", kind: "p", section: "Algoritmo", text: String.raw`\begin{algorithm} \caption{Exact Greedy Algorithm for Split Finding} \KwIn{$I$, instance set} $gain\leftarrow 0$\\ $G \leftarrow \sum g_i$\\ \end{algorithm}` },
+    { id: "a", kind: "p", section: "Algoritmo", text: String.raw`\newcommand{\x}{\mathbf{x}} \begin{algorithm} \caption{Exact Greedy Algorithm for Split Finding} \KwIn{$I$, instance set} $gain\leftarrow 0$\\ \For{$k=1$ to $m$}{$G_L\leftarrow 0$\\ sorted by $\x_{jk}$} \end{algorithm}` },
     { id: "s", kind: "p", section: "Algoritmo", text: "assuming that the input and output are of the same dimensions, $\\mathcal{H}(x)-x$." },
   ];
   const pack = collectV2(rows);

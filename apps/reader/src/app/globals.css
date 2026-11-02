@@ -353,6 +353,7 @@ tr.row-on td { background: rgba(39,71,107,.14) !important; }
 .gap-bar { height: 8px; background: #efeae2; margin: 2px 0; }
 .gap-bar i { display: block; height: 100%; background: #1d4e89; }
 .shape-pill { display: inline-block; margin: .2rem 0 .2rem .5rem; padding: .05rem .5rem; border: 1px solid #1d4e89; border-radius: 999px; color: #1d4e89; font: 600 .78rem/1.5 var(--sans); vertical-align: middle; }
+.shape-pill .katex { color: inherit; font-size: 1em; }
 .step-list { margin: .35rem 0; padding-left: 1.2rem; }
 .step-list li.on { background: #fff3c4; }
 .case-list { list-style: none; margin: .3rem 0; padding: 0; }
