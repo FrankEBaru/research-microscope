@@ -170,6 +170,30 @@ def _ask(store: Store, item):
     return answer(rows, text or "", ids=ids, encode=encode_texts, stage=stage or "todo")
 
 
+def _notes(store: Store, item):
+    """Mismo contrato que el lector en vivo. Meta apagado deja solo recordatorios."""
+    from rrm.reader.notes import answer_notes
+    from rrm.reader.phrases import collect_phrases
+
+    empty = {"notes": [], "artifacts": [], "usage": {"model": "", "license": "", "cost_usd": 0.0}}
+    if not isinstance(item, dict):
+        return empty
+    try:
+        cid = str(int(item.get("id")))
+    except (TypeError, ValueError):
+        return empty
+    doc = _paper_doc(store.papers.get(cid))
+    if not isinstance(doc, dict):
+        return empty
+    if doc.get("corpusid") is None:
+        doc = dict(doc)
+        doc["corpusid"] = int(cid)
+    try:
+        return answer_notes(doc, collect_phrases(doc))
+    except Exception:
+        return empty
+
+
 def build_handler(store: Store):
     class Handler(BaseHTTPRequestHandler):
         # No loguear la query: puede traer ?k=
@@ -325,6 +349,13 @@ def build_handler(store: Store):
                     self._json(400, {"error": err})
                     return
                 self._json(200, _ask(store, item))
+                return
+            if path == "/notes":
+                item, err = _json_body(self)
+                if err:
+                    self._json(400, {"error": err})
+                    return
+                self._json(200, _notes(store, item))
                 return
             if path == "/prepare":
                 length = int(self.headers.get("Content-Length") or "0")

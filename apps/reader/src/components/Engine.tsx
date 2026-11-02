@@ -12,6 +12,7 @@ import { burst, explain, groupNames, keepOpened, labels as fetchLabels, liveEnab
 import { coreMode } from "@/lib/features.js";
 import { applyGroupNames, groupPacks, mapPapers, pinPoint } from "@/lib/layout.js";
 import { mergeLabels, popVisit, pushVisit } from "@/lib/path.js";
+import { EXPLORE_KEY, readExplore, recordVisit } from "@/lib/explore.js";
 import { normalizeQuestion, phaseOf, readOverflow, readQuestions, recallQuestion, rememberQuestion, writeOverflow } from "@/lib/qcache.js";
 import { bindDevLog, createDevLog } from "@/lib/devlog.js";
 import { LiveCircle } from "./MapView";
@@ -56,6 +57,9 @@ export default function Engine() {
   const [devOn, setDevOn] = useState(false);
   const [asList, setAsList] = useState(false);
   const [camino, setCamino] = useState<{ id: string; porQue: string; padre: string | null }[]>([]);
+  const caminoRef = useRef(camino);
+  caminoRef.current = camino;
+  const [explore, setExplore] = useState<{ q: string; nodes: any[]; edges: any[] }>({ q: "", nodes: [], edges: [] });
   const [labelNote, setLabelNote] = useState("");
   const [phase, setPhase] = useState("");
   const [since, setSince] = useState(0);
@@ -164,20 +168,52 @@ export default function Engine() {
     const ordered = Number.isInteger(head) ? [head, ...ids.filter((id: number) => id !== head)] : ids;
     if (ordered.length) prepare(ordered, true).catch(() => {});
   }, [liveResult]);
+  const titleFor = useCallback((id: string) => {
+    const hit = (liveResult?.papers || []).find((item: any) => paperKey(item) === id);
+    if (hit?.title) return String(hit.title);
+    if (opened?.paper && paperKey(opened.paper) === id && opened.paper.title) return String(opened.paper.title);
+    const curated = papers?.[id];
+    return curated?.title ? String(curated.title) : "";
+  }, [liveResult, opened, papers]);
   const abrir = useCallback((id: string, porQue: string) => {
     const key = String(id || "");
     if (!key) return;
-    setCamino((prev) => pushVisit(prev, key, porQue));
+    const prev = caminoRef.current || [];
+    const from = prev.length ? prev[prev.length - 1].id : "";
+    try {
+      const graph = recordVisit(localStorage, liveQ, {
+        id: key, title: titleFor(key), from, porQue, at: Date.now(),
+      }, (json: string) => { writeOverflow(indexedDB, json, EXPLORE_KEY).catch(() => {}); });
+      setExplore(graph);
+    } catch { /* modo privado: el salto sigue y la pila también */ }
+    setCamino(pushVisit(prev, key, porQue));
     promoteBurst(key);
     if (key === liveId) return;
     go({ p: key });
-  }, [go, liveId, promoteBurst]);
+  }, [go, liveId, liveQ, promoteBurst, titleFor]);
   const volver = () => {
     const next = popVisit(camino);
     setCamino(next);
     if (next.length) go({ p: next[next.length - 1].id });
     else go({});
   };
+
+  useEffect(() => {
+    let stop = false;
+    try {
+      const local = readExplore(localStorage, liveQ);
+      if ((local.nodes || []).length) { setExplore(local); return; }
+    } catch { /* sigue con IndexedDB */ }
+    readOverflow(indexedDB, EXPLORE_KEY).then((json) => {
+      if (stop || !json) return;
+      try {
+        const all = JSON.parse(json);
+        const key = normalizeQuestion(liveQ) || "_solo";
+        if (all && all[key]) setExplore(all[key]);
+      } catch { /* el grafo de esta página sigue vacío */ }
+    }).catch(() => {});
+    return () => { stop = true; };
+  }, [liveQ]);
 
   useEffect(() => {
     if (!liveOn || !liveResult) return;
@@ -518,7 +554,7 @@ export default function Engine() {
             {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
             {core && <button type="button" className="link" onClick={volver}>volver</button>}
             {core && camino[camino.length - 1]?.porQue && <p className="jump-why">Salto: {camino[camino.length - 1].porQue}</p>}
-            <PaperView paper={opened.paper} content={content || {}} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} showInstrument={!core} showCrops={!core} core={core} burstIds={(liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p))} map={liveResult ? { papers: mapPapers(liveResult), edges: liveResult.edges || [], layout: liveResult.layout } : null} onOpenPaper={abrir} onPromote={() => promoteBurst(liveId)} />
+            <PaperView paper={opened.paper} content={content || {}} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} showInstrument={!core} showCrops={!core} core={core} burstIds={(liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p))} map={liveResult ? { papers: mapPapers(liveResult), edges: liveResult.edges || [], layout: liveResult.layout } : null} explore={explore} openId={liveId} onOpenPaper={abrir} onPromote={() => promoteBurst(liveId)} />
           </div>
         )}
         {live && (liveOn || liveId) && liveId && !opened && (

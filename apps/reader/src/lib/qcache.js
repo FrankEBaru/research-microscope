@@ -41,12 +41,12 @@ export function rememberQuestion(storage, question, payload, overflow) {
 const IDB_NAME = "rrm-questions";
 
 /** IndexedDB when localStorage refuses the write. `db` is the browser `indexedDB` or a test double. */
-export function writeOverflow(db, json) {
-  return idbStore(db, "readwrite", (store) => store.put(json, STORAGE_KEY));
+export function writeOverflow(db, json, key = STORAGE_KEY) {
+  return idbStore(db, "readwrite", (store) => store.put(json, key));
 }
 
-export function readOverflow(db) {
-  return idbStore(db, "readonly", (store) => store.get(STORAGE_KEY)).then(
+export function readOverflow(db, key = STORAGE_KEY) {
+  return idbStore(db, "readonly", (store) => store.get(key)).then(
     (value) => (typeof value === "string" ? value : null),
     () => null,
   );

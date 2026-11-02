@@ -5,7 +5,8 @@ import { Tex, Rich, Sym } from "@/lib/math";
 import { ProvChip } from "./Bits";
 import Instrument from "./Instrument";
 import { bibtex } from "@/lib/bibtex.js";
-import { crops, eqTex, figureCandidates, figureUrl, paperKey, refText, sourcePdfUrl } from "@/lib/backend.js";
+import { crops, eqTex, fetchNotes, figureCandidates, figureUrl, paperKey, refText, sourcePdfUrl } from "@/lib/backend.js";
+import { compareOf, matrixOf } from "@/lib/artifacts.js";
 import { pdfPagesOnly, polishText, presentInlines, visibleInlines } from "@/lib/prose.js";
 import { equationHover, symbolHover, tableHover } from "@/lib/hover.js";
 import { faltaText } from "@/lib/falta.js";
@@ -25,6 +26,64 @@ import Companion, { Offer } from "./Companion";
 /* ---------- utilidades ---------- */
 const countNotes = (inls: Inline[]): number =>
   (inls || []).reduce((n, x) => n + (x.t === "note" ? 1 : Array.isArray(x.c) ? countNotes(x.c) : 0), 0);
+
+const noteCache = new Map<string, any>();
+
+function drawnOf(art: any) {
+  if (!art) return null;
+  const drawn = art.type === "matriz" ? matrixOf(art.tex) : art.type === "con_sin" ? compareOf(art.tex) : null;
+  return drawn ? { ...drawn, why: art.why_look || "" } : null;
+}
+
+function ArtifactView({ drawn }: { drawn: any }) {
+  if (drawn.kind === "matriz") {
+    return (
+      <div className="gap-art">
+        <p className="gap-tag">Nota de IA</p>
+        {drawn.why && <p>{drawn.why}</p>}
+        <table className="gap-matrix">{drawn.rows.map((row: any) => (
+          <tr key={row.i}>{row.cells.map((v: number, i: number) => {
+            const t = Math.max(0, Math.min(1, (v + 1) / 2));
+            const color = `rgb(${Math.round(255 + (29 - 255) * t)},${Math.round(255 + (78 - 255) * t)},${Math.round(255 + (137 - 255) * t)})`;
+            return <td key={i} style={{ background: color }} />;
+          })}</tr>
+        ))}</table>
+        <p className="gap-src">{drawn.legend}</p>
+      </div>
+    );
+  }
+  const max = Math.max(...drawn.with, ...drawn.without, 0.01);
+  const bars = (xs: number[]) => xs.map((v, i) => <div key={i} className="gap-bar"><i style={{ width: `${(v / max) * 100}%` }} /></div>);
+  return (
+    <div className="gap-art">
+      <p className="gap-tag">Nota de IA</p>
+      {drawn.why && <p>{drawn.why}</p>}
+      <p>con el término</p>{bars(drawn.with)}
+      <p>sin el término</p>{bars(drawn.without)}
+      <p className="gap-src">{drawn.legend}</p>
+    </div>
+  );
+}
+
+export function GapView({ note, art, self, onOpen }: { note?: any; art?: any; self: string; onOpen?: (id: string, why: string) => void }) {
+  const drawn = drawnOf(art);
+  if (!note && !drawn) return null;
+  const other = Boolean(note && note.paper && String(note.paper) !== self);
+  return (
+    <aside className="gap-card">
+      {note && note.generated !== false && <p className="gap-tag">Nota de IA</p>}
+      {note && <p>{note.note}</p>}
+      {note && note.generated !== false && note.cite && <p className="gap-cite">{note.cite}</p>}
+      {note && (note.section || note.paper) && (
+        <p className="gap-src">
+          {note.section || ""}{note.paper ? ` · ${note.paper}` : ""}
+          {other && onOpen && <button type="button" className="link" onClick={() => onOpen(String(note.paper), "nota")}>abrir</button>}
+        </p>
+      )}
+      {drawn && <ArtifactView drawn={drawn} />}
+    </aside>
+  );
+}
 
 export function plainOf(inls: Inline[]): string {
   return (inls || []).map((x) => x.t === "text" ? x.v : x.t === "math" ? `$${x.v}$` : x.t === "cite" ? "" : x.t === "note" ? "" : Array.isArray(x.c) ? plainOf(x.c) : x.v || "").join("").replace(/\s+/g, " ").trim();
@@ -81,7 +140,7 @@ function One({ x, ctx, prev = "" }: { x: Inline; ctx: Ctx; prev?: string }) {
 /* ---------- popover ---------- */
 type PopState = { key: string; rect: DOMRect } | null;
 
-function Popover({ pop, paper, model, content, core }: { pop: NonNullable<PopState>; paper: Paper; model: any; content: any; core?: boolean }) {
+function Popover({ pop, paper, model, content, core, pack, onOpen }: { pop: NonNullable<PopState>; paper: Paper; model: any; content: any; core?: boolean; pack?: any; onOpen?: (id: string, why: string) => void }) {
   const [kind, ...r] = pop.key.split("|");
   const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, counter: { n: 0 } };
   let body: any = null;
@@ -94,8 +153,17 @@ function Popover({ pop, paper, model, content, core }: { pop: NonNullable<PopSta
     const hit = symbolHover(paper.blocks, tex, { block: r[0], index: Number(r[1]) });
     body = <><p className="pop-quote">{hit.text}</p><div className="pop-meta"><ProvChip kind="paper" text="frase del autor" /></div></>;
   } else if (kind === "e" && core) {
+    const card = (pack?.notes || []).find((n: any) => n.block_id === r[0]);
+    const art = (pack?.artifacts || []).find((n: any) => n.block_id === r[0]);
+    if (card || art) {
+      body = <GapView note={card} art={art} self={String(paper.corpusid ?? "")} onOpen={onOpen} />;
+    } else {
     const hit = equationHover(paper.blocks, r[0]);
     body = <><p className="pop-title">De dónde sale</p>{hit.texts.map((text: string, i: number) => <p key={i} className="pop-quote">{text}</p>)}{!hit.texts.length && <p className="pop-quote">el paper no lo define</p>}<div className="pop-meta"><ProvChip kind="paper" text="frase del autor" /></div></>;
+    }
+  } else if (kind === "s" && core && pack) {
+    const card = (pack.notes || []).find((n: any) => n.block_id === r[0] && n.sent_index === +r[1]);
+    if (card) body = <GapView note={card} self={String(paper.corpusid ?? "")} onOpen={onOpen} />;
   } else if (kind === "y") {
     const s = content.attention.symbols.find((s: any) => s.id === r[0]);
     body = (
@@ -197,20 +265,25 @@ function Table({ b, ctx, n, predict = true, still = false }: { b: Block; ctx: Ct
   const [hc, setHc] = useState<number | null>(null);
   const [showChart, setShowChart] = useState(false);
   const [hl, setHl] = useState("");
+  const [filter, setFilter] = useState("");
   const model = b.an;
   const chartable = model.numericCols.length > 0 && bars(model, model.numericCols[0]).length >= 3;
   useEffect(() => { const f = (e: any) => setHl(e.detail || ""); window.addEventListener("rrm-row", f); return () => window.removeEventListener("rrm-row", f); }, []);
   return (
     <figure className="table-fig" id={b.label || undefined} data-tab={b.id}>
-      {chartable && <div className="tchart-bar"><button className="tchart-toggle" aria-pressed={showChart} onClick={() => setShowChart((v) => !v)}>{showChart ? "Ocultar gráfica" : "Ver como gráfica"}</button></div>}
-      {showChart && <TableChart model={model} n={n} predict={predict} />}
+      {chartable && !ctx.core && <div className="tchart-bar"><button className="tchart-toggle" aria-pressed={showChart} onClick={() => setShowChart((v) => !v)}>{showChart ? "Ocultar gráfica" : "Ver como gráfica"}</button></div>}
+      {ctx.core && <input className="table-filter" aria-label="Filtrar filas" value={filter} placeholder="Filtrar filas" onChange={(e) => setFilter(e.target.value)} />}
+      {showChart && !ctx.core && <TableChart model={model} n={n} predict={predict} />}
       <div className="table-wrap" onMouseLeave={() => setHc(null)}>
         <table data-hc={hc ?? undefined}>
           <thead>{model.headRows.map((hr: any[], ri: number) => (
             <tr key={ri}>{hr.map((c: any, ci: number) => <th key={ci} colSpan={c.span} data-c={c.col} className={hc !== null && hc >= c.col && hc < c.col + c.span ? "col-on" : ""} onMouseEnter={() => setHc(c.col)}><Inlines inls={c.c} ctx={ctx} /></th>)}</tr>
           ))}</thead>
           <tbody>
-            {model.bodyRows.map((r: any[], ri: number) => (
+            {model.bodyRows.filter((r: any[]) => {
+              const needle = filter.trim().toLowerCase();
+              return !needle || r.some((c: any) => plainOf(c.c).toLowerCase().includes(needle));
+            }).map((r: any[], ri: number) => (
               <tr key={ri} className={hl && plainOf(r[0].c).replace(/\[cite\]/g, "").trim() === hl ? "row-on" : ""} style={still ? undefined : { animationDelay: `${ri * 35}ms` }}>
                 {r.map((c: any, ci: number) => <td key={ci} colSpan={c.span} data-c={c.col} className={hc !== null && hc >= c.col && hc < c.col + c.span ? "col-on" : ""} onMouseEnter={() => setHc(c.col)} data-pop={`t|${b.id}|${ri}|${c.col}`} tabIndex={0}><Inlines inls={c.c} ctx={ctx} /></td>)}
               </tr>
@@ -342,9 +415,12 @@ function CropStrip({ id }: { id: string }) {
   );
 }
 
-export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote, showInstrument = true, showCrops = true, core = false, burstIds, map, onOpenPaper, onPromote }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string; pdf?: boolean; oa_pdf?: string; arxiv?: string } | null; showInstrument?: boolean; showCrops?: boolean; core?: boolean; burstIds?: string[]; map?: { papers: any[]; edges: any[]; layout: any } | null; onOpenPaper?: (id: string, why: string) => void; onPromote?: () => void }) {
+export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote, showInstrument = true, showCrops = true, core = false, burstIds, map, explore, openId, onOpenPaper, onPromote }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string; pdf?: boolean; oa_pdf?: string; arxiv?: string } | null; showInstrument?: boolean; showCrops?: boolean; core?: boolean; burstIds?: string[]; map?: { papers: any[]; edges: any[]; layout: any } | null; explore?: { nodes?: any[]; edges?: any[] } | null; openId?: string; onOpenPaper?: (id: string, why: string) => void; onPromote?: () => void }) {
   const art = useRef<HTMLElement>(null);
   const [pop, setPop] = useState<PopState>(null);
+  const [pack, setPack] = useState<any>(null);
+  const [symHot, setSymHot] = useState("");
+  const [symPin, setSymPin] = useState("");
   const [reading, setReading] = useState(false);
   const [left, setLeft] = useState("");
   const [hold, setHold] = useState("");
@@ -415,7 +491,16 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     clearTimeout(timer.current);
     if (!el) return;
     const key = el.dataset.pop || `y|${el.dataset.sym}`;
-    if (core && !SENTENCE_MOCK && key.startsWith("s|")) return; // RRM-47: en core la oración solo traía la maqueta «ejemplo simulado»
+    if (core) {
+      const host = (e.target as HTMLElement).closest("[data-sym],[data-tex]") as HTMLElement | null;
+      const sym = host?.dataset.sym ? `id:${host.dataset.sym}` : host?.dataset.tex ? `tex:${host.dataset.tex.replace(/\s+/g, "")}` : "";
+      if (sym) setSymHot(sym);
+    }
+    if (core && !SENTENCE_MOCK && key.startsWith("s|")) {
+      const parts = key.split("|");
+      const has = (pack?.notes || []).some((n: any) => n.block_id === parts[1] && n.sent_index === +parts[2]);
+      if (!has) return; // RRM-47: en core la oración solo traía la maqueta «ejemplo simulado»
+    }
     if (companion) signal(key);
     const show = () => setPop({ key, rect: el.getBoundingClientRect() });
     if (key.startsWith("s|")) timer.current = setTimeout(show, 380); else show();
@@ -437,7 +522,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     }
   };
   const touched = useRef(0); // con el dedo no hay «salir del elemento»: el popover se abre al tocar y se cierra al tocar fuera
-  const onOut = () => { if (Date.now() - touched.current < 800) return; clearTimeout(timer.current); setPop(null); };
+  const onOut = () => { if (Date.now() - touched.current < 800) return; clearTimeout(timer.current); setPop(null); setSymHot(""); };
   useEffect(() => {
     const away = (e: TouchEvent) => { const t = e.target as HTMLElement; if (!t.closest?.("[data-pop],[data-sym],.popover")) setPop(null); };
     document.addEventListener("touchstart", away, { passive: true }); return () => document.removeEventListener("touchstart", away);
@@ -445,8 +530,12 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const onClick = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement;
     if (Date.now() - touched.current < 800 && !t.closest("[data-sym],[data-xref]")) { const el = t.closest("[data-pop]") as HTMLElement | null; if (el && !el.dataset.pop!.startsWith("s|")) setPop({ key: el.dataset.pop!, rect: el.getBoundingClientRect() }); }
-    const sym = t.closest("[data-sym]") as HTMLElement | null;
-    if (sym && att) { const s = att.symbols.find((y: any) => y.id === sym.dataset.sym); if (s) goTo(s.def.anchor.blockId); return; }
+    const sym = t.closest("[data-sym],[data-tex]") as HTMLElement | null;
+    if (core && sym) {
+      const mark = sym.dataset.sym ? `id:${sym.dataset.sym}` : sym.dataset.tex ? `tex:${sym.dataset.tex.replace(/\s+/g, "")}` : "";
+      if (mark) { setSymPin((cur) => (cur === mark ? "" : mark)); return; }
+    }
+    if (!core && sym && att) { const s = att.symbols.find((y: any) => y.id === sym.dataset.sym); if (s) goTo(s.def.anchor.blockId); return; }
     const xr = t.closest("[data-xref]") as HTMLElement | null;
     if (xr) { e.preventDefault(); const el = document.getElementById(model.target[xr.dataset.xref!] || xr.dataset.xref!); el?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
     const cite = t.closest("[data-pop]") as HTMLElement | null;
@@ -490,6 +579,41 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
   };
   useEffect(() => { if (focus) setTimeout(() => goTo(focus), 250); }, [focus, paper.arxivId]);
+  const blockCount = (paper.blocks || []).length;
+  useEffect(() => {
+    if (!core || paper.corpusid == null || !blockCount) return;
+    const key = String(paper.corpusid);
+    const hit = noteCache.get(key);
+    if (hit) { setPack(hit); return; }
+    let stop = false;
+    const timer = window.setTimeout(() => { stop = true; }, 22000);
+    fetchNotes(key).then((body) => {
+      if (stop) return;
+      noteCache.set(key, body);
+      setPack(body);
+    }).catch(() => {
+      if (stop) return;
+      const empty = { notes: [], artifacts: [], usage: { cost_usd: 0 } };
+      noteCache.set(key, empty);
+      setPack(empty);
+    });
+    return () => { stop = true; window.clearTimeout(timer); };
+  }, [core, paper.corpusid, blockCount]);
+  useEffect(() => {
+    const root = art.current;
+    if (!root) return;
+    root.querySelectorAll(".sym-mark").forEach((el) => el.classList.remove("sym-mark"));
+    const key = symPin || symHot;
+    if (!key) return;
+    const cut = key.indexOf(":");
+    const kind = key.slice(0, cut);
+    const val = key.slice(cut + 1);
+    root.querySelectorAll(kind === "id" ? "[data-sym]" : "[data-tex]").forEach((el) => {
+      const node = el as HTMLElement;
+      const cur = kind === "id" ? node.dataset.sym : (node.dataset.tex || "").replace(/\s+/g, "");
+      if (cur === val) node.classList.add("sym-mark");
+    });
+  }, [symPin, symHot, paper, reading]);
   // RRM-48: en scan casi no hay encabezados (2 de 28 en Vaswani) y el índice no iba a ningún lado.
   // Si la sección no está pintada, pasa a «Leer» y baja a ella después del render.
   const pendingSec = useRef("");
@@ -547,7 +671,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
 
   return (
     <div className="paper-layout">
-      {core && map && <ReadMinimap papers={map.papers} edges={map.edges} layout={map.layout} onOpen={(id) => onOpenPaper?.(id, "nodo del minimapa")} />}
+      {core && map && <ReadMinimap papers={map.papers} edges={map.edges} layout={map.layout} explore={explore} openId={openId} onOpen={(id) => onOpenPaper?.(id, "nodo del minimapa")} />}
       {model.toc.length > 0 && (
         <nav className="toc" aria-label="Secciones">
           {model.toc.map((t) => (
@@ -639,6 +763,12 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
                 </aside>
               )}
               {showInstrument && att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
+              {core && b.kind === "p" && (pack?.notes || []).filter((n: any) => n.block_id === b.id).map((n: any) => (
+                <GapView key={`${n.block_id}-${n.sent_index}`} note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
+              ))}
+              {core && b.kind === "eq" && (
+                <GapView note={(pack?.notes || []).find((n: any) => n.block_id === b.id)} art={(pack?.artifacts || []).find((n: any) => n.block_id === b.id)} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} />
+              )}
             </div>
           );
           if (askBox && b.id === abstractId) return <div key={b.id}>{row}{askBox}</div>;
@@ -648,7 +778,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           <p>Texto, ecuaciones, figuras y tablas son los del e-print de arXiv:{paper.arxivId}, convertidos desde LaTeX sin resumir ni parafrasear. Lo que no es del paper lleva una etiqueta de procedencia.</p>
         </footer>
       </article>
-      {pop && <Popover pop={pop} paper={paper} model={model} content={content} core={core} />}
+      {pop && <Popover pop={pop} paper={paper} model={model} content={content} core={core} pack={pack} onOpen={onOpenPaper} />}
       {companion && <Companion offer={offer} target={point} onAnswer={() => setOffer(null)} onHide={() => onHideCompanion?.()} />}
     </div>
   );
