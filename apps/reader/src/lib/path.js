@@ -24,6 +24,15 @@ export function popVisit(stack) {
   return prev.slice(0, -1);
 }
 
+/** El back del navegador deja la pila en el paper de arriba. Recórtala al paper abierto. */
+export function alignVisit(stack, id) {
+  const cur = String(id || "");
+  const prev = Array.isArray(stack) ? stack : [];
+  if (!cur || !prev.length || String(prev[prev.length - 1].id) === cur) return prev;
+  const idx = prev.map((step) => String(step.id)).lastIndexOf(cur);
+  return idx < 0 ? [] : prev.slice(0, idx + 1);
+}
+
 export function mergeLabels(papers, body) {
   if (!body || body.ok === false) return papers || [];
   const by = body.by_id || {};

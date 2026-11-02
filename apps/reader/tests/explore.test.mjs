@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { pickExplore, recordVisit } from "../src/lib/explore.js";
+import { pickExplore, recordVisit, visitWhy } from "../src/lib/explore.js";
 
 function mem() {
   const box = new Map();
@@ -55,6 +55,16 @@ test("sin pregunta, el deep link recupera el grafo que contiene el paper", () =>
   assert.equal(picked.nodes.length, 2);
   assert.equal(picked.edges[0].porQue, "cita");
   assert.equal(pickExplore(all, "otra", "").nodes.length, 0);
+});
+
+test("la primera visita dice de dónde salió y el salto del minimapa se lee", () => {
+  const store = mem();
+  const map = recordVisit(store, "how does self-attention replace recurrence", { id: "13756489", title: "Attention Is All You Need y un título largo que no cabe en la lista del minimapa", from: "", porQue: "desde el mapa", at: 1 });
+  assert.equal(visitWhy(map.nodes[0], map.edges, map.q), "desde el mapa");
+  const jump = recordVisit(store, "how does self-attention replace recurrence", { id: "bleu", title: "BLEU", from: "13756489", porQue: "nodo del minimapa", at: 2 });
+  assert.equal(visitWhy(jump.nodes[1], jump.edges, jump.q), "salto desde el minimapa");
+  const solo = recordVisit(store, "", { id: "13756489", title: "Attention", from: "", at: 3 });
+  assert.equal(visitWhy(solo.nodes[0], solo.edges, solo.q), "link directo");
 });
 
 test("si localStorage tira, el overflow recibe el json", () => {

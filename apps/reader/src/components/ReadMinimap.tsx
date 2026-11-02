@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { paperKey } from "@/lib/backend.js";
+import { visitWhy } from "@/lib/explore.js";
 import { layoutOf } from "@/lib/layout.js";
 
 export default function ReadMinimap({ papers, edges, layout, onOpen, explore, openId }: {
@@ -8,7 +9,7 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
   edges: any[];
   layout: any;
   onOpen: (id: string) => void;
-  explore?: { nodes?: any[]; edges?: any[] } | null;
+  explore?: { nodes?: any[]; edges?: any[]; q?: string } | null;
   openId?: string;
 }) {
   const model = useMemo(() => layoutOf({ papers, edges, layout }), [papers, edges, layout]);
@@ -33,14 +34,6 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
     });
     return map;
   }, [at, lone, nodes]);
-  const whyOf = (id: string) => {
-    let best: any = null;
-    for (const edge of graphEdges) {
-      if (String(edge.to) !== id) continue;
-      if (!best || (edge.at || 0) >= (best.at || 0)) best = edge;
-    }
-    return best ? String(best.porQue || "") : "";
-  };
   const byId = useMemo(() => {
     const map = new Map<string, any>();
     (papers || []).forEach((paper) => map.set(paperKey(paper), paper));
@@ -102,10 +95,12 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
       {big && nodes.length > 0 && (
         <ul className="explore-rest">
           {nodes.map((node) => {
-            const why = whyOf(String(node.id));
+            const why = visitWhy(node, graphEdges, explore?.q);
+            const title = String(node.title || node.id).replace(/\s+/g, " ").trim();
+            const cut = title.length > 60;
             return (
               <li key={node.id}>
-                <button type="button" className="link" onClick={() => onOpen(String(node.id))}>{String(node.title || node.id).slice(0, 60)}</button>
+                <button type="button" className="link" title={cut ? title : undefined} onClick={() => onOpen(String(node.id))}>{cut ? `${title.slice(0, 59)}…` : title}</button>
                 {why && <span className="explore-why"> {why}</span>}
               </li>
             );

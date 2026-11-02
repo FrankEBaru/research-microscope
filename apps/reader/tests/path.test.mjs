@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { mergeLabels, popVisit, pushVisit, resolveCite } from "../src/lib/path.js";
+import { alignVisit, mergeLabels, popVisit, pushVisit, resolveCite } from "../src/lib/path.js";
 import { pinPoint } from "../src/lib/layout.js";
 
 test("no duplica el paper abierto y el padre es la visita anterior", () => {
@@ -18,6 +18,15 @@ test("no duplica el paper abierto y el padre es la visita anterior", () => {
   assert.equal(back.length, 1);
   assert.equal(back[0].id, "1");
   assert.deepEqual(popVisit(back), []);
+});
+
+test("el back deja el porQué del paper abierto", () => {
+  const stack = [{ id: "13756489", porQue: "desde el mapa", padre: null }, { id: "bleu", porQue: "salto desde el minimapa", padre: "13756489" }];
+  const back = alignVisit(stack, "13756489");
+  assert.equal(back.length, 1);
+  assert.equal(back[0].porQue, "desde el mapa");
+  assert.deepEqual(alignVisit(stack, "bleu"), stack);
+  assert.deepEqual(alignVisit(stack, "otro"), []);
 });
 
 test("el survey se agrega una vez y el retractado se marca sin inventarlo", () => {

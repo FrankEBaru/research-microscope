@@ -72,7 +72,7 @@ export function GapView({ note, art, self, onOpen }: { note?: any; art?: any; se
   return (
     <aside className="gap-card">
       {note && note.generated !== false && <p className="gap-tag">Nota de IA</p>}
-      {note && <p>{note.note}</p>}
+      {note && note.note && <p><Rich text={note.note} /></p>}
       {note && note.generated !== false && note.cite && <p className="gap-cite"><Rich text={note.cite} /></p>}
       {note && (note.section || note.paper) && (
         <p className="gap-src">
@@ -671,7 +671,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
 
   return (
     <div className="paper-layout">
-      {core && (map || (explore?.nodes || []).length > 0) && <ReadMinimap papers={map?.papers || []} edges={map?.edges || []} layout={map?.layout || null} explore={explore} openId={openId} onOpen={(id) => onOpenPaper?.(id, "nodo del minimapa")} />}
+      {core && (map || (explore?.nodes || []).length > 0) && <ReadMinimap papers={map?.papers || []} edges={map?.edges || []} layout={map?.layout || null} explore={explore} openId={openId} onOpen={(id) => onOpenPaper?.(id, "salto desde el minimapa")} />}
       {model.toc.length > 0 && (
         <nav className="toc" aria-label="Secciones">
           {model.toc.map((t) => (

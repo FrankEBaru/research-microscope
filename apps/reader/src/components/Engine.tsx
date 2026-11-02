@@ -11,8 +11,8 @@ import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
 import { burst, explain, groupNames, keepOpened, labels as fetchLabels, liveEnabled, paperKey, paper as fetchPaper, prepare, settled, status as fetchStatus, subtopics as fetchSubtopics, warm } from "@/lib/backend.js";
 import { coreMode } from "@/lib/features.js";
 import { applyGroupNames, groupPacks, mapPapers, pinPoint } from "@/lib/layout.js";
-import { mergeLabels, popVisit, pushVisit } from "@/lib/path.js";
-import { EXPLORE_KEY, pickExplore, readExploreFor, recordVisit } from "@/lib/explore.js";
+import { alignVisit, mergeLabels, popVisit, pushVisit } from "@/lib/path.js";
+import { EXPLORE_KEY, pickExplore, readExploreFor, recordVisit, whyLabel } from "@/lib/explore.js";
 import { normalizeQuestion, phaseOf, readOverflow, readQuestions, recallQuestion, rememberQuestion, writeOverflow } from "@/lib/qcache.js";
 import { bindDevLog, createDevLog } from "@/lib/devlog.js";
 import { LiveCircle } from "./MapView";
@@ -191,6 +191,10 @@ export default function Engine() {
     if (key === liveId) return;
     go({ p: key });
   }, [go, liveId, liveQ, promoteBurst, titleFor]);
+  useEffect(() => {
+    if (!liveId) return;
+    setCamino((prev) => alignVisit(prev, liveId));
+  }, [liveId]);
   const volver = () => {
     const next = popVisit(camino);
     setCamino(next);
@@ -552,7 +556,7 @@ export default function Engine() {
           <div className="lvl">
             {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
             {core && <button type="button" className="link" onClick={volver}>volver</button>}
-            {core && camino[camino.length - 1]?.porQue && <p className="jump-why">Salto: {camino[camino.length - 1].porQue}</p>}
+            {core && (() => { const top = camino[camino.length - 1]; const why = top && String(top.id) === liveId ? whyLabel(top.porQue) : ""; return why ? <p className="jump-why">Salto: {why}</p> : null; })()}
             <PaperView paper={opened.paper} content={content || {}} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} showInstrument={!core} showCrops={!core} core={core} burstIds={(liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p))} map={liveResult ? { papers: mapPapers(liveResult), edges: liveResult.edges || [], layout: liveResult.layout } : null} explore={explore} openId={liveId} onOpenPaper={abrir} onPromote={() => promoteBurst(liveId)} />
           </div>
         )}
@@ -595,8 +599,8 @@ export default function Engine() {
                 {labelNote && <p className="muted" role="status">{labelNote}</p>}
                 {liveResult.topic_note && <p className="muted" role="status">{liveResult.topic_note}</p>}
                 {asList
-                  ? <CoreList papers={liveResult.papers || []} states={rowState} onOpen={(id: string) => abrir(id, "nodo del mapa")} onWant={wantThis} />
-                  : <LiveMap papers={mapPapers(liveResult)} edges={liveResult.edges || []} layout={liveResult.layout} states={rowState} query={shownQ} onLayout={(next) => { setLiveResult((prev) => (prev ? { ...prev, layout: next } : prev)); if (!next?.pending_vectors?.length) setPhase((cur) => (cur === "layout" ? "" : cur)); }} onOpen={(id: string) => abrir(id, "nodo del mapa")} onWant={wantThis} />}
+                  ? <CoreList papers={liveResult.papers || []} states={rowState} onOpen={(id: string) => abrir(id, "desde el mapa")} onWant={wantThis} />
+                  : <LiveMap papers={mapPapers(liveResult)} edges={liveResult.edges || []} layout={liveResult.layout} states={rowState} query={shownQ} onLayout={(next) => { setLiveResult((prev) => (prev ? { ...prev, layout: next } : prev)); if (!next?.pending_vectors?.length) setPhase((cur) => (cur === "layout" ? "" : cur)); }} onOpen={(id: string) => abrir(id, "desde el mapa")} onWant={wantThis} />}
                 <p className="muted small">Datos de papers y citas: Semantic Scholar. LaTeX primero; OCR solo si el paper no tiene LaTeX.</p>
               </>
             )}

@@ -1,6 +1,7 @@
 import katex from "katex";
 import { useMemo } from "react";
 import { displayTex, katexSource } from "@/lib/backend.js";
+import { splitRich } from "@/lib/richtext.js";
 
 export interface Sym { id: string; latex: string; name: string; color: string }
 
@@ -54,8 +55,11 @@ export function Tex({ tex, display = false, syms = [] as Sym[], className = "" }
   return <span className={className} dangerouslySetInnerHTML={{ __html: html.h }} />;
 }
 
-/** Texto con $math$ (citas literales de abstracts). */
+/** Texto con $math$ y, si no hay delimitador, la fórmula en display. */
 export function Rich({ text }: { text: string }) {
-  const parts = text.split(/(\$[^$]+\$)/g).filter(Boolean);
-  return <>{parts.map((p, i) => (p.startsWith("$") && p.endsWith("$") && p.length > 2 ? <Tex key={i} tex={p.slice(1, -1)} /> : <span key={i}>{p}</span>))}</>;
+  const parts = String(text || "").split(/(\$[^$]+\$)/g).filter(Boolean);
+  return <>{parts.map((p, i) => {
+    if (p.startsWith("$") && p.endsWith("$") && p.length > 2) return <Tex key={i} tex={p.slice(1, -1)} />;
+    return <span key={i}>{splitRich(p).map((bit, j) => (bit[0] === "d" ? <Tex key={j} tex={bit[1]} display /> : <span key={j}>{bit[1]}</span>))}</span>;
+  })}</>;
 }

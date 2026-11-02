@@ -47,8 +47,23 @@ def _clip_cite(text, symbols):
     end = len(parts)
     while end > start and parts[end - 1][-1:] not in ".?!":
         end -= 1
+    dropped = end < len(parts)
     chosen = " ".join(parts[start:end] or parts[start:start + 1])
-    return ("…" + chosen) if cut or start else chosen
+    if cut or start:
+        chosen = "…" + chosen
+    return chosen + "…" if dropped and not chosen.endswith("…") else chosen
+
+
+def _fit(flat, lo, hi):
+    """Recorte por longitud, en el último punto. more si todavía había texto."""
+    n = len(flat)
+    lo, hi = max(0, min(int(lo), n)), max(0, min(int(hi), n))
+    more, chunk = hi < n, flat[lo:hi]
+    if more:
+        marks = list(re.finditer(r"[.!?]", chunk))
+        if marks:
+            chunk = chunk[: marks[-1].end()]
+    return chunk.strip(), more
 _HINT = {
     "con_sin": "Explica por qué se escala: si q y k tienen componentes de varianza 1, q·k tiene varianza d_k; sin dividir, el softmax se satura y los gradientes se hacen chicos. Si una FUENTE lo dice (la nota al pie), cítala.",
     "matriz": "Explica cómo leer PE como matriz posición × dimensión: las dimensiones bajas oscilan rápido y las altas lento.",
@@ -73,9 +88,10 @@ def _fuentes(gaps, passages):
             at = low.find(key)
             if at >= 0:
                 break
-        flat = flat[max(0, at - 180):at + 340] if at >= 0 else flat[:500]
+        lo, hi = (max(0, at - 180), at + 340) if at >= 0 else (0, 500)
+        flat, more = _fit(flat, lo, hi)
         seen.add(rid)
-        rows.append({"id": rid, "text": flat, "latex": str(latex or ""), "paper": str(paper or ""), "section": str(section or "")})
+        rows.append({"id": rid, "text": flat, "latex": str(latex or ""), "paper": str(paper or ""), "section": str(section or ""), "more": more})
 
     eqs = sorted((gaps or {}).get("equations") or [], key=lambda eq: eq.get("hint") not in ("matriz", "con_sin"))
     for eq in eqs:
@@ -306,6 +322,8 @@ def apply(raw, gaps, passages, paper_text):
                 continue
             if not _substring():
                 cite = _clip_cite(cite, tokens_of(tex))
+                if row.get("more") and cite and not cite.endswith("…"):
+                    cite += "…"
             paper = str((row or {}).get("paper") or "")
             section = str((row or {}).get("section") or eq.get("section") or "")
             sent = item.get("sent_index")

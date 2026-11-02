@@ -110,6 +110,25 @@ def test_cite_starts_on_a_whole_sentence():
     assert cite.startswith("…That is") or "sinusoid" in cite
 
 
+def test_length_cut_ends_on_a_sentence():
+    para = (
+        "In addition to attention sub-layers, each of the layers in our encoder and decoder contains a fully connected feed-forward network, which is applied to each position separately and identically. "
+        "This consists of two linear transformations with a ReLU activation in between. "
+        r"\mathrm{FFN}(x)=\max(0, xW_1 + b_1) W_2 + b_2 "
+        "While the linear transformations are the same across different positions, they use different parameters from layer to layer. "
+        "Another way of describing this is as two convolutions with kernel size 1."
+    )
+    gaps = _gaps()
+    gaps["equations"][0]["para"] = para
+    gaps["equations"][0]["tex"] = r"\mathrm{FFN}(x)=\max(0, xW_1 + b_1) W_2 + b_2"
+    raw = {"notes": [{"block_id": "e", "sent_index": 0, "note": "La red aplica \\max entre dos transformaciones.", "fuente": "e"}], "artifacts": []}
+    cite = apply(raw, gaps, [], "")["notes"][0]["cite"]
+    assert cite.endswith("…")
+    assert "convolutions wi" not in cite
+    assert r"\mathrm{FFN}" in cite
+    assert cite.rstrip("…")[-1] in ".!?"
+
+
 def test_formula_begging_is_dropped_and_hint_still_draws():
     raw = {"notes": [
         {"block_id": "e", "sent_index": 0, "note": "Al lector le falta aquí la fórmula.", "fuente": "row1"},
