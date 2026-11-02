@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ProvChip } from "./Bits";
 import { mapLayout, paperKey } from "@/lib/backend.js";
 import { phaseOf } from "@/lib/qcache.js";
+import { fullText } from "@/lib/atlas.js";
 import { farGroupIds, layoutOf, mapCaption, nodeLabel, statusLine } from "@/lib/layout.js";
 import { LENSES, usePlatina, type Frame } from "./usePlatina";
 
@@ -68,13 +69,6 @@ function reducedMotion() {
 function ease(t: number) {
   const p = Math.min(1, Math.max(0, t));
   return 1 - Math.pow(1 - p, 3);
-}
-
-function fullText(paper: any, state: any) {
-  if (paper?.full || state?.text) return true;
-  if (state?.status === "done") return true;
-  if (state?.source === "latex" || state?.source === "ocr") return true;
-  return state?.stages?.sections === "done";
 }
 
 function sceneKey(frame: Frame | null) {

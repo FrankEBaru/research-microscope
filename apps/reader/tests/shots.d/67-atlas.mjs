@@ -36,8 +36,6 @@ export default async function (page, { width, base, shot, fixtures }) {
   await page.getByRole("button", { name: "Read in full", exact: true }).click();
   await page.waitForSelector('[data-screen="paper"] .paper-head', { timeout: 20000 });
   await page.getByRole("button", { name: "Open the atlas" }).waitFor({ timeout: 20000 });
-  // main.zoom-in anima transform 420ms; mientras dura, position:fixed se ancla al main.
-  await page.waitForTimeout(500);
   await shot("67-read");
 
   const mini = page.getByRole("button", { name: "Open the atlas" });

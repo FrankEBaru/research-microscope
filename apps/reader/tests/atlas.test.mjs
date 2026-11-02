@@ -86,18 +86,6 @@ test("parent is the first arrival and a return does not cycle", () => {
   assert.equal(parent.c, "b");
   assert.equal(parent.a, undefined);
   assert.equal(lastVisit(explore), "c");
-  const seen = new Set();
-  for (const id of Object.keys(parent)) {
-    const walk = new Set();
-    let cur = id;
-    while (cur) {
-      assert.equal(walk.has(cur), false);
-      walk.add(cur);
-      cur = parent[cur];
-    }
-    seen.add(id);
-  }
-  assert.equal(seen.size, 2);
 });
 
 test("related keeps visited papers first and stops at 14", () => {

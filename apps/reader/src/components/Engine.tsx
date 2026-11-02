@@ -498,7 +498,13 @@ export default function Engine() {
   };
   const wantThis = (id: string) => {
     const step = note("quiero leer este", id);
-    setRowState((prev) => ({ ...prev, [id]: { ...(prev[id] || {}), id: Number(id), status: "queued" } }));
+    const key = String(id);
+    setRowState((prev) => {
+      const cur = prev[key];
+      // Ready (done or abstract-only) stays Ready. Queued would show Preparing.
+      if (cur?.status === "done" || cur?.status === "abstract_only") return prev;
+      return { ...prev, [key]: { ...(cur || {}), id: Number(id), status: "queued" } };
+    });
     prepare([Number(id)], true).then(
       () => done(step, "ok", "al frente de la cola"),
       (err: any) => done(step, "error", explain(err)),

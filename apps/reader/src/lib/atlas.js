@@ -120,37 +120,12 @@ function visitedIds(explore) {
 function laneHeights(rows) {
   const gaps = Math.max(0, rows.length - 1) * GAP;
   const usable = ATLAS_H - gaps;
-  const total = rows.reduce((sum, row) => sum + Math.max(0, row.n), 0) || rows.length || 1;
-  let heights = rows.map((row) => (Math.max(0, row.n) || 0) * usable / total);
-  if (heights.some((h) => h < 28) && rows.length) {
-    heights = heights.map((h) => Math.max(28, h));
-    const sum = heights.reduce((a, b) => a + b, 0);
-    if (sum > usable) {
-      const k = usable / sum;
-      heights = heights.map((h) => h * k);
-    }
-  }
-  const rounded = heights.map((h) => Math.floor(h));
-  let used = rounded.reduce((a, b) => a + b, 0);
-  let spare = usable - used;
-  let guard = 0;
-  while (spare > 0 && guard < 10000) {
-    rounded[guard % rounded.length] += 1;
-    spare -= 1;
-    guard += 1;
-  }
-  while (used > usable && guard < 20000) {
-    let j = 0;
-    rounded.forEach((h, idx) => { if (h > rounded[j]) j = idx; });
-    if (rounded[j] <= 16) break;
-    rounded[j] -= 1;
-    used -= 1;
-    guard += 1;
-  }
+  const total = rows.reduce((sum, row) => sum + Math.max(1, row.n), 0) || 1;
   let top = 0;
-  return rounded.map((h) => {
-    const box = { top, h: Math.max(16, h) };
-    top += box.h + GAP;
+  return rows.map((row) => {
+    const h = Math.max(1, row.n) / total * usable;
+    const box = { top, h };
+    top += h + GAP;
     return box;
   });
 }

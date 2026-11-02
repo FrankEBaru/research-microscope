@@ -1,5 +1,6 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { atlasModel, lastVisit, suggestOf } from "@/lib/atlas.js";
 import Atlas from "./atlas/Atlas";
 import Overlay from "./atlas/Overlay";
@@ -35,6 +36,8 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
   const [open, setOpen] = useState(false);
   const [from, setFrom] = useState<HTMLElement | null>(null);
   const n = model.visited?.length || 0;
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  useEffect(() => { setHost(document.body); }, []);
   const close = () => {
     setOpen(false);
     btn.current?.focus();
@@ -46,7 +49,9 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
     onOpen(id);
     setOpen(false);
   };
-  return (
+  if (!host) return null;
+  // Portal: main.zoom-in uses transform, which would trap position:fixed for 420ms.
+  return createPortal(
     <>
       <button
         ref={btn}
@@ -74,6 +79,7 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
         onScan={scan}
         onRead={read}
       />
-    </>
+    </>,
+    host,
   );
 }
