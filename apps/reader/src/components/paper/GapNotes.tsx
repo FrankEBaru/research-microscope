@@ -44,6 +44,22 @@ export function Stepper({ drawn }: { drawn: any }) {
   );
 }
 
+function artEn(text: string) {
+  return String(text || "")
+    .replaceAll("casi todo el peso cae en una sola clave.", "almost all the weight lands on one key.")
+    .replaceAll("Cada barra es una coordenada, antes y después de dividir entre σ.", "Each bar is a coordinate, before and after dividing by σ.")
+    .replaceAll("Cada fila es una dimensión. La de arriba (i = 0) cambia más rápido.", "Each row is a dimension. The top one (i = 0) changes faster.")
+    .replaceAll("Cada fila es un k.", "Each row is a k.")
+    .replaceAll("después de dividir entre", "after dividing by")
+    .replaceAll("antes de dividir", "before dividing")
+    .replaceAll("dividiendo entre", "dividing by")
+    .replaceAll("Sin dividir", "Without dividing")
+    .replaceAll("sin dividir", "without dividing")
+    .replaceAll("ilustrativo", "illustrative")
+    .replaceAll("Ilustrativo", "Illustrative")
+    .replaceAll("Nota de IA", "AI note");
+}
+
 export function ArtifactView({ drawn }: { drawn: any }) {
   if (drawn.kind === "pasos") return <Stepper drawn={drawn} />;
   if (drawn.kind === "casos") {
@@ -59,7 +75,7 @@ export function ArtifactView({ drawn }: { drawn: any }) {
   if (drawn.kind === "matriz") {
     return (
       <div className="gap-art" data-artifact="matriz">
-        <p className="gap-tag">{drawn.tag || "Nota de IA"}</p>
+        <p className="gap-tag">{artEn(drawn.tag || "AI note")}</p>
         <table className="gap-matrix"><tbody>{drawn.rows.map((row: any, ri: number) => (
           <tr key={ri}>{row.cells.map((v: number, i: number) => {
             const t = Math.max(0, Math.min(1, (v + 1) / 2));
@@ -67,8 +83,8 @@ export function ArtifactView({ drawn }: { drawn: any }) {
             return <td key={i} style={{ background: `color-mix(in oklab, var(--accent) ${p}%, var(--sheet))` }} />;
           })}</tr>
         ))}</tbody></table>
-        {drawn.freq && <p className="gap-src">{drawn.freq}</p>}
-        <p className="gap-src">{drawn.legend}</p>
+        {drawn.freq && <p className="gap-src">{artEn(drawn.freq)}</p>}
+        <p className="gap-src">{artEn(drawn.legend)}</p>
         {drawn.quote && <p className="gap-src"><Rich text={drawn.quote} /></p>}
       </div>
     );
@@ -77,11 +93,11 @@ export function ArtifactView({ drawn }: { drawn: any }) {
   const bars = (xs: number[]) => xs.map((v, i) => <div key={i} className="gap-bar"><i style={{ width: `${(v / max) * 100}%` }} /></div>);
   return (
     <div className="gap-art" data-artifact="con_sin">
-      <p className="gap-tag">{drawn.tag || "Nota de IA"}</p>
-      <p>{drawn.withLabel}</p>{bars(drawn.with)}
-      <p>{drawn.withoutLabel}</p>{bars(drawn.without)}
-      <p className="gap-src">{drawn.look}</p>
-      <p className="gap-src">{drawn.legend}</p>
+      <p className="gap-tag">{artEn(drawn.tag || "AI note")}</p>
+      <p>{artEn(drawn.withLabel)}</p>{bars(drawn.with)}
+      <p>{artEn(drawn.withoutLabel)}</p>{bars(drawn.without)}
+      <p className="gap-src">{artEn(drawn.look)}</p>
+      <p className="gap-src">{artEn(drawn.legend)}</p>
       {drawn.quote && <p className="gap-src"><Rich text={drawn.quote} /></p>}
     </div>
   );

@@ -307,8 +307,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       const has = (pack?.notes || []).some((n: any) => n.block_id === parts[1] && n.sent_index === +parts[2]);
       if (!has) return;
     }
-    if (key.startsWith("e|")) return;
-    if (wide && key.startsWith("n|")) return;
+    if (key.startsWith("e|") || key.startsWith("n|")) return;
     if (companion) signal(key);
     const show = () => setPop({ key, rect: el.getBoundingClientRect() });
     if (key.startsWith("s|")) timer.current = setTimeout(show, 380); else show();
@@ -343,7 +342,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   }, []);
   const onClick = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement;
-    if (Date.now() - touched.current < 800 && !t.closest("[data-sym],[data-xref]")) { const el = t.closest("[data-pop]") as HTMLElement | null; if (el && !el.dataset.pop!.startsWith("s|")) setPop({ key: el.dataset.pop!, rect: el.getBoundingClientRect() }); }
+    if (Date.now() - touched.current < 800 && !t.closest("[data-sym],[data-xref]")) { const el = t.closest("[data-pop]") as HTMLElement | null; const popKey = el?.dataset.pop || ""; if (el && !popKey.startsWith("s|") && !popKey.startsWith("n|") && !popKey.startsWith("e|")) setPop({ key: popKey, rect: el.getBoundingClientRect() }); }
     const sym = t.closest("[data-sym],[data-tex]") as HTMLElement | null;
     if (core && sym) {
       const mark = sym.dataset.sym ? `id:${sym.dataset.sym}` : sym.dataset.tex ? `tex:${sym.dataset.tex.replace(/\s+/g, "")}` : "";
@@ -721,8 +720,12 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       <article key={mountKey(paper)} ref={art} lang={paperLang(paper)} className={`art paper sec${reading ? " is-read" : ""}`} onTouchStart={() => (touched.current = Date.now())} onMouseOver={onOver} onMouseOut={onOut} onFocus={onOver} onBlur={onOut} onClick={onClick}>
         <Boundary name="header">
           <header className="ah paper-head">
-            <div className="ah-meta">
-              {metaBits.map((bit) => <span key={bit.key} className={bit.tnum ? "tnum" : undefined}>{bit.text}</span>)}
+            <div className="ah-bar">
+              {metaBits.length > 0 && (
+                <div className="ah-meta">
+                  {metaBits.map((bit) => <span key={bit.key} className={bit.tnum ? "tnum" : undefined}>{bit.text}</span>)}
+                </div>
+              )}
               {core && paper.full && (
                 <Segmented
                   label="Mode"
@@ -741,7 +744,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               {!paper.arxivId && paper.corpusid != null && (remote?.status === "abstract_only" || remote?.status === "failed" || remote?.stage === "abstract_only") && <a href={`https://www.semanticscholar.org/paper/${paper.corpusid}`} target="_blank" rel="noreferrer">Semantic Scholar</a>}
             </p>
             <div className="ah-prov">
-              <Prov kind="paper" text={paper.arxivId ? `arXiv:${paper.arxivId}` : `corpus:${paper.corpusid ?? ""}`} />
+              {!paper.arxivId && <Prov kind="paper" text={`corpus:${paper.corpusid ?? ""}`} />}
               {!paper.full && !remote && <Prov kind="curado" text="abstract only in this burst" />}
               {remote?.stage === "stub" && <Prov kind="curado" text="reading sections…" />}
               {(remote?.status === "abstract_only" || remote?.stage === "abstract_only") && <Prov kind="curado" text="abstract only" />}
@@ -761,7 +764,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             {showCrops && remote && paper.corpusid != null && /^\d+$/.test(String(paper.corpusid)) && <CropStrip id={String(paper.corpusid)} />}
           </header>
         </Boundary>
-        {undrawn && <Notice kind="absence">Missing: {faltaText(remote?.reason)}</Notice>}
+        {undrawn && <Notice kind="absence">{`Missing: ${faltaText(remote?.reason)}`}</Notice>}
         {undrawn && pdfHref && <iframe className="source-pdf" title="Paper PDF" src={pdfHref} />}
         {undrawn && !pdfHref && honest && <p className="ah-links"><a href={honest} target="_blank" rel="noreferrer">No PDF in the reader, on arXiv, or as an open-access PDF. The record is here.</a></p>}
         {undrawn && core && askBox("slot", abstractId, "Abstract")}

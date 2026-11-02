@@ -1,21 +1,33 @@
 /* Lectura B.1 · Folio. Solo tokens. */
 
+/* .lvl in legacy.css caps the paper at 1060px. This file cannot edit that sheet. */
+[data-screen="paper"].lvl:has(> .folio) {
+  max-width: none;
+  width: 100%;
+  padding-left: 28px;
+  padding-right: 28px;
+  box-sizing: border-box;
+}
 .folio {
   display: grid;
-  grid-template-columns: 220px minmax(0, 700px) 250px;
+  grid-template-columns: 200px minmax(0, 42rem) 240px;
   justify-content: center;
-  gap: 52px;
-  padding: 36px 36px 140px;
+  gap: 36px;
+  width: 100%;
+  padding: 28px 0 140px;
+  box-sizing: border-box;
 }
+.folio .art { min-width: 0; }
 .folio .toc { position: sticky; top: 84px; align-self: start; max-height: none; overflow: visible; display: block; font-size: 13.5px; padding-right: 0; }
 .folio .toc .cap { margin-bottom: 10px; }
 .folio .toc ol { list-style: none; margin: 0; padding: 0; }
+.folio .toc li { margin: 0; padding: 0; }
 .folio .toc a {
   display: grid;
-  grid-template-columns: minmax(2rem, max-content) 1fr auto;
+  grid-template-columns: 4.6rem 1fr;
   align-items: baseline;
-  gap: 8px;
-  padding: 5px 0;
+  column-gap: 8px;
+  padding: 4px 0;
   font-size: 13.5px;
   line-height: 1.35;
   color: var(--ink-2);
@@ -24,7 +36,7 @@
   transition: color var(--dur-1);
 }
 .folio .toc .sub a { padding-left: 14px; font-size: 13px; }
-.folio .toc .n { font: 500 12.5px/1.35 var(--font-ui); font-variant-numeric: tabular-nums; color: var(--ink-3); }
+.folio .toc .n { font: 500 12.5px/1.35 var(--font-ui); font-variant-numeric: tabular-nums; color: var(--ink-3); text-align: right; }
 .folio .toc .is-on a { color: var(--ink); font-weight: 600; }
 .folio .toc .is-on .t { background: linear-gradient(transparent 52%, var(--hl-soft) 52%, var(--hl-soft) 94%, transparent 94%); }
 .folio .prog { height: 3px; margin-top: 16px; border-radius: 2px; background: var(--page-3); overflow: hidden; }
@@ -50,9 +62,10 @@
 .folio .read-minimap.is-big svg { width: 100%; height: auto; }
 
 .folio .ah { padding-bottom: 24px; margin-bottom: 32px; border-bottom: 1px solid var(--rule); }
-.folio .ah-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font: 400 13px/1.4 var(--font-ui); color: var(--ink-2); margin: 0; }
-.folio .ah-meta > span + span::before { content: "·"; margin-right: 12px; color: var(--rule-2); }
-.folio .ah-meta .seg { margin-left: auto; }
+.folio .ah-bar { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.folio .ah-bar .seg { align-self: flex-end; }
+.folio .ah-meta { display: flex; align-items: center; gap: 0; flex-wrap: wrap; font: 400 13px/1.4 var(--font-ui); color: var(--ink-2); margin: 0; }
+.folio .ah-meta > span + span::before { content: "·"; margin: 0 10px; color: var(--rule-2); }
 .folio .ah h1 { margin: 16px 0 12px; font: 600 44px/1.1 var(--font-read); letter-spacing: -.015em; text-wrap: balance; }
 .folio .ah-auth { margin: 0; font: 400 14.5px/1.5 var(--font-ui); color: var(--ink-2); }
 .folio .ah-links { display: flex; align-items: center; gap: 16px; margin: 12px 0 0; font: 400 13.5px/1.4 var(--font-ui); color: var(--ink-2); }
@@ -270,25 +283,29 @@
   .folio .read-minimap:hover { border-color: var(--accent-line); }
 }
 
+@media (min-width: 1400px) {
+  .folio { grid-template-columns: 240px minmax(0, 42rem) 240px; }
+}
 @media (min-width: 1200px) {
   .folio .fig.blk,
   .folio .table-fig,
-  .folio .instrument { margin-right: calc(-1 * (250px + 52px)); }
+  .folio .instrument { margin-right: calc(-1 * (240px + 36px)); }
   .folio .margin-inline { display: none; }
 }
 @media (max-width: 1199px) {
-  .folio { grid-template-columns: 220px minmax(0, 700px); }
+  .folio { grid-template-columns: 180px minmax(0, 42rem); gap: 28px; }
   .folio .side { display: none; }
   .folio .fig.blk,
   .folio .table-fig,
   .folio .instrument { margin-right: 0; }
 }
 @media (max-width: 760px) {
-  .folio { display: block; padding: 22px 20px 100px; }
+  [data-screen="paper"].lvl:has(> .folio) { padding-left: 20px; padding-right: 20px; }
+  .folio { display: block; padding: 12px 0 100px; }
   .folio .toc { display: none; }
   .folio .sec p { text-align: left; -webkit-hyphens: manual; hyphens: manual; }
   .folio .ah h1 { font-size: 34px; }
-  .folio .ah-meta .seg { margin-left: 0; }
+  .folio .ah-bar .seg { align-self: flex-start; }
   .folio .eq .copy { display: none; }
   .folio .eq .katex-display > .katex { font-size: .8em; }
   .folio .popover { width: auto; }

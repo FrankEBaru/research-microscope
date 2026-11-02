@@ -55,7 +55,7 @@ export function Table({ b, ctx, n, predict = true, still = false }: { b: Block; 
   return (
     <figure className="table-fig" id={b.label || undefined} data-tab={b.id}>
       {chartable && !ctx.core && <div className="tchart-bar"><button className="tchart-toggle" aria-pressed={showChart} onClick={() => setShowChart((v) => !v)}>{showChart ? "Ocultar gráfica" : "Ver como gráfica"}</button></div>}
-      {ctx.core && <input className="table-filter" aria-label="Filter rows" value={filter} placeholder="Filter rows" onChange={(e) => setFilter(e.target.value)} />}
+      {ctx.core && <input className="table-filter" aria-label="Filtrar filas" value={filter} placeholder="Filtrar filas" onChange={(e) => setFilter(e.target.value)} />}
       {showChart && !ctx.core && <TableChart model={model} n={n} predict={predict} />}
       <div className="table-wrap" onMouseLeave={() => setHc(null)}>
         <table data-hc={hc ?? undefined}>
@@ -74,7 +74,7 @@ export function Table({ b, ctx, n, predict = true, still = false }: { b: Block; 
           </tbody>
         </table>
       </div>
-      <figcaption><b>Table {n}.</b> <Inlines inls={b.caption} ctx={ctx} /></figcaption>
+      <figcaption><b>Tabla {n}.</b> <Inlines inls={b.caption} ctx={ctx} /></figcaption>
     </figure>
   );
 }

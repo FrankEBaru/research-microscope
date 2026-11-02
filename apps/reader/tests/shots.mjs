@@ -288,7 +288,7 @@ async function main() {
       await shot("05-paper-vistazo");
     });
     await step("05b-paper-leer", async () => {
-      await page.getByRole("button", { name: "Leer", exact: true }).click({ timeout: 5000 });
+      await page.getByRole("tab", { name: "Read", exact: true }).click({ timeout: 5000 });
       await sleep(800);
       await shot("05b-paper-leer");
     });
@@ -308,7 +308,11 @@ async function main() {
     });
     await step("06-caja", async () => {
       if (!info.askText) throw new Error("los datos no traen texto para la caja");
-      const form = page.locator(S.ask).first();
+      let form = page.locator(S.ask).first();
+      if (!(await form.count())) {
+        await page.locator(".yw").first().click({ timeout: 5000 });
+        form = page.locator(S.ask).first();
+      }
       await form.scrollIntoViewIfNeeded({ timeout: 5000 });
       await form.locator("textarea").fill(info.askText);
       await form.locator('button[type="submit"]').click({ timeout: 5000 });
