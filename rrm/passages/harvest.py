@@ -1,5 +1,9 @@
 """Descarga y parseo reanudables. Una máquina, una conexión.
 
+La licencia no hace falta para construir. Solo se pide (OAI-PMH, una petición
+más por paper con el mismo gate) con `license_lookup=True`
+(`RRM_PASSAGES_LICENSE=1` en Modal). Apagada, `license` queda vacío.
+
 Salta un corpusid que ya tiene filas o una falla anotada. Si el caché del
 lector está `done` con fuente latex, no vuelve a bajar; si faltan filas,
 las saca de paper.json. Un abstract_only no trae el cuerpo, así que sí se
@@ -63,7 +67,7 @@ def _reason(err) -> str:
     return text[:200]
 
 
-def harvest_one(meta, *, client, papers_root, dest, retry=False):
+def harvest_one(meta, *, client, papers_root, dest, retry=False, license_lookup=False):
     """Un paper. `meta` trae corpusid y, si se conoce, arxiv_id, título y licencia."""
     cid = int(meta["corpusid"])
     row_path = paper_dir(dest) / f"{cid}.json"
@@ -87,13 +91,13 @@ def harvest_one(meta, *, client, papers_root, dest, retry=False):
             # El caché viejo del lector no guarda licencia. Se pide a la API de
             # arXiv (misma conexión, mismo gate de 3.5 s); el e-print no se baja.
             license_url = (load_meta(folder) or {}).get("license") or (paper or {}).get("license") or ""
-        if not license_url and arxiv_id:
+        if license_lookup and not license_url and arxiv_id:
             license_url, license_error = _license(client, arxiv_id)
     else:
         if not arxiv_id:
             save_failure(dest, cid, "sin arxiv id")
             return {"corpusid": cid, "skipped": False, "reason": "sin arxiv id", "rows": 0}
-        if not license_url:
+        if license_lookup and not license_url:
             license_url, license_error = _license(client, arxiv_id)
         started = time.time()
         try:
@@ -156,7 +160,8 @@ def harvest_one(meta, *, client, papers_root, dest, retry=False):
     }
 
 
-def harvest_ids(ids, metas, *, client, papers_root, dest, retry=False, break_lock=False, on_paper=None):
+def harvest_ids(ids, metas, *, client, papers_root, dest, retry=False, break_lock=False, on_paper=None,
+                license_lookup=False):
     """En serie. `metas` es un dict corpusid → metadata. Para al primer 429 repetido."""
     acquire_harvest_lock(dest, break_lock=break_lock)
     done = []
@@ -167,6 +172,7 @@ def harvest_ids(ids, metas, *, client, papers_root, dest, retry=False, break_loc
             meta["corpusid"] = cid
             result = harvest_one(
                 meta, client=client, papers_root=papers_root, dest=dest, retry=retry,
+                license_lookup=license_lookup,
             )
             done.append(result)
             if on_paper:

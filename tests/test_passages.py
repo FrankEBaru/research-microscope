@@ -356,7 +356,7 @@ def test_arxiv_gap_backoff_and_resume(tmp_path, monkeypatch):
 
     def fake(url, ua):
         calls["n"] += 1
-        if "api/query" in url:
+        if "oai2" in url:
             return b'<arxiv:license href="http://creativecommons.org/licenses/by/4.0/" />'
         return TEX.encode("utf-8")
 
@@ -366,7 +366,7 @@ def test_arxiv_gap_backoff_and_resume(tmp_path, monkeypatch):
     second = harvest_one(meta, client=client, papers_root=tmp_path / "papers", dest=tmp_path / "passages")
     assert first["rows"] >= 1 and first["downloaded"] is True
     assert second["skipped"] is True and second["reason"] == "rows"
-    assert calls["n"] == 2
+    assert calls["n"] == 1  # licencia apagada por defecto: solo el e-print
     folder = tmp_path / "papers" / "11"
     assert reader_cache_ready(folder) and latex_cache_ready(folder)
     assert read_phrases(folder)

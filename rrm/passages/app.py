@@ -22,6 +22,7 @@ Al terminar, Modal queda parado: estas funciones no dejan un contenedor caliente
 `RRM_PASSAGES_RETRY=1` rehace las filas de los ids de la etapa aunque ya existan.
 `RRM_PASSAGES_SKIP_CACHED=1` toma los primeros `n` de la unión que no están en
 el caché del lector y tienen arxiv id (prueba de descarga real).
+`RRM_PASSAGES_LICENSE=1` pide la licencia por OAI (apagado por defecto).
 `RRM_PASSAGES_EXTRA_IDS=1,2` suma ids que ya están en el caché latex (sin e-print).
 """
 
@@ -74,6 +75,7 @@ _STAGE_KEYS = (
     "RRM_PASSAGES_IGNORE_STOP",
     "RRM_PASSAGES_BREAK_LOCK",
     "RRM_PASSAGES_RETRY",
+    "RRM_PASSAGES_LICENSE",
     "RRM_PASSAGES_SKIP_CACHED",
     "RRM_PASSAGES_EXTRA_IDS",
     "RRM_PASSAGES_ANCHORS",
@@ -239,6 +241,14 @@ def e0_run():
     })
 
 
+def _save_requests(dest, stage, client, error=None):
+    """Log de peticiones a arXiv con hora de inicio y gaps. Se guarda aunque la etapa pare."""
+    body = {"stage": stage, "error": error, "requests": client.log, "gaps_s": client.gaps(),
+            "min_gap_s": min(client.gaps()) if client.gaps() else None}
+    (Path(dest) / f"{stage}_requests.json").write_text(json.dumps(body), encoding="utf-8")
+    print(json.dumps({"arxiv_requests": len(client.log), "gaps_s": body["gaps_s"], "error": error}), flush=True)
+
+
 @app.function(image=cpu_image, volumes={MOUNT: vol}, secrets=[stage_env], cpu=1, memory=2048, timeout=8 * 3600, max_containers=1)
 def harvest_run(stage: str, n: int):
     """Baja y parsea los primeros `n` de la unión. Reanudable. Sin GPU."""
@@ -331,11 +341,14 @@ def harvest_run(stage: str, n: int):
             break_lock=os.environ.get("RRM_PASSAGES_BREAK_LOCK") == "1",
             retry=os.environ.get("RRM_PASSAGES_RETRY") == "1",
             on_paper=on_paper,
+            license_lookup=os.environ.get("RRM_PASSAGES_LICENSE") == "1",
         )
     except (ArxivStopped, StageBudget) as err:
+        _save_requests(dest, stage, client, error=str(err))
         compile_store(dest, quota_source=union.get("quota_source"))
         vol.commit()
         raise SystemExit(f"{stage} se detiene: {err}") from err
+    _save_requests(dest, stage, client)
     manifest = compile_store(dest, quota_source=union.get("quota_source"))
     vol.commit()
     return _report(stage, started, cpu=1, extra={

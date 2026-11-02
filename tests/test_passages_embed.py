@@ -235,7 +235,8 @@ def test_cached_paper_without_license_asks_only_the_license(tmp_path):
 
     client = ArxivClient(opener=opener, sleep=lambda s: None)
     out = harvest_one({"corpusid": 7, "arxiv_id": "9999.00007", "title": "Attention Is All You Need"},
-                      client=client, papers_root=tmp_path / "papers", dest=tmp_path / "passages")
+                      client=client, papers_root=tmp_path / "papers", dest=tmp_path / "passages",
+                      license_lookup=True)
     assert out["downloaded"] is False and out["rows"] > 0
     assert len(urls) == 1 and "/oai2?verb=GetRecord" in urls[0] and "oai:arXiv.org:9999.00007" in urls[0]
     import json
@@ -243,7 +244,8 @@ def test_cached_paper_without_license_asks_only_the_license(tmp_path):
     saved = json.loads((tmp_path / "passages" / "papers" / "7.json").read_text(encoding="utf-8"))
     assert saved["paper"]["license"] == "http://creativecommons.org/licenses/by/4.0/"
     again = harvest_one({"corpusid": 7, "arxiv_id": "9999.00007"}, client=client,
-                        papers_root=tmp_path / "papers", dest=tmp_path / "passages", retry=True)
+                        papers_root=tmp_path / "papers", dest=tmp_path / "passages", retry=True,
+                        license_lookup=True)
     assert again["rows"] == out["rows"] and len(urls) == 2
 
 
@@ -264,7 +266,37 @@ def test_oai_license_parse_errors_are_reported_and_gate_is_shared(tmp_path):
                          gate=gate, sleep=lambda d: None)
     client.now = lambda: clock["t"]
     out = harvest_one({"corpusid": 21, "arxiv_id": "9999.00021"}, client=client,
-                      papers_root=tmp_path / "papers", dest=tmp_path / "passages")
+                      papers_root=tmp_path / "papers", dest=tmp_path / "passages", license_lookup=True)
     assert out["license"] == "" and out["license_error"].startswith("oai badArgument")
     assert [e["url"].split("/")[3][:5] for e in client.log] == ["oai2?", "e-pri"]
     assert client.gaps() and min(client.gaps()) >= 3.5
+
+
+
+def test_license_off_by_default_and_retry_after_is_honored(tmp_path):
+    import urllib.error
+
+    from rrm.passages.arxiv import ArxivClient, HarvestGate, retry_after
+    from rrm.passages.harvest import harvest_one
+
+    urls = []
+    client = ArxivClient(opener=lambda url, ua: (urls.append(url), b"not a tarball")[1],
+                         gate=HarvestGate(sleep=lambda d: None, now=lambda: 0.0), sleep=lambda d: None)
+    out = harvest_one({"corpusid": 22, "arxiv_id": "9999.00022"}, client=client,
+                      papers_root=tmp_path / "papers", dest=tmp_path / "passages")
+    assert out["license"] == "" and out["license_error"] is None
+    assert len(urls) == 1 and "/e-print/" in urls[0]
+
+    assert retry_after({"Retry-After": "30"}) == 30.0 and retry_after({}) is None and retry_after(None) is None
+    sleeps = []
+    codes = [429, 200]
+
+    def flaky(url, ua):
+        code = codes.pop(0)
+        if code != 200:
+            raise urllib.error.HTTPError(url, code, "slow", {"Retry-After": "20"}, None)
+        return b"ok"
+
+    client = ArxivClient(flaky, gate=HarvestGate(sleep=sleeps.append, now=lambda: 0.0), sleep=sleeps.append)
+    assert client.get("https://export.arxiv.org/e-print/1") == b"ok"
+    assert 20.0 in sleeps and client.log[0]["status"] == 429 and client.log[0]["retry_after"] == 20.0

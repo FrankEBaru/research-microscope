@@ -94,6 +94,15 @@ class HarvestGate:
             self.next = self.now() + self.interval
 
 
+def retry_after(headers):
+    """Segundos de `Retry-After` si viene como número. None si no viene."""
+    try:
+        raw = headers.get("Retry-After") if headers is not None else None
+        return float(raw) if raw is not None and str(raw).strip() else None
+    except (TypeError, ValueError):
+        return None
+
+
 def urlopen(url, ua):
     req = urllib.request.Request(url, headers={"User-Agent": ua})
     with urllib.request.urlopen(req, timeout=120) as resp:
@@ -141,6 +150,10 @@ class ArxivClient:
                 self._streak += 1
                 if self._streak >= self.stop_after:
                     raise ArxivStopped(f"arXiv http {last.code} repeated")
+                wait = retry_after(getattr(last, "headers", None))
+                if wait is not None:
+                    self.log[-1]["retry_after"] = wait
+                    delay = max(delay, min(wait, 600.0))
                 self.sleep(delay)
                 delay = min(delay * 2, 120.0)
                 continue
