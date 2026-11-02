@@ -1,0 +1,92 @@
+/* Caja «Your words». Una columna. El slot sigue sticky por .ask-slot en legacy. */
+
+.box,
+.box-h { scroll-margin-top: 6.5rem; }
+
+.ask-slot .ask-card.box,
+form.ask-card.box {
+  max-height: none;
+  overflow: visible;
+  margin: 6px 0 34px;
+  padding: 20px 22px 18px;
+  border-radius: 14px;
+  background: var(--page-2);
+  border: 1px solid var(--rule);
+  font-family: var(--font-ui);
+  color: var(--ink);
+}
+
+.ask-slot:has(.box[data-variant="section"]) {
+  position: static;
+  top: auto;
+  z-index: auto;
+}
+
+.box-h { display: flex; align-items: center; gap: 10px; }
+.box-h > .ic { color: var(--accent); }
+.box-h h3 { margin: 0; font: 600 19px/1.2 var(--font-read); color: var(--ink); }
+.saved { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--ink-3); }
+.saved .ic { width: 14px; height: 14px; color: var(--accent); stroke-width: 2.2; }
+
+.box .you {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--sheet);
+  border: 1px solid var(--rule-2);
+  font: 400 16px/1.55 var(--font-ui);
+  color: var(--ink);
+  resize: vertical;
+  min-height: 4.5rem;
+}
+.box-act { display: flex; justify-content: flex-end; margin-top: 8px; }
+.box .btn:disabled { opacity: .45; }
+.box-status { margin: 8px 0 0; font: 400 13px/1.4 var(--font-ui); color: var(--ink-3); }
+.box-preview { margin: 8px 0 0; font: 400 16px/1.55 var(--font-ui); color: var(--ink-2); }
+.box-offer { margin: 0 0 10px; font: 400 14px/1.45 var(--font-ui); color: var(--ink-2); }
+
+.box .ask-result.feedback {
+  margin: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+.box .cap { margin-top: 14px; }
+.claim { margin-top: 8px; color: var(--ink); }
+.box .claim > p { margin: 0; font: 400 16px/1.55 var(--font-ui); color: var(--ink); }
+.claim-miss { margin: 4px 0 0; font: 400 14px/1.45 var(--font-ui); color: var(--ink-2); }
+
+.box .ex {
+  margin: 10px 0 12px;
+  padding: 0 0 0 14px;
+  border: 0;
+  border-left: 3px solid var(--rule-2);
+  border-radius: 0;
+  background: transparent;
+}
+.box .ex.is-linked { border-left-color: var(--accent); }
+.box .ex p { margin: 0; font: 400 16.5px/1.6 var(--font-read); color: var(--ink); }
+.box .ex footer { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+.box-jump {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: 600 13px/1 var(--font-ui);
+  color: var(--accent);
+  cursor: pointer;
+}
+.box-note { margin: 6px 0 0; font: 400 14px/1.45 var(--font-ui); color: var(--ink-2); }
+.box-prov { margin: 14px 0 0; }
+
+.sent.flash { background: var(--hl-soft); border-radius: 2px; }
+
+@media (hover: hover) {
+  .box-jump:hover { color: var(--accent-h); }
+}
+@media (max-width: 760px) {
+  form.ask-card.box { padding: 16px 14px 14px; }
+}
