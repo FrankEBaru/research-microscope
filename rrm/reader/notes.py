@@ -55,7 +55,6 @@ def _clip_cite(text, symbols):
 
 
 def _fit(flat, lo, hi):
-    """Recorte por longitud, en el último punto. more si todavía había texto."""
     n = len(flat)
     lo, hi = max(0, min(int(lo), n)), max(0, min(int(hi), n))
     more, chunk = hi < n, flat[lo:hi]

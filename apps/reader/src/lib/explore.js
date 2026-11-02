@@ -64,19 +64,11 @@ export function whyLabel(raw) {
   const text = String(raw || "").replace(/\s+/g, " ").trim();
   return WHY[text] || text;
 }
-
-/** Arista de llegada, o la primera visita: «desde el mapa» / «link directo». */
 export function visitWhy(node, edges, q) {
   const id = String((node && node.id) || "");
-  let best = null;
-  for (const edge of edges || []) {
-    if (String(edge.to) !== id) continue;
-    if (!best || (edge.at || 0) >= (best.at || 0)) best = edge;
-  }
+  const best = (edges || []).filter((edge) => String(edge.to) === id).sort((a, b) => (a.at || 0) - (b.at || 0)).pop();
   if (best) return whyLabel(best.porQue);
-  const own = whyLabel(node && node.llegada);
-  if (own) return own;
-  return q && q !== "_solo" ? "desde el mapa" : "link directo";
+  return whyLabel(node && node.llegada) || (q && q !== "_solo" ? "desde el mapa" : "link directo");
 }
 
 function trim(entry, current) {

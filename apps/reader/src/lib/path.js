@@ -24,7 +24,6 @@ export function popVisit(stack) {
   return prev.slice(0, -1);
 }
 
-/** El back del navegador deja la pila en el paper de arriba. Recórtala al paper abierto. */
 export function alignVisit(stack, id) {
   const cur = String(id || "");
   const prev = Array.isArray(stack) ? stack : [];
