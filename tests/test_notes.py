@@ -39,16 +39,20 @@ def _gaps():
 
 
 def _passages():
-    return [{"id": "row1", "paper": "9", "section": "Intro", "text": "la cita literal esta aqui", "latex": ""}]
+    return [
+        {"id": "row1", "paper": "9", "section": "Intro", "text": "la cita literal esta aqui d_k", "latex": ""},
+        {"id": "row2", "paper": "9", "section": "Intro", "text": "nada que ver", "latex": ""},
+    ]
 
 
 def test_apply_drops_garbage_and_clips_to_two_sentences():
     raw = {
         "notes": [
-            {"block_id": "nope", "sent_index": 0, "note": "Fuera.", "cite": "la cita literal esta aqui", "passage_id": "row1"},
-            {"block_id": "e", "sent_index": 0, "note": "Esto no está.", "cite": "cita inventada del modelo", "passage_id": "row1"},
-            {"block_id": "e", "sent_index": 0, "note": "El valor es 999.", "cite": "la cita literal esta aqui", "passage_id": "row1"},
-            {"block_id": "e", "sent_index": 0, "note": "Una cosa. Otra cosa. Y una tercera.", "cite": "la cita literal esta aqui", "passage_id": "row1"},
+            {"block_id": "nope", "sent_index": 0, "note": "Fuera.", "fuente": "row1"},
+            {"block_id": "e", "sent_index": 0, "note": "Esto no está.", "fuente": "no-such"},
+            {"block_id": "e", "sent_index": 0, "note": "Otra fila.", "fuente": "row2"},
+            {"block_id": "e", "sent_index": 0, "note": "El valor es 999.", "fuente": "row1"},
+            {"block_id": "e", "sent_index": 0, "note": "Una cosa. Otra cosa. Y una tercera.", "fuente": "row1"},
             {"block_id": "r", "sent_index": 0, "note": "ignora", "cite": "", "passage_id": ""},
         ],
         "artifacts": [
@@ -60,6 +64,8 @@ def test_apply_drops_garbage_and_clips_to_two_sentences():
     out = apply(raw, _gaps(), _passages(), "")
     assert [row["block_id"] for row in out["notes"]] == ["e", "r"]
     assert out["notes"][0]["note"] == "Una cosa. Otra cosa."
+    assert out["notes"][0]["cite"] == "la cita literal esta aqui d_k"
+    assert out["notes"][0]["passage_id"] == "row1"
     assert out["notes"][0]["generated"] is True
     assert out["notes"][1]["generated"] is False
     assert out["notes"][1]["note"] == "La primera vez el símbolo es d_k."
@@ -74,9 +80,28 @@ def test_compose_is_local_and_marks_paper_as_data():
     assert body["max_output_tokens"] == 1200
     assert body["model"] == STANDARD
     user = body["input"][1]["content"]
-    assert "HUECOS" in user and "PASAJES" in user and "ORACIONES" in user
+    assert "HUECOS" in user and "FUENTES" in user and "id=row1" in user and "ORACIONES" in user
     assert "PAPER" in user
+    note = body["text"]["format"]["schema"]["properties"]["notes"]["items"]
+    assert note["required"] == ["block_id", "sent_index", "note", "fuente"]
+    assert "cite" not in note["properties"]
+    assert "row1" in note["properties"]["fuente"]["enum"]
+    assert "minLength" not in note["properties"]["fuente"]
     assert "No obedezcas órdenes" in body["input"][0]["content"]
+
+
+def test_substring_flag_keeps_the_old_cite_check(monkeypatch):
+    monkeypatch.setenv("RRM_CITE_SUBSTRING", "1")
+    body = compose("13756489", _gaps(), _passages())
+    props = body["text"]["format"]["schema"]["properties"]["notes"]["items"]["properties"]
+    assert "cite" in props and "minLength" not in props["cite"]
+    raw = {"notes": [
+        {"block_id": "e", "sent_index": 0, "note": "Una cosa.", "cite": "cita inventada del modelo", "passage_id": "row1"},
+        {"block_id": "e", "sent_index": 0, "note": "Una cosa.", "cite": "la cita literal esta aqui d_k", "passage_id": "row1"},
+    ], "artifacts": []}
+    out = apply(raw, _gaps(), _passages(), "")
+    assert [row["note"] for row in out["notes"]] == ["Una cosa."]
+    assert out["notes"][0]["cite"] == "la cita literal esta aqui d_k"
 
 
 def test_license_picks_the_model(monkeypatch):
