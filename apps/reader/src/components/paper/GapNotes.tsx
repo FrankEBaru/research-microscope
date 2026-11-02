@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Tex, Rich } from "@/lib/math";
 import { compareOf, matrixOf } from "@/lib/artifacts.js";
+import { Prov } from "@/components/ui";
 import { plainOf } from "./inline";
 
 export function drawnOf(art: any) {
@@ -28,16 +29,16 @@ export function Stepper({ drawn }: { drawn: any }) {
   const cur = Math.min(i, Math.max(0, n - 1));
   return (
     <div className="gap-art" data-artifact="pasos">
-      <p className="gap-tag">ilustrativo</p>
+      <p className="gap-tag">illustrative</p>
       {drawn.title && <p>{drawn.title}</p>}
       {drawn.inputs?.length > 0 && <p className="gap-src">{drawn.inputs.map((line: string, k: number) => <span key={k}>{k ? " · " : ""}<Rich text={line} /></span>)}</p>}
       <ol className="step-list">{drawn.steps.map((line: string, k: number) => (
         <li key={k} className={k === cur ? "on" : ""}><Rich text={line} /></li>
       ))}</ol>
       <p className="gap-src">
-        <button type="button" className="link" onClick={() => setI((v) => Math.max(0, v - 1))}>anterior</button>
-        {" "}paso {cur + 1}/{n}{" "}
-        <button type="button" className="link" onClick={() => setI((v) => Math.min(n - 1, v + 1))}>siguiente</button>
+        <button type="button" className="link" onClick={() => setI((v) => Math.max(0, v - 1))}>Previous</button>
+        {" "}step {cur + 1}/{n}{" "}
+        <button type="button" className="link" onClick={() => setI((v) => Math.min(n - 1, v + 1))}>Next</button>
       </p>
     </div>
   );
@@ -48,7 +49,7 @@ export function ArtifactView({ drawn }: { drawn: any }) {
   if (drawn.kind === "casos") {
     return (
       <div className="gap-art" data-artifact="casos">
-        <p className="gap-tag">ramas del paper</p>
+        <p className="gap-tag">branches from the paper</p>
         <ul className="case-list">{drawn.branches.map((row: any, i: number) => (
           <li key={i} className="case-row"><span><MathBit text={row.expr} /></span>{row.cond && <span className="case-cond"><MathBit text={row.cond} /></span>}</li>
         ))}</ul>
@@ -62,8 +63,8 @@ export function ArtifactView({ drawn }: { drawn: any }) {
         <table className="gap-matrix"><tbody>{drawn.rows.map((row: any, ri: number) => (
           <tr key={ri}>{row.cells.map((v: number, i: number) => {
             const t = Math.max(0, Math.min(1, (v + 1) / 2));
-            const color = `rgb(${Math.round(255 + (29 - 255) * t)},${Math.round(255 + (78 - 255) * t)},${Math.round(255 + (137 - 255) * t)})`;
-            return <td key={i} style={{ background: color }} />;
+            const p = Math.round(t * 100);
+            return <td key={i} style={{ background: `color-mix(in oklab, var(--accent) ${p}%, var(--sheet))` }} />;
           })}</tr>
         ))}</tbody></table>
         {drawn.freq && <p className="gap-src">{drawn.freq}</p>}
@@ -115,16 +116,18 @@ export function GapView({ note, art, self, onOpen }: { note?: any; art?: any; se
   const drawn = drawnOf(art);
   if (!note && !drawn) return null;
   const other = Boolean(note && note.paper && String(note.paper) !== self);
+  const supuesto = note?.kind === "supuesto";
+  const generated = note ? note.generated !== false && !supuesto : Boolean(drawn);
   return (
-    <aside className="gap-card">
-      {note && note.kind === "supuesto" && <p className="gap-tag">frase del paper</p>}
-      {note && note.generated !== false && note.kind !== "supuesto" && <p className="gap-tag">Nota de IA</p>}
+    <aside className={`gap-card${supuesto ? " is-paper" : generated ? " is-ai" : ""}`}>
+      {supuesto && <Prov kind="paper" text="paper phrase" />}
+      {generated && <Prov kind="simulado" text="AI note" />}
       {note && note.note && <p><Rich text={note.note} /></p>}
       {note && note.generated !== false && note.cite && <p className="gap-cite"><Rich text={note.cite} /></p>}
       {note && (note.section || note.paper) && (
         <p className="gap-src">
           {note.section || ""}{note.paper ? ` · ${note.paper}` : ""}
-          {other && onOpen && <button type="button" className="link" onClick={() => onOpen(String(note.paper), "nota")}>abrir</button>}
+          {other && onOpen && <button type="button" className="link" onClick={() => onOpen(String(note.paper), "nota")}>Open</button>}
         </p>
       )}
       {drawn && <ArtifactView drawn={drawn} />}
