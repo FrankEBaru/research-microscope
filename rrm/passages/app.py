@@ -908,7 +908,7 @@ def export_meta():
     ids = [int(item) for item in union.get("ids") or []]
     display = _root() / "index" / "display.parquet"
     table = pq.read_table(display, columns=["corpusid", "arxiv", "title", "year"])
-    mask = pc.is_in(table.column("corpusid"), value=pa.array(ids, type=pa.int64()))
+    mask = pc.is_in(table.column("corpusid"), value_set=pa.array(ids, type=pa.int64()))
     sub = table.filter(mask)
     by_id = {}
     for i in range(sub.num_rows):
