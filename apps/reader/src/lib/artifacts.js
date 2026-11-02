@@ -502,6 +502,42 @@ export function stepsOf(text, macros) {
   };
 }
 
+function isWordChar(ch) {
+  return /[\p{L}\p{N}]/u.test(ch || "");
+}
+
+/** A cut from a fixed window can land inside a word. Move to a word edge. */
+function snapWordStart(blob, index) {
+  let start = Math.max(0, Math.min(index, blob.length));
+  while (start > 0 && isWordChar(blob[start]) && isWordChar(blob[start - 1])) start -= 1;
+  while (start < blob.length && /[\s"'“”«»(\[]/.test(blob[start])) start += 1;
+  return start;
+}
+
+function snapWordEnd(blob, index) {
+  let end = Math.max(0, Math.min(index, blob.length));
+  if (end > 0 && end < blob.length && isWordChar(blob[end - 1]) && isWordChar(blob[end])) {
+    while (end < blob.length && isWordChar(blob[end])) end += 1;
+  }
+  return end;
+}
+
+function sentenceStart(blob, index) {
+  let dot = -1;
+  const at = Math.min(index, blob.length);
+  for (let i = at - 1; i >= 0; i--) {
+    if (blob[i] !== ".") continue;
+    const prev = blob[i - 1] || "";
+    const next = blob[i + 1] || "";
+    if (isWordChar(prev) && isWordChar(next)) continue;
+    if (/\d/.test(prev) && /\d/.test(next)) continue;
+    dot = i;
+    break;
+  }
+  if (dot < 0 || at - dot > 280) return snapWordStart(blob, Math.max(0, at - 100));
+  return snapWordStart(blob, dot + 1);
+}
+
 function assumption(text) {
   const src = String(text || "");
   const found = ASSUME.exec(src);
@@ -511,6 +547,7 @@ function assumption(text) {
   let start = found.index;
   while (start > 0 && src[start - 1] !== "." && found.index - start < 160) start -= 1;
   if (src[start] === ".") start += 1;
+  start = snapWordStart(src, start);
   let end = src.indexOf(".", found.index + found[0].length);
   if (end < 0 || end - start > 320) end = Math.min(src.length, found.index + found[0].length + 140);
   else end += 1;
@@ -531,15 +568,14 @@ function whyQuote(rows) {
   const re = /gradient|counteract|variance/gi;
   let mark;
   while ((mark = re.exec(blob))) {
-    let start = blob.lastIndexOf(".", mark.index);
-    if (start < 0 || mark.index - start > 280) start = Math.max(0, mark.index - 100);
-    else start += 1;
+    const start = sentenceStart(blob, mark.index);
     let end = blob.indexOf(".", mark.index);
     if (end < 0) end = Math.min(blob.length, mark.index + 160);
     else end += 1;
+    end = snapWordEnd(blob, end);
     const sentence = blob.slice(start, end).replace(/\s+/g, " ").trim();
     if (/softmax|gradient/i.test(sentence) && /scale|counteract|variance|sqrt|softmax/i.test(sentence)) {
-      return sentence.slice(0, 280);
+      return sentence.slice(0, snapWordEnd(sentence, Math.min(280, sentence.length))).trim();
     }
   }
   return "";
