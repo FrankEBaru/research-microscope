@@ -389,8 +389,6 @@ function yearCitation(rows, years, known, directed, undirected) {
   );
 }
 
-const CLUSTER_COLORS = ["#27476b", "#3d5a47", "#8a5a2b", "#5c4d7a", "#3e6b66", "#6d5a4a"];
-
 export function statusLine(papers, states) {
   const counts = { encontrado: 0, preparando: 0, listo: 0, fallo: 0 };
   for (const paper of papers || []) counts[phaseOf(states?.[paperKey(paper)]?.status).id] += 1;
@@ -405,7 +403,8 @@ export function statusLine(papers, states) {
 
 export function clusterColor(id) {
   const n = Number(id) || 0;
-  return CLUSTER_COLORS[((n % CLUSTER_COLORS.length) + CLUSTER_COLORS.length) % CLUSTER_COLORS.length];
+  const i = ((n % 6) + 6) % 6;
+  return `var(--grp-${i + 1})`;
 }
 
 export function pointRadius(rank, n) {
