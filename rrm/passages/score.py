@@ -17,9 +17,15 @@ from rrm.search.graph import locate
 
 
 def dedupe_ids(ids):
+    if isinstance(ids, np.ndarray):
+        seq = ids.tolist()
+    elif not ids:
+        seq = []
+    else:
+        seq = ids
     out = []
     seen = set()
-    for raw in ids or []:
+    for raw in seq:
         try:
             cid = int(raw)
         except (TypeError, ValueError):

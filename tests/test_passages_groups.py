@@ -41,6 +41,8 @@ def test_penalized_score_demotes_the_global_hub():
     assert by_id[40]["score"] > by_id[50]["score"] > by_id[80]["score"]
     assert by_id[50]["score"] == by_id[90]["score"]
     assert 30 not in by_id and 70 not in by_id
+    as_array = rank_group(graph, np.array([10, 20], dtype=np.int64), cc)
+    assert [row["corpusid"] for row in as_array] == [40, 50, 90, 80]
 
 
 def test_layer_union_is_round_robin_and_skips_duplicates():
