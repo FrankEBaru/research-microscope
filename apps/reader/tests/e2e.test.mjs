@@ -183,10 +183,10 @@ test("gráficas vivas: la Tabla 2 de Attention se ve como barras con los número
   const toggles = await p.$$(".tchart-toggle"); assert.ok(toggles.length >= 1, "en all al menos una tabla numérica es graficable");
   const fig = (await p.$$(".table-fig"))[1]; await fig.evaluate((e) => e.scrollIntoView({ block: "center" }));
   await (await fig.$(".tchart-toggle")).click(); await p.waitForSelector(".tchart .tbar-row");
-  assert.match(await p.$eval(".tchart .chips", (e) => e.textContent), /sin cambiar/);
+  assert.match(await p.$eval(".tchart .chips", (e) => e.textContent), /paper values/);
   const rows = await p.$$eval(".tchart .tbar-row", (n) => n.map((e) => [e.dataset.rowLabel, e.querySelector(".tb-val").textContent.trim()]));
   assert.ok(rows.length >= 6); assert.ok(rows.some(([l, v]) => /ByteNet/.test(l) && v === "23.75"), "ByteNet 23.75, tal cual la tabla");
-  await p.selectOption(".tchart select", "desc"); await p.waitForTimeout(300);
+  await p.click(".tchart .more"); await p.selectOption(".tchart select", "desc"); await p.waitForTimeout(300);
   const first = await p.$eval(".tchart .tbar-row .tb-val", (e) => parseFloat(e.textContent)); const all = await p.$$eval(".tchart .tb-val", (n) => n.map((e) => parseFloat(e.textContent)));
   assert.equal(first, Math.max(...all), "orden de mayor a menor");
   await p.click(".tchart .pills button >> nth=1"); await p.waitForTimeout(300); assert.ok((await p.$$(".tchart .tbar-row")).length >= 3);
@@ -246,15 +246,15 @@ test("gráfica: predecir antes de ver oculta las barras hasta elegir y luego rev
   const p = await page("#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".paper");
   if (!(await p.$(".companion-toggle"))) {
     assert.equal(await p.$(".tchart-toggle"), null, "en core no está Ver como gráfica");
-    assert.equal((await p.$eval("body", (e) => e.textContent)).includes("Acertaste"), false);
+    assert.equal((await p.$eval("body", (e) => e.textContent)).includes("You chose"), false);
     assert.deepEqual(p.errs, []); await p.close();
     return;
   }
   const fig = (await p.$$(".table-fig"))[1]; await fig.evaluate((e) => e.scrollIntoView({ block: "center" }));
   await (await fig.$(".tchart-toggle")).click(); await p.waitForSelector(".tchart .tbar-row");
-  await p.check(".tpredict input"); assert.equal(await p.$$eval(".tbar-row.hid .tb-val", (n) => n.every((e) => e.textContent === "?")), true);
+  await p.getByRole("switch", { name: "Predict first" }).click(); assert.equal(await p.$$eval(".tbar-row.hid .tb-val", (n) => n.every((e) => e.textContent === "?")), true);
   await p.click(".tbar-row.hid >> nth=0"); await p.waitForSelector(".tp-result");
-  assert.match(await p.$eval(".tp-result", (e) => e.textContent), /Acertaste|el más alto es/);
+  assert.match(await p.$eval(".tp-result", (e) => e.textContent), /You chose .+ The highest is/);
   assert.equal(await p.$$eval(".tbar-row.hid", (n) => n.length), 0, "al elegir se revelan los valores"); assert.deepEqual(p.errs, []); await p.close();
 });
 
