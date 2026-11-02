@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { draftKey, hasDraft, legacyKey, loadDraft, migrateLegacy, saveDraft } from "../src/lib/draft.js";
+import { draftKey, legacyKey, loadDraft, migrateLegacy, saveDraft } from "../src/lib/draft.js";
 
 function memory() {
   const map = new Map();
@@ -36,18 +36,6 @@ test("guardar y leer; JSON roto o storage que truena no tiran", () => {
   assert.equal(loadDraft(broken, "k"), null);
   assert.equal(saveDraft(broken, "k", snap), false);
   assert.equal(saveDraft(null, "k", snap), false);
-});
-
-test("hasDraft solo cuenta texto no vacío de ese paper", () => {
-  const box = memory();
-  saveDraft(box, draftKey("7", "intro"), { text: "  una frase  ", at: 1 });
-  saveDraft(box, draftKey("7", "cierre"), { text: "   ", at: 1 });
-  saveDraft(box, draftKey("7", "_"), { text: "slot", at: 1 });
-  saveDraft(box, draftKey("9", "intro"), { text: "otro paper", at: 1 });
-  assert.deepEqual([...hasDraft(box, "7")].sort(), ["_", "intro"]);
-  assert.deepEqual([...hasDraft(box, "9")], ["intro"]);
-  assert.equal(hasDraft(box, "").size, 0);
-  assert.equal(hasDraft({ get length() { throw new Error("no"); }, key() { return null; } }, "7").size, 0);
 });
 
 test("migra rrm-ask y no pisa la clave nueva", () => {

@@ -32,25 +32,7 @@ export function saveDraft(storage, key, snap) {
   }
 }
 
-/** Secciones con texto no vacío. `_` es la caja sin sectionId. */
-export function hasDraft(storage, paperId) {
-  const found = new Set();
-  if (!storage || paperId == null || String(paperId) === "") return found;
-  const prefix = `rrm.draft.v1:${paperId}:`;
-  let n = 0;
-  try { n = storage.length; } catch { return found; }
-  for (let i = 0; i < n; i++) {
-    let key = "";
-    try { key = storage.key(i) || ""; } catch { continue; }
-    if (!key.startsWith(prefix)) continue;
-    const snap = loadDraft(storage, key);
-    if (!String(snap?.text || "").trim()) continue;
-    found.add(key.slice(prefix.length));
-  }
-  return found;
-}
-
-/** Copia `rrm-ask:<id>` a la clave nueva y borra la vieja. No pisa un borrador nuevo. */
+/** Copia `rrm-ask:<id>` dentro del mismo storage y borra la vieja. No pisa un borrador nuevo. */
 export function migrateLegacy(storage, paperId, sectionId) {
   const key = draftKey(paperId, sectionId);
   const current = loadDraft(storage, key);

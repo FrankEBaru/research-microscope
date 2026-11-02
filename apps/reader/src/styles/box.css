@@ -1,5 +1,8 @@
 /* Caja «Your words». Una columna. El slot sigue sticky por .ask-slot en legacy. */
 
+.box,
+.box-h { scroll-margin-top: 6.5rem; }
+
 .ask-slot .ask-card.box,
 form.ask-card.box {
   max-height: none;

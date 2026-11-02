@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Rich } from "@/lib/math";
 import { ask, explain, preparePhrases } from "@/lib/backend.js";
 import { cleanExtract, markMidStart, storeLine } from "@/lib/extract.js";
-import { draftKey, loadDraft, migrateLegacy, saveDraft } from "@/lib/draft.js";
+import { draftKey, legacyKey, loadDraft, saveDraft } from "@/lib/draft.js";
 import { storageFault } from "@/lib/faults.js";
 import { Button, Cap, Icon, Prov } from "@/components/ui";
 import Notice from "@/components/faults/Notice";
@@ -133,11 +133,13 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
 
   useEffect(() => {
     const box = memory();
+    const session = tab();
     let snap = box && focusId ? loadDraft(box, draftKey(focusId, sectionId)) : null;
-    if (box && focusId && !snap) snap = migrateLegacy(box, focusId, sectionId);
-    if (!snap && focusId) {
-      const old = loadDraft(tab(), `rrm-ask:${focusId}`);
-      if (old && box) {
+    // La clave vieja vivía en sessionStorage. localStorage nunca la tuvo.
+    if (!snap && box && focusId) {
+      const oldKey = legacyKey(focusId);
+      const old = loadDraft(session, oldKey);
+      if (old) {
         snap = {
           text: old.text || "",
           result: old.result ?? null,
@@ -146,7 +148,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
           at: typeof old.at === "number" ? old.at : Date.now(),
         };
         if (saveDraft(box, draftKey(focusId, sectionId), snap)) {
-          try { tab()?.removeItem(`rrm-ask:${focusId}`); } catch { /* la copia nueva ya quedó */ }
+          try { session?.removeItem(oldKey); } catch { /* la copia nueva ya quedó */ }
         }
       }
     }
@@ -291,12 +293,18 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
       }
       setJumps((prev) => (prev.join("|") === next.join("|") ? prev : next));
     };
-    scan();
+    let timer = 0;
+    let stop = false;
+    const run = () => { if (!stop) scan(); };
+    run();
     const root = document.querySelector(".paper");
-    if (!root) return;
-    const obs = new MutationObserver(scan);
+    if (!root) return () => { stop = true; };
+    const obs = new MutationObserver(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(run, 250);
+    });
     obs.observe(root, { childList: true, subtree: true });
-    return () => obs.disconnect();
+    return () => { stop = true; obs.disconnect(); window.clearTimeout(timer); };
   }, [result, focusId]);
 
   const jumpTo = (shownText: string) => {
