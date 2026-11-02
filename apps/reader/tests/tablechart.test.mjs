@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { parseNumber, analyze, bars, cellText } from "../src/lib/tablechart.js";
+import { parseNumber, analyze, bars, cellText, axisMarks, formatTick } from "../src/lib/tablechart.js";
 
 const T = (v) => ({ t: "text", v }); const M = (v) => ({ t: "math", v, display: false });
 test("parseNumber: decimales, miles, porcentaje, científica y basura", () => {
@@ -42,6 +42,15 @@ test("bars: orden, valores nulos fuera, y la escala log no cambia el orden", () 
   const lin = bars(m, 1, { sort: "desc" }); assert.deepEqual(lin.map((x) => x.label), ["b", "d", "a"]); assert.equal(lin[0].frac, 1);
   const lg = bars(m, 1, { sort: "desc", log: true }); assert.deepEqual(lg.map((x) => x.label), ["b", "d", "a"]); assert.ok(lg[2].frac > 0 && lg[2].frac < lin[1].frac + 1);
   assert.ok(lg[1].frac > lin[1].frac, "en log, 100 pesa más que en lineal");
+});
+test("axisMarks: cuatro marcas; lineal desde 0 y log desde el menor positivo", () => {
+  assert.equal(formatTick(0), "0"); assert.equal(formatTick(80.4), "80.4"); assert.equal(formatTick(2.3e19), "2.3e19");
+  const items = [{ value: 10 }, { value: 1000 }, { value: 100 }];
+  const lin = axisMarks(items);
+  assert.equal(lin.length, 4); assert.equal(lin[0].label, "0"); assert.equal(lin[3].value, 1000); assert.equal(lin[3].at, 1);
+  const lg = axisMarks(items, { log: true });
+  assert.equal(lg.length, 4); assert.equal(lg[0].value, 10); assert.equal(lg[3].value, 1000);
+  assert.ok(lg[0].at < lg[1].at && lg[1].at < lg[2].at && lg[2].at < lg[3].at);
 });
 test("Attention, Tabla 2 real: las barras de BLEU EN-DE coinciden con los números del paper", { skip: !existsSync(new URL("../public/papers/1706.03762.json", import.meta.url)) }, () => {
   const d = JSON.parse(readFileSync(new URL("../public/papers/1706.03762.json", import.meta.url)));

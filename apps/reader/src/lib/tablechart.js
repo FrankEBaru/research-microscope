@@ -59,7 +59,7 @@ export function analyze(t) {
 
 /** Barras de una columna: valores no nulos, con orden y escala elegidos. Las barras de log usan log10 relativo al mínimo positivo. */
 export function bars(model, col, { sort = "original", log = false } = {}) {
-  let items = model.rows.map((r, i) => ({ row: i, label: r.label || `fila ${i + 1}`, value: r.num[col], raw: r.raw[col] })).filter((x) => x.value !== null);
+  let items = model.rows.map((r, i) => ({ row: i, label: r.label || `row ${i + 1}`, value: r.num[col], raw: r.raw[col] })).filter((x) => x.value !== null);
   if (sort === "asc") items.sort((a, b) => a.value - b.value); else if (sort === "desc") items.sort((a, b) => b.value - a.value);
   const vals = items.map((x) => x.value), max = Math.max(...vals), min = Math.min(...vals.filter((v) => v > 0), Infinity);
   return items.map((x) => {
@@ -68,4 +68,39 @@ export function bars(model, col, { sort = "original", log = false } = {}) {
     else f = max > 0 ? Math.max(0, x.value) / max : 0;
     return { ...x, frac: Math.min(1, f) };
   });
+}
+
+/** Etiqueta corta de un eje. Los valores grandes van en notación compacta. */
+export function formatTick(n) {
+  if (!Number.isFinite(n)) return "";
+  const sign = n < 0 ? "-" : "";
+  const a = Math.abs(n);
+  if (a === 0) return "0";
+  if (a >= 1e5 || a < 0.01) {
+    const exp = Math.floor(Math.log10(a));
+    const mt = Math.round((a / 10 ** exp) * 10) / 10;
+    return `${sign}${mt}e${exp}`;
+  }
+  return `${sign}${Math.round(a * 100) / 100}`;
+}
+
+/**
+ * Cuatro marcas del eje. Lineal: 0 … máximo. Log: del menor positivo al máximo,
+ * en la misma fracción que usan las barras.
+ */
+export function axisMarks(items, { log = false } = {}) {
+  const vals = (items || []).map((x) => x.value).filter((v) => typeof v === "number" && Number.isFinite(v));
+  if (!vals.length) return [];
+  const max = Math.max(...vals);
+  const positives = vals.filter((v) => v > 0);
+  const min = positives.length ? Math.min(...positives) : Infinity;
+  const useLog = Boolean(log && Number.isFinite(min) && max > min);
+  const at = (value) => {
+    if (useLog && value > 0) return (Math.log10(value) - Math.log10(min)) / (Math.log10(max) - Math.log10(min)) * 0.92 + 0.08;
+    return max > 0 ? Math.max(0, value) / max : 0;
+  };
+  const values = useLog
+    ? [0, 1, 2, 3].map((i) => (i === 0 ? min : i === 3 ? max : 10 ** (Math.log10(min) + (Math.log10(max) - Math.log10(min)) * (i / 3))))
+    : [0, max / 3, (2 * max) / 3, max];
+  return values.map((value, i) => ({ at: i === values.length - 1 ? 1 : Math.min(1, Math.max(0, at(value))), value, label: formatTick(value) }));
 }
