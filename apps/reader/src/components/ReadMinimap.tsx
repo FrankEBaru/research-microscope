@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { paperKey } from "@/lib/backend.js";
 import { visitWhy } from "@/lib/explore.js";
 import { layoutOf } from "@/lib/layout.js";
+import type { AtlasCtx } from "./screens/types";
 
 export default function ReadMinimap({ papers, edges, layout, onOpen, explore, openId }: {
   papers: any[];
@@ -11,6 +12,7 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
   onOpen: (id: string) => void;
   explore?: { nodes?: any[]; edges?: any[]; q?: string } | null;
   openId?: string;
+  atlasCtx?: AtlasCtx;
 }) {
   const model = useMemo(() => layoutOf({ papers, edges, layout }), [papers, edges, layout]);
   const [big, setBig] = useState(false);
