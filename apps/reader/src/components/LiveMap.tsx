@@ -3,11 +3,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ProvChip } from "./Bits";
 import { mapLayout, paperKey } from "@/lib/backend.js";
 import { phaseOf } from "@/lib/qcache.js";
-import { clusterColor, farGroupIds, layoutOf, mapCaption, nodeLabel, statusLine } from "@/lib/layout.js";
+import { fullText } from "@/lib/atlas.js";
+import { farGroupIds, layoutOf, mapCaption, nodeLabel, statusLine } from "@/lib/layout.js";
 import { LENSES, usePlatina, type Frame } from "./usePlatina";
 
 // Franklin (1 nov): las lentes no ayudan a leer el mapa. El código sigue; la cámara se mueve con rueda y arrastre.
 const showLenses = false;
+const CLUSTER_HEX = ["#27476b", "#3d5a47", "#8a5a2b", "#5c4d7a", "#3e6b66", "#6d5a4a"];
+function clusterHex(id: any) {
+  const n = Number(id) || 0;
+  return CLUSTER_HEX[((n % CLUSTER_HEX.length) + CLUSTER_HEX.length) % CLUSTER_HEX.length];
+}
 
 const short = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s);
 const fitWords = (s: string, n: number) => {
@@ -63,13 +69,6 @@ function reducedMotion() {
 function ease(t: number) {
   const p = Math.min(1, Math.max(0, t));
   return 1 - Math.pow(1 - p, 3);
-}
-
-function fullText(paper: any, state: any) {
-  if (paper?.full || state?.text) return true;
-  if (state?.status === "done") return true;
-  if (state?.source === "latex" || state?.source === "ocr") return true;
-  return state?.stages?.sections === "done";
 }
 
 function sceneKey(frame: Frame | null) {
@@ -344,7 +343,7 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
             <YearAxis years={years} sx={sx} sy={sy} size={size} />
           )}
           {regions.map((group: any) => {
-            const ink = clusterColor(group.id);
+            const ink = clusterHex(group.id);
             const inside = members(group.id);
             const screenR = group.r * view.k;
             const idsIn = inside.map((point: any) => String(point.corpusid));
@@ -411,7 +410,7 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
             const sunk = Boolean(meta.paper.retracted);
             const phase = phaseOf(states[id]?.status);
             const full = fullText(meta.paper, states[id]);
-            const ink = sunk ? "#8d2a2a" : clusterColor(point.cluster);
+            const ink = sunk ? "#8d2a2a" : clusterHex(point.cluster);
             const r = (focus ? 4.6 : 3) * Math.max(here.s, 0.45);
             const showLabel = here.s > 0.55 && (selected === id || hover === id || focus);
             const label = showLabel ? shortName(meta.paper) : "";
@@ -480,11 +479,11 @@ export default function LiveMap({ papers, edges, layout, states, onOpen, onWant,
         animateTo({ cx: box.minX + ((e.clientX - r.left) / r.width) * (box.maxX - box.minX), cy: box.minY + ((e.clientY - r.top) / r.height) * (box.maxY - box.minY) });
       }}>
         <svg viewBox={frame ? `${frame.minX} ${frame.minY} ${frame.maxX - frame.minX} ${frame.maxY - frame.minY}` : "0 0 1600 1000"}>
-          {regions.map((group: any) => <circle key={group.id} cx={group.cx} cy={group.cy} r={group.r} fill={clusterColor(group.id)} fillOpacity={0.08} stroke={clusterColor(group.id)} strokeWidth={6} />)}
+          {regions.map((group: any) => <circle key={group.id} cx={group.cx} cy={group.cy} r={group.r} fill={clusterHex(group.id)} fillOpacity={0.08} stroke={clusterHex(group.id)} strokeWidth={6} />)}
           {targets.map((p: any) => {
             const paper = byId.get(String(p.corpusid))?.paper;
             const full = fullText(paper, states[String(p.corpusid)]);
-            return <circle key={p.corpusid} cx={p.x} cy={p.y} r={p.focus ? 14 : 7} fill={full ? clusterColor(p.cluster) : "#fffdf8"} stroke={clusterColor(p.cluster)} strokeWidth={4} />;
+            return <circle key={p.corpusid} cx={p.x} cy={p.y} r={p.focus ? 14 : 7} fill={full ? clusterHex(p.cluster) : "#fffdf8"} stroke={clusterHex(p.cluster)} strokeWidth={4} />;
           })}
           <rect x={view.cx - size.w / view.k / 2} y={view.cy - size.h / view.k / 2} width={size.w / view.k} height={size.h / view.k} className="mm-view" vectorEffect="non-scaling-stroke" />
         </svg>

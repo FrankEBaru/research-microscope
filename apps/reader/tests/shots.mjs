@@ -114,7 +114,8 @@ const sel = (...list) => list.join(", ");
 const S = {
   input: sel('[data-screen="inicio"] input', 'input[aria-label="Pregunta"]'),
   atlas: sel('[data-screen="atlas"] [data-live-map]', "[data-live-map]"),
-  dot: sel(".node-dot:not(.is-faint) circle", ".node-dot circle"),
+  dot: sel(".node-dot:not(.is-faint) circle", ".node-dot circle", "[data-live-map] .p"),
+  tip: sel(".map-tip", "[data-live-map] .peek"),
   paper: sel('[data-screen="paper"] .paper-head', ".paper-head"),
   ask: sel('[data-screen="paper"] form.ask-card', "form.ask-card"),
   alert: '[role="alert"], .fail-reason, .center-msg, [data-screen="error"]',
@@ -250,21 +251,22 @@ async function main() {
       await shot("03-atlas");
     });
 
-    const dotBox = async () => {
-      const box = await page.locator(S.dot).first().boundingBox();
-      if (!box) throw new Error("no hay puntos en el mapa");
-      return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-    };
     await step("03b-atlas-hover", async () => {
-      const at = await dotBox();
-      await page.mouse.move(at.x, at.y);
-      await sleep(400);
+      const dot = page.locator(S.dot).first();
+      await dot.hover({ timeout: 5000 });
+      await page.waitForSelector(S.tip, { timeout: 5000 });
+      await sleep(200);
       await shot("03b-atlas-hover");
     });
     await step("03c-atlas-tarjeta", async () => {
-      const at = await dotBox();
-      await page.mouse.click(at.x, at.y);
-      await page.waitForSelector(".map-tip", { timeout: 5000 });
+      const dot = page.locator(S.dot).first();
+      const id = await dot.getAttribute("data-id");
+      await dot.click({ timeout: 5000 });
+      if (id) {
+        await page.waitForFunction((cid) => document.querySelector(".atlas-screen .card")?.getAttribute("data-id") === cid, id, { timeout: 5000 });
+      } else {
+        await page.waitForSelector(S.tip, { timeout: 5000 });
+      }
       await sleep(300);
       await shot("03c-atlas-tarjeta");
     });
@@ -305,6 +307,8 @@ async function main() {
       await toggle.click({ timeout: 5000 });
       await sleep(500);
       await shot("05d-atlas-encima");
+      await page.keyboard.press("Escape");
+      await page.waitForSelector(".ovl", { state: "detached", timeout: 3000 });
     });
     await step("06-caja", async () => {
       if (!info.askText) throw new Error("los datos no traen texto para la caja");
