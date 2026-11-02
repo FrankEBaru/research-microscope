@@ -4,9 +4,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ ! -f tests/fixtures/demo/paper_sections.json ]]; then
   tmp="$(mktemp -d)"
-  if ! gh release download artifacts/RRM-16-demo-fixtures-2026-10-29 --pattern demo-fixtures.tar.gz --dir "$tmp"; then
-    echo "gh release download failed" >&2
-    exit 1
+  # El tar es sintético: si gh no está o falla, se genera igual.
+  if ! command -v gh >/dev/null 2>&1 || ! gh release download artifacts/RRM-16-demo-fixtures-2026-10-29 --pattern demo-fixtures.tar.gz --dir "$tmp" >/dev/null 2>&1; then
+    echo "gh no bajó los fixtures: los genero con scripts/build_demo_fixtures.py" >&2
+    python3 scripts/build_demo_fixtures.py "$tmp/demo-fixtures.tar.gz" >/dev/null
   fi
   mkdir -p tests/fixtures/demo
   tar -xzf "$tmp/demo-fixtures.tar.gz" -C tests/fixtures/demo

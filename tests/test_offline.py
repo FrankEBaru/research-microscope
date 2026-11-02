@@ -189,3 +189,105 @@ def test_sin_flag_el_panorama_sigue_grabado(tmp_path, monkeypatch):
         assert code == 200 and body[0]["mode"] == "sim" and body[0]["fallback_reason"] == "timeout"
     finally:
         httpd.shutdown()
+
+
+def _replay_tree(tmp_path):
+    root = _tree(tmp_path)
+    (root / "labels").mkdir()
+    (root / "notes").mkdir()
+    (root / "ask").mkdir()
+    (root / "labels" / "hello.json").write_text(json.dumps({
+        "ok": True, "reason": "", "note": "",
+        "by_id": {"7": {"abstract": "Resumen inventado.", "authors": ["Autora Prueba"], "tldr": "", "survey": False, "retracted": False}},
+        "survey_paper": None,
+    }), encoding="utf-8")
+    (root / "notes" / "7.json").write_text(json.dumps({
+        "notes": [{"block_id": "b1", "sent_index": 0, "note": "Nota inventada.", "cite": "x", "generated": True, "paper": "7", "section": "S"}],
+        "artifacts": [], "usage": {"model": "", "license": "", "cost_usd": 0.0},
+    }), encoding="utf-8")
+    (root / "ask" / "index.json").write_text(json.dumps([
+        {"focus": "7", "text": "Frase de prueba.", "stage": "revisar", "file": "r.json"},
+    ]), encoding="utf-8")
+    (root / "ask" / "r.json").write_text(json.dumps({
+        "extracts": [], "papers": 0, "matched": 0, "empty": False,
+        "parts": {"coincide": [{"text": "Coincide inventado.", "cite": "c", "paper_id": "7", "section": "S", "verified": True}],
+                  "contradice": [], "sin_respaldo": [], "te_falto": []},
+        "note": "", "store": {"ready": 1, "total": 1},
+    }), encoding="utf-8")
+    return root
+
+
+def test_replay_de_labels_notes_y_ask(tmp_path, monkeypatch):
+    monkeypatch.setenv("RRM_FEATURES", "core")
+    httpd = _server(_replay_tree(tmp_path))
+    port = httpd.server_address[1]
+    try:
+        code, raw, _ = _get(port, "/labels?q=hello%20world")
+        body = json.loads(raw)
+        assert code == 200 and body["ok"] is True and body["by_id"]["7"]["abstract"] == "Resumen inventado."
+
+        code, body = _post(port, "/notes", {"id": 7})
+        assert code == 200 and body["notes"][0]["note"] == "Nota inventada."
+
+        # El texto se normaliza con strip y espacios colapsados.
+        code, body = _post(port, "/ask", {"ids": [7], "text": "  Frase   de\nprueba. ", "stage": "revisar", "focus": "7"})
+        assert code == 200 and body["parts"]["coincide"][0]["text"] == "Coincide inventado."
+    finally:
+        httpd.shutdown()
+
+
+def test_sin_grabacion_se_calcula_en_local(tmp_path, monkeypatch):
+    monkeypatch.setenv("RRM_FEATURES", "core")
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    httpd = _server(_replay_tree(tmp_path))
+    port = httpd.server_address[1]
+    try:
+        code, raw, _ = _get(port, "/labels?q=otra%20pregunta")
+        body = json.loads(raw)
+        assert code == 200 and body["ok"] is False and body["reason"] == "network" and body["by_id"] == {}
+
+        code, body = _post(port, "/notes", {"id": 8})
+        assert code == 200 and body["notes"] == [] and body["artifacts"] == []
+
+        # Otra etapa o otro texto no es la grabación.
+        code, body = _post(port, "/ask", {"ids": [7], "text": "Frase de prueba.", "stage": "frases", "focus": "7"})
+        assert code == 200 and body["parts"]["coincide"] == []
+        code, body = _post(port, "/ask", {"ids": [7], "text": "Otra cosa.", "stage": "revisar", "focus": "7"})
+        assert code == 200 and body["parts"]["coincide"] == []
+    finally:
+        httpd.shutdown()
+
+
+def test_phrases_responde_200_sin_trabajo(tmp_path):
+    httpd = _server(_tree(tmp_path))
+    port = httpd.server_address[1]
+    try:
+        code, body = _post(port, "/phrases", {"id": 7})
+        assert code == 200 and body == {"ok": True, "offline": True}
+    finally:
+        httpd.shutdown()
+
+
+def test_core_no_llama_a_meta_aunque_haya_clave(tmp_path, monkeypatch):
+    """Sin grabación y con MODEL_API_KEY, /ask y /notes no tocan la red en core."""
+    monkeypatch.setenv("RRM_FEATURES", "core")
+    monkeypatch.setenv("MODEL_API_KEY", "clave-de-prueba")
+    monkeypatch.delenv("RRM_META", raising=False)
+
+    def boom(*_a, **_k):
+        raise AssertionError("no debe llamar a Meta")
+
+    monkeypatch.setattr("rrm.reader.metacall.post_responses", boom)
+    monkeypatch.setattr("rrm.reader.feedback.post_responses", boom, raising=False)
+    monkeypatch.setattr("rrm.reader.notes.post_responses", boom, raising=False)
+    root = _tree(tmp_path)
+    _paper_with_sentence(root)
+    httpd = _server(root)
+    port = httpd.server_address[1]
+    try:
+        code, body = _post(port, "/ask", {"ids": [7], "text": _SENT, "stage": "revisar", "focus": "7"})
+        assert code == 200 and body["extracts"] and all(not rows for rows in body["parts"].values())
+        code, body = _post(port, "/notes", {"id": 7})
+        assert code == 200 and body["artifacts"] == []
+    finally:
+        httpd.shutdown()
