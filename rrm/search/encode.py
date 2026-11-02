@@ -78,3 +78,13 @@ class QueryEncoder:
         with self._torch.no_grad():
             hidden = self._model(**inputs).last_hidden_state[:, 0, :]
         return hidden.numpy().astype("float32", copy=False)
+
+    def encode_proximity(self, texts):
+        """Passage vectors. Always the proximity adapter; `encode` is unchanged."""
+        import numpy as np
+
+        texts = list(texts)
+        self.load()
+        if not texts:
+            return np.zeros((0, 768), dtype=np.float32)
+        return self._forward(texts, "proximity")

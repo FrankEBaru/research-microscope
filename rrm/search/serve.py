@@ -69,6 +69,8 @@ if modal.is_local():
         "RRM_GROUPS": os.environ.get("RRM_GROUPS", ""),
         "RRM_TITLE": os.environ.get("RRM_TITLE", ""),
         "RRM_LOOKUP_SYNC": os.environ.get("RRM_LOOKUP_SYNC", ""),
+        # Vacío: BurstSearch no carga passages/. RRM-55 lo prende con 1.
+        "RRM_PASSAGES": os.environ.get("RRM_PASSAGES", ""),
     })
 else:
     model_secret = modal.Secret.from_dict({})
@@ -155,6 +157,15 @@ class BurstSearch:
         else:
             threading.Thread(target=build_lookup, name="rrm-lookup", daemon=True).start()
         self.loaded = ["faiss", "faiss_ids", "graph", "node_meta", "display", "display_ext", "encoder"]
+        # RRM-55: el índice de pasajes solo entra con el flag. Apagado, esta carga no corre.
+        if os.environ.get("RRM_PASSAGES") == "1":
+            try:
+                from rrm.passages.load import attach
+
+                attach(self, root)
+            except Exception as err:
+                self.passages = None
+                self.passages_error = f"{type(err).__name__}: {err}"[:200]
 
     @modal.enter()
     def resume(self):
@@ -527,6 +538,25 @@ class BurstSearch:
         """All questions in one container so the index loads once."""
         return [self._measure_one(q) for q in queries]
 
+    def _passages_answer(self, gap):
+        from rrm.passages.load import answer
+
+        encode = None
+        encoder = getattr(self, "encoder", None)
+        if encoder is not None and hasattr(encoder, "encode_proximity"):
+            encode = encoder.encode_proximity
+        return answer(
+            getattr(self, "passages", None),
+            gap,
+            encode=encode,
+            error=getattr(self, "passages_error", None),
+        )
+
+    @modal.method()
+    def query_passages(self, gap: dict):
+        """Consulta de pasajes. Vacía si RRM_PASSAGES no es 1."""
+        return self._passages_answer(gap or {})
+
     @modal.asgi_app()
     def api(self):
         from fastapi import FastAPI, Request
@@ -593,6 +623,16 @@ class BurstSearch:
             if isinstance(layout, dict) and layout.get("pending_vectors"):
                 pending = True
             return {"layout": layout, "pending": pending or layout is None}
+
+        @web.get("/passages")
+        def route_passages(request: Request, symbol: str = "", claim: str = "", local: str = ""):
+            """Fila guardada. Apagado (enabled false) si RRM_PASSAGES no es 1."""
+            denied = gate(request)
+            if denied:
+                return denied
+            if os.environ.get("RRM_PASSAGES") != "1":
+                return {"enabled": False, "rows": []}
+            return self._passages_answer({"symbol": symbol, "claim": claim, "local": local})
 
         @web.get("/burst")
         def route_burst(request: Request, q: str, n: int = 50):
@@ -686,6 +726,19 @@ def _prefetch_reader(corpusids):
         )
     except Exception:
         return
+
+
+@app.local_entrypoint()
+def passages_query(symbol: str = r"\sqrt{d_k}", claim: str = "", local: str = ""):
+    """E4. Carga passages/ solo con RRM_PASSAGES=1. No deja el contenedor caliente."""
+    import json
+
+    if os.environ.get("RRM_PASSAGES") != "1":
+        raise SystemExit("E4 necesita RRM_PASSAGES=1")
+    if os.environ.get("RRM_PASSAGES_STAGE") != "e4":
+        raise SystemExit("E4 necesita RRM_PASSAGES_STAGE=e4")
+    out = BurstSearch().query_passages.remote({"symbol": symbol, "claim": claim, "local": local})
+    print(json.dumps(out, ensure_ascii=False))
 
 
 @app.local_entrypoint()
