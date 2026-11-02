@@ -3,6 +3,7 @@
 
 import json
 import struct
+import sys
 import tarfile
 import tempfile
 import zlib
@@ -43,7 +44,7 @@ def _paper(stage: str, images: list) -> dict:
 
 
 def main() -> None:
-    dest = Path("/tmp/demo-fixtures.tar.gz")
+    dest = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/demo-fixtures.tar.gz")
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "paper_stub.json").write_text(
