@@ -1,0 +1,3 @@
+# Cosecha local (harvest_local). Sin torch, faiss ni Modal.
+# Correr desde la raíz del repo: PYTHONPATH=. python -m rrm.passages.harvest_local ...
+numpy

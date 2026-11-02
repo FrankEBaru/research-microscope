@@ -151,6 +151,46 @@ def test_title_table_drops_blanks_and_arxiv_version_matches():
     assert titled_ids_from_table(pa.table({"corpusid": [1]})) is None
 
 
+def test_seed_document_is_title_newline_abstract():
+    from rrm.passages.groups import seed_document
+
+    assert seed_document("What learning", "Investigations with linear models") == (
+        "What learning\nInvestigations with linear models"
+    )
+    assert seed_document("  Only title  ", "  ") == "Only title"
+
+
+def test_local_harvest_skips_done_and_always_writes_the_log(tmp_path):
+    from rrm.passages.arxiv import ArxivStopped
+    from rrm.passages.harvest_local import load_meta_map, load_order, pending_ids, run_local
+
+    order = tmp_path / "union.json"
+    order.write_text('{"ids": [1, 2, 3, 4]}', encoding="utf-8")
+    meta = tmp_path / "meta.json"
+    meta.write_text('{"papers": [{"corpusid": 2, "arxiv": "1.2"}]}', encoding="utf-8")
+    assert load_order(order) == [1, 2, 3, 4]
+    assert load_meta_map(meta)[2]["arxiv_id"] == "1.2"
+    out = tmp_path / "out"
+    (out / "papers").mkdir(parents=True)
+    (out / "papers" / "1.json").write_text("{}", encoding="utf-8")
+    (out / "failures").mkdir()
+    (out / "failures" / "3.json").write_text("{}", encoding="utf-8")
+    assert pending_ids([1, 2, 3, 4], out, 2) == [2, 4]
+
+    class Boom:
+        log = []
+
+        def gaps(self):
+            return []
+
+        def fetch_eprint(self, _arxiv_id):
+            raise ArxivStopped("arXiv http 429 repeated")
+
+    summary = run_local([2], {2: {"corpusid": 2, "arxiv_id": "1.2"}}, tmp_path / "out2", limit=1, client=Boom())
+    assert summary["error"] == "arXiv http 429 repeated"
+    assert (tmp_path / "out2" / "local_requests.json").is_file()
+
+
 def test_arxiv_column_and_external_ids():
     from rrm.passages.groups import arxiv_from_external, arxiv_ids_from_table
 

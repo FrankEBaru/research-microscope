@@ -6,6 +6,9 @@ Sirven para un estimado [I]. No incluyen la memoria. No son un costo medido:
 
 CPU_USD_PER_CORE_S = 0.0000131
 L4_USD_PER_S = 0.000222
+# Orden de preferencia del embed. Tarifas [I] de modal.com/pricing, 2026-10-28.
+GPU_USD_PER_S = {"L4": L4_USD_PER_S, "A10G": 0.000306, "T4": 0.000164}
+GPU_FALLBACK = ("L4", "A10G", "T4")
 
 # Plan de máquina, no una corrida. Segundos y GPU son [I].
 STAGE_PLAN = {

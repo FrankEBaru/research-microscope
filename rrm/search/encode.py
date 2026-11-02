@@ -75,9 +75,11 @@ class QueryEncoder:
             return_tensors="pt",
             return_token_type_ids=False,
         )
+        device = next(self._model.parameters()).device
+        inputs = {key: value.to(device) for key, value in inputs.items()}
         with self._torch.no_grad():
             hidden = self._model(**inputs).last_hidden_state[:, 0, :]
-        return hidden.numpy().astype("float32", copy=False)
+        return hidden.detach().cpu().numpy().astype("float32", copy=False)
 
     def encode_proximity(self, texts):
         """Passage vectors. Always the proximity adapter; `encode` is unchanged."""

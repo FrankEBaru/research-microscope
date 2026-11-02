@@ -1,25 +1,19 @@
 """Grupos k-means sobre SPECTER2 y donación por capas.
-
 El default de la base. Las anclas siguen en `cut.py` y solo corren con
 `RRM_PASSAGES_SELECT=anchors`. Aquí no se baja ningún e-print.
-
 Se entrena k-means en una muestra y se asignan todos los vectores. El
 score de un candidato es local / log(2 + citationcount). Solo dona un
 candidato con arxiv id. La unión es por capas (`layer_union`).
 """
-
 import numpy as np
-
 from rrm.passages.score import rank_group_arrays
 from rrm.passages.union import LIMIT, layer_union, title_notes
-
 N_GROUPS = 2000
 TRAIN_N = 300_000
 # Cuántos del ranking se miran al buscar arxiv id. Más allá no dona en esta pasada.
 DONOR_DEPTH = 2048
 DONORS_PER_GROUP = 8
 PROBE_N = 10
-
 PROBES = (
     {"name": "attention", "corpusid": 13756489, "title": None, "question": None},
     {
@@ -37,13 +31,11 @@ PROBES = (
     },
 )
 
-
 def select_mode(raw):
     """`anchors` conserva el corte viejo. Cualquier otro valor, o vacío, es grupos."""
     if str(raw or "").strip().lower() == "anchors":
         return "anchors"
     return "groups"
-
 
 def reservoir_extend(buf_ids, buf_vecs, seen, ids, vecs, k, rng):
     """Mete un lote en un reservoir de tamaño k. `seen` es cuántos ya se vieron."""
@@ -81,11 +73,9 @@ def reservoir_extend(buf_ids, buf_vecs, seen, ids, vecs, k, rng):
         buf_vecs[repl] = np.ascontiguousarray(vecs[slots], dtype=np.float32)
     return buf_ids, buf_vecs, seen + n
 
-
 def train_centroids(sample, k, seed=0, niter=12):
     """Centroides L2. faiss.Kmeans en CPU. La muestra tiene que alcanzar a k."""
     import faiss
-
     sample = np.ascontiguousarray(sample, dtype=np.float32)
     if sample.ndim != 2 or sample.shape[0] == 0:
         raise ValueError("muestra vacía")
@@ -96,11 +86,9 @@ def train_centroids(sample, k, seed=0, niter=12):
     km.train(sample)
     return np.ascontiguousarray(km.centroids, dtype=np.float32)
 
-
 def assign_vectors(centroids, vecs):
     """Índice del centroide más cercano (L2). Vacío si no hay vectores."""
     import faiss
-
     vecs = np.asarray(vecs)
     if vecs.size == 0:
         return np.zeros(0, dtype=np.int32)
@@ -114,11 +102,17 @@ def assign_vectors(centroids, vecs):
         labels[start:start + step] = lab.reshape(-1)
     return labels
 
+def seed_document(title, abstract):
+    """Texto del corpus SPECTER2: título, un salto de línea, abstract."""
+    title = " ".join((title or "").split())
+    abstract = " ".join((abstract or "").split())
+    if title and abstract:
+        return title + "\n" + abstract
+    return title or abstract
 
 def nearest_centroid(centroids, vector):
     lab = assign_vectors(centroids, np.asarray(vector, dtype=np.float32).reshape(1, -1))
     return int(lab[0])
-
 
 def dedupe_labels(ids, labels):
     """Un corpusid, la primera etiqueta. Devuelve ids ordenados y sus labels."""
@@ -132,10 +126,8 @@ def dedupe_labels(ids, labels):
     _uniq, first = np.unique(ids, return_index=True)
     return ids[first], labels[first]
 
-
 def group_slices(labels, k):
     """`ordered` de argsort, `starts` y `sizes` por grupo 0..k-1.
-
     El caller parte sus ids con el mismo argsort: ids[order][start:start+size].
     """
     labels = np.asarray(labels, dtype=np.int32).reshape(-1)
@@ -150,7 +142,6 @@ def group_slices(labels, k):
         np.cumsum(sizes[:-1], out=starts[1:])
     return order, starts, sizes
 
-
 def partition_stats(sizes):
     sizes = np.asarray(sizes, dtype=np.int64).reshape(-1)
     if sizes.size == 0:
@@ -164,7 +155,6 @@ def partition_stats(sizes):
         "nonempty_min": int(sizes[sizes > 0].min()) if np.any(sizes > 0) else 0,
     }
 
-
 def label_of(sorted_ids, labels, corpusid):
     """Etiqueta de un corpusid. None si no está en la partición."""
     sorted_ids = np.asarray(sorted_ids, dtype=np.int64)
@@ -172,7 +162,6 @@ def label_of(sorted_ids, labels, corpusid):
     if pos >= sorted_ids.size or int(sorted_ids[pos]) != int(corpusid):
         return None
     return int(labels[pos])
-
 
 def in_sorted(ids, sorted_ids):
     ids = np.asarray(ids, dtype=np.int64).reshape(-1)
@@ -185,10 +174,8 @@ def in_sorted(ids, sorted_ids):
     pos = np.minimum(pos, sorted_ids.size - 1)
     return sorted_ids[pos] == ids
 
-
 def select_donors(corpus_ordered, display_sorted, extra, keep=DONORS_PER_GROUP, depth=DONOR_DEPTH, titled=None):
     """Mejores `keep` con arxiv id y con título, en el orden del ranking.
-
     Sin título no dona y no entra a `pending`: es ruido de metadata.
     `extra` son corpusid que el dataset papers confirmó con arxiv.
     """
@@ -212,7 +199,6 @@ def select_donors(corpus_ordered, display_sorted, extra, keep=DONORS_PER_GROUP, 
         pending.append(cid)
     return donors, pending
 
-
 def keep_titled(corpus, *rest, titled):
     """Quita ids sin título. `rest` sigue el mismo orden que `corpus`."""
     corpus = np.asarray(corpus)
@@ -220,7 +206,6 @@ def keep_titled(corpus, *rest, titled):
         return (corpus, *rest)
     mask = in_sorted(corpus, titled)
     return (corpus[mask], *(np.asarray(col)[mask] for col in rest))
-
 
 def citation_like(corpus, citations, n=PROBE_N):
     """¿El top por score es el top por citas? `corpus` ya viene ordenado por score."""
@@ -236,11 +221,9 @@ def citation_like(corpus, citations, n=PROBE_N):
     same = n_have >= 5 and np.array_equal(top, by_cc)
     return bool(same), int(overlap), n_have
 
-
 def would_split_group(same, overlap, n_have):
     """La regla del ticket: el top parece el de citas globales."""
     return (bool(same) and int(n_have) >= 5) or (int(n_have) >= 10 and int(overlap) >= 8)
-
 
 def seeds_of(ordered_ids, starts, sizes, group):
     group = int(group)
@@ -249,7 +232,6 @@ def seeds_of(ordered_ids, starts, sizes, group):
     start = int(starts[group])
     size = int(sizes[group])
     return np.asarray(ordered_ids[start:start + size], dtype=np.int64)
-
 
 def _finish_donors(ranked, display_sorted, extra, keep, depth, titled=None):
     lists = []
@@ -280,10 +262,8 @@ def _finish_donors(ranked, display_sorted, extra, keep, depth, titled=None):
         "groups_without_local": empty_local,
     }
 
-
 def donor_lists(graph, cc, ordered_ids, starts, sizes, display_sorted, extra, keep=DONORS_PER_GROUP, depth=DONOR_DEPTH, titled=None):
     """Una lista de corpusid por grupo, solo con arxiv y con título.
-
     `would_split` cuenta grupos cuyo top, ya sin nodos sin título, parece
     el top por citas globales. No parte la partición.
     """
@@ -307,11 +287,9 @@ def donor_lists(graph, cc, ordered_ids, starts, sizes, display_sorted, extra, ke
     out["would_split"] = would
     return out
 
-
 def donors_from_ranked(ranked, display_sorted, extra, keep=DONORS_PER_GROUP, depth=DONOR_DEPTH, titled=None):
     """Misma donación, sin tocar el grafo. Sirve tras el lookup de arxiv id."""
     return _finish_donors(ranked, display_sorted, extra, keep, depth, titled=titled)
-
 
 def field_name(field, names, node):
     if field is None or node is None:
@@ -323,7 +301,6 @@ def field_name(field, names, node):
     if names is None or code < 0 or code >= len(names):
         return None
     return str(names[code])
-
 
 def _pack(corpus, counts, scores, citations, nodes, n, meta_of, field, names):
     rows = []
@@ -345,10 +322,8 @@ def _pack(corpus, counts, scores, citations, nodes, n, meta_of, field, names):
         })
     return rows
 
-
 def probe_group(graph, cc, seed_ids, meta_of, field=None, field_names=None, n=PROBE_N, titled=None):
     """Top n del grupo y, al lado, el top n por citas globales de esos candidatos.
-
     Un candidato sin título no entra en ninguno de los dos tops.
     """
     corpus, counts, scores, citations, nodes = rank_group_arrays(graph, seed_ids, cc)
@@ -374,11 +349,9 @@ def probe_group(graph, cc, seed_ids, meta_of, field=None, field_names=None, n=PR
         "candidates": int(corpus.size),
     }
 
-
 def ivf_labels(index):
     """Etiqueta de lista IVF por fila de `index`, en el orden en que se agregaron."""
     import faiss
-
     n = int(index.ntotal)
     labels = np.full(n, -1, dtype=np.int32)
     inv = index.invlists
@@ -391,10 +364,8 @@ def ivf_labels(index):
         labels[raw] = i
     return labels
 
-
 def rows_of_list(labels, list_id):
     return np.flatnonzero(np.asarray(labels) == int(list_id))
-
 
 def union_from_lists(lists, limit=LIMIT):
     """Unión por capas más el conteo de grupos que donaron en cada capa."""
@@ -403,11 +374,9 @@ def union_from_lists(lists, limit=LIMIT):
     body["groups_that_donate"] = sum(1 for ids in (lists or []) if ids)
     return body
 
-
 def titled_ids_from_table(table):
     """corpusid ordenados con título no vacío. Sin fila o sin título no entran."""
     import pyarrow.compute as pc
-
     if table is None or "title" not in table.column_names:
         return None
     if table.num_rows == 0:
@@ -419,16 +388,12 @@ def titled_ids_from_table(table):
         return np.zeros(0, dtype=np.int64)
     return np.unique(np.asarray(ids.to_numpy(zero_copy_only=False), dtype=np.int64))
 
-
 def corpus_by_arxiv(table, arxiv_id):
     """corpusid de un arXiv id en la columna `arxiv`. None si no está.
-
     Acepta el id con o sin versión (`2211.15661v2`).
     """
     import pyarrow.compute as pc
-
     from rrm.search.display import canon_arxiv
-
     want = canon_arxiv(arxiv_id)
     if not want or table is None or table.num_rows == 0 or "arxiv" not in table.column_names:
         return None
@@ -445,11 +410,9 @@ def corpus_by_arxiv(table, arxiv_id):
             return int(cid)
     return None
 
-
 def corpus_by_title(table, title):
     """Primer corpusid cuyo título contiene el texto, ya en minúsculas."""
     import pyarrow.compute as pc
-
     needle = " ".join((title or "").lower().split())
     if len(needle) < 12 or table is None or table.num_rows == 0 or "title" not in table.column_names:
         return None
@@ -458,7 +421,6 @@ def corpus_by_title(table, title):
     if ids.length() == 0:
         return None
     return int(ids[0].as_py())
-
 
 def resolve_corpus(table, *, corpusid=None, arxiv=None, title=None):
     """Id dado, si no el arXiv, si no el título. No usa FAISS."""
@@ -472,18 +434,14 @@ def resolve_corpus(table, *, corpusid=None, arxiv=None, title=None):
         return found, "title"
     return None, "none"
 
-
 def corpus_from_s2(arxiv_id):
     """Un corpusId por arXiv en la API de Semantic Scholar. None si no hay llave o falla.
-
     Una petición. La llave va en el header y no se imprime.
     """
     import json
     import os
     import urllib.request
-
     from rrm.search.display import canon_arxiv
-
     want = canon_arxiv(arxiv_id)
     key = os.environ.get("S2_API_KEY", "").strip()
     if not want or not key:
@@ -500,11 +458,9 @@ def corpus_from_s2(arxiv_id):
     cid = body.get("corpusId") if isinstance(body, dict) else None
     return int(cid) if cid else None
 
-
 def arxiv_ids_from_table(table):
     """corpusid ordenados cuya columna `arxiv` no está vacía."""
     import pyarrow.compute as pc
-
     if table is None or table.num_rows == 0 or "arxiv" not in table.column_names:
         return np.zeros(0, dtype=np.int64)
     filled = pc.fill_null(table.column("arxiv"), "")
@@ -515,11 +471,9 @@ def arxiv_ids_from_table(table):
     out = np.asarray(ids.to_numpy(zero_copy_only=False), dtype=np.int64)
     return np.unique(out)
 
-
 def arxiv_from_external(table, needed_sorted):
     """corpusid → arxiv id para filas cuyo externalids trae ArXiv y está en `needed`."""
     from rrm.search.display import _ext_strings, canon_arxiv
-
     needed_sorted = np.asarray(needed_sorted, dtype=np.int64).reshape(-1)
     found = {}
     if table is None or table.num_rows == 0 or needed_sorted.size == 0:

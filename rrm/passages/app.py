@@ -25,8 +25,9 @@ el caché del lector y tienen arxiv id (prueba de descarga real).
 `RRM_PASSAGES_LICENSE=1` pide la licencia por OAI (apagado por defecto).
 `RRM_PASSAGES_SELECT=anchors` usa el corte viejo. El default es k-means y capas.
 `RRM_PASSAGES_REUSE_GROUPS=1` reusa group_ids.npy si ya se entrenó.
-`RRM_PASSAGES_SPLIT=1` parte de verdad un grupo cuyo top parece el de citas. Sin eso solo se cuenta.
 `RRM_PASSAGES_EXTRA_IDS=1,2` suma ids que ya están en el caché latex (sin e-print).
+`RRM_PASSAGES_EMBED_CIDS=1,2` embebe solo esas filas (prueba corta).
+La cosecha larga va en la máquina local: `python -m rrm.passages.harvest_local`.
 """
 
 import json
@@ -43,7 +44,7 @@ if len(_HERE.parents) > 2:
 
 import modal
 
-from rrm.passages.cost import stage_estimate
+from rrm.passages.cost import GPU_FALLBACK, GPU_USD_PER_S, stage_estimate
 
 MOUNT = "/s2"
 RELEASE = "2026-10-20"
@@ -85,10 +86,10 @@ _STAGE_KEYS = (
     "RRM_PASSAGES_ANCHORS",
     "RRM_PASSAGES_SELECT",
     "RRM_PASSAGES_REUSE_GROUPS",
-    "RRM_PASSAGES_SPLIT",
     "RRM_PASSAGES_K",
     "RRM_PASSAGES_TRAIN_N",
     "RRM_ARXIV_CONTACT",
+    "RRM_PASSAGES_EMBED_CIDS",
     "S2_API_KEY",
 )
 stage_env = modal.Secret.from_dict({key: os.environ[key] for key in _STAGE_KEYS if os.environ.get(key)})
@@ -107,6 +108,24 @@ def _budget():
     if not raw:
         return None
     return float(raw)
+
+
+def _embed_cids():
+    raw = os.environ.get("RRM_PASSAGES_EMBED_CIDS", "")
+    return {int(part) for part in raw.split(",") if part.strip().isdigit()}
+
+
+def _gpu_kind():
+    """Nombre corto L4/A10G/T4 si el dispositivo lo dice."""
+    import torch
+
+    if not torch.cuda.is_available():
+        return "", ""
+    name = torch.cuda.get_device_name(0)
+    for kind in GPU_FALLBACK:
+        if kind in name:
+            return kind, name
+    return "", name
 
 
 def _root():
@@ -549,59 +568,6 @@ def _e0_groups():
 
     split_notes = []
     flags = cut_flags(probes)
-    # Sin RRM_PASSAGES_SPLIT la regla del ticket solo se cuenta en would_split.
-    # No se reentrena ni se reetiqueta la partición guardada.
-    do_split = os.environ.get("RRM_PASSAGES_SPLIT") == "1"
-    if do_split and (flags["stop"] or flags["close"]) and os.environ.get("RRM_PASSAGES_IGNORE_STOP") != "1":
-        from rrm.passages.groups import in_sorted
-
-        for probe in list(probes):
-            if not (probe.get("same_order") or (len(probe.get("top") or []) >= 10 and int(probe.get("overlap") or 0) >= 8)):
-                continue
-            group = probe.get("group")
-            if group is None:
-                continue
-            member_ids = seeds_of(ordered_ids, starts, sizes, group)
-            if member_ids.size < 2:
-                continue
-            _guard("partir grupo")
-            wanted = np.unique(member_ids)
-            got_i, got_v = [], []
-            for name in names:
-                for shard_ids, shard_vecs in _iter_embeddings(emb_dir / name):
-                    mask = in_sorted(shard_ids, wanted)
-                    if not np.any(mask):
-                        continue
-                    got_i.append(np.asarray(shard_ids, dtype=np.int64)[mask])
-                    got_v.append(np.ascontiguousarray(shard_vecs[mask], dtype=np.float32))
-            if not got_i:
-                continue
-            part_ids = np.concatenate(got_i)
-            part_vecs = np.concatenate(got_v)
-            if part_vecs.shape[0] > 200_000:
-                pick = np.random.default_rng(1).choice(part_vecs.shape[0], 200_000, replace=False)
-                sample = part_vecs[pick]
-            else:
-                sample = part_vecs
-            child = train_centroids(sample, 2, seed=1, niter=10)
-            sub = assign_vectors(child, part_vecs)
-            new_label = int(labels.max()) + 1
-            pos = np.searchsorted(sorted_ids, part_ids)
-            valid = (pos < sorted_ids.size) & (sorted_ids[np.minimum(pos, sorted_ids.size - 1)] == part_ids)
-            labels[pos[valid & (sub == 1)]] = new_label
-            split_notes.append({"group": int(group), "new_group": new_label, "moved": int((sub == 1).sum())})
-        if split_notes:
-            order, starts, sizes = group_slices(labels, int(labels.max()) + 1)
-            ordered_ids = sorted_ids[order]
-            k = int(labels.max()) + 1
-            probes = []
-            for spec in specs:
-                group, via, _vec = locate(spec)
-                probes.append(one_probe(spec, group, via) if group is not None else {
-                    "name": spec["name"], "error": "sin grupo", "top": [], "same_order": False, "overlap": 0,
-                })
-            flags = cut_flags(probes)
-
     _guard("donantes")
     donated = donor_lists(
         graph, cc, ordered_ids, starts, sizes, display_sorted, set(), titled=titled,
@@ -631,8 +597,8 @@ def _e0_groups():
     ignore = os.environ.get("RRM_PASSAGES_IGNORE_STOP") == "1"
     # Contar grupos parecidos a las citas no vacía la unión. Partir sí puede pararla.
     probe_flags = dict(flags)
-    if not do_split:
-        flags = {"stop": False, "close": False, "errors": flags["errors"]}
+    # would_split cuenta los grupos parecidos a las citas. No vacía la unión.
+    flags = {"stop": False, "close": False, "errors": flags["errors"]}
     blocked = bool(flags["stop"] or flags["close"] or flags["errors"]) and not ignore
     if blocked:
         union = {
@@ -688,18 +654,6 @@ def _e0_groups():
         "groups_with_arxiv_donor": donated["groups_with_donor"],
         "would_split": would_split,
         "probe_flags": probe_flags,
-        "probes": [
-            {
-                "name": item.get("name"), "corpusid": item.get("corpusid"), "how": item.get("how"),
-                "group": item.get("group"), "group_size": item.get("group_size"),
-                "arxiv_donor": item.get("arxiv_donor"),
-                "top5": [
-                    {k: row.get(k) for k in ("title", "local", "citationcount", "score")}
-                    for row in (item.get("top") or [])[:5]
-                ],
-            }
-            for item in probes
-        ],
         "size_min": stats["min"],
         "size_median": stats["median"],
         "size_max": stats["max"],
@@ -841,79 +795,227 @@ def harvest_run(stage: str, n: int):
         vol.commit()
     if error:
         raise SystemExit(f"{stage} se detiene: {error}")
-    fetched = [item for item in done if item.get("downloaded")]
-    with_tex = [item for item in fetched if item.get("tex")]
-    download_s = [float(item["eprint"]["seconds"]) for item in fetched if (item.get("eprint") or {}).get("seconds") is not None]
-    parse_s = [float(item["parse_seconds"]) for item in fetched if item.get("parse_seconds") is not None]
-    row_counts = [int(item.get("rows") or 0) for item in done if not item.get("skipped")]
     return _report(stage, started, cpu=1, extra={
         "n": len(ids), "extra_ids": extra, "results": done, "rows": manifest["counts"],
         "arxiv_requests": client.log, "arxiv_gaps_s": client.gaps(),
         "min_gap_s": min(client.gaps()) if client.gaps() else None,
-        "pace": {
-            "fetched": len(fetched),
-            "with_tex": len(with_tex),
-            "tex_pct": round(100.0 * len(with_tex) / len(fetched), 1) if fetched else None,
-            "download_s_sum": round(sum(download_s), 3),
-            "download_s_per_paper": round(sum(download_s) / len(download_s), 3) if download_s else None,
-            "parse_s_sum": round(sum(parse_s), 3),
-            "parse_s_per_paper": round(sum(parse_s) / len(parse_s), 3) if parse_s else None,
-            "rows_per_paper": round(sum(row_counts) / len(row_counts), 2) if row_counts else None,
-        },
     })
 
 
-@app.function(image=gpu_image, gpu="L4", volumes={MOUNT: vol}, secrets=[stage_env], cpu=2, memory=16384, timeout=3600, max_containers=1)
+@app.function(
+    image=gpu_image, gpu=list(GPU_FALLBACK), volumes={MOUNT: vol}, secrets=[stage_env],
+    cpu=2, memory=8192, timeout=1800, startup_timeout=180, max_containers=1,
+)
 def embed_run(stage: str):
-    """Un job corto. Embed de las filas ya parseadas y IndexFlatIP. Luego se apaga."""
+    """Embed corto. Prueba L4, luego A10G, luego T4. La cola no espera más de 180 s."""
     _require(stage)
+    import numpy as np
+
     from rrm.passages.embed import embed_rows
+    from rrm.passages.query import contains_symbol, query_rows
     from rrm.passages.store import compile_store, load_saved, write_faiss
     from rrm.search.encode import QueryEncoder
 
     started = time.time()
+    budget = _budget()
     dest = _passages()
-    _papers, rows, _failures = load_saved(dest)
-    if not rows:
+    _papers, saved, _failures = load_saved(dest)
+    if not saved:
         raise SystemExit("no hay filas; la cosecha no escribió papers/")
+    wanted = _embed_cids()
+    rows = [row for row in saved if int(row.get("corpusid") or 0) in wanted] if wanted else list(saved)
+    if not rows:
+        raise SystemExit("RRM_PASSAGES_EMBED_CIDS no dejó filas")
     encoder = QueryEncoder()
+    t_load = time.time()
     encoder.load()
+    import torch
+    if torch.cuda.is_available():
+        encoder._model.to("cuda")
+    load_s = round(time.time() - t_load, 3)
+    kind, device = _gpu_kind()
+    rate = GPU_USD_PER_S.get(kind, GPU_USD_PER_S["L4"])
+    if budget is not None and (time.time() - started) * rate >= float(budget):
+        raise SystemExit(f"embed llegó al tope ${budget} antes de las filas ({device or 'sin GPU'})")
+    t0 = time.time()
     vectors = embed_rows(rows, encoder.encode_proximity, batch=16)
-    _index, unit = write_faiss(dest, vectors)
+    embed_s = round(time.time() - t0, 3)
+    symbol = r"\sqrt{d_k}"
+    extra_rows = [
+        row for row in saved
+        if contains_symbol(row, symbol) and int(row.get("corpusid") or 0) not in {int(item.get("corpusid") or 0) for item in rows}
+    ]
+    if extra_rows:
+        extra_vecs = embed_rows(extra_rows, encoder.encode_proximity, batch=16)
+        query_rows_in = rows + extra_rows
+        unit_q = np.vstack([vectors, extra_vecs])
+    else:
+        query_rows_in = rows
+        unit_q = vectors
+    from rrm.passages.embed import l2_normalize
+
+    unit_q = l2_normalize(unit_q)
+    query = encoder.encode_proximity([symbol + "\n"])[0]
+    hits = query_rows(query_rows_in, unit_q, {"symbol": symbol, "vector": query}, k=3)
+    # El índice oficial solo se escribe cuando el embed es el de todas las filas.
+    index_note = "subset"
+    if not wanted:
+        _index, _unit = write_faiss(dest, vectors)
+        index_note = "full"
     manifest = compile_store(dest)
     gpu_s = round(time.time() - started, 3)
-    extra = {
+    per_1k_s = round(embed_s * 1000 / len(rows), 3)
+    vol.commit()
+    return _report(stage, started, cpu=2, gpu_l4_seconds=gpu_s, extra={
         "rows": len(rows),
-        "dim": int(unit.shape[1]) if unit.ndim == 2 else 0,
-        "index": manifest["index"],
-    }
-    if stage == "e2":
-        from rrm.passages.cost import L4_USD_PER_S
-        from rrm.passages.query import query_rows
-
-        symbol = r"\sqrt{d_k}"
-        query = encoder.encode_proximity([symbol + "\n"])[0]
-        hits = query_rows(rows, unit, {"symbol": symbol, "vector": query}, k=3)
-        extra["symbol_query"] = {
+        "subset": bool(wanted),
+        "index": index_note,
+        "manifest_index": manifest["index"],
+        "gpu": device,
+        "gpu_kind": kind,
+        "load_s": load_s,
+        "embed_s": embed_s,
+        "seconds_per_1k": per_1k_s,
+        "usd_per_1k_est": round(per_1k_s * rate, 6),
+        "usd_wall_est": round(gpu_s * rate, 6),
+        "symbol_query": {
             "symbol": symbol,
             "n": len(hits),
             "hits": [
                 {
-                    "id": hit.get("id"),
-                    "corpusid": hit.get("corpusid"),
-                    "kind": hit.get("kind"),
-                    "section": hit.get("section"),
-                    "latex": (hit.get("latex") or "")[:180],
-                    "text": (hit.get("text") or "")[:180],
-                    "cosine": hit.get("cosine"),
-                    "url": hit.get("url"),
+                    "id": hit.get("id"), "corpusid": hit.get("corpusid"), "kind": hit.get("kind"),
+                    "section": hit.get("section"), "latex": (hit.get("latex") or "")[:180],
+                    "text": (hit.get("text") or "")[:180], "cosine": hit.get("cosine"), "url": hit.get("url"),
                 }
                 for hit in hits
             ],
+        },
+    })
+
+
+@app.function(image=cpu_image, volumes={MOUNT: vol}, secrets=[stage_env], cpu=1, memory=8192, timeout=1800, max_containers=1)
+def export_meta():
+    """Escribe union_meta.json: arxiv y título de los ids de la unión. Sin e-prints."""
+    _require("e2_export")
+    import pyarrow as pa
+    import pyarrow.compute as pc
+    import pyarrow.parquet as pq
+
+    from rrm.search.display import canon_arxiv
+
+    dest = _passages()
+    union = json.loads((dest / "union.json").read_text(encoding="utf-8"))
+    ids = [int(item) for item in union.get("ids") or []]
+    display = _root() / "index" / "display.parquet"
+    table = pq.read_table(display, columns=["corpusid", "arxiv", "title", "year"])
+    mask = pc.is_in(table.column("corpusid"), value=pa.array(ids, type=pa.int64()))
+    sub = table.filter(mask)
+    by_id = {}
+    for i in range(sub.num_rows):
+        cid = int(sub.column("corpusid")[i].as_py())
+        by_id[cid] = {
+            "corpusid": cid,
+            "arxiv_id": canon_arxiv(sub.column("arxiv")[i].as_py() or ""),
+            "title": sub.column("title")[i].as_py() or "",
+            "year": sub.column("year")[i].as_py(),
         }
-        extra["embed_usd_l4"] = round(gpu_s * L4_USD_PER_S, 6)
+    papers = [by_id.get(cid) or {"corpusid": cid, "arxiv_id": "", "title": "", "year": None} for cid in ids]
+    (dest / "union_meta.json").write_text(json.dumps({"papers": papers}), encoding="utf-8")
     vol.commit()
-    return _report(stage, started, cpu=2, gpu_l4_seconds=gpu_s, extra=extra)
+    return {"n": len(papers), "with_arxiv": sum(1 for row in papers if row["arxiv_id"])}
+
+
+@app.function(image=cpu_image, volumes={MOUNT: vol}, secrets=[stage_env], cpu=1, memory=2048, timeout=1800, max_containers=1)
+def ingest_run(stage: str):
+    """Copia passages/inbox/{papers,failures} al almacén y recompila filas. Sin arXiv."""
+    _require(stage)
+    from rrm.passages.store import compile_store
+
+    dest = _passages()
+    src = dest / "inbox"
+    copied = 0
+    for kind in ("papers", "failures"):
+        folder = src / kind
+        if not folder.is_dir():
+            continue
+        target = dest / kind
+        target.mkdir(parents=True, exist_ok=True)
+        for path in folder.glob("*.json"):
+            to = target / path.name
+            if to.is_file():
+                continue
+            to.write_bytes(path.read_bytes())
+            copied += 1
+    manifest = compile_store(dest)
+    vol.commit()
+    return {"copied": copied, "rows": manifest["counts"]}
+
+
+@app.function(image=index_image, volumes={MOUNT: vol}, secrets=[stage_env], cpu=2, memory=32768, timeout=3600, max_containers=1)
+def probe_icl():
+    """Grupo de Akyürek con título+abstract. No escribe la unión ni los donantes."""
+    _require("probe_icl")
+    import numpy as np
+
+    from rrm.passages.groups import (
+        group_slices,
+        nearest_centroid,
+        probe_group,
+        seed_document,
+        seeds_of,
+    )
+    from rrm.passages.meta import meta_from_files
+    from rrm.reader.fetch import _scan_dataset
+    from rrm.search.encode import QueryEncoder
+
+    cid = 254043800
+    root = _root()
+    dest = _passages()
+    meta = meta_from_files(cid, root / "index" / "display.parquet", root / "index_ext" / "display_ext.parquet")
+    title = (meta or {}).get("title") or ""
+    abstract = (_scan_dataset(root / "abstracts", cid, ["abstract"], limit_files=10000) or {}).get("abstract") or ""
+    how = "title+abstract" if abstract else "title"
+    text = seed_document(title, abstract)
+    encoder = QueryEncoder()
+    encoder.load()
+    vec = encoder.encode_proximity([text])[0]
+    centroids = np.load(dest / "centroids.npy")
+    sorted_ids = np.load(dest / "group_ids.npy")
+    labels = np.load(dest / "group_labels.npy")
+    group = nearest_centroid(centroids, vec)
+    _order, starts, sizes = group_slices(labels, int(centroids.shape[0]))
+    seeds = seeds_of(sorted_ids[_order], starts, sizes, group)
+    graph = _load_graph()
+    node = np.load(root / "index_ext" / "node_meta.npz", mmap_mode="r", allow_pickle=True)
+    cc = np.maximum(np.asarray(node["cc"]), 0)
+
+    def meta_of(one):
+        return meta_from_files(one, root / "index" / "display.parquet", root / "index_ext" / "display_ext.parquet")
+
+    report = probe_group(graph, cc, seeds, meta_of, n=20)
+    top = [row for row in report["top"] if (row.get("title") or "").strip()][:5]
+    body = {
+        "corpusid": cid,
+        "how": how,
+        "abstract_chars": len(abstract),
+        "group": int(group),
+        "group_size": int(sizes[group]),
+        "top5": [
+            {"title": row.get("title"), "local": row.get("local"), "citationcount": row.get("citationcount"), "score": row.get("score")}
+            for row in top
+        ],
+    }
+    (dest / "probe_icl.json").write_text(json.dumps(body), encoding="utf-8")
+    vol.commit()
+    return body
+
+
+def _gpu_queue_message(err):
+    return (
+        "La cola de GPU no dio máquina en 180 s (orden L4, A10G, T4). "
+        "No hay embed y no hay que dejar el intento corriendo. "
+        f"{type(err).__name__}: {str(err)[:240]}"
+    )
 
 
 @app.local_entrypoint()
@@ -930,6 +1032,33 @@ def e1():
 def e2():
     print(json.dumps(harvest_run.remote("e2", 50), ensure_ascii=False))
     print(json.dumps(embed_run.remote("e2"), ensure_ascii=False))
+
+
+@app.local_entrypoint()
+def e2_export():
+    print(json.dumps(export_meta.remote(), ensure_ascii=False))
+
+
+@app.local_entrypoint()
+def e2_ingest():
+    print(json.dumps(ingest_run.remote("e2_ingest"), ensure_ascii=False))
+
+
+@app.local_entrypoint()
+def embed_new():
+    """Embed de RRM_PASSAGES_EMBED_CIDS. Falla claro si la cola de GPU pasa de 180 s."""
+    try:
+        print(json.dumps(embed_run.remote("e2"), ensure_ascii=False))
+    except Exception as err:
+        text = str(err).lower()
+        if "timeout" in text or "startup" in text or "gpu" in text:
+            raise SystemExit(_gpu_queue_message(err)) from err
+        raise
+
+
+@app.local_entrypoint()
+def probe_seed():
+    print(json.dumps(probe_icl.remote(), ensure_ascii=False))
 
 
 @app.local_entrypoint()
