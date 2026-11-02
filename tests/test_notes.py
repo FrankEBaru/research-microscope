@@ -70,7 +70,8 @@ def test_compose_is_local_and_marks_paper_as_data():
     body = compose("13756489", _gaps(), _passages())
     assert body["store"] is False
     assert body["reasoning"]["effort"] == "minimal"
-    assert body["max_output_tokens"] == 500
+    assert body["reasoning"] == {"effort": "minimal"}
+    assert body["max_output_tokens"] == 1200
     assert body["model"] == STANDARD
     user = body["input"][1]["content"]
     assert "HUECOS" in user and "PASAJES" in user and "ORACIONES" in user

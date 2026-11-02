@@ -49,6 +49,7 @@ function ArtifactView({ drawn }: { drawn: any }) {
           })}</tr>
         ))}</table>
         <p className="gap-src">{drawn.legend}</p>
+        {drawn.freq && <p className="gap-src">{drawn.freq}</p>}
       </div>
     );
   }

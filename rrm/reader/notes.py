@@ -187,7 +187,10 @@ def compose(paper_id, gaps, passages):
         "model": model,
         "store": False,
         "reasoning": {"effort": "minimal"},
-        "max_output_tokens": 500,
+        # El ticket pedía 500. Con reasoning.effort=minimal (el más bajo que
+        # Muse Spark acepta; "none" responde 400) esos 500 se iban en reasoning
+        # y no salía JSON. 1200 es el desvío anotado en el PR.
+        "max_output_tokens": 1200,
         "input": [
             {"role": "developer", "content": _SYSTEM},
             {"role": "user", "content": "\n".join(lines)},

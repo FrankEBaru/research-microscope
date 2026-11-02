@@ -10,6 +10,8 @@ test("la matriz de PE usa d = 64 ilustrativo y la fila 0 cambia más", () => {
   const drawn = matrixOf(PE);
   assert.ok(drawn);
   assert.equal(drawn.legend, "d = 64, ilustrativo");
+  assert.match(drawn.freq, /i = 0 cambia más rápido/);
+  assert.match(drawn.freq, /i grandes cambian lento/);
   assert.equal(drawn.rows.length, 16);
   assert.equal(drawn.rows[0].cells.length, 32);
   const speed = (row) => {

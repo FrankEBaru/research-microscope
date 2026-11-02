@@ -74,7 +74,7 @@ export function matrixOf(tex) {
   const d = found.d;
   const last = Math.min(15, Math.floor((d - 1) / 2));
   if (last < 1) return null;
-  // Con la fórmula del ticket, i = 0 es la fila rápida. Si no lo es, no se dibuja.
+  // i = 0 es la frecuencia más alta (cambia más rápido). Las i grandes cambian lento.
   if (!(drift(0, d) > drift(last, d))) return null;
   const rows = [];
   for (let i = 0; i <= last; i++) {
@@ -87,6 +87,7 @@ export function matrixOf(tex) {
     d,
     illustrative: found.illustrative,
     legend: found.illustrative ? "d = 64, ilustrativo" : `d = ${d}`,
+    freq: "La fila i = 0 cambia más rápido. Las i grandes cambian lento.",
     rows,
   };
 }
