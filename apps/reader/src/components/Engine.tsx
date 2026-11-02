@@ -5,18 +5,22 @@ import { Rich } from "@/lib/math";
 import { Coverage, ProvChip } from "./Bits";
 import PaperView, { plainOf } from "./Paper";
 import MapView from "./MapView";
-import Panorama, { LiveCoverage } from "./Panorama";
-import SimPanorama from "./SimPanorama";
+import Panorama from "./Panorama";
 import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
-import { burst, explain, groupNames, keepOpened, labels as fetchLabels, liveEnabled, paperKey, paper as fetchPaper, prepare, settled, status as fetchStatus, subtopics as fetchSubtopics, warm } from "@/lib/backend.js";
+import { burst, curatedContent, curatedPaper, explain, groupNames, keepOpened, labels as fetchLabels, liveEnabled, paperKey, paper as fetchPaper, prepare, settled, status as fetchStatus, subtopics as fetchSubtopics, warm } from "@/lib/backend.js";
+import { classify, storageFault } from "@/lib/faults.js";
 import { coreMode } from "@/lib/features.js";
 import { applyGroupNames, groupPacks, mapPapers, pinPoint } from "@/lib/layout.js";
 import { alignVisit, mergeLabels, popVisit, pushVisit } from "@/lib/path.js";
 import { EXPLORE_KEY, pickExplore, readExploreFor, recordVisit, whyLabel } from "@/lib/explore.js";
 import { normalizeQuestion, phaseOf, readOverflow, readQuestions, recallQuestion, rememberQuestion, writeOverflow } from "@/lib/qcache.js";
 import { bindDevLog, createDevLog } from "@/lib/devlog.js";
-import { LiveCircle } from "./MapView";
-import LiveMap from "./LiveMap";
+import { Boundary, DiagPanel, useDebug } from "./faults";
+import TopBar from "./screens/TopBar";
+import StartScreen from "./screens/StartScreen";
+import MapScreen from "./screens/MapScreen";
+import ReaderFrame from "./screens/ReaderFrame";
+import type { AtlasCtx } from "./screens/types";
 
 type Route = { q?: string; c?: string; p?: string; b?: string };
 const parse = (h: string): Route => {
@@ -50,11 +54,12 @@ export default function Engine() {
   const [engine, setEngine] = useState(live ? "preparando" : "listo");
   const [liveResult, setLiveResult] = useState<any>(null);
   const [liveErr, setLiveErr] = useState("");
+  const [liveCode, setLiveCode] = useState("");
+  const debug = useDebug();
   const [impatient, setImpatient] = useState(false); // hay papers que no terminan: se puede armar con los ya leídos
   const [forced, setForced] = useState(false);
   const [rowState, setRowState] = useState<Record<string, any>>({});
   const [opened, setOpened] = useState<any>(null);
-  const [devOn, setDevOn] = useState(false);
   const [asList, setAsList] = useState(false);
   const [camino, setCamino] = useState<{ id: string; porQue: string; padre: string | null }[]>([]);
   const caminoRef = useRef(camino);
@@ -81,6 +86,10 @@ export default function Engine() {
     dev.finish(id, state, detail);
     setDevTick((n) => n + 1);
   }, [dev]);
+  const fail = useCallback((e: any) => {
+    setLiveErr(explain(e));
+    setLiveCode(e?.code || classify(e));
+  }, []);
 
   useEffect(() => {
     bindDevLog({
@@ -90,16 +99,14 @@ export default function Engine() {
   }, [dev]);
 
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    if (params.get("dev") === "1") setDevOn(true);
     const db = typeof indexedDB === "undefined" ? null : indexedDB;
     let stop = false;
     readOverflow(db).then((raw) => {
       if (stop || !raw) return;
       try {
         if (!localStorage.getItem("rrm.questions.v1")) localStorage.setItem("rrm.questions.v1", raw);
-      } catch { /* the memory of this tab is enough */ }
-    }).catch(() => {});
+      } catch (e) { storageFault(e, "localStorage"); }
+    }).catch((e) => storageFault(e, "IndexedDB"));
     return () => { stop = true; };
   }, []);
 
@@ -137,11 +144,11 @@ export default function Engine() {
   useEffect(() => {
     (async () => {
       try {
-        const c = await (await fetch("/papers/_content.json")).json();
+        const c = await curatedContent();
         setContent(c);
         const ids = new Set<string>();
         c.map.questions.forEach((q: any) => q.clusters.forEach((cl: any) => cl.papers.forEach((p: any) => ids.add(p.id))));
-        const got = await Promise.all([...ids].map(async (id) => [id, await (await fetch(`/papers/${id}.json`)).json()] as const));
+        const got = await Promise.all([...ids].map(async (id) => [id, await curatedPaper(id)] as const));
         setPapers(Object.fromEntries(got));
       } catch (e: any) {
         setErr("No se encontraron los datos. Ejecuta `npm run data` (descarga los papers de arXiv; no se commitean).");
@@ -152,7 +159,6 @@ export default function Engine() {
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA/.test((e.target as HTMLElement).tagName)) return;
-      if ((e.key === "d" || e.key === "D")) { setDevOn((v) => !v); return; }
       if (!core && (e.key === "c" || e.key === "C")) setCompanion((v) => !v);
     };
     window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
@@ -183,9 +189,9 @@ export default function Engine() {
     try {
       const graph = recordVisit(localStorage, liveQ, {
         id: key, title: titleFor(key), from, porQue, at: Date.now(),
-      }, (json: string) => { writeOverflow(indexedDB, json, EXPLORE_KEY).catch(() => {}); });
+      }, (json: string) => { writeOverflow(indexedDB, json, EXPLORE_KEY).catch((e) => storageFault(e, "IndexedDB")); });
       setExplore(graph);
-    } catch { /* modo privado: el salto sigue y la pila también */ }
+    } catch (e) { storageFault(e, "localStorage"); }
     setCamino(pushVisit(prev, key, porQue));
     promoteBurst(key);
     if (key === liveId) return;
@@ -207,14 +213,14 @@ export default function Engine() {
     try {
       const local = readExploreFor(localStorage, liveQ, liveId);
       if ((local.nodes || []).length) { setExplore(local); return; }
-    } catch { /* sigue con IndexedDB */ }
+    } catch (e) { storageFault(e, "localStorage"); }
     readOverflow(indexedDB, EXPLORE_KEY).then((json) => {
       if (stop || !json) return;
       try {
         const picked = pickExplore(JSON.parse(json), liveQ, liveId);
         if (picked.nodes.length) setExplore(picked);
-      } catch { /* el grafo de esta página sigue vacío */ }
-    }).catch(() => {});
+      } catch (e) { storageFault(e, "IndexedDB"); }
+    }).catch((e) => storageFault(e, "IndexedDB"));
     return () => { stop = true; };
   }, [liveQ, liveId]);
 
@@ -232,7 +238,7 @@ export default function Engine() {
         setRowState(map); setLiveErr("");
         if (ids.every((id: number) => settled(map[String(id)]?.status))) return;
       } catch (e: any) {
-        if (!stop) setLiveErr(explain(e));
+        if (!stop) fail(e);
       }
       if (!stop) window.setTimeout(tick, 1500);
     };
@@ -245,8 +251,8 @@ export default function Engine() {
     if (!liveResult || !liveQ) return;
     if (liveResult.provisional) return; // RRM-48: búsqueda sin el índice de títulos; no se guarda
     const keep = () => {
-      try { rememberQuestion(localStorage, liveQ, { result: liveResult, states: rowState }, (json: string) => { writeOverflow(indexedDB, json).catch(() => {}); }); }
-      catch { /* private mode: the list is still on screen */ }
+      try { rememberQuestion(localStorage, liveQ, { result: liveResult, states: rowState }, (json: string) => { writeOverflow(indexedDB, json).catch((e) => storageFault(e, "IndexedDB")); }); }
+      catch (e) { storageFault(e, "localStorage"); }
     };
     keep();
   }, [liveResult, liveQ, rowState]);
@@ -344,7 +350,7 @@ export default function Engine() {
         }
         if (settled(row.status)) return;
       } catch (e: any) {
-        if (!stop) setLiveErr(explain(e));
+        if (!stop) fail(e);
       }
       if (!stop) window.setTimeout(loop, 2000);
     };
@@ -356,7 +362,7 @@ export default function Engine() {
         apply(body);
         if (settled(body.status)) return;
       } catch (e: any) {
-        if (!stop) setLiveErr(explain(e));
+        if (!stop) fail(e);
       }
       if (!stop) window.setTimeout(loop, 2000);
     })();
@@ -367,7 +373,7 @@ export default function Engine() {
   useEffect(() => {
     if (pending || !core || !live || liveResult || !route.p) return;
     let rows: any[] = [];
-    try { rows = readQuestions(localStorage); } catch { rows = []; }
+    try { rows = readQuestions(localStorage); } catch (e) { storageFault(e, "localStorage"); rows = []; }
     const hit = rows.find((row) => (row?.payload?.result?.papers || []).some((p: any) => paperKey(p) === route.p));
     if (!hit?.payload?.result) return;
     setLiveQ(hit.q);
@@ -448,7 +454,7 @@ export default function Engine() {
     setLiveQ(q); setLiveOn(true); setLiveErr(""); setImpatient(false); setForced(false); setTopics(null); setAsList(false); setLabelNote("");
     setPending(true);
     let cached: any = null;
-    try { cached = recallQuestion(localStorage, q); } catch { cached = null; }
+    try { cached = recallQuestion(localStorage, q); } catch (e) { storageFault(e, "localStorage"); cached = null; }
     if (cached?.payload?.result) {
       const step = note("pregunta", normalizeQuestion(q));
       setLiveResult(cached.payload.result);
@@ -484,7 +490,7 @@ export default function Engine() {
     } catch (err: any) {
       if (searchGen.current !== gen) return;
       setPhase("");
-      setLiveErr(explain(err));
+      fail(err);
       done(step, "error", explain(err));
     } finally {
       if (searchGen.current === gen) setPending(false);
@@ -528,93 +534,40 @@ export default function Engine() {
     { n: 3, label: "Paper", sub: paper ? paper.title : undefined, on: undefined },
   ] : [];
 
+  const atlasCtx: AtlasCtx = {
+    papers: liveResult ? mapPapers(liveResult) : [],
+    edges: liveResult?.edges || [],
+    layout: liveResult?.layout,
+    states: rowState,
+    query: shownQ,
+    explore,
+    openId: liveId,
+    onOpen: abrir,
+    onWant: wantThis,
+  };
+  const onLayout = (next: any) => { setLiveResult((prev) => (prev ? { ...prev, layout: next } : prev)); if (!next?.pending_vectors?.length) setPhase((cur) => (cur === "layout" ? "" : cur)); };
+  const back = <>{!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}{core && <button type="button" className="link" onClick={volver}>volver</button>}</>;
+  const jump = core && (() => { const top = camino[camino.length - 1]; const why = top && String(top.id) === liveId ? whyLabel(top.porQue) : ""; return why ? <p className="jump-why">Salto: {why}</p> : null; })();
+  const frame = {
+    back, openLine, liveErr, liveCode, debug,
+    content, focus: route.b, companion, onHideCompanion: () => setCompanion(false), core,
+    burstIds: (liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p)),
+    map: liveResult ? { papers: mapPapers(liveResult), edges: liveResult.edges || [], layout: liveResult.layout } : null,
+    explore, openId: liveId, onOpenPaper: abrir, onPromote: () => promoteBurst(liveId), atlasCtx,
+  };
+
   return (
     <>
-      <header className="topbar">
-        <a className="brand" href="#/" onClick={() => window.scrollTo({ top: 0 })}><span className="lens" aria-hidden="true" />Microscopio de lectura</a>
-        {!(core && (liveOn || liveId)) && (
-          <nav className="scope" aria-label="Nivel de zoom">
-            {steps.map((s) => (
-              <button key={s.n} className={`step ${level === s.n ? "on" : ""} ${level > s.n ? "past" : ""}`} disabled={!s.on || level === s.n} onClick={s.on} title={s.sub || ""}>
-                <span className="dot">{s.n}</span><span className="lbl">{s.label}</span>
-              </button>
-            ))}
-          </nav>
-        )}
-        {live && !(core && !liveOn && !liveId) && (
-          <form className="live-search" onSubmit={onSearch}>
-            <input aria-label="Pregunta" title={draft || undefined} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Pregunta" />
-            <button type="submit">Buscar</button>
-          </form>
-        )}
-        {!core && <button className="companion-toggle" aria-pressed={companion} onClick={() => setCompanion((v) => !v)} title="Compañero de lectura opcional: ofrece ayuda, nunca interrumpe, no guarda nada (tecla C)">Compañero {companion ? "activado" : "apagado"}</button>}
-        {!(live && process.env.NEXT_PUBLIC_RRM_OFFLINE !== "1") && <span className="proto">prototipo · datos locales</span>}
-      </header>
+      <TopBar core={core} live={live} liveOn={liveOn} liveId={liveId} steps={steps} level={level} draft={draft} setDraft={setDraft} onSearch={onSearch} companion={companion} setCompanion={setCompanion} />
 
       <main key={`${level}-${route.c}-${route.p}`} className="zoom-in">
-        {live && (liveOn || liveId) && liveId && opened && (
-          <div className="lvl">
-            {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
-            {core && <button type="button" className="link" onClick={volver}>volver</button>}
-            {core && (() => { const top = camino[camino.length - 1]; const why = top && String(top.id) === liveId ? whyLabel(top.porQue) : ""; return why ? <p className="jump-why">Salto: {why}</p> : null; })()}
-            <PaperView paper={opened.paper} content={content || {}} focus={route.b} companion={core ? false : companion} onHideCompanion={() => setCompanion(false)} remote={opened.remote} showInstrument={!core} showCrops={!core} core={core} burstIds={(liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p))} map={liveResult ? { papers: mapPapers(liveResult), edges: liveResult.edges || [], layout: liveResult.layout } : null} explore={explore} openId={liveId} onOpenPaper={abrir} onPromote={() => promoteBurst(liveId)} />
-          </div>
-        )}
-        {live && (liveOn || liveId) && liveId && !opened && (
-          <div className="lvl">
-            {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
-            {core && <button type="button" className="link" onClick={volver}>volver</button>}
-            <p className="center-msg">{liveErr ? "No se pudo cargar el paper (se sigue intentando)." : (openLine || "abriendo el paper…")}</p>
-            {liveErr && <p className="fail-reason" role="alert">{liveErr}</p>}
-          </div>
-        )}
+        {live && (liveOn || liveId) && liveId && opened && <Boundary name="reader"><ReaderFrame {...frame} opened={opened} jump={jump} /></Boundary>}
+        {live && (liveOn || liveId) && liveId && !opened && <Boundary name="reader"><ReaderFrame {...frame} opened={null} /></Boundary>}
         {live && core && !liveOn && !liveId && (
-          <section className="lvl ask">
-            <p className="eyebrow">Una pregunta</p>
-            <h1 className="question">Qué quieres entender</h1>
-            <form className="ask-box" onSubmit={onSearch}>
-              <input aria-label="Pregunta" title={draft || undefined} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Una pregunta, un título, un tema" autoFocus />
-              <button type="submit" disabled={pending || !draft.trim()}>Ver el mapa</button>
-            </form>
-            {(engine === "preparando" || phase === "wake") && <p className="warm" role="status">{say(phase || "wake")}</p>}
-            <p className="sub">Los papers aparecen como puntos en cuanto la ráfaga responde. El tamaño es el puesto. El texto completo de los 10 primeros se prepara después, sin bloquear el mapa.</p>
-          </section>
+          <Boundary name="start"><StartScreen draft={draft} setDraft={setDraft} onSearch={onSearch} pending={pending} engine={engine} phase={phase} since={since} say={say} /></Boundary>
         )}
         {live && liveOn && !liveId && (
-          <section className={`lvl ${core ? "lvl-map" : ""}`}>
-            {!core && <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>}
-            <h1 className="question">{shownQ}</h1>
-            {!core && topics && <p className="sub" data-subtopics>{topics.length ? <>Subtemas: {topics.join(" · ")}</> : "Esta pregunta no separó subtemas."}</p>}
-            {!core && !liveResult && <p className="warm" role="status">{say(phase || (engine === "preparando" ? "wake" : "search"))}</p>}
-            {phase === "layout" && liveResult && <p className="warm" role="status">{beat("layout", since)}</p>}
-            {core && !liveResult && <div className="platina is-wait" role="status"><p>{say(phase || "search")}</p></div>}
-            {liveErr && <p className="fail-reason" role="alert">{liveErr}</p>}
-            {core && liveErr && !liveResult && !pending && <div className="platina is-wait"><p>No se pudo armar el mapa.</p></div>}
-            {core && liveResult && (liveResult.papers || []).length > 0 && (
-              <>
-                <div className="view-toggle" role="tablist" aria-label="Vista">
-                  <button type="button" className={!asList ? "on" : ""} onClick={() => setAsList(false)}>Mapa</button>
-                  <button type="button" className={asList ? "on" : ""} onClick={() => setAsList(true)}>Lista</button>
-                </div>
-                {labelNote && <p className="muted" role="status">{labelNote}</p>}
-                {liveResult.topic_note && <p className="muted" role="status">{liveResult.topic_note}</p>}
-                {asList
-                  ? <CoreList papers={liveResult.papers || []} states={rowState} onOpen={(id: string) => abrir(id, "desde el mapa")} onWant={wantThis} />
-                  : <LiveMap papers={mapPapers(liveResult)} edges={liveResult.edges || []} layout={liveResult.layout} states={rowState} query={shownQ} onLayout={(next) => { setLiveResult((prev) => (prev ? { ...prev, layout: next } : prev)); if (!next?.pending_vectors?.length) setPhase((cur) => (cur === "layout" ? "" : cur)); }} onOpen={(id: string) => abrir(id, "desde el mapa")} onWant={wantThis} />}
-                <p className="muted small">Datos de papers y citas: Semantic Scholar. LaTeX primero; OCR solo si el paper no tiene LaTeX.</p>
-              </>
-            )}
-            {!core && liveResult && <LiveCoverage ids={(liveResult.papers || []).slice(0, 10).map((p: any) => paperKey(p))} states={rowState} />}
-            {!core && liveResult && liveIds.length === 0 && <p className="muted" role="status">La ráfaga no encontró papers para esta pregunta. Prueba con otras palabras.</p>}
-            {core && liveResult && (liveResult.papers || []).length === 0 && <p className="muted" role="status">La ráfaga no encontró papers para esta pregunta. Prueba con otras palabras.</p>}
-            {!core && liveResult && liveIds.length > 0 && !liveIds.every((id: string) => settled(rowState[id]?.status)) && impatient && !forced && (
-              <p className="muted small" role="status">Algunos papers siguen en cola o leyéndose. <button type="button" className="link" onClick={() => setForced(true)}>Armar el Panorama con los ya leídos</button> (los que faltan no cuentan como «no lo dice»).</p>
-            )}
-            {!core && liveResult && liveIds.length > 0 && (forced || liveIds.every((id: string) => settled(rowState[id]?.status))) && (
-              <SimPanorama key={`${liveQ}|${forced}`} autorun question={liveQ} ids={liveIds} states={rowState} getDoc={async (id: string) => { try { return (await fetchPaper(id)).paper; } catch { return null; } }} nameOf={liveName} open={(id, b) => go({ p: id, b })} />
-            )}
-            {!core && liveResult && <LiveCircle papers={liveResult.papers || []} edges={liveResult.edges || []} states={rowState} onOpen={(id) => go({ p: id })} />}
-          </section>
+          <Boundary name="map"><MapScreen core={core} shownQ={shownQ} topics={topics} liveResult={liveResult} phase={phase} engine={engine} say={say} liveErr={liveErr} liveCode={liveCode} debug={debug} pending={pending} asList={asList} setAsList={setAsList} labelNote={labelNote} liveIds={liveIds} impatient={impatient} forced={forced} setForced={setForced} liveQ={liveQ} liveName={liveName} go={go} backToCurated={backToCurated} atlasCtx={atlasCtx} onLayout={onLayout} /></Boundary>
         )}
         {!(live && core) && !(live && (liveOn || liveId)) && level === 1 && <Area q={q} questions={questions} papers={papers} go={go} content={content} core={core} />}
         {!(live && core) && !(live && (liveOn || liveId)) && level === 2 && cluster && <Cluster q={q} cl={cluster} papers={papers} go={go} />}
@@ -633,39 +586,8 @@ export default function Engine() {
           </>
         )}
       </footer>
-      {devOn && (
-        <aside className="devlog" data-devlog={devTick} aria-label="Registro de desarrollo">
-          <h2>Qué está haciendo</h2>
-          <ol>
-            {dev.steps.map((row) => <li key={row.id} className={row.state}>{dev.line(row)}</li>)}
-          </ol>
-        </aside>
-      )}
+      <DiagPanel dev={dev} data-devlog={devTick} />
     </>
-  );
-}
-
-function CoreList({ papers, states, onOpen, onWant }: { papers: any[]; states: Record<string, any>; onOpen: (id: string) => void; onWant: (id: string) => void }) {
-  const ordered = [...papers].sort((a, b) => Number(Boolean(a.retracted)) - Number(Boolean(b.retracted)));
-  return (
-    <ol className="core-list">
-      {ordered.map((p) => {
-        const id = paperKey(p);
-        const phase = phaseOf(states[id]?.status);
-        const reason = states[id]?.reason;
-        return (
-          <li key={id} className={p.retracted ? "is-sunk" : undefined}>
-            <p className={`phase phase-${phase.id}`} data-phase={phase.id}>{phase.label}{phase.id === "fallo" && reason ? ` (${reason})` : ""}</p>
-            <h2><button type="button" className="link" onClick={() => onOpen(id)}>{p.title || id}</button></h2>
-            <p className="authors">{[p.year, p.citationcount != null ? `${p.citationcount} citas` : null, p.venue].filter((x) => x != null && x !== "").join(" · ")}</p>
-            {p.survey && <p className="survey-tag">survey</p>}
-            {p.retracted && <p className="retract">retractado</p>}
-            {p.abstract ? <p className="core-blurb">{p.abstract}</p> : p.tldr ? <p className="core-blurb"><span className="chip chip-simulado">generado</span> {p.tldr}</p> : <p className="small">Sin abstract en el índice.</p>}
-            <button type="button" onClick={() => onWant(id)}>quiero leer este</button>
-          </li>
-        );
-      })}
-    </ol>
   );
 }
 
