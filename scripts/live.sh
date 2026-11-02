@@ -161,21 +161,9 @@ echo "Modo: ${MODE}. Tope: ${MAX_MIN} min. Features: ${RRM_FEATURES}."
 echo "Panorama: ${RRM_PANORAMA_MODE}. SAM: ${RRM_SAM:-grabado}."
 
 ensure_fixtures() {
-  if [[ -f "$FIX_DIR/manifest.json" ]]; then
-    return
-  fi
-  if [[ -n "${RRM_OFFLINE_DIR:-}" ]]; then
-    echo "RRM_OFFLINE_DIR no tiene manifest.json." >&2
-    exit 1
-  fi
-  if ! command -v gh >/dev/null 2>&1; then
-    echo "Faltan las consultas grabadas y no está gh. Instala gh y corre gh auth login." >&2
-    exit 1
-  fi
-  local tag=offline-fixtures-v1
-  gh release download "$tag" --repo FrankEBaru/research-microscope --pattern "${tag}.tar.gz" --clobber --dir "$ROOT"
-  tar -xzf "$ROOT/${tag}.tar.gz" -C "$ROOT"
-  rm -f "$ROOT/${tag}.tar.gz"
+  # shellcheck source=scripts/_fixtures.sh
+  source "$ROOT/scripts/_fixtures.sh"
+  resolve_fixtures "$ROOT" || exit 1
 }
 
 deploy_one() {

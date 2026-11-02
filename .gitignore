@@ -64,6 +64,9 @@ data/
 # E2E benchmark reports (may contain timings of a private deploy)
 e2e-report*.json
 
-# Grabación offline (GitHub Release offline-fixtures-v1, no va en git)
+# Datos locales: grabación privada (RRM_OFFLINE_DIR / RRM_OFFLINE_TAR) y sintéticos generados
 offline-fixtures/
+offline-fixtures.tmp.*/
+offline-fixtures-synth/
 offline-fixtures-v1.tar.gz
+apps/reader/shots/

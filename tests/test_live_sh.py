@@ -85,6 +85,10 @@ echo "python3 $*" >> "$RRM_FAKE_LOG"
 if [[ "$1" == "-c" ]]; then
   exit 0
 fi
+if [[ "$1" == *build_ui_fixtures.py ]]; then
+  mkdir -p "$3" && echo '{"queries":[]}' > "$3/manifest.json"
+  exit 0
+fi
 echo "OFFLINE_PAN=${RRM_OFFLINE_PANORAMA-}" >> "$RRM_FAKE_LOG"
 echo "PAN_MODE=${RRM_PANORAMA_MODE-}" >> "$RRM_FAKE_LOG"
 echo "FEATURES=${RRM_FEATURES-}" >> "$RRM_FAKE_LOG"
@@ -161,12 +165,26 @@ def _stops(text: str):
     assert "modal app list" in text
 
 
-def test_off_reusa_offline_y_no_toca_modal(tmp_path):
+def _off_sin_datos(tmp_path, **extra):
     bindir, log = _fakes(tmp_path)
-    code, out = _run(_env(bindir, log, RRM_LIVE="off", RRM_DEMO_TOKEN=TOKEN))
-    text = log.read_text(encoding="utf-8") if log.is_file() else ""
-    assert code != 0
-    assert "gh release download" in text
+    env = _env(bindir, log, RRM_DEMO_TOKEN=TOKEN, RRM_OFFLINE_SYNTH_DIR=str(tmp_path / "synth"), **extra)
+    proc = _start(env)
+    try:
+        _wait_log(log, "npm run dev")
+        code, out = _stop(proc, signal.SIGTERM)
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait(timeout=5)
+    return code, out, log.read_text(encoding="utf-8")
+
+
+def test_off_reusa_offline_y_no_toca_modal(tmp_path):
+    code, out, text = _off_sin_datos(tmp_path, RRM_LIVE="off")
+    assert "gh " not in text
+    assert "build_ui_fixtures.py --out" in text
+    assert f"python3 -m rrm.offline --root {tmp_path / 'synth'}" in text
+    assert "sintéticos" in out
     assert "modal " not in text
     assert "curl " not in text
     assert TOKEN not in out
@@ -174,10 +192,8 @@ def test_off_reusa_offline_y_no_toca_modal(tmp_path):
 
 
 def test_default_es_off(tmp_path):
-    bindir, log = _fakes(tmp_path)
-    code, out = _run(_env(bindir, log, RRM_DEMO_TOKEN=TOKEN))
-    text = log.read_text(encoding="utf-8") if log.is_file() else ""
-    assert code != 0 and "gh release download" in text and "modal " not in text
+    code, out, text = _off_sin_datos(tmp_path)
+    assert "gh " not in text and "modal " not in text and "build_ui_fixtures.py" in text
     assert TOKEN not in out
 
 

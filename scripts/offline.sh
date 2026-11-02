@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Baja el Release offline-fixtures-v1 y arranca la API local y la UI. Sin Modal ni Meta.
+# Arranca la API local y la UI con datos locales. Sin Modal ni Meta, sin red.
+#   RRM_OFFLINE_DIR=<dir con manifest.json>   usa ese directorio.
+#   RRM_OFFLINE_TAR=<.tar.gz o prefijo de *.part-aa…>   lo descomprime en offline-fixtures/.
+#   RRM_OFFLINE_SYNTH=1   fuerza los fixtures sintéticos (también si no hay nada más).
+#   RRM_OFFLINE_NO_UI=1   solo arranca la API.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
-TAG=offline-fixtures-v1
-REPO=FrankEBaru/research-microscope
 PORT=8787
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -16,15 +18,9 @@ if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -f "$ROOT/offline-fixtures/manifest.json" ]]; then
-  if ! command -v gh >/dev/null 2>&1; then
-    echo "Faltan las consultas grabadas y no está gh. Instala gh y corre gh auth login." >&2
-    exit 1
-  fi
-  gh release download "$TAG" --repo "$REPO" --pattern "${TAG}.tar.gz" --clobber --dir "$ROOT"
-  tar -xzf "$ROOT/${TAG}.tar.gz" -C "$ROOT"
-  rm -f "$ROOT/${TAG}.tar.gz"
-fi
+# shellcheck source=scripts/_fixtures.sh
+source "$ROOT/scripts/_fixtures.sh"
+resolve_fixtures "$ROOT" || exit 1
 
 export RRM_FEATURES="${RRM_FEATURES:-core}"
 export NEXT_PUBLIC_RRM_FEATURES="${NEXT_PUBLIC_RRM_FEATURES:-$RRM_FEATURES}"
@@ -33,7 +29,7 @@ export NEXT_PUBLIC_READER_URL="http://127.0.0.1:${PORT}"
 export NEXT_PUBLIC_RRM_DEMO_TOKEN="${NEXT_PUBLIC_RRM_DEMO_TOKEN:-local}"
 export NEXT_PUBLIC_RRM_OFFLINE=1
 
-python3 -m rrm.offline --root "$ROOT/offline-fixtures" --host 127.0.0.1 --port "$PORT" &
+python3 -m rrm.offline --root "$FIX_DIR" --host 127.0.0.1 --port "$PORT" &
 PID=$!
 cleanup() { kill "$PID" 2>/dev/null || true; }
 trap cleanup EXIT
@@ -48,6 +44,12 @@ done
 if [[ "$ready" != 1 ]]; then
   echo "El servidor offline no arrancó en el puerto ${PORT}." >&2
   exit 1
+fi
+
+if [[ "${RRM_OFFLINE_NO_UI:-}" == "1" ]]; then
+  echo "API local: http://127.0.0.1:${PORT} (sin UI). Ctrl+C la apaga."
+  wait "$PID"
+  exit $?
 fi
 
 echo ""
