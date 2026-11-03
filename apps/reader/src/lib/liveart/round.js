@@ -220,24 +220,28 @@ export const ROUND = [
     }
   },
   {
-    "source": "catalog",
+    "source": "round",
     "widget": {
       "id": "grok-delay",
       "topic": "grok",
       "title": "La validación generaliza mucho después",
-      "explain": "En grokking el entrenamiento acierta mucho antes. La validación se queda en el azar un tramo largo y después, de pronto, generaliza. El lugar del salto en la figura es ilustrativo.",
+      "explain": "Power et al. 2201.02177: entrena casi perfecto y la validación sigue en el azar; generaliza «1000 times more» pasos después, y con menos datos todavía más tarde. Mueve datos: el salto coral se corre y el azul no. El eje y la forma son ilustrativos. El weight decay del paper baja cuántos datos hacen falta; aquí no es un control.",
       "questions": [
         {
-          "q": "¿Por qué entrenar bien no quiere decir que ya generaliza?",
-          "why": "la validación puede seguir en el azar"
+          "q": "¿En el paso 42, por qué el entrenamiento ya está alto y la validación no?",
+          "why": "memoriza pronto; generalizar va mucho después"
         },
         {
-          "q": "¿Qué se ve cuando el cursor pasa el salto?",
-          "why": "la validación sube de golpe"
+          "q": "¿Qué le pasa al salto coral si bajas datos de 0.4 a 0.2?",
+          "why": "se sale del eje: con pocos datos no alcanza"
         },
         {
-          "q": "¿El paso del salto es el del paper?",
-          "why": "no: el lugar es ilustrativo, el retraso es el fenómeno"
+          "q": "¿La curva azul también se corre cuando hay menos datos?",
+          "why": "no: el entrenamiento sigue igual de rápido"
+        },
+        {
+          "q": "¿Este eje es la medición de 1000 veces más pasos?",
+          "why": "no: el 1000x es del paper; el eje es ilustrativo"
         }
       ],
       "controls": [
@@ -248,30 +252,42 @@ export const ROUND = [
           "max": 100,
           "value": 42,
           "step": 1
+        },
+        {
+          "id": "data",
+          "label": "datos",
+          "min": 0.2,
+          "max": 1,
+          "value": 0.4,
+          "step": 0.05
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, step = Math.round(state.step);\n  var N = 100, i, tr, va, L = 36, R = w * 0.78, T = 40, B = h * 0.78;\n  function trainAt(s) { return 1 - Math.exp(-s / 8); }\n  function valAt(s) {\n    if (s < 60) return 0.12;\n    return 0.12 + (1 - Math.exp(-(s - 60) / 6)) * 0.86;\n  }\n  function X(v) { return L + (v / N) * (R - L); }\n  function Y(v) { return B - v * (B - T); }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  for (i = 0; i <= N; i++) {\n    tr = trainAt(i);\n    if (i === 0) ctx.moveTo(X(i), Y(tr));\n    else ctx.lineTo(X(i), Y(tr));\n  }\n  ctx.stroke();\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.beginPath();\n  for (i = 0; i <= N; i++) {\n    va = valAt(i);\n    if (i === 0) ctx.moveTo(X(i), Y(va));\n    else ctx.lineTo(X(i), Y(va));\n  }\n  ctx.stroke();\n  ctx.strokeStyle = \"#2e7d32\";\n  ctx.beginPath();\n  ctx.moveTo(X(step), T);\n  ctx.lineTo(X(step), B);\n  ctx.stroke();\n  tr = trainAt(step);\n  va = valAt(step);\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"16px sans-serif\";\n  ctx.fillText(va < 0.3 ? \"entrena ya, valida no\" : \"de pronto generaliza\", 16, 24);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"azul entrena  \" + Math.round(tr * 100) + \"%\", 16, h * 0.92);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillText(\"coral valida  \" + Math.round(va * 100) + \"%\", w * 0.48, h * 0.92);\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, step = Math.round(state.step), data = state.data;\n  var N = 100, i, tr, va, jump, msg, L = 36, R = w * 0.72, T = 48, B = h * 0.78;\n  if (data < 0.2) data = 0.2;\n  jump = 24 / data;\n  function trainAt(s) { return 1 - Math.exp(-s / 8); }\n  function valAt(s) {\n    if (s < jump) return 0.12;\n    return 0.12 + (1 - Math.exp(-(s - jump) / 6)) * 0.86;\n  }\n  function X(v) { return L + (v / N) * (R - L); }\n  function Y(v) { return B - v * (B - T); }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  if (jump <= N) {\n    ctx.strokeStyle = \"#c4512c\";\n    ctx.lineWidth = 2;\n    ctx.beginPath();\n    ctx.moveTo(X(jump), T);\n    ctx.lineTo(X(jump), B);\n    ctx.stroke();\n    ctx.fillStyle = \"#c4512c\";\n    ctx.font = \"12px sans-serif\";\n    ctx.fillText(\"salto\", X(jump) - 14, T - 8);\n  }\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2.5;\n  ctx.beginPath();\n  for (i = 0; i <= N; i++) {\n    tr = trainAt(i);\n    if (i === 0) ctx.moveTo(X(i), Y(tr));\n    else ctx.lineTo(X(i), Y(tr));\n  }\n  ctx.stroke();\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.beginPath();\n  for (i = 0; i <= N; i++) {\n    va = valAt(i);\n    if (i === 0) ctx.moveTo(X(i), Y(va));\n    else ctx.lineTo(X(i), Y(va));\n  }\n  ctx.stroke();\n  ctx.strokeStyle = \"#2e7d32\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  ctx.moveTo(X(step), T);\n  ctx.lineTo(X(step), B);\n  ctx.stroke();\n  tr = trainAt(step);\n  va = valAt(step);\n  msg = \"de pronto generaliza\";\n  if (va < 0.3) msg = jump > N ? \"con estos datos no alcanza\" : \"entrena ya, valida no\";\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"16px sans-serif\";\n  ctx.fillText(msg, 16, 24);\n  ctx.fillStyle = \"#8a8175\";\n  ctx.font = \"11px sans-serif\";\n  ctx.fillText(\"exactitud\", 8, T - 6);\n  ctx.fillText(\"paso, lineal\", R - 78, B + 16);\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"eje ilustrativo\", R + 16, h * 0.28);\n  ctx.fillText(\"paper: valida ~1000x\", R + 16, h * 0.36);\n  ctx.fillText(jump > N ? \"salto fuera del eje\" : \"salto en \" + Math.round(jump), R + 16, h * 0.48);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"azul entrena  \" + Math.round(tr * 100) + \"%\", 16, h * 0.92);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillText(\"coral valida  \" + Math.round(va * 100) + \"%\", w * 0.42, h * 0.92);\n}"
     }
   },
   {
-    "source": "catalog",
+    "source": "round",
     "widget": {
       "id": "denoise-strip",
       "topic": "noise_schedule",
       "title": "Ho disuelve el dibujo en mil pasos",
-      "explain": "Ho mezcla el dibujo con ruido: x_t = √ᾱ x0 + √(1−ᾱ) ε. ᾱ es el producto de (1−β), y β va en línea de 0.0001 al beta final, en 1000 pasos. El ε de cada celda es fijo y sale de un seno, no de la gaussiana del paper. El cuadro grande es el t que eliges.",
+      "explain": "Ho 2006.11239, proceso directo: cada paso mete ruido, no limpia. x_t = √ᾱ x0 + √(1−ᾱ) ε, ᾱ producto de (1−β), β lineal de 0.0001 al beta final, en 1000 pasos. El ε pintado es un seno fijo, no la gaussiana. En t=500 la señal no es 50%: mira el número y sube el beta final.",
       "questions": [
         {
-          "q": "¿Por qué al llegar a t = 1000 el dibujo desaparece?",
-          "why": "ᾱ se va a cero y solo queda el ruido"
+          "q": "¿Por qué en t=200 el plus sigue y la señal marca 81%?",
+          "why": "recién va el producto de (1−β); todavía queda ᾱ"
         },
         {
-          "q": "¿Qué es el beta final de este horario?",
-          "why": "el ruido del último paso; el primero se queda en 0.0001"
+          "q": "¿En t=500 queda la mitad de la señal?",
+          "why": "no: el número del lienzo no es 50"
         },
         {
-          "q": "¿El seno de cada celda es el ε del paper?",
-          "why": "no: la mezcla sí es la de Ho, el ε es un sustituto fijo"
+          "q": "¿Subir el beta final borra antes, en el mismo t?",
+          "why": "el producto de (1−β) cae más rápido"
+        },
+        {
+          "q": "¿Este dibujo es el modelo limpiando, o el proceso que ensucia?",
+          "why": "el directo, que ensucia; limpiar es el inverso"
         }
       ],
       "controls": [
@@ -292,7 +308,7 @@ export const ROUND = [
           "step": 0.001
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, step = Math.round(state.step), bT = state.beta;\n  var T = 1000, b1 = 0.0001, s, acc = 1, bs, ab = [];\n  ab[0] = 1;\n  for (s = 1; s <= T; s++) {\n    bs = b1 + (bT - b1) * (s - 1) / (T - 1);\n    acc = acc * (1 - bs);\n    ab[s] = acc;\n  }\n  function grid(x, y, cellpx, tt, hot) {\n    var i, j, bit, eps, sig, noi, v, n;\n    sig = Math.sqrt(ab[tt]);\n    noi = Math.sqrt(Math.max(0, 1 - ab[tt]));\n    for (i = 0; i < 8; i++) for (j = 0; j < 8; j++) {\n      bit = (i === 3 || i === 4 || j === 3 || j === 4) ? 1 : 0;\n      n = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453;\n      eps = (n - Math.floor(n)) * 2 - 1;\n      v = sig * bit + noi * eps;\n      ctx.fillStyle = v > 0.45 ? \"#1f4b99\" : (v > 0.12 ? \"#e7a090\" : \"#efe6d8\");\n      ctx.fillRect(x + j * cellpx, y + i * cellpx, cellpx - 1, cellpx - 1);\n    }\n    if (hot) {\n      ctx.strokeStyle = \"#2e7d32\";\n      ctx.lineWidth = 2;\n      ctx.strokeRect(x - 2, y - 2, cellpx * 8 + 3, cellpx * 8 + 3);\n    }\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  if (step < 0) step = 0;\n  if (step > T) step = T;\n  var sig = Math.sqrt(ab[step]);\n  var cell = Math.floor(Math.min((h - 48) / 8, (w * 0.46) / 8));\n  if (cell < 8) cell = 8;\n  grid(16, 24, cell, step, 0);\n  var rx = 32 + cell * 8;\n  var marks = [0, 200, 400, 700, 1000], f, fr, near = 0, dist = 9999;\n  var pitch = (w - rx - 16) / 5;\n  var scell = Math.floor(Math.min(pitch / 8, 14));\n  if (scell < 3) scell = 3;\n  for (f = 0; f < 5; f++) if (Math.abs(marks[f] - step) < dist) { dist = Math.abs(marks[f] - step); near = f; }\n  for (f = 0; f < 5; f++) {\n    fr = marks[f];\n    grid(rx + f * pitch, 28, scell, fr, f === near);\n    ctx.fillStyle = \"#5c564c\";\n    ctx.font = \"11px sans-serif\";\n    ctx.fillText(\"\" + fr, rx + f * pitch, 36 + scell * 8);\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"15px sans-serif\";\n  ctx.fillText(\"t \" + step + \" / 1000\", rx, h * 0.46);\n  ctx.fillText(\"señal \" + Math.round(sig * 100) + \"%\", rx, h * 0.54);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"Ho: señal x + ruido e\", rx, h * 0.64);\n  ctx.fillText(\"e fijo, no es gaussiana\", rx, h * 0.72);\n  ctx.fillText(\"beta de 0.0001 a \" + Math.round(bT * 1000) / 1000, rx, h * 0.8);\n  ctx.fillStyle = \"#e4d6c4\";\n  ctx.fillRect(rx, h * 0.86, w - rx - 20, 10);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(rx, h * 0.86, Math.max(2, (w - rx - 20) * sig), 10);\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, step = Math.round(state.step), bT = state.beta;\n  var T = 1000, b1 = 0.0001, s, acc = 1, bs, ab = [];\n  ab[0] = 1;\n  for (s = 1; s <= T; s++) {\n    bs = b1 + (bT - b1) * (s - 1) / (T - 1);\n    acc = acc * (1 - bs);\n    ab[s] = acc;\n  }\n  function grid(x, y, cellpx, tt, hot) {\n    var i, j, bit, eps, sig, noi, v, n;\n    sig = Math.sqrt(ab[tt]);\n    noi = Math.sqrt(Math.max(0, 1 - ab[tt]));\n    for (i = 0; i < 8; i++) for (j = 0; j < 8; j++) {\n      bit = (i === 3 || i === 4 || j === 3 || j === 4) ? 1 : 0;\n      n = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453;\n      eps = (n - Math.floor(n)) * 2 - 1;\n      v = sig * bit + noi * eps;\n      ctx.fillStyle = v > 0.45 ? \"#1f4b99\" : (v > 0.12 ? \"#e7a090\" : \"#efe6d8\");\n      ctx.fillRect(x + j * cellpx, y + i * cellpx, cellpx - 1, cellpx - 1);\n    }\n    if (hot) {\n      ctx.strokeStyle = \"#2e7d32\";\n      ctx.lineWidth = 2;\n      ctx.strokeRect(x - 2, y - 2, cellpx * 8 + 3, cellpx * 8 + 3);\n    }\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  if (step < 0) step = 0;\n  if (step > T) step = T;\n  var sig = Math.sqrt(ab[step]);\n  var noi = Math.sqrt(Math.max(0, 1 - ab[step]));\n  var cell = Math.floor(Math.min((h - 48) / 8, (w * 0.46) / 8));\n  if (cell < 8) cell = 8;\n  grid(16, 24, cell, step, 0);\n  var rx = 32 + cell * 8;\n  var marks = [0, 200, 400, 700, 1000], f, fr, near = 0, dist = 9999;\n  var pitch = (w - rx - 16) / 5;\n  var scell = Math.floor(Math.min(pitch / 8, 14));\n  if (scell < 3) scell = 3;\n  for (f = 0; f < 5; f++) if (Math.abs(marks[f] - step) < dist) { dist = Math.abs(marks[f] - step); near = f; }\n  for (f = 0; f < 5; f++) {\n    fr = marks[f];\n    grid(rx + f * pitch, 28, scell, fr, f === near);\n    ctx.fillStyle = \"#5c564c\";\n    ctx.font = \"11px sans-serif\";\n    ctx.fillText(\"\" + fr, rx + f * pitch, 36 + scell * 8);\n  }\n  var ps = Math.round(sig * 100), pn = Math.round(noi * 100), s2 = Math.round(sig * sig * 100);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"azul alto   rosa medio   crema bajo\", rx, h * 0.36);\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"15px sans-serif\";\n  ctx.fillText(\"t \" + step + \" / 1000\", rx, h * 0.44);\n  ctx.fillText(\"√a \" + ps + \"%    ruido \" + pn + \"%\", rx, h * 0.52);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"cuadrados \" + s2 + \"+\" + (100 - s2) + \"=100\", rx, h * 0.60);\n  var mid = Math.round(Math.sqrt(ab[500]) * 100);\n  ctx.fillText(\"directo: ensucia, no limpia\", rx, h * 0.68);\n  ctx.fillText(\"e fijo, no es gaussiana\", rx, h * 0.76);\n  ctx.fillText(\"en t=500 queda \" + mid + \"%, no 50\", rx, h * 0.84);\n  ctx.fillStyle = \"#e4d6c4\";\n  ctx.fillRect(rx, h * 0.90, w - rx - 20, 8);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(rx, h * 0.90, Math.max(2, (w - rx - 20) * sig), 8);\n}"
     }
   },
   {
@@ -330,24 +346,28 @@ export const ROUND = [
     }
   },
   {
-    "source": "catalog",
+    "source": "round",
     "widget": {
       "id": "moe-drop",
       "topic": "moe",
       "title": "El experto lleno deja tokens afuera",
-      "explain": "El router manda cada token a unos pocos expertos. El cupo es corto: si muchos eligen al mismo, los que llegan tarde se caen. Con k = 2, el segundo experto todavía los puede recibir.",
+      "explain": "Fedus et al. 2101.03961: cada token va al experto de mayor puntaje. Cupo = (tokens / expertos) × factor. Si se llena, «computation is skipped» y el token sigue por el atajo. Un factor grande deja hueco y gasta de más. Los puntajes son un ejemplo.",
       "questions": [
         {
-          "q": "¿Por qué un experto popular deja tokens afuera?",
-          "why": "el cupo se llena y los de después se caen"
+          "q": "¿Por qué t2, t4 y t6 no entran a un experto con factor 1?",
+          "why": "E0 ya va 2/2; el cupo es (8/4) por 1"
         },
         {
-          "q": "¿Qué recupera el top 2 que el top 1 tira?",
-          "why": "el segundo experto todavía tiene lugar"
+          "q": "¿A dónde van los que no cupieron, se pierden?",
+          "why": "no: el lienzo los pone en el atajo, sin experto"
         },
         {
-          "q": "¿Qué se está limitando, el puntaje o el cupo?",
-          "why": "el cupo; el puntaje solo elige a quién"
+          "q": "¿k=2 devuelve a t2 y t4, o también deja a alguien nuevo en el atajo?",
+          "why": "vuelven t2 y t4; t7 cae porque el segundo puesto llenó E3"
+        },
+        {
+          "q": "¿Por qué un factor de 2 deja casillas vacías?",
+          "why": "el cupo crece y sobra buffer, que también cuesta"
         }
       ],
       "controls": [
@@ -360,15 +380,15 @@ export const ROUND = [
           "step": 1
         },
         {
-          "id": "cap",
-          "label": "cupo",
-          "min": 1,
-          "max": 6,
-          "value": 2,
-          "step": 1
+          "id": "factor",
+          "label": "factor",
+          "min": 0.5,
+          "max": 2.5,
+          "value": 1,
+          "step": 0.25
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, top = Math.round(state.k), cap = Math.round(state.cap);\n  var L = [2.2, 0.2, 0, -0.4, 1.8, 0.4, 0.1, -0.2, 1.6, 0.3, 0.5, 0, 0.2, 2, 0.1, 0.3, 1.4, 0.2, 0.6, -0.1, 0.1, 0.2, 1.8, 0.4, 1.1, 0.5, 0.2, 0.3, 0, 0.3, 0.2, 1.7];\n  var count = [0, 0, 0, 0], slot = [], ti, e, k, b1, b2, got, fall = \"\";\n  for (ti = 0; ti < 16; ti++) slot[ti] = -1;\n  for (ti = 0; ti < 8; ti++) {\n    b1 = 0; b2 = 1;\n    if (L[ti * 4 + 1] > L[ti * 4]) { b1 = 1; b2 = 0; }\n    for (e = 2; e < 4; e++) {\n      if (L[ti * 4 + e] > L[ti * 4 + b1]) { b2 = b1; b1 = e; }\n      else if (L[ti * 4 + e] > L[ti * 4 + b2]) b2 = e;\n    }\n    got = 0;\n    var pick = [b1, b2];\n    for (k = 0; k < top; k++) {\n      e = pick[k];\n      if (count[e] < cap) { count[e] += 1; slot[ti * 2 + k] = e; got = 1; }\n    }\n    if (!got) fall = fall + \" t\" + ti;\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var used = [0, 0, 0, 0];\n  var colw = (w - 28) / 4;\n  var boxH = h * 0.68;\n  ctx.font = \"14px sans-serif\";\n  for (e = 0; e < 4; e++) {\n    var x = 12 + e * colw;\n    ctx.fillStyle = \"#1d1a16\";\n    ctx.fillText(\"E\" + e, x, h * 0.06);\n    ctx.fillStyle = count[e] >= cap ? \"#c4512c\" : \"#5c564c\";\n    ctx.fillText(count[e] + \"/\" + cap, x + 36, h * 0.06);\n    ctx.strokeStyle = \"#e0d5c6\";\n    ctx.strokeRect(x, h * 0.1, colw - 12, boxH);\n  }\n  var slotH = Math.min(28, (boxH - 16) / 6);\n  for (ti = 0; ti < 8; ti++) {\n    for (k = 0; k < top; k++) {\n      e = slot[ti * 2 + k];\n      if (e >= 0) {\n        var x = 18 + e * colw;\n        var y = h * 0.12 + used[e] * (slotH + 4);\n        used[e] += 1;\n        ctx.fillStyle = \"#1f4b99\";\n        ctx.fillRect(x, y, colw - 28, slotH);\n        ctx.fillStyle = \"#f6f3ec\";\n        ctx.font = \"13px sans-serif\";\n        ctx.fillText(\"t\" + ti, x + 8, y + slotH * 0.72);\n      }\n    }\n  }\n  ctx.font = \"15px sans-serif\";\n  if (fall) {\n    ctx.fillStyle = \"#c4512c\";\n    ctx.fillText(\"se caen\" + fall, 12, h * 0.94);\n  } else {\n    ctx.fillStyle = \"#2e7d32\";\n    ctx.fillText(\"nadie se cae\", 12, h * 0.94);\n  }\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, top = Math.round(state.k), factor = state.factor;\n  var cap = Math.round((8 / 4) * factor);\n  var L = [2.2, 0.2, 0, -0.4, 1.8, 0.4, 0.1, -0.2, 1.6, 0.3, 0.5, 0, 0.2, 2, 0.1, 0.3, 1.4, 0.2, 0.6, -0.1, 0.1, 0.2, 1.8, 0.4, 1.1, 0.5, 0.2, 0.3, 0, 0.3, 0.2, 1.7];\n  var count = [0, 0, 0, 0], slot = [], drop = [], ti, e, k, b1, b2, got, di, fans = \"\";\n  if (cap < 1) cap = 1;\n  for (ti = 0; ti < 16; ti++) slot[ti] = -1;\n  for (ti = 0; ti < 8; ti++) {\n    b1 = 0; b2 = 1;\n    if (L[ti * 4 + 1] > L[ti * 4]) { b1 = 1; b2 = 0; }\n    for (e = 2; e < 4; e++) {\n      if (L[ti * 4 + e] > L[ti * 4 + b1]) { b2 = b1; b1 = e; }\n      else if (L[ti * 4 + e] > L[ti * 4 + b2]) b2 = e;\n    }\n    if (b1 === 0) fans = fans + \" t\" + ti;\n    got = 0;\n    var pick = [b1, b2];\n    for (k = 0; k < top; k++) {\n      e = pick[k];\n      if (count[e] < cap) { count[e] += 1; slot[ti * 2 + k] = e; got = 1; }\n    }\n    if (!got) drop.push(ti);\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var used = [0, 0, 0, 0];\n  var colw = (w - 28) / 4;\n  var boxH = h * 0.58;\n  ctx.font = \"14px sans-serif\";\n  for (e = 0; e < 4; e++) {\n    var x = 12 + e * colw;\n    ctx.fillStyle = \"#1d1a16\";\n    ctx.fillText(\"E\" + e, x, h * 0.06);\n    ctx.fillStyle = count[e] >= cap ? \"#c4512c\" : \"#5c564c\";\n    ctx.fillText(count[e] + \"/\" + cap, x + 36, h * 0.06);\n    ctx.strokeStyle = \"#e0d5c6\";\n    ctx.strokeRect(x, h * 0.1, colw - 12, boxH);\n  }\n  var slotH = Math.min(28, (boxH - 16) / 6);\n  for (ti = 0; ti < 8; ti++) {\n    for (k = 0; k < top; k++) {\n      e = slot[ti * 2 + k];\n      if (e >= 0) {\n        var x = 18 + e * colw;\n        var y = h * 0.12 + used[e] * (slotH + 4);\n        used[e] += 1;\n        ctx.fillStyle = \"#1f4b99\";\n        ctx.fillRect(x, y, colw - 28, slotH);\n        ctx.fillStyle = \"#f6f3ec\";\n        ctx.font = \"13px sans-serif\";\n        ctx.fillText(\"t\" + ti, x + 8, y + slotH * 0.72);\n      }\n    }\n  }\n  ctx.font = \"14px sans-serif\";\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.fillText(\"piden E0:\" + fans, 12, h * 0.76);\n  ctx.fillText(\"cupo (8/4) x \" + Math.round(factor * 100) / 100 + \" = \" + cap, 12, h * 0.84);\n  if (drop.length) {\n    ctx.fillStyle = \"#c4512c\";\n    ctx.fillText(\"atajo\", 12, h * 0.93);\n    for (di = 0; di < drop.length; di++) {\n      ctx.fillStyle = \"#c4512c\";\n      ctx.fillRect(64 + di * 44, h * 0.875, 36, 20);\n      ctx.fillStyle = \"#f6f3ec\";\n      ctx.fillText(\"t\" + drop[di], 70 + di * 44, h * 0.915);\n    }\n  } else {\n    ctx.fillStyle = \"#2e7d32\";\n    ctx.fillText(\"nadie al atajo; sobra hueco\", 12, h * 0.93);\n  }\n}"
     }
   },
   {
@@ -568,24 +588,28 @@ export const ROUND = [
     }
   },
   {
-    "source": "catalog",
+    "source": "round",
     "widget": {
       "id": "resid-stream",
       "topic": "residual",
       "title": "El atajo se lleva el token de capa en capa",
-      "explain": "Cada capa escribe un cambio y el atajo suma el vector anterior. Con el atajo en 1, el token de la entrada sigue en las dos primeras filas. Si baja, las capas de arriba lo tapan.",
+      "explain": "He et al. 1512.03385: y = F(x) + x. El atajo copia la entrada y la capa escribe el cambio. En el paper «identity shortcuts are never closed»; en 0 ves la red plana, que entrena peor. El tablero y el % son un ejemplo, no el error de ImageNet. Contorno coral: la entrada.",
       "questions": [
         {
-          "q": "¿Por qué el token de entrada sigue ahí al final?",
-          "why": "el atajo lo copia de capa en capa"
+          "q": "¿Por qué el contorno coral sigue en L4 si cada capa escribe algo?",
+          "why": "escribe el cambio; la entrada se suma, no se reemplaza"
         },
         {
-          "q": "¿Qué se pierde si el atajo baja a cero?",
-          "why": "cada capa reemplaza el vector, no le suma"
+          "q": "¿Qué se apaga si pones el atajo en 0?",
+          "why": "la red plana: las dos filas de la entrada"
         },
         {
-          "q": "¿Qué escriben las capas nuevas?",
-          "why": "un cambio en otras filas, el delta"
+          "q": "¿Las filas nuevas son la entrada o lo que escribió la capa?",
+          "why": "lo que escribió la capa; la entrada es el contorno"
+        },
+        {
+          "q": "¿El 100% es el error del paper en ImageNet?",
+          "why": "no: es cuánto del token de este ejemplo sigue ahí"
         }
       ],
       "controls": [
@@ -603,31 +627,35 @@ export const ROUND = [
           "min": 0,
           "max": 1,
           "value": 1,
-          "step": 0.05
+          "step": 1
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, depth = Math.round(state.depth), skip = state.skip;\n  var e = [1, 0.85, 0.25, 0, 0, 0, 0, 0];\n  var D = [\n    0, 0, 0.15, 0.8, 0.1, 0, 0, 0,\n    0, 0, 0, 0, 0.55, 0.7, 0, 0,\n    0, 0, 0, 0, 0, 0.15, 0.75, 0.1,\n    0, 0, 0, 0, 0, 0, 0.1, 0.65\n  ];\n  var cur = [], i, layer, v, x, y;\n  for (i = 0; i < 8; i++) cur[i] = e[i];\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#8a8175\";\n  ctx.fillText(\"token\", 8, 26);\n  var pitch = Math.min(72, (w * 0.58) / 5);\n  var cw = pitch - 8, ch = (h * 0.7) / 8;\n  function paint(col) {\n    for (i = 0; i < 8; i++) {\n      v = cur[i];\n      if (v < 0) v = 0;\n      x = 16 + col * pitch;\n      y = h * 0.08 + i * ch;\n      ctx.fillStyle = v > 0.66 ? \"#1f4b99\" : (v > 0.28 ? \"#7ea0d0\" : (v > 0.06 ? \"#d9e3f5\" : \"#efe6d8\"));\n      ctx.fillRect(x, y, cw, ch - 3);\n      if (i < 2 && cur[i] > 0.2) {\n        ctx.strokeStyle = \"#c4512c\";\n        ctx.lineWidth = 2;\n        ctx.strokeRect(x, y, cw, ch - 3);\n      }\n    }\n    ctx.fillStyle = \"#5c564c\";\n    ctx.font = \"12px sans-serif\";\n    ctx.fillText(col === 0 ? \"emb\" : \"L\" + col, 16 + col * pitch, h * 0.08 + 8 * ch + 16);\n  }\n  paint(0);\n  for (layer = 0; layer < depth; layer++) {\n    for (i = 0; i < 8; i++) cur[i] = skip * cur[i] + D[layer * 8 + i];\n    paint(layer + 1);\n  }\n  var left = depth === 0 ? 100 : Math.round(100 * Math.pow(skip, depth));\n  var tx = 28 + 5 * pitch;\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"16px sans-serif\";\n  ctx.fillText(\"queda \" + left + \"% del token\", tx, h * 0.22);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(skip > 0.85 ? \"el atajo lo conserva\" : \"sin atajo se apaga\", tx, h * 0.32);\n  ctx.fillText(\"de la entrada\", tx, h * 0.38);\n  ctx.fillStyle = \"#e4d6c4\";\n  ctx.fillRect(tx, h * 0.46, w - tx - 20, 14);\n  ctx.fillStyle = left > 40 ? \"#2e7d32\" : \"#c4512c\";\n  ctx.fillRect(tx, h * 0.46, Math.max(2, (w - tx - 20) * left / 100), 14);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"atajo \" + Math.round(skip * 100) / 100, tx, h * 0.58);\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, depth = Math.round(state.depth), skip = state.skip;\n  var e = [1, 0.85, 0.25, 0, 0, 0, 0, 0];\n  var D = [\n    0, 0, 0.15, 0.8, 0.1, 0, 0, 0,\n    0, 0, 0, 0, 0.55, 0.7, 0, 0,\n    0, 0, 0, 0, 0, 0.15, 0.75, 0.1,\n    0, 0, 0, 0, 0, 0, 0.1, 0.65\n  ];\n  var cur = [], i, layer, v, x, y;\n  for (i = 0; i < 8; i++) cur[i] = e[i];\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#8a8175\";\n  ctx.fillText(\"token\", 8, 26);\n  var pitch = Math.min(72, (w * 0.58) / 5);\n  var cw = pitch - 8, ch = (h * 0.7) / 8;\n  function paint(col) {\n    for (i = 0; i < 8; i++) {\n      v = cur[i];\n      if (v < 0) v = 0;\n      x = 16 + col * pitch;\n      y = h * 0.08 + i * ch;\n      ctx.fillStyle = v > 0.66 ? \"#1f4b99\" : (v > 0.28 ? \"#7ea0d0\" : (v > 0.06 ? \"#d9e3f5\" : \"#efe6d8\"));\n      ctx.fillRect(x, y, cw, ch - 3);\n      if (i < 2 && cur[i] > 0.2) {\n        ctx.strokeStyle = \"#c4512c\";\n        ctx.lineWidth = 2;\n        ctx.strokeRect(x, y, cw, ch - 3);\n      }\n    }\n    ctx.fillStyle = \"#5c564c\";\n    ctx.font = \"12px sans-serif\";\n    ctx.fillText(col === 0 ? \"emb\" : \"L\" + col, 16 + col * pitch, h * 0.08 + 8 * ch + 16);\n  }\n  paint(0);\n  for (layer = 0; layer < depth; layer++) {\n    for (i = 0; i < 8; i++) cur[i] = skip * cur[i] + D[layer * 8 + i];\n    paint(layer + 1);\n  }\n  var left = depth === 0 ? 100 : Math.round(100 * Math.pow(skip, depth));\n  var tx = 28 + 5 * pitch;\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"16px sans-serif\";\n  ctx.fillText(\"queda \" + left + \"% del token\", tx, h * 0.22);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(skip > 0.5 ? \"y = x + cambio\" : \"red plana, sin suma\", tx, h * 0.32);\n  ctx.fillText(skip > 0.5 ? \"el atajo lo conserva\" : \"sin atajo se apaga\", tx, h * 0.4);\n  ctx.fillText(\"contorno coral: entrada\", tx, h * 0.66);\n  ctx.fillText(\"filas: dimensiones\", tx, h * 0.74);\n  ctx.fillText(\"azul lleno = valor alto\", tx, h * 0.82);\n  ctx.fillStyle = \"#e4d6c4\";\n  ctx.fillRect(tx, h * 0.46, w - tx - 20, 14);\n  ctx.fillStyle = left > 40 ? \"#2e7d32\" : \"#c4512c\";\n  ctx.fillRect(tx, h * 0.46, Math.max(2, (w - tx - 20) * left / 100), 14);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"atajo \" + Math.round(skip * 100) / 100, tx, h * 0.58);\n}"
     }
   },
   {
-    "source": "catalog",
+    "source": "round",
     "widget": {
       "id": "kv-grow",
       "topic": "gqa",
       "title": "El cache crece con el texto y con los grupos",
-      "explain": "El cache guarda K y V por grupo. Crece con los tokens y con los grupos que no comparten esa memoria. Menos grupos, y el mismo texto ocupa menos.",
+      "explain": "Ainslie et al. 2305.13245: GQA comparte K y V por grupo, «interpolating between multi-head and multi-query». MHA es 8 grupos y MQA es 1. Cache = capas × tokens × grupos × 2; las cabezas que preguntan no cuentan. El cupo y las 4 capas son de juguete, no una GPU.",
       "questions": [
         {
-          "q": "¿Por qué un texto largo se come la memoria?",
-          "why": "cada token suma K y V en cada capa"
+          "q": "¿Por qué 12 tokens y 8 grupos pasan el cupo?",
+          "why": "4 x 12 x 8 x 2 = 768, y la raya está en 256"
         },
         {
-          "q": "¿Qué se achica si las cabezas comparten K y V?",
-          "why": "el cache, no la cantidad de tokens"
+          "q": "¿Qué baja si pones 1 grupo: el texto o las copias de K y V?",
+          "why": "las copias; el texto sigue en 12 tokens"
         },
         {
-          "q": "¿Qué marca la raya del medidor?",
-          "why": "un cupo fijo de celdas, para ver cuándo se pasa"
+          "q": "¿MQA y MHA son los extremos de este control?",
+          "why": "sí: 1 grupo es MQA y 8 es MHA"
+        },
+        {
+          "q": "¿La raya del cupo es la memoria de una GPU?",
+          "why": "no: es un cupo de juguete para ver cuándo se pasa"
         }
       ],
       "controls": [
@@ -641,14 +669,14 @@ export const ROUND = [
         },
         {
           "id": "kv",
-          "label": "grupos",
+          "label": "grupos KV",
           "min": 1,
           "max": 8,
           "value": 8,
           "step": 1
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, len = Math.round(state.len), heads = Math.round(state.kv);\n  var layers = 4, cells = layers * len * heads * 2, budget = 256, cap = 1536;\n  var layer, tok, x, y, bh;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var rowH = h * 0.16;\n  ctx.font = \"13px sans-serif\";\n  ctx.fillStyle = \"#8a8175\";\n  for (layer = 0; layer < layers; layer++) ctx.fillText(\"L\" + (layer + 1), 8, h * 0.1 + layer * rowH);\n  var cw = Math.min(22, (w - 56) / len - 2);\n  if (cw < 4) cw = 4;\n  for (layer = 0; layer < layers; layer++) {\n    y = h * 0.04 + layer * rowH;\n    for (tok = 0; tok < len; tok++) {\n      x = 36 + tok * (cw + 3);\n      bh = 4 + heads * rowH * 0.1;\n      if (bh > rowH * 0.85) bh = rowH * 0.85;\n      ctx.fillStyle = \"#1f4b99\";\n      ctx.fillRect(x, y + rowH * 0.7 - bh, cw, bh * 0.55);\n      ctx.fillStyle = \"#c4512c\";\n      ctx.fillRect(x, y + rowH * 0.7 - bh * 0.45, cw, bh * 0.45);\n    }\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"15px sans-serif\";\n  ctx.fillText(cells + (cells > budget ? \" celdas · pasa el cupo\" : \" celdas · cabe\"), 28, h * 0.78);\n  ctx.fillStyle = \"#e4d6c4\";\n  ctx.fillRect(28, h * 0.82, w - 48, 12);\n  var mw = (w - 48) * cells / cap;\n  if (mw > w - 48) mw = w - 48;\n  ctx.fillStyle = cells > budget ? \"#c4512c\" : \"#2e7d32\";\n  ctx.fillRect(28, h * 0.82, Math.max(2, mw), 12);\n  var bx = 28 + (w - 48) * budget / cap;\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.beginPath();\n  ctx.moveTo(bx, h * 0.8);\n  ctx.lineTo(bx, h * 0.88);\n  ctx.stroke();\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"K azul   V coral   la raya es el cupo\", 28, h * 0.96);\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.fillText(\"cupo\", bx - 6, h * 0.9);\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, len = Math.round(state.len), heads = Math.round(state.kv);\n  var layers = 4, cells = layers * len * heads * 2, budget = 256, cap = 1536;\n  var layer, tok, x, y, bh;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var rowH = h * 0.135;\n  ctx.font = \"13px sans-serif\";\n  ctx.fillStyle = \"#8a8175\";\n  for (layer = 0; layer < layers; layer++) ctx.fillText(\"L\" + (layer + 1), 8, h * 0.1 + layer * rowH);\n  var cw = Math.min(22, (w - 56) / len - 2);\n  if (cw < 4) cw = 4;\n  for (layer = 0; layer < layers; layer++) {\n    y = h * 0.04 + layer * rowH;\n    for (tok = 0; tok < len; tok++) {\n      x = 36 + tok * (cw + 3);\n      bh = 4 + heads * rowH * 0.1;\n      if (bh > rowH * 0.85) bh = rowH * 0.85;\n      ctx.fillStyle = \"#1f4b99\";\n      ctx.fillRect(x, y + rowH * 0.7 - bh, cw, bh * 0.55);\n      ctx.fillStyle = \"#c4512c\";\n      ctx.fillRect(x, y + rowH * 0.7 - bh * 0.45, cw, bh * 0.45);\n    }\n  }\n  var regime = heads <= 1 ? \"MQA\" : (heads >= 8 ? \"MHA\" : \"GQA\");\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"15px sans-serif\";\n  ctx.fillText(\"8 queries comparten \" + heads + (heads === 1 ? \" grupo KV\" : \" grupos KV\"), 28, h * 0.62);\n  ctx.fillText(regime + \"   4 x \" + len + \" x \" + heads + \" x 2 = \" + cells, 28, h * 0.70);\n  ctx.fillStyle = \"#e4d6c4\";\n  ctx.fillRect(28, h * 0.76, w - 48, 12);\n  var mw = (w - 48) * cells / cap;\n  if (mw > w - 48) mw = w - 48;\n  ctx.fillStyle = cells > budget ? \"#c4512c\" : \"#2e7d32\";\n  ctx.fillRect(28, h * 0.76, Math.max(2, mw), 12);\n  var bx = 28 + (w - 48) * budget / cap;\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.beginPath();\n  ctx.moveTo(bx, h * 0.74);\n  ctx.lineTo(bx, h * 0.82);\n  ctx.stroke();\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"cupo\", bx + 6, h * 0.90);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"K azul  V coral    MHA = 8 grupos    MQA = 1    cupo de juguete\", 28, h * 0.96);\n}"
     }
   }
 ];

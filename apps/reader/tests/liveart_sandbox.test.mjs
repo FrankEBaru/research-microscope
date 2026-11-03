@@ -320,7 +320,10 @@ test("the gallery lists the fifteen topics and each one mounts", () => {
   ];
   assert.deepEqual(ROUND.map((entry) => entry.widget.id), ids);
   const redrawn = ROUND.filter((entry) => entry.source === "round").map((entry) => entry.widget.id);
-  assert.deepEqual(redrawn, ["attn-walk", "int8-outlier", "online-softmax", "spec-best", "chinchilla"]);
+  assert.deepEqual(redrawn, [
+    "attn-walk", "int8-outlier", "grok-delay", "denoise-strip", "moe-drop",
+    "online-softmax", "spec-best", "chinchilla", "resid-stream", "kv-grow",
+  ]);
   for (const entry of ROUND) {
     const report = verifyWidget(entry.widget);
     assert.equal(report.accept, true, entry.widget.id + " " + report.reasons.join(","));
