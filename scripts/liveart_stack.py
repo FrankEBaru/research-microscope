@@ -92,7 +92,15 @@ def main():
     parser.add_argument("--n", type=int, default=16)
     parser.add_argument("--sandbox", action="store_true")
     parser.add_argument("--out", default="")
+    parser.add_argument("--live", action="store_true", help="call muse-spark-1.3-contributor (needs MODEL_API_KEY)")
+    parser.add_argument("--raw", default="", help="dir for key-free raw outputs (--live)")
+    parser.add_argument("--cap", type=float, default=1.0, help="hard USD cap (--live)")
+    parser.add_argument("--ids", default="", help="comma ids (--live), overrides --n order")
     args = parser.parse_args()
+    if args.live:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from scripts_live import run_live
+        return run_live(args, _ordered_cases(), NODE, ROOT)
     chosen = _ordered_cases()
     if args.n > 0:
         chosen = chosen[: args.n]
