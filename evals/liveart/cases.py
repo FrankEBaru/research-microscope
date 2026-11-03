@@ -63,7 +63,7 @@ def selector_cases():
         ("guidance", claim("Classifier-free guidance scales the conditional score minus the unconditional score.", arxiv="2205.01138"), "widget", "guidance", "mechanism"),
         ("detr", claim("The Hungarian algorithm solves the bipartite matching between object queries and boxes.", arxiv="2005.12872"), "widget", "detr_match", "mechanism"),
         ("residual", claim("A residual connection adds the block input to its output, an identity mapping.", arxiv="1512.03385"), "widget", "residual", "mechanism"),
-        ("nucleus", claim("Nucleus sampling (top-p) keeps the smallest set of tokens whose cumulative mass exceeds p."), "widget", "nucleus", "mechanism"),
+        ("nucleus", claim("Nucleus sampling (top-p) keeps the smallest set of tokens whose cumulative mass exceeds p.", arxiv="1904.09751"), "widget", "nucleus", "mechanism"),
         ("contrastive", claim("The contrastive loss divides similarities by a temperature tau before the softmax over the batch."), "widget", "contrastive_temp", "mechanism"),
         ("scale-wrong-denominator", NEAR, "widget", "attention_scale", "mechanism"),
         ("bleu", BLEU, "skip", "", "result"),

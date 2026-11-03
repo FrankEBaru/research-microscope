@@ -1,4 +1,4 @@
-"""Último bloque para cerrar el banco en 100 casos."""
+"""Último bloque del banco, más tres temas que la sonda 1 no tocó."""
 
 from rrm.liveart.wave2 import _spec
 
@@ -62,20 +62,26 @@ TAIL = [
         "ia3_scale", "ia3-scale", "Escala la llave, no le suma un rango",
         "IA3 scales key vectors instead of adding a low-rank update.",
         "2205.05638", r"\bia3\b", "scale",
-        "IA3 scale multiplica la llave. No suma una matriz: la barra de la llave se estira.",
+        "IA3 scale multiplica la llave. A la izquierda una suma deja un bloque naranja encima; a la derecha la llave solo se estira, sin bloque extra.",
         (
-            ("¿IA3 suma un rango bajo o multiplica?", "multiplica"),
-            ("¿Qué se estira con la escala?", "la llave"),
-            ("¿Cambia el número de parámetros como LoRA?", "no, solo escalas"),
+            ("¿IA3 suma un rango bajo o multiplica?", "multiplica, el panel derecho"),
+            ("¿Qué panel agrega un bloque naranja?", "el de la izquierda, que no es IA3"),
+            ("¿Qué se estira con la escala?", "la llave de la derecha"),
         ),
         (("scale", "escala", 0.3, 2.4, 1, 0.05),),
         """  var scale = state.scale;
-  var vals = [0.3, 0.7, 0.45, 0.9];
-  var i, bh;
-  for (i = 0; i < 4; i++) {
-    bh = vals[i] * scale * h * 0.28;
+  var vals = [28, 52, 18, 64, 36];
+  var i, base, cap, mulH;
+  cap = 16;
+  for (i = 0; i < 5; i++) {
+    base = vals[i];
     ctx.fillStyle = "#1f4b99";
-    ctx.fillRect(40 + i * 50, h * 0.8 - bh, 32, bh);
+    ctx.fillRect(28 + i * 36, h * 0.72 - base, 22, base);
+    ctx.fillStyle = "#c4512c";
+    ctx.fillRect(28 + i * 36, h * 0.72 - base - cap, 22, cap);
+    mulH = base * scale;
+    ctx.fillStyle = "#1f4b99";
+    ctx.fillRect(300 + i * 36, h * 0.72 - mulH, 22, mulH);
   }
 """,
     ),
@@ -307,41 +313,64 @@ TAIL = [
         "performer_m", "performer-m", "Más rasgos, más cerca del softmax",
         "Performer approximates softmax attention with m random features.",
         "2009.14794", r"\bperformer\b", "performer",
-        "Performer cambia el softmax por m rasgos al azar. Más m, la barra de error se acorta.",
+        "Performer cambia el softmax por m rasgos. La curva naranja es esa aproximación: con pocos rasgos queda plana y con más m se pega a la loma gris.",
         (
             ("¿Hace falta el softmax exacto?", "se aproxima con rasgos"),
-            ("¿Qué baja cuando m crece?", "el error de la aproximación"),
-            ("¿Se está viendo el costo o el error?", "el error"),
+            ("¿Qué hace la curva naranja cuando m crece?", "se acerca a la loma"),
+            ("¿El hueco entre las dos curvas es el costo o el error?", "el error"),
         ),
         (("m", "rasgos", 1, 16, 4, 1),),
         """  var m = state.m;
-  var err = h * 0.55 * (1 / m);
-  ctx.fillStyle = "#c4512c";
-  ctx.fillRect(40, h * 0.8 - err, 70, err);
-  ctx.fillStyle = "#1f4b99";
-  ctx.fillRect(140, h * 0.8 - m * 6, 70, m * 6);
+  var i, x, y, k, at, span;
+  span = (w - 80) / 20;
+  ctx.strokeStyle = "#d9d3c7";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  for (i = 0; i <= 20; i++) {
+    x = 40 + i * span;
+    y = h * 0.72 - Math.exp(-((i - 10) * (i - 10)) / 14) * 150;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = "#c4512c";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  for (i = 0; i <= 20; i++) {
+    k = Math.floor(i * m / 21);
+    at = k * (20 / m);
+    x = 40 + i * span;
+    y = h * 0.72 - Math.exp(-((at - 10) * (at - 10)) / 14) * 150;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
 """,
     ),
     _spec(
         "rwkv_time", "rwkv-decay", "El estado se apaga por canal",
         "RWKV mixes a time-decayed state with the current token, and the decay is per channel.",
         "2305.13048", r"\brwkv\b", "rwkv",
-        "RWKV decay apaga el estado antes de sumar el token nuevo. Un decay chico olvida; uno alto acumula.",
+        "RWKV decay apaga el estado antes de sumar el token. Cada fila es un canal: un decay chico olvida el pico y uno alto lo arrastra a la derecha.",
         (
             ("¿El estado viejo entra completo?", "primero se multiplica por el decay"),
-            ("¿Qué canal se queda más alto?", "el de decay más alto"),
-            ("¿Se está mezclando atención o un estado?", "un estado"),
+            ("¿Qué fila sigue encendida después del pico?", "la de decay más alto"),
+            ("¿Se está mezclando atención o un estado?", "un estado por canal"),
         ),
         (("decay", "decay", 0.4, 0.95, 0.7, 0.05),),
         """  var decay = state.decay;
-  var i, s, bh;
-  s = 0;
-  for (i = 0; i < 10; i++) {
-    s = s * decay + 0.35;
+  var rates = [decay, decay * 0.72, 0.96];
+  var spike = [1, 0, 0, 1, 0, 0, 0, 1];
+  var c, i, s, bh, y0;
+  for (c = 0; c < 3; c++) {
+    s = 0;
+    y0 = 36 + c * 100;
+    for (i = 0; i < 8; i++) {
+      s = s * rates[c] + spike[i];
+      bh = s * 34;
+      if (bh > 70) bh = 70;
+      ctx.fillStyle = c === 0 ? "#1f4b99" : "#c4512c";
+      ctx.fillRect(36 + i * 70, y0 + 70 - bh, 48, bh);
+    }
   }
-  bh = s * h * 0.15;
-  ctx.fillStyle = "#1f4b99";
-  ctx.fillRect(40, h * 0.8 - bh, 80, bh);
 """,
     ),
     _spec(
@@ -372,20 +401,23 @@ TAIL = [
         "deepnorm", "deepnorm-alpha", "Alpha agranda el atajo",
         "DeepNet uses DeepNorm, which scales the residual branch by alpha so a deep stack does not wash out.",
         "2203.00555", r"\bdeepnorm\b", "deepnorm",
-        "DeepNorm multiplica el atajo por alpha. Alpha grande deja pasar la entrada aunque la pila sea honda.",
+        "DeepNorm multiplica el atajo por alpha. Alpha chico y la pila se apaga capa a capa; alpha grande deja la señal alta hasta el fondo.",
         (
             ("¿Una pila honda se traga la entrada?", "alpha se lo impide"),
-            ("¿Qué barra es el atajo?", "la que crece con alpha"),
+            ("¿Qué pasa con las barras del fondo si alpha baja?", "se achican"),
             ("¿Se escala la rama o el atajo?", "el atajo"),
         ),
         (("alpha", "alpha", 0.5, 4, 2, 0.25),),
         """  var alpha = state.alpha;
-  var branch = h * 0.2;
-  var skip = alpha * h * 0.12;
-  ctx.fillStyle = "#c4512c";
-  ctx.fillRect(40, h * 0.8 - branch, 50, branch);
-  ctx.fillStyle = "#1f4b99";
-  ctx.fillRect(120, h * 0.8 - skip, 50, skip);
+  var i, s, bh;
+  s = 1;
+  for (i = 0; i < 8; i++) {
+    bh = s * 110;
+    if (bh > h * 0.7) bh = h * 0.7;
+    ctx.fillStyle = "#1f4b99";
+    ctx.fillRect(28 + i * 74, h * 0.84 - bh, 40, bh);
+    s = alpha * 0.35 * s + 0.3;
+  }
 """,
     ),
     _spec(
@@ -473,6 +505,99 @@ TAIL = [
   ctx.strokeRect(40 + dist, h * 0.4, 70, 50);
   ctx.fillStyle = "#c4512c";
   ctx.fillRect(w * 0.72, h * 0.75 - dist * 0.4, 28, Math.max(4, dist * 0.4));
+""",
+    ),
+    _spec(
+        "grokking", "grok-delay", "El test espera, el train ya bajó",
+        "Grokking is the delayed generalization: train loss falls long before test loss, and a longer delay keeps the test error high.",
+        "2201.02177", r"\bgrokking\b", "grokking",
+        "Grokking deja el test alto mucho después de que el train ya bajó. Más delay, más a la derecha cae la curva naranja.",
+        (
+            ("¿El test baja en el mismo paso que el train?", "no, grokking lo retrasa"),
+            ("¿Qué curva se corre a la derecha si crece el delay?", "la del test"),
+            ("¿Cuál ya está abajo desde el principio del eje?", "la del train"),
+        ),
+        (("delay", "delay", 1, 12, 5, 1),),
+        """  var delay = state.delay;
+  var i, x, y, drop;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#1f4b99";
+  ctx.beginPath();
+  for (i = 0; i <= 16; i++) {
+    x = 36 + i * ((w - 72) / 16);
+    y = i < 3 ? h * 0.28 : h * 0.78;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  drop = 3 + delay;
+  if (drop > 16) drop = 16;
+  ctx.strokeStyle = "#c4512c";
+  ctx.beginPath();
+  for (i = 0; i <= 16; i++) {
+    x = 36 + i * ((w - 72) / 16);
+    y = i < drop ? h * 0.28 : h * 0.78;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+""",
+    ),
+    _spec(
+        "decision_rtg", "decision-rtg", "El retorno pedido levanta la trayectoria",
+        "A Decision Transformer conditions on a target return-to-go, so a higher target return aims the actions at a better trajectory.",
+        "2106.01345", r"decision transformer", "return",
+        "Un Decision Transformer condiciona el return-to-go. Sube el target return y la trayectoria apunta más alto, hacia el punto naranja.",
+        (
+            ("¿Un retorno pedido más alto deja la misma trayectoria?", "no, apunta más arriba"),
+            ("¿Qué marca el punto naranja?", "el target return"),
+            ("¿Se ve el premio de un solo paso o el retorno que se pide?", "el retorno que se pide"),
+        ),
+        (("target", "retorno", 1, 8, 4, 1),),
+        """  var target = state.target;
+  var i, x, y;
+  ctx.strokeStyle = "#1f4b99";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  for (i = 0; i <= 8; i++) {
+    x = 40 + i * ((w - 120) / 8);
+    y = h * 0.82 - (i / 8) * target * 28;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = "#c4512c";
+  ctx.beginPath();
+  ctx.arc(w - 56, h * 0.82 - target * 28, 8, 0, Math.PI * 2);
+  ctx.fill();
+""",
+    ),
+    _spec(
+        "beta_vae", "beta-vae", "Beta separa y borra el detalle",
+        "In a beta-VAE, raising beta weights the KL term, which blurs the reconstruction and separates the latent factors.",
+        "1804.03599", r"\bbeta-vae\b", "beta",
+        "Un beta-VAE pesa el KL con beta. Beta grande junta el detalle de la reconstrucción en un bloque y separa los dos factores.",
+        (
+            ("¿Subir beta deja la imagen igual de nítida?", "no, el detalle se funde"),
+            ("¿Qué se separa cuando beta crece?", "los dos factores"),
+            ("¿Qué término pesa más?", "el KL"),
+        ),
+        (("beta", "beta", 0.5, 8, 2, 0.5),),
+        """  var beta = state.beta;
+  var n = Math.round(9 - beta);
+  var i, bw, gap;
+  if (n < 1) n = 1;
+  if (n > 8) n = 8;
+  bw = 168 / n;
+  ctx.fillStyle = "#1f4b99";
+  for (i = 0; i < n; i++) {
+    ctx.fillRect(36 + i * bw, h * 0.32, bw - 6, 78);
+  }
+  gap = beta * 16;
+  ctx.fillStyle = "#c4512c";
+  ctx.beginPath();
+  ctx.arc(w * 0.68 - gap, h * 0.55, 11, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(w * 0.68 + gap, h * 0.55, 11, 0, Math.PI * 2);
+  ctx.fill();
 """,
     ),
 ]

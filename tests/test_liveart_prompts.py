@@ -99,6 +99,20 @@ def test_package_builds_messages_only_when_the_flag_is_on(monkeypatch):
         "no_network", "no_injection_obeyed", "not_slop",
     ]
     assert "slop" in selector_system()
+    from collections import Counter
+
+    from evals.liveart.probe_claims import PROBE_2, PROBE_3, claims
+    from rrm.liveart.offline import select_claim
+
+    packed = claims()
+    assert len(packed) == len(PROBE_2) + len(PROBE_3)
+    assert len({item["id"] for item in packed}) == len(packed)
+    areas = Counter(item["area"] for item in packed)
+    for area in ("vision", "rl", "diffusion", "optimization", "systems", "nlp", "theory"):
+        assert areas[area] >= 2
+    for item in packed:
+        got = select_claim(item["claim"])
+        assert got["merit"] == "widget" and got["topic"] == item["topic"], item["id"]
 
 
 def test_contract_doc_matches_the_version():
@@ -126,7 +140,7 @@ def test_gold_draws_change_when_the_slider_or_time_changes():
 
     node = shutil.which("node")
     assert node, "node is required to execute the gold draws"
-    assert len(CATALOG) == 100
+    assert len(CATALOG) == 103
     payload = []
     for name, raw in DRAWS.items():
         left, right = _ends(raw["controls"])
