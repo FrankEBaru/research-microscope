@@ -92,8 +92,8 @@ function show(id) {
   const host = document.getElementById("host");
   host.replaceChildren();
   const canvas = document.createElement("canvas");
-  canvas.width = 360;
-  canvas.height = 200;
+  canvas.width = 640;
+  canvas.height = 360;
   host.appendChild(canvas);
   session = createSession(widget, () => canvas.getContext("2d"));
   for (const spec of session.specs) {
@@ -146,8 +146,8 @@ function show(id) {
 
 function paint(widget, overrides) {
   const canvas = document.createElement("canvas");
-  canvas.width = 360;
-  canvas.height = 200;
+  canvas.width = 640;
+  canvas.height = 360;
   canvas.style.width = "520px";
   canvas.style.height = "auto";
   canvas.style.background = "#f6f3ec";
@@ -165,17 +165,21 @@ if (params.get("sheet") === "1") {
   const root = document.createElement("div");
   root.style.cssText = "padding:16px 20px 32px;font:15px/1.4 Georgia,serif;color:#1d1a16";
   const pairs = [
-    ["pe-sincos", { base: 300 }, "base 10000 → 300"],
-    ["rope-shift", { shift: 32 }, "desplaza 0 → 32"],
     ["adam-valley", { lr: 0.09 }, "lr 0.04 → 0.09"],
-    ["lora-rank", { rank: 3 }, "rango 2 → 3"],
-    ["kl-policy", { beta: 0.18 }, "beta 0.7 → 0.18"],
+    ["attn-walk", { stage: 0 }, "paso 2 → 0, el puntaje crudo"],
+    ["int8-outlier", { keep: 1 }, "el outlier entra al paso → se queda afuera"],
+    ["rope-shift", { shift: 32 }, "desplaza 0 → 32"],
     ["beam-trap", { width: 2 }, "ancho 1 → 2"],
-    ["bn-stable", { scale: 0.5 }, "escala 2.2 → 0.5"],
-    ["chinchilla", { logc: 25 }, "log10 FLOPs 22 → 25"],
-    ["spec-best", { agree: 0.45 }, "acuerdo 0.8 → 0.45"],
+    ["denoise-strip", { step: 0 }, "limpieza 12 → 0"],
+    ["kl-policy", { beta: 0.18 }, "beta 0.7 → 0.18"],
+    ["moe-drop", { k: 2 }, "k 1 → 2"],
     ["online-softmax", { blocks: 4 }, "bloques 2 → 4"],
-    ["tau-near", { tau: 1.1 }, "tau 0.2 → 1.1"],
+    ["spec-best", { agree: 0.45 }, "acuerdo 0.8 → 0.45"],
+    ["chinchilla", { logc: 25 }, "log10 FLOPs 22 → 25"],
+    ["pe-sincos", { base: 300 }, "base 10000 → 300"],
+    ["resid-stream", { skip: 0 }, "atajo 1 → 0"],
+    ["kv-grow", { kv: 1 }, "grupos 8 → 1"],
+    ["lora-rank", { rank: 3 }, "rango 2 → 3"],
   ];
   for (const [id, alt, note] of pairs) {
     const widget = byId.get(id);

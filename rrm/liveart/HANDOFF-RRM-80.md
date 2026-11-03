@@ -1,6 +1,6 @@
 # Handoff RRM-80
 
-Rama: `cursor/rrm-80-mockups-2121`. Compass dio 404. Contrato que seguimos: `rrm-widget/0.1` (texto de RRM-78). No se llamó a Meta.
+Rama: `cursor/rrm-80-mockups-2121`. Contrato: `rrm-widget/0.3` (RRM-79, PR #59). No se llamó a Meta.
 
 ## Hecho
 
@@ -16,7 +16,17 @@ Rama: `cursor/rrm-80-mockups-2121`. Compass dio 404. Contrato que seguimos: `rrm
 - Galería en `apps/reader/src/app/live/`, bandera `NEXT_PUBLIC_RRM_LIVE_ARTIFACTS` en `1` / `true` / `yes` / `on`. Apagada, el lector no cambia.
 - Notas de coordinación: `compass_updates/RRM-80.md` y `compass_updates/equipo-artefactos/`.
 
-## Pase del 3 nov (relaunch)
+## Pase del 3 nov ~1:45 (contrato 0.3)
+
+Franklin: no integrar al lector. El host es la galería estática, ahora a 640×360.
+
+- Catálogo 117. JSON `rrm/liveart/mockups.json`, versión `rrm-widget/0.3`.
+- Harness local (`apps/reader/src/live/contract.js`) con los números de 0.3: draw 8000, explicación 420, pregunta 180, porqué 160, etiqueta 28, controles 1–6.
+- `verifyWidget` de RRM-79 (`613cf74`): 117/117 accept. La prueba de pixeles local también, 4/4.
+- Temas del harness alineados a la tabla publicada: `chinchilla` (antes `scaling`), `rope` (absorbe el relativo), `spec_cost`, `gqa`, `moe` con control `k`. `quant` es propuesta: no está en la tabla.
+- Seis draws de varios pasos en `rich.js`. El ranking de 15 está en compass `equipo-artefactos/IDEAS.md`.
+
+## Pase anterior (11 widgets)
 
 Franklin: no integrar al lector todavía. El host es la galería estática `rrm/liveart/gallery/index.html` (servir la raíz del repo). `GET /live` sigue en 500 (`ssr: false` en un Server Component); no se tocó.
 
@@ -24,10 +34,10 @@ Los 100 primeros draws se quedaron. Se sumaron 11 en `apps/reader/src/live/explo
 
 ## Siguiente
 
-1. La galería del lector (`/live`) sigue en 500. Cuando toque integrar, mover el `dynamic()` a un Client Component. La revisión visual está hecha en la galería estática, en Chrome headless.
-2. RRM-79 monta estos draws en el iframe (CSP, sin red, AST). El raster de `apps/reader/src/live/raster.js` solo cubre rect, path, arc y texto. No implementa `save` / `rotate` / `scale`. Los draws de oro no los usan.
-3. RRM-78 puede pegar los 14 de `fewshot_ids` en el prompt. El resto son variantes del mismo tema. Si el prompt se alarga, no metas los 100.
-4. No llamar a Meta hasta que el sandbox exista.
+1. La galería del lector (`/live`) sigue en 500. Cuando toque integrar, mover el `dynamic()` a un Client Component. La revisión visual está hecha en la galería estática, en Chrome headless, a 640×360.
+2. El raster de `apps/reader/src/live/raster.js` solo cubre rect, path, arc y texto. No implementa `save` / `rotate` / `scale`. Los draws no los usan.
+3. `fewshot_ids` trae un draw por tema del harness (25), oro primero. Si el prompt se alarga, no metas los 117.
+4. Esta rama no pide la llave de Meta. El motor ya tiene sandbox.
 
 ## Mejores mockups
 

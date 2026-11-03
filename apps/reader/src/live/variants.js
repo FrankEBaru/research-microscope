@@ -6,8 +6,10 @@ export const VARIANTS = [
     knob("dim", "par i", 0, 8, 2, 1),
   ], `
 function draw(ctx, state, t) {
-  var w = state.w, h = state.h, base = state.base;
+  var w = state.w, h = state.h, base = state.base, dim = Math.round(state.dim);
   var row, col, rows = 8, cols = 24, cellW, cellH, pos, freq, v;
+  if (dim < 0) dim = 0;
+  if (dim > 7) dim = 7;
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#f6f3ec";
   ctx.fillRect(0, 0, w, h);
@@ -22,6 +24,19 @@ function draw(ctx, state, t) {
       ctx.fillRect(8 + col * cellW, 8 + row * cellH, cellW - 2, cellH - 2);
     }
   }
+  ctx.strokeStyle = "#c4512c";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(6, 6 + dim * cellH, w - 12, cellH);
+  freq = 1 / Math.pow(base, (2 * dim) / 64);
+  ctx.beginPath();
+  for (col = 0; col <= cols; col++) {
+    pos = col * 2;
+    var x = 8 + (col / cols) * (w - 16);
+    var y = 8 + dim * cellH + cellH * 0.5 - Math.sin(pos * freq) * cellH * 0.36;
+    if (col === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
 }
 `),
   widget("positional_encoding", "pe-offset", "El desfase se lee en el producto", [
@@ -285,8 +300,9 @@ function draw(ctx, state, t) {
   ctx.fillStyle = "#f6f3ec";
   ctx.fillRect(0, 0, w, h);
   for (i = 0; i < 7; i++) {
+    var bh = i < cut ? 28 : 10;
     ctx.fillStyle = i < cut ? "#1f4b99" : "#c4512c";
-    ctx.fillRect(20 + i * ((w - 30) / 7), h * 0.42, 24, 24);
+    ctx.fillRect(20 + i * ((w - 30) / 7), h * 0.42 + (28 - bh), 24, bh);
   }
 }
 `),
@@ -386,8 +402,9 @@ function draw(ctx, state, t) {
   for (i = 0; i < 3; i++) {
     ctx.strokeStyle = "#1d1a16";
     ctx.strokeRect(30 + i * 70, 36, 40, 28);
+    var bh = i < links ? 28 : 8;
     ctx.fillStyle = i < links ? "#1f4b99" : "#eadfce";
-    ctx.fillRect(30 + i * 70, h * 0.65, 28, 28);
+    ctx.fillRect(30 + i * 70, h * 0.65 + (28 - bh), 28, bh);
   }
 }
 `),
@@ -434,8 +451,9 @@ function draw(ctx, state, t) {
   ctx.fillStyle = "#f6f3ec";
   ctx.fillRect(0, 0, w, h);
   for (i = 0; i < probs.length; i++) {
+    var bh = i < keep ? probs[i] * 180 : 6;
     ctx.fillStyle = i < keep ? "#1f4b99" : "#eadfce";
-    ctx.fillRect(20 + i * (w / 6), h * 0.75 - probs[i] * 180, 28, probs[i] * 180);
+    ctx.fillRect(20 + i * (w / 6), h * 0.75 - bh, 28, bh);
   }
 }
 `),

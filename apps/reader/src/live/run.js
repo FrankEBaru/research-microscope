@@ -1,6 +1,6 @@
 import { shapeErrors, bannedIn } from "./contract.js";
 
-const VIEW = { w: 360, h: 200 };
+const VIEW = { w: 640, h: 360 };
 
 export function createSession(widget, makeCanvas) {
   const hits = shapeErrors(widget);

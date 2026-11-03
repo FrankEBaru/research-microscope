@@ -61,6 +61,14 @@ export const BANKS = {
       ["¿Qué se alarga: el texto o las vueltas del ángulo?", "el control mueve la escala, no el texto"],
     ]),
   },
+  spec_cost: {
+    explain: "El borrador propone varios tokens y cada uno tiene un costo. Se aceptan con la chance del acuerdo. La curva es el speedup según el largo; el punto verde es el largo que más conviene. Si el costo sale caro, queda por debajo de 1.",
+    questions: qs([
+      ["¿Por qué no proponer cincuenta tokens de borrador?", "cada uno cuesta, y el ahorro deja de subir"],
+      ["¿Qué es el costo c del dibujo?", "la fracción de un paso del modelo grande"],
+      ["¿Por qué la curva puede quedar por debajo de 1?", "un borrador caro y poco aceptado sale más lento"],
+    ]),
+  },
   speculative: {
     explain: "El modelo chico propone un borrador y el grande lo acepta token por token. Si se parecen, la racha aceptada crece y se ahorran pasos del modelo grande.",
     questions: qs([
@@ -165,12 +173,36 @@ export const BANKS = {
       ["¿Qué se mueve cuando corro la entrada y qué se queda?", "solo la fila cruda; las otras usan el lote normalizado"],
     ]),
   },
-  scaling: {
+  chinchilla: {
     explain: "Con un cómputo fijo, un modelo más grande deja menos datos. La curva es el ajuste de Chinchilla en ese trueque; el punto marca el fondo. Si crece el presupuesto, el valle se corre y conviene subir datos junto con el modelo.",
     questions: qs([
       ["¿Con más cómputo, crezco el modelo o los datos?", "los dos, el valle no se va a un extremo"],
       ["¿Por qué hay un tamaño mejor para un presupuesto fijo?", "pasar de ese tamaño quita datos que hacían falta"],
       ["¿De dónde sale la forma de la curva?", "del ajuste publicado, no de una corrida de este demo"],
+    ]),
+  },
+  moe: {
+    explain: "El router manda cada token a unos pocos expertos. El cupo es corto: si muchos eligen al mismo, los que llegan tarde se caen. Con k = 2, el segundo experto todavía los puede recibir.",
+    questions: qs([
+      ["¿Por qué un experto popular deja tokens afuera?", "el cupo se llena y los de después se caen"],
+      ["¿Qué recupera el top 2 que el top 1 tira?", "el segundo experto todavía tiene lugar"],
+      ["¿Qué se está limitando, el puntaje o el cupo?", "el cupo; el puntaje solo elige a quién"],
+    ]),
+  },
+  gqa: {
+    explain: "El cache guarda K y V por grupo. Crece con los tokens y con los grupos que no comparten esa memoria. Menos grupos, y el mismo texto ocupa menos.",
+    questions: qs([
+      ["¿Por qué un texto largo se come la memoria?", "cada token suma K y V en cada capa"],
+      ["¿Qué se achica si las cabezas comparten K y V?", "el cache, no la cantidad de tokens"],
+      ["¿Qué marca la raya del medidor?", "un cupo fijo de celdas, para ver cuándo se pasa"],
+    ]),
+  },
+  quant: {
+    explain: "absmax arma el paso con el valor más grande. Un outlier lo agranda y el error se come a los números chicos. Si ese outlier se queda afuera del paso, el resto vuelve a tener niveles finos.",
+    questions: qs([
+      ["¿Por qué un solo número grande arruina a los chicos?", "el paso sale de ese máximo"],
+      ["¿Qué pasa con el error si ese número se queda afuera?", "el paso se mide con el resto y baja"],
+      ["¿Qué se redondea cuando el interruptor está prendido?", "los chicos; el outlier se queda como estaba"],
     ]),
   },
   online_softmax: {

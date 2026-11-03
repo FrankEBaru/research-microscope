@@ -1,19 +1,19 @@
-// rrm-widget/0.1. The text lives with RRM-78 (rrm/liveart/contract.py).
-// This is the same gate for the mockup harness. RRM-79 owns the iframe and the AST.
+// rrm-widget/0.3. Numbers match RRM-79 (apps/reader/src/lib/liveart/spec.js).
+// This harness still checks shape and pixels. RRM-79 owns the iframe and the AST.
 
-export const CONTRACT_VERSION = "rrm-widget/0.1";
+export const CONTRACT_VERSION = "rrm-widget/0.3";
 
 export const LIMITS = {
-  draw: 3500,
+  draw: 8000,
   title: 80,
-  explain: 360,
-  question: 160,
-  why: 140,
-  label: 24,
+  explain: 420,
+  question: 180,
+  why: 160,
+  label: 28,
   questionsMin: 2,
   questionsMax: 4,
   controlsMin: 1,
-  controlsMax: 4,
+  controlsMax: 6,
 };
 
 export const RESERVED_IDS = new Set(["w", "h", "t"]);
@@ -26,22 +26,27 @@ export const TOPICS = {
   positional_encoding: { controls: ["base", "dim"], mark: "base" },
   softmax_temperature: { controls: ["temp"], mark: "temperatura" },
   stddev: { controls: ["sigma"], mark: "desviación" },
-  rope: { controls: ["theta"], mark: "gira" },
+  rope: { controls: ["theta", "shift"], mark: "gira" },
   speculative: { controls: ["agree"], mark: "borrador" },
   noise_schedule: { controls: ["beta"], mark: "ruido" },
   guidance: { controls: ["scale"], mark: "guía" },
   detr_match: { controls: ["class_w"], mark: "emparej" },
   residual: { controls: ["skip"], mark: "atajo" },
   nucleus: { controls: ["p"], mark: "masa" },
-  // Proposals from the mockup pass (2026-11-03). RRM-79 publishes the contract.
-  rope_relative: { controls: ["shift"], mark: "relativo" },
+  // Ids from the 0.2 delta in compass CONTRACT.md. Marks stay local where 0.2
+  // names the topic but not the mark word.
   adam: { controls: ["lr"], mark: "momento" },
   lora: { controls: ["rank"], mark: "rango" },
   kl_rlhf: { controls: ["beta"], mark: "kl" },
   beam: { controls: ["width"], mark: "haz" },
   batchnorm: { controls: ["scale"], mark: "lote" },
-  scaling: { controls: ["logc"], mark: "datos" },
+  chinchilla: { controls: ["logc"], mark: "datos" },
   online_softmax: { controls: ["blocks"], mark: "exacto" },
+  spec_cost: { controls: ["cost"], mark: "costo" },
+  gqa: { controls: ["kv"], mark: "grupo" },
+  moe: { controls: ["k"], mark: "expertos" },
+  // No 0.2 id yet. The selector should stay static until one exists.
+  quant: { controls: ["mag"], mark: "error" },
 };
 
 const BANNED = [

@@ -403,8 +403,8 @@ function draw(ctx, state, t) {
   ctx.fillRect(30, h * 0.35, 40, 50);
   ctx.fillRect(80, h * 0.45, 40, 40);
   ctx.fillStyle = show ? "#c4512c" : "#eadfce";
-  ctx.fillRect(140, h * 0.55, 30, 24);
-  ctx.fillRect(180, h * 0.6, 24, 18);
+  ctx.fillRect(140, show ? h * 0.55 : h * 0.72, 30, show ? 24 : 4);
+  ctx.fillRect(180, show ? h * 0.6 : h * 0.74, 24, show ? 18 : 4);
 }
 `),
   widget("contrastive_temp", "tau-pos", "Tau bajo se queda con el positivo", [

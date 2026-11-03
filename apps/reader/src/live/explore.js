@@ -2,7 +2,7 @@
 // Numbers that come from a paper are named in compass equipo-artefactos/IDEAS.md.
 // Everything drawn here is illustrative.
 
-import { knob, widget } from "./banks.js";
+import { BANKS, knob, widget } from "./banks.js";
 
 const PE_SINCOS = `
 function draw(ctx, state, t) {
@@ -21,6 +21,11 @@ function draw(ctx, state, t) {
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#f6f3ec";
   ctx.fillRect(0, 0, w, h);
+  ctx.font = "11px sans-serif";
+  ctx.fillStyle = "#1f4b99";
+  ctx.fillText("seno", w - 92, 11);
+  ctx.fillStyle = "#c4512c";
+  ctx.fillText("coseno", w - 54, 11);
   rh = (h * 0.56) / rows.length;
   for (r = 0; r < rows.length; r++) {
     y0 = 8 + r * rh + rh * 0.5;
@@ -195,6 +200,9 @@ function draw(ctx, state, t) {
   ctx.fillStyle = "#1d1a16";
   ctx.fillText("SGD", x0 + pw + 22, 37);
   ctx.fillText("Adam", x0 + pw + 22, 57);
+  ctx.fillStyle = "#8a8175";
+  ctx.font = "10px sans-serif";
+  ctx.fillText("y empinado", x0, 12);
   if (sgdOut) {
     ctx.fillStyle = "#c4512c";
     ctx.fillText("SGD se sale", x0 + pw + 8, 80);
@@ -212,28 +220,35 @@ function draw(ctx, state, t) {
     if (rank >= 3 && i <= 1) v += 1;
     return v;
   }
+  var cw = Math.floor(Math.min((w * 0.4) / n, (h * 0.62) / n));
+  if (cw < 8) cw = 8;
   function paint(x, rank) {
-    var cw = 13, ch = 13;
     for (i = 0; i < n; i++) for (j = 0; j < n; j++) {
       v = val(i, j, rank);
-      ctx.fillStyle = v <= 0 ? "#efe6d8" : (v < 1.5 ? "#7ea0d0" : "#1f4b99");
-      ctx.fillRect(x + j * cw, 28 + i * ch, cw - 2, ch - 2);
+      if (v > 0) {
+        ctx.fillStyle = v < 1.5 ? "#7ea0d0" : "#1f4b99";
+        ctx.fillRect(x + j * cw, 32 + i * cw, cw - 2, cw - 2);
+      }
     }
   }
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#f6f3ec";
   ctx.fillRect(0, 0, w, h);
-  ctx.font = "11px sans-serif";
+  var right = w * 0.52;
+  ctx.font = "14px sans-serif";
   ctx.fillStyle = "#5c564c";
-  ctx.fillText("rango 3", 16, 18);
-  ctx.fillText("rango " + r, 150, 18);
+  ctx.fillText("objetivo", 16, 22);
+  ctx.fillText("rango " + r, right, 22);
   paint(16, 3);
-  paint(150, r);
+  paint(right, r);
+  var gy = 40 + n * cw;
+  ctx.fillStyle = "#c4512c";
+  ctx.fillRect(right, gy, 12 + r * cw * 0.7, 8);
   var d = 4096, lo = 2 * d * r, hi = d * d, times = Math.round(hi / lo);
   ctx.fillStyle = "#1d1a16";
-  ctx.font = "12px sans-serif";
-  ctx.fillText("capa 4096:  " + lo + "   frente a   " + hi, 16, h - 28);
-  ctx.fillText("el rango " + r + " es 1/" + times + " del ajuste completo", 16, h - 10);
+  ctx.font = "14px sans-serif";
+  ctx.fillText(lo + " números, frente a " + hi, 16, gy + 28);
+  ctx.fillText(r === 3 ? "igual: ya está el patrón" : "este rango es 1/" + times + " de la capa", 16, gy + 48);
 }
 `;
 
@@ -264,10 +279,11 @@ function draw(ctx, state, t) {
     ctx.fillRect(x, h * 0.5, bw - 10, bh);
     ctx.fillStyle = i === 4 ? "#c4512c" : "#1f4b99";
     ctx.fillRect(x, h * 0.5 + bh * (1 - Math.min(p[i], 0.95) / 0.95), bw - 10, bh * Math.min(p[i], 0.95) / 0.95);
-    ctx.fillStyle = "#1d1a16";
-    ctx.fillText(name[i], x, h - 8);
+    ctx.fillStyle = i === 4 ? "#c4512c" : "#1d1a16";
+    ctx.fillText(i === 4 ? "ja · premio" : name[i], x, h - 8);
   }
-  ctx.fillText("KL " + Math.round(kl * 100) / 100, w - 70, 16);
+  ctx.fillStyle = "#1d1a16";
+  ctx.fillText("KL " + Math.round(kl * 100) / 100, w - 78, 16);
 }
 `;
 
@@ -298,22 +314,24 @@ function draw(ctx, state, t) {
   ctx.fillText("frase completa", w * 0.48, 16);
   for (a = 0; a < 3; a++) {
     i = order[a];
-    var y = 28 + a * 46, kept = a < width;
+    var y = h * 0.14 + a * h * 0.22, kept = a < width;
     var bestB = 0;
     for (b = 1; b < 3; b++) if (s2[i][b] > s2[i][bestB]) bestB = b;
     var total = s1[i] + s2[i][bestB];
-    ctx.fillStyle = kept ? "#1f4b99" : "#e4d6c4";
-    ctx.fillRect(16, y, (s1[i] + 2.2) / 2.2 * 90, 16);
+    var bw1 = (s1[i] + 2.2) / 2.2 * 70;
+    ctx.fillStyle = kept ? "#1f4b99" : "#b7aa9a";
+    ctx.fillRect(16, y, bw1, 16);
     ctx.fillStyle = "#1d1a16";
-    ctx.fillText(w1[i], 20, y + 12);
-    ctx.fillStyle = kept ? (i === bi ? "#c4512c" : "#1f4b99") : "#e4d6c4";
-    ctx.fillRect(w * 0.48, y, Math.max(8, (total + 3.2) / 3.2 * 120), 16);
+    ctx.fillText(w1[i], 20 + bw1, y + 12);
+    var bw2 = Math.max(6, (total + 3.2) / 3.2 * 64);
+    ctx.fillStyle = kept ? (i === bi ? "#c4512c" : "#1f4b99") : "#b7aa9a";
+    ctx.fillRect(w * 0.46, y, bw2, 16);
     ctx.fillStyle = "#1d1a16";
-    ctx.fillText(w1[i] + " " + w2[i][bestB], w * 0.48 + 4, y + 12);
+    ctx.fillText(w1[i] + " " + w2[i][bestB] + "  " + Math.round(total * 10) / 10, w * 0.46 + bw2 + 6, y + 12);
   }
   ctx.strokeStyle = "#1d1a16";
   ctx.lineWidth = 1.5;
-  ctx.strokeRect(10, 24, w * 0.42, width * 46 - 4);
+  ctx.strokeRect(10, h * 0.1, w * 0.42, width * h * 0.22 - 4);
   ctx.font = "13px sans-serif";
   ctx.fillStyle = "#1d1a16";
   ctx.fillText("devuelve: " + phrase, 16, h - 10);
@@ -541,7 +559,7 @@ const PE_COPY = {
 };
 
 const SPEC_COPY = {
-  explain: "El borrador propone varios tokens. Cada uno se acepta con la chance del acuerdo, y cada uno cuesta una fracción del modelo grande. La curva es el speedup según el largo; el punto verde es el largo que más conviene. Si sale caro, queda por debajo de 1.",
+  explain: "El borrador propone varios tokens y cada uno tiene un costo. Se aceptan con la chance del acuerdo. La curva es el speedup según el largo; el punto verde es el largo que más conviene. Si el costo sale caro, queda por debajo de 1.",
 };
 
 export const EXPLORE = [
@@ -549,11 +567,11 @@ export const EXPLORE = [
     knob("base", "base", 20, 100000, 10000, 20),
     knob("pos", "posición", 0, 64, 18, 1),
   ], PE_SINCOS, PE_COPY),
-  widget("rope_relative", "rope-shift", "Mover los dos tokens no cambia el producto", [
+  widget("rope", "rope-shift", "Mover los dos tokens no cambia el producto", [
     knob("shift", "desplaza", 0, 40, 0, 1),
     knob("m", "posición m", 0, 20, 3, 1),
     knob("n", "posición n", 0, 20, 8, 1),
-  ], ROPE_SHIFT),
+  ], ROPE_SHIFT, { explain: BANKS.rope_relative.explain, questions: BANKS.rope_relative.questions }),
   widget("adam", "adam-valley", "En el valle, el segundo momento frena el rebote", [
     knob("lr", "paso lr", 0.01, 0.1, 0.04, 0.005),
     knob("beta2", "beta2", 0.8, 0.999, 0.99, 0.001),
@@ -573,10 +591,10 @@ export const EXPLORE = [
     knob("gamma", "gamma", 0.3, 2.2, 1.8, 0.1),
     knob("bias", "beta", -1, 1, 0.35, 0.05),
   ], BN),
-  widget("scaling", "chinchilla", "Con el mismo cómputo hay un tamaño que conviene", [
+  widget("chinchilla", "chinchilla", "Con el mismo cómputo hay un tamaño que conviene", [
     knob("logc", "log10 FLOPs", 19, 25, 22, 0.25),
   ], CHINCHILLA),
-  widget("speculative", "spec-best", "El borrador tiene un largo que conviene", [
+  widget("spec_cost", "spec-best", "El borrador tiene un largo que conviene", [
     knob("agree", "acuerdo", 0.35, 0.95, 0.8, 0.01),
     knob("cost", "costo c", 0.02, 0.8, 0.1, 0.01),
   ], SPEC, SPEC_COPY),
@@ -589,8 +607,8 @@ export const EXPLORE = [
 ];
 
 const LEAD_IDS = {
-  "rope-shift": 1,
   "adam-valley": 1,
+  "spec-best": 1,
   "lora-rank": 1,
   "kl-policy": 1,
   "beam-trap": 1,

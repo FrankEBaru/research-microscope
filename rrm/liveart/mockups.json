@@ -1,6 +1,6 @@
 {
-  "version": "rrm-widget/0.1",
-  "count": 111,
+  "version": "rrm-widget/0.3",
+  "count": 117,
   "fewshot_ids": [
     "positional-encoding",
     "softmax-temperature",
@@ -16,14 +16,17 @@
     "residual",
     "nucleus",
     "contrastive-temp",
-    "rope-shift",
     "adam-valley",
     "lora-rank",
     "kl-policy",
     "beam-trap",
     "bn-stable",
     "chinchilla",
-    "online-softmax"
+    "spec-best",
+    "online-softmax",
+    "moe-drop",
+    "kv-grow",
+    "int8-outlier"
   ],
   "widgets": [
     {
@@ -94,7 +97,7 @@
           "step": 0.05
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, temp = state.temp;\n  var logits = [1.2, 0.4, -0.2, -0.8];\n  var i, m = logits[0], exps = [], s = 0, p, bw, bh, gap;\n  if (temp < 0.05) temp = 0.05;\n  for (i = 1; i < logits.length; i++) if (logits[i] > m) m = logits[i];\n  for (i = 0; i < logits.length; i++) {\n    exps[i] = Math.exp((logits[i] - m) / temp);\n    s += exps[i];\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  gap = 12;\n  bw = (w - gap * (logits.length + 1)) / logits.length;\n  for (i = 0; i < logits.length; i++) {\n    p = exps[i] / s;\n    bh = p * (h - 36);\n    ctx.fillStyle = i === 0 ? \"#c4512c\" : \"#1f4b99\";\n    ctx.fillRect(gap + i * (bw + gap), h - 16 - bh, bw, bh);\n  }\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, temp = state.temp;\n  var logits = [1.2, 0.4, -0.2, -0.8];\n  var name = [\"sí\", \"no\", \"eh\", \"ya\"];\n  var i, m = logits[0], exps = [], s = 0, p, bw, bh, gap;\n  if (temp < 0.05) temp = 0.05;\n  for (i = 1; i < logits.length; i++) if (logits[i] > m) m = logits[i];\n  for (i = 0; i < logits.length; i++) {\n    exps[i] = Math.exp((logits[i] - m) / temp);\n    s += exps[i];\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  gap = 12;\n  bw = (w - gap * (logits.length + 1)) / logits.length;\n  for (i = 0; i < logits.length; i++) {\n    p = exps[i] / s;\n    bh = p * (h - 36);\n    ctx.fillStyle = i === 0 ? \"#c4512c\" : \"#1f4b99\";\n    ctx.fillRect(gap + i * (bw + gap), h - 22 - bh, bw, bh);\n    ctx.fillStyle = \"#1d1a16\";\n    ctx.font = \"13px sans-serif\";\n    ctx.fillText(name[i], gap + i * (bw + gap) + 8, h - 6);\n  }\n}"
     },
     {
       "id": "attention-scale",
@@ -125,7 +128,7 @@
           "step": 4
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, d = state.d;\n  var raw = [1, 0.4, 0, -0.3];\n  var s = Math.sqrt(d < 1 ? 1 : d);\n  var grown = [], flat = [], i, gap, bw, x;\n  function probs(xs) {\n    var m = xs[0], k, out = [], acc = 0;\n    for (k = 1; k < xs.length; k++) if (xs[k] > m) m = xs[k];\n    for (k = 0; k < xs.length; k++) { out[k] = Math.exp(xs[k] - m); acc += out[k]; }\n    for (k = 0; k < xs.length; k++) out[k] = out[k] / acc;\n    return out;\n  }\n  for (i = 0; i < raw.length; i++) { grown[i] = raw[i] * s; flat[i] = raw[i]; }\n  var top = probs(grown), bot = probs(flat);\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  gap = 8;\n  bw = (w - gap * (raw.length + 1)) / raw.length;\n  for (i = 0; i < raw.length; i++) {\n    x = gap + i * (bw + gap);\n    ctx.fillStyle = \"#c4512c\";\n    ctx.fillRect(x, h * 0.46 - top[i] * (h * 0.40), bw, top[i] * (h * 0.40));\n    ctx.fillStyle = \"#1f4b99\";\n    ctx.fillRect(x, h * 0.96 - bot[i] * (h * 0.40), bw, bot[i] * (h * 0.40));\n  }\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, d = state.d;\n  var raw = [1, 0.4, 0, -0.3];\n  var s = Math.sqrt(d < 1 ? 1 : d);\n  var grown = [], flat = [], i, gap, bw, x;\n  function probs(xs) {\n    var m = xs[0], k, out = [], acc = 0;\n    for (k = 1; k < xs.length; k++) if (xs[k] > m) m = xs[k];\n    for (k = 0; k < xs.length; k++) { out[k] = Math.exp(xs[k] - m); acc += out[k]; }\n    for (k = 0; k < xs.length; k++) out[k] = out[k] / acc;\n    return out;\n  }\n  for (i = 0; i < raw.length; i++) { grown[i] = raw[i] * s; flat[i] = raw[i]; }\n  var top = probs(grown), bot = probs(flat);\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.font = \"12px sans-serif\";\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillText(\"sin raíz\", 8, 16);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillText(\"con raíz\", 8, h * 0.5);\n  gap = 8;\n  bw = (w - gap * (raw.length + 1)) / raw.length;\n  for (i = 0; i < raw.length; i++) {\n    x = gap + i * (bw + gap);\n    ctx.fillStyle = \"#c4512c\";\n    ctx.fillRect(x, h * 0.42 - top[i] * (h * 0.30), bw, top[i] * (h * 0.30));\n    ctx.fillStyle = \"#1f4b99\";\n    ctx.fillRect(x, h * 0.92 - bot[i] * (h * 0.30), bw, bot[i] * (h * 0.30));\n  }\n}"
     },
     {
       "id": "stddev",
@@ -280,7 +283,7 @@
           "step": 0.05
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, a = state.agree;\n  var n = 8, kept = Math.round(n * Math.min(1, a)), i, bw;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  bw = (w - 40) / n;\n  for (i = 0; i < n; i++) {\n    ctx.fillStyle = i < kept ? \"#1f4b99\" : \"#c4512c\";\n    ctx.fillRect(16 + i * bw, h * 0.4, bw - 8, 36);\n  }\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, a = state.agree;\n  var n = 8, kept = Math.round(n * Math.min(1, a)), i, bw;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  bw = (w - 40) / n;\n  for (i = 0; i < n; i++) {\n    var bh = i < kept ? 36 : 12;\n    ctx.fillStyle = i < kept ? \"#1f4b99\" : \"#c4512c\";\n    ctx.fillRect(16 + i * bw, h * 0.4 + (36 - bh), bw - 8, bh);\n  }\n}"
     },
     {
       "id": "noise-schedule",
@@ -435,7 +438,7 @@
           "step": 0.05
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, p = state.p;\n  var probs = [0.4, 0.22, 0.14, 0.09, 0.07, 0.05, 0.03];\n  var i, mass = 0, keep = probs.length, bw;\n  for (i = 0; i < probs.length; i++) {\n    mass += probs[i];\n    if (mass >= p) { keep = i + 1; break; }\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  bw = (w - 30) / probs.length;\n  for (i = 0; i < probs.length; i++) {\n    ctx.fillStyle = i < keep ? \"#1f4b99\" : \"#e4d8c8\";\n    ctx.fillRect(12 + i * bw, h * 0.82 - probs[i] * (h * 0.9), bw - 8, probs[i] * (h * 0.9));\n  }\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, p = state.p;\n  var probs = [0.4, 0.22, 0.14, 0.09, 0.07, 0.05, 0.03];\n  var i, mass = 0, keep = probs.length, bw;\n  for (i = 0; i < probs.length; i++) {\n    mass += probs[i];\n    if (mass >= p) { keep = i + 1; break; }\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  bw = (w - 30) / probs.length;\n  for (i = 0; i < probs.length; i++) {\n    var bh = i < keep ? probs[i] * (h * 0.9) : 4;\n    ctx.fillStyle = i < keep ? \"#1f4b99\" : \"#e4d8c8\";\n    ctx.fillRect(12 + i * bw, h * 0.82 - bh, bw - 8, bh);\n  }\n}"
     },
     {
       "id": "contrastive-temp",
@@ -505,7 +508,7 @@
           "step": 1
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, base = state.base;\n  var row, col, rows = 8, cols = 24, cellW, cellH, pos, freq, v;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  cellW = (w - 16) / cols;\n  cellH = (h - 16) / rows;\n  for (row = 0; row < rows; row++) {\n    freq = 1 / Math.pow(base, (2 * row) / 64);\n    for (col = 0; col < cols; col++) {\n      pos = col * 2;\n      v = (Math.sin(pos * freq) + 1) / 2;\n      ctx.fillStyle = v > 0.5 ? \"#1f4b99\" : \"#eadfce\";\n      ctx.fillRect(8 + col * cellW, 8 + row * cellH, cellW - 2, cellH - 2);\n    }\n  }\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, base = state.base, dim = Math.round(state.dim);\n  var row, col, rows = 8, cols = 24, cellW, cellH, pos, freq, v;\n  if (dim < 0) dim = 0;\n  if (dim > 7) dim = 7;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  cellW = (w - 16) / cols;\n  cellH = (h - 16) / rows;\n  for (row = 0; row < rows; row++) {\n    freq = 1 / Math.pow(base, (2 * row) / 64);\n    for (col = 0; col < cols; col++) {\n      pos = col * 2;\n      v = (Math.sin(pos * freq) + 1) / 2;\n      ctx.fillStyle = v > 0.5 ? \"#1f4b99\" : \"#eadfce\";\n      ctx.fillRect(8 + col * cellW, 8 + row * cellH, cellW - 2, cellH - 2);\n    }\n  }\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.lineWidth = 2;\n  ctx.strokeRect(6, 6 + dim * cellH, w - 12, cellH);\n  freq = 1 / Math.pow(base, (2 * dim) / 64);\n  ctx.beginPath();\n  for (col = 0; col <= cols; col++) {\n    pos = col * 2;\n    var x = 8 + (col / cols) * (w - 16);\n    var y = 8 + dim * cellH + cellH * 0.5 - Math.sin(pos * freq) * cellH * 0.36;\n    if (col === 0) ctx.moveTo(x, y);\n    else ctx.lineTo(x, y);\n  }\n  ctx.stroke();\n}"
     },
     {
       "id": "pe-offset",
@@ -978,7 +981,7 @@
           "step": 0.05
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, a = state.agree;\n  var cut = Math.max(1, Math.round(a * 7)), i;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  for (i = 0; i < 7; i++) {\n    ctx.fillStyle = i < cut ? \"#1f4b99\" : \"#c4512c\";\n    ctx.fillRect(20 + i * ((w - 30) / 7), h * 0.42, 24, 24);\n  }\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, a = state.agree;\n  var cut = Math.max(1, Math.round(a * 7)), i;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  for (i = 0; i < 7; i++) {\n    var bh = i < cut ? 28 : 10;\n    ctx.fillStyle = i < cut ? \"#1f4b99\" : \"#c4512c\";\n    ctx.fillRect(20 + i * ((w - 30) / 7), h * 0.42 + (28 - bh), 24, bh);\n  }\n}"
     },
     {
       "id": "noise-dots",
@@ -1164,7 +1167,7 @@
           "step": 0.05
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, cw = state.class_w;\n  var links = cw > 0.66 ? 1 : cw > 0.33 ? 2 : 3;\n  var i;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  for (i = 0; i < 3; i++) {\n    ctx.strokeStyle = \"#1d1a16\";\n    ctx.strokeRect(30 + i * 70, 36, 40, 28);\n    ctx.fillStyle = i < links ? \"#1f4b99\" : \"#eadfce\";\n    ctx.fillRect(30 + i * 70, h * 0.65, 28, 28);\n  }\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, cw = state.class_w;\n  var links = cw > 0.66 ? 1 : cw > 0.33 ? 2 : 3;\n  var i;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  for (i = 0; i < 3; i++) {\n    ctx.strokeStyle = \"#1d1a16\";\n    ctx.strokeRect(30 + i * 70, 36, 40, 28);\n    var bh = i < links ? 28 : 8;\n    ctx.fillStyle = i < links ? \"#1f4b99\" : \"#eadfce\";\n    ctx.fillRect(30 + i * 70, h * 0.65 + (28 - bh), 28, bh);\n  }\n}"
     },
     {
       "id": "skip-depth",
@@ -1257,7 +1260,7 @@
           "step": 0.05
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, p = state.p;\n  var probs = [0.55, 0.2, 0.12, 0.08, 0.05], i, mass = 0, keep = 5;\n  for (i = 0; i < probs.length; i++) { mass += probs[i]; if (mass >= p) { keep = i + 1; break; } }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  for (i = 0; i < probs.length; i++) {\n    ctx.fillStyle = i < keep ? \"#1f4b99\" : \"#eadfce\";\n    ctx.fillRect(20 + i * (w / 6), h * 0.75 - probs[i] * 180, 28, probs[i] * 180);\n  }\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, p = state.p;\n  var probs = [0.55, 0.2, 0.12, 0.08, 0.05], i, mass = 0, keep = 5;\n  for (i = 0; i < probs.length; i++) { mass += probs[i]; if (mass >= p) { keep = i + 1; break; } }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  for (i = 0; i < probs.length; i++) {\n    var bh = i < keep ? probs[i] * 180 : 6;\n    ctx.fillStyle = i < keep ? \"#1f4b99\" : \"#eadfce\";\n    ctx.fillRect(20 + i * (w / 6), h * 0.75 - bh, 28, bh);\n  }\n}"
     },
     {
       "id": "nucleus-curve",
@@ -2164,7 +2167,7 @@
           "step": 0.05
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, show = state.p > 0.85;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(30, h * 0.35, 40, 50);\n  ctx.fillRect(80, h * 0.45, 40, 40);\n  ctx.fillStyle = show ? \"#c4512c\" : \"#eadfce\";\n  ctx.fillRect(140, h * 0.55, 30, 24);\n  ctx.fillRect(180, h * 0.6, 24, 18);\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, show = state.p > 0.85;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(30, h * 0.35, 40, 50);\n  ctx.fillRect(80, h * 0.45, 40, 40);\n  ctx.fillStyle = show ? \"#c4512c\" : \"#eadfce\";\n  ctx.fillRect(140, show ? h * 0.55 : h * 0.72, 30, show ? 24 : 4);\n  ctx.fillRect(180, show ? h * 0.6 : h * 0.74, 24, show ? 18 : 4);\n}"
     },
     {
       "id": "tau-pos",
@@ -2296,7 +2299,7 @@
           "step": 10
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, i, k, on;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  for (i = 0; i < 6; i++) {\n    var freq = 1 / Math.pow(state.base, (2 * i) / 48);\n    for (k = 0; k < 16; k++) {\n      on = Math.sin(k * freq) > 0;\n      ctx.fillStyle = on ? \"#1f4b99\" : \"#eadfce\";\n      ctx.fillRect(12 + k * 20, 16 + i * 28, 16, 18);\n    }\n  }\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, i, k, on;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  for (i = 0; i < 6; i++) {\n    var freq = 1 / Math.pow(state.base, (2 * i) / 48);\n    for (k = 0; k < 16; k++) {\n      on = Math.sin(k * freq);\n      var amp = on < 0 ? -on : on;\n      var bh = 6 + amp * 14;\n      ctx.fillStyle = on > 0 ? \"#1f4b99\" : \"#eadfce\";\n      ctx.fillRect(12 + k * 20, 16 + i * 28 + (20 - bh), 16, bh);\n    }\n  }\n}"
     },
     {
       "id": "temp-flat",
@@ -2699,7 +2702,7 @@
           "step": 0.05
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, n = Math.round(state.agree * 5) + 1, i;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  for (i = 0; i < 6; i++) {\n    ctx.fillStyle = i < n ? \"#1f4b99\" : \"#eadfce\";\n    ctx.fillRect(16 + i * 40, h * 0.4, 28, 22);\n  }\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, n = Math.round(state.agree * 5) + 1, i;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  for (i = 0; i < 6; i++) {\n    var bh = i < n ? 28 : 8;\n    ctx.fillStyle = i < n ? \"#1f4b99\" : \"#eadfce\";\n    ctx.fillRect(16 + i * 40, h * 0.4 + (28 - bh), 28, bh);\n  }\n}"
     },
     {
       "id": "spec-waste",
@@ -2916,7 +2919,7 @@
           "step": 0.05
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, pick = state.class_w > 0.55 ? 1 : 0;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.fillStyle = pick === 0 ? \"#1f4b99\" : \"#eadfce\";\n  ctx.fillRect(40, h * 0.4, 50, 36);\n  ctx.fillStyle = pick === 1 ? \"#c4512c\" : \"#eadfce\";\n  ctx.fillRect(140, h * 0.4, 50, 36);\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, pick = state.class_w > 0.55 ? 1 : 0;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var h0 = pick === 0 ? 52 : 18;\n  var h1 = pick === 1 ? 52 : 18;\n  ctx.fillStyle = pick === 0 ? \"#1f4b99\" : \"#eadfce\";\n  ctx.fillRect(40, h * 0.32, 50, h0);\n  ctx.fillStyle = pick === 1 ? \"#c4512c\" : \"#eadfce\";\n  ctx.fillRect(140, h * 0.32, 50, h1);\n}"
     },
     {
       "id": "skip-sum",
@@ -3211,11 +3214,11 @@
           "step": 1
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, base = state.base, p = state.pos, d = 64, N = 64;\n  var rows = [0, 4, 10, 16], r, i, q, y0, y, f, rh;\n  function X(q) { return 26 + (q / N) * (w - 36); }\n  function freq(k) { return 1 / Math.pow(base, (2 * k) / d); }\n  function sim(a, b) {\n    var acc = 0, k, fr;\n    for (k = 0; k < d / 2; k++) {\n      fr = freq(k);\n      acc += Math.sin(a * fr) * Math.sin(b * fr) + Math.cos(a * fr) * Math.cos(b * fr);\n    }\n    return acc / (d / 2);\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  rh = (h * 0.56) / rows.length;\n  for (r = 0; r < rows.length; r++) {\n    y0 = 8 + r * rh + rh * 0.5;\n    f = freq(rows[r]);\n    ctx.font = \"10px sans-serif\";\n    ctx.fillStyle = \"#8a8175\";\n    ctx.fillText(\"\" + rows[r], 2, y0 + 3);\n    ctx.lineWidth = 1.5;\n    ctx.strokeStyle = \"#1f4b99\";\n    ctx.beginPath();\n    for (i = 0; i <= N; i++) {\n      q = i;\n      y = y0 - Math.sin(q * f) * rh * 0.34;\n      if (i === 0) ctx.moveTo(X(q), y); else ctx.lineTo(X(q), y);\n    }\n    ctx.stroke();\n    ctx.lineWidth = 1;\n    ctx.strokeStyle = \"#c4512c\";\n    ctx.beginPath();\n    for (i = 0; i <= N; i++) {\n      q = i;\n      y = y0 - Math.cos(q * f) * rh * 0.34;\n      if (i === 0) ctx.moveTo(X(q), y); else ctx.lineTo(X(q), y);\n    }\n    ctx.stroke();\n    ctx.fillStyle = \"#1f4b99\";\n    ctx.beginPath();\n    ctx.arc(X(p), y0 - Math.sin(p * f) * rh * 0.34, 2.6, 0, 6.2832);\n    ctx.fill();\n    ctx.fillStyle = \"#c4512c\";\n    ctx.beginPath();\n    ctx.arc(X(p), y0 - Math.cos(p * f) * rh * 0.34, 2.3, 0, 6.2832);\n    ctx.fill();\n  }\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(X(p), 4);\n  ctx.lineTo(X(p), h * 0.58);\n  ctx.stroke();\n  var sy = h * 0.66, sh = h * 0.26;\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"10px sans-serif\";\n  ctx.fillText(\"parecido\", 2, sy + 4);\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1.6;\n  ctx.beginPath();\n  for (i = 0; i <= N; i++) {\n    y = sy + sh - ((sim(p, i) + 0.2) / 1.35) * sh;\n    if (i === 0) ctx.moveTo(X(i), y); else ctx.lineTo(X(i), y);\n  }\n  ctx.stroke();\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, base = state.base, p = state.pos, d = 64, N = 64;\n  var rows = [0, 4, 10, 16], r, i, q, y0, y, f, rh;\n  function X(q) { return 26 + (q / N) * (w - 36); }\n  function freq(k) { return 1 / Math.pow(base, (2 * k) / d); }\n  function sim(a, b) {\n    var acc = 0, k, fr;\n    for (k = 0; k < d / 2; k++) {\n      fr = freq(k);\n      acc += Math.sin(a * fr) * Math.sin(b * fr) + Math.cos(a * fr) * Math.cos(b * fr);\n    }\n    return acc / (d / 2);\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillText(\"seno\", w - 92, 11);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillText(\"coseno\", w - 54, 11);\n  rh = (h * 0.56) / rows.length;\n  for (r = 0; r < rows.length; r++) {\n    y0 = 8 + r * rh + rh * 0.5;\n    f = freq(rows[r]);\n    ctx.font = \"10px sans-serif\";\n    ctx.fillStyle = \"#8a8175\";\n    ctx.fillText(\"\" + rows[r], 2, y0 + 3);\n    ctx.lineWidth = 1.5;\n    ctx.strokeStyle = \"#1f4b99\";\n    ctx.beginPath();\n    for (i = 0; i <= N; i++) {\n      q = i;\n      y = y0 - Math.sin(q * f) * rh * 0.34;\n      if (i === 0) ctx.moveTo(X(q), y); else ctx.lineTo(X(q), y);\n    }\n    ctx.stroke();\n    ctx.lineWidth = 1;\n    ctx.strokeStyle = \"#c4512c\";\n    ctx.beginPath();\n    for (i = 0; i <= N; i++) {\n      q = i;\n      y = y0 - Math.cos(q * f) * rh * 0.34;\n      if (i === 0) ctx.moveTo(X(q), y); else ctx.lineTo(X(q), y);\n    }\n    ctx.stroke();\n    ctx.fillStyle = \"#1f4b99\";\n    ctx.beginPath();\n    ctx.arc(X(p), y0 - Math.sin(p * f) * rh * 0.34, 2.6, 0, 6.2832);\n    ctx.fill();\n    ctx.fillStyle = \"#c4512c\";\n    ctx.beginPath();\n    ctx.arc(X(p), y0 - Math.cos(p * f) * rh * 0.34, 2.3, 0, 6.2832);\n    ctx.fill();\n  }\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(X(p), 4);\n  ctx.lineTo(X(p), h * 0.58);\n  ctx.stroke();\n  var sy = h * 0.66, sh = h * 0.26;\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"10px sans-serif\";\n  ctx.fillText(\"parecido\", 2, sy + 4);\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1.6;\n  ctx.beginPath();\n  for (i = 0; i <= N; i++) {\n    y = sy + sh - ((sim(p, i) + 0.2) / 1.35) * sh;\n    if (i === 0) ctx.moveTo(X(i), y); else ctx.lineTo(X(i), y);\n  }\n  ctx.stroke();\n}"
     },
     {
       "id": "rope-shift",
-      "topic": "rope_relative",
+      "topic": "rope",
       "title": "Mover los dos tokens no cambia el producto",
       "explain": "RoPE gira q y k con la posición absoluta. Desplaza los dos el mismo tramo: las flechas avanzan juntas y el producto no se mueve, la curva queda plana. Cambia la distancia m−n y el producto sí cambia. El giro es absoluto; el puntaje es relativo.",
       "questions": [
@@ -3297,7 +3300,7 @@
           "step": 0.001
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, lr = state.lr, b2 = state.beta2, b1 = 0.9, eps = 1e-8;\n  var x0 = 28, y0 = 14, pw = w * 0.68, ph = h - 28;\n  function X(x) { return x0 + (x + 1.5) / 3 * pw; }\n  function Y(y) { return y0 + (1.15 - y) / 2.3 * ph; }\n  var levels = [0.5, 1.5, 3, 6, 9], li, a, c, ct, st;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.strokeStyle = \"#e4d6c4\";\n  ctx.lineWidth = 1;\n  for (li = 0; li < levels.length; li++) {\n    c = levels[li];\n    ctx.beginPath();\n    for (a = 0; a <= 48; a++) {\n      ct = Math.cos(a / 48 * 6.2832);\n      st = Math.sin(a / 48 * 6.2832);\n      var px = Math.sqrt(2 * c) * ct, py = Math.sqrt(c / 20) * st;\n      if (a === 0) ctx.moveTo(X(px), Y(py)); else ctx.lineTo(X(px), Y(py));\n    }\n    ctx.stroke();\n  }\n  function path(kind) {\n    var x = -1.15, y = 0.55, mx = 0, my = 0, vx = 0, vy = 0, step, gx, gy, out = 0;\n    ctx.beginPath();\n    ctx.moveTo(X(x), Y(y));\n    for (step = 1; step <= 26; step++) {\n      gx = x; gy = 40 * y;\n      if (kind === 0) { x -= lr * gx; y -= lr * gy; }\n      else {\n        mx = b1 * mx + (1 - b1) * gx; my = b1 * my + (1 - b1) * gy;\n        vx = b2 * vx + (1 - b2) * gx * gx; vy = b2 * vy + (1 - b2) * gy * gy;\n        var mhx = mx / (1 - Math.pow(b1, step)), mhy = my / (1 - Math.pow(b1, step));\n        var vhx = vx / (1 - Math.pow(b2, step)), vhy = vy / (1 - Math.pow(b2, step));\n        x -= lr * mhx / (Math.sqrt(vhx) + eps);\n        y -= lr * mhy / (Math.sqrt(vhy) + eps);\n      }\n      if (x > 1.45 || x < -1.45 || y > 1.1 || y < -1.1) { out = 1; break; }\n      ctx.lineTo(X(x), Y(y));\n    }\n    ctx.stroke();\n    return out;\n  }\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.lineWidth = 2;\n  var sgdOut = path(0);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  path(1);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillRect(x0 + pw + 8, 28, 10, 10);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(x0 + pw + 8, 48, 10, 10);\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.fillText(\"SGD\", x0 + pw + 22, 37);\n  ctx.fillText(\"Adam\", x0 + pw + 22, 57);\n  if (sgdOut) {\n    ctx.fillStyle = \"#c4512c\";\n    ctx.fillText(\"SGD se sale\", x0 + pw + 8, 80);\n  }\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, lr = state.lr, b2 = state.beta2, b1 = 0.9, eps = 1e-8;\n  var x0 = 28, y0 = 14, pw = w * 0.68, ph = h - 28;\n  function X(x) { return x0 + (x + 1.5) / 3 * pw; }\n  function Y(y) { return y0 + (1.15 - y) / 2.3 * ph; }\n  var levels = [0.5, 1.5, 3, 6, 9], li, a, c, ct, st;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.strokeStyle = \"#e4d6c4\";\n  ctx.lineWidth = 1;\n  for (li = 0; li < levels.length; li++) {\n    c = levels[li];\n    ctx.beginPath();\n    for (a = 0; a <= 48; a++) {\n      ct = Math.cos(a / 48 * 6.2832);\n      st = Math.sin(a / 48 * 6.2832);\n      var px = Math.sqrt(2 * c) * ct, py = Math.sqrt(c / 20) * st;\n      if (a === 0) ctx.moveTo(X(px), Y(py)); else ctx.lineTo(X(px), Y(py));\n    }\n    ctx.stroke();\n  }\n  function path(kind) {\n    var x = -1.15, y = 0.55, mx = 0, my = 0, vx = 0, vy = 0, step, gx, gy, out = 0;\n    ctx.beginPath();\n    ctx.moveTo(X(x), Y(y));\n    for (step = 1; step <= 26; step++) {\n      gx = x; gy = 40 * y;\n      if (kind === 0) { x -= lr * gx; y -= lr * gy; }\n      else {\n        mx = b1 * mx + (1 - b1) * gx; my = b1 * my + (1 - b1) * gy;\n        vx = b2 * vx + (1 - b2) * gx * gx; vy = b2 * vy + (1 - b2) * gy * gy;\n        var mhx = mx / (1 - Math.pow(b1, step)), mhy = my / (1 - Math.pow(b1, step));\n        var vhx = vx / (1 - Math.pow(b2, step)), vhy = vy / (1 - Math.pow(b2, step));\n        x -= lr * mhx / (Math.sqrt(vhx) + eps);\n        y -= lr * mhy / (Math.sqrt(vhy) + eps);\n      }\n      if (x > 1.45 || x < -1.45 || y > 1.1 || y < -1.1) { out = 1; break; }\n      ctx.lineTo(X(x), Y(y));\n    }\n    ctx.stroke();\n    return out;\n  }\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.lineWidth = 2;\n  var sgdOut = path(0);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  path(1);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillRect(x0 + pw + 8, 28, 10, 10);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(x0 + pw + 8, 48, 10, 10);\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.fillText(\"SGD\", x0 + pw + 22, 37);\n  ctx.fillText(\"Adam\", x0 + pw + 22, 57);\n  ctx.fillStyle = \"#8a8175\";\n  ctx.font = \"10px sans-serif\";\n  ctx.fillText(\"y empinado\", x0, 12);\n  if (sgdOut) {\n    ctx.fillStyle = \"#c4512c\";\n    ctx.fillText(\"SGD se sale\", x0 + pw + 8, 80);\n  }\n}"
     },
     {
       "id": "lora-rank",
@@ -3328,7 +3331,7 @@
           "step": 1
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, r = Math.round(state.rank), n = 8, i, j, v, left;\n  function val(i, j, rank) {\n    var v = 0;\n    if (rank >= 1 && i >= 3 && i <= 4) v += 1;\n    if (rank >= 2 && j >= 3 && j <= 4) v += 1;\n    if (rank >= 3 && i <= 1) v += 1;\n    return v;\n  }\n  function paint(x, rank) {\n    var cw = 13, ch = 13;\n    for (i = 0; i < n; i++) for (j = 0; j < n; j++) {\n      v = val(i, j, rank);\n      ctx.fillStyle = v <= 0 ? \"#efe6d8\" : (v < 1.5 ? \"#7ea0d0\" : \"#1f4b99\");\n      ctx.fillRect(x + j * cw, 28 + i * ch, cw - 2, ch - 2);\n    }\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"rango 3\", 16, 18);\n  ctx.fillText(\"rango \" + r, 150, 18);\n  paint(16, 3);\n  paint(150, r);\n  var d = 4096, lo = 2 * d * r, hi = d * d, times = Math.round(hi / lo);\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"capa 4096:  \" + lo + \"   frente a   \" + hi, 16, h - 28);\n  ctx.fillText(\"el rango \" + r + \" es 1/\" + times + \" del ajuste completo\", 16, h - 10);\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, r = Math.round(state.rank), n = 8, i, j, v, left;\n  function val(i, j, rank) {\n    var v = 0;\n    if (rank >= 1 && i >= 3 && i <= 4) v += 1;\n    if (rank >= 2 && j >= 3 && j <= 4) v += 1;\n    if (rank >= 3 && i <= 1) v += 1;\n    return v;\n  }\n  var cw = Math.floor(Math.min((w * 0.4) / n, (h * 0.62) / n));\n  if (cw < 8) cw = 8;\n  function paint(x, rank) {\n    for (i = 0; i < n; i++) for (j = 0; j < n; j++) {\n      v = val(i, j, rank);\n      if (v > 0) {\n        ctx.fillStyle = v < 1.5 ? \"#7ea0d0\" : \"#1f4b99\";\n        ctx.fillRect(x + j * cw, 32 + i * cw, cw - 2, cw - 2);\n      }\n    }\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var right = w * 0.52;\n  ctx.font = \"14px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"objetivo\", 16, 22);\n  ctx.fillText(\"rango \" + r, right, 22);\n  paint(16, 3);\n  paint(right, r);\n  var gy = 40 + n * cw;\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillRect(right, gy, 12 + r * cw * 0.7, 8);\n  var d = 4096, lo = 2 * d * r, hi = d * d, times = Math.round(hi / lo);\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"14px sans-serif\";\n  ctx.fillText(lo + \" números, frente a \" + hi, 16, gy + 28);\n  ctx.fillText(r === 3 ? \"igual: ya está el patrón\" : \"este rango es 1/\" + times + \" de la capa\", 16, gy + 48);\n}"
     },
     {
       "id": "kl-policy",
@@ -3359,7 +3362,7 @@
           "step": 0.02
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, beta = state.beta;\n  var name = [\"si\", \"ok\", \"eh\", \"bueno\", \"ja\"];\n  var ref = [0.42, 0.28, 0.16, 0.1, 0.04];\n  var reward = [0.1, 0.3, 0.5, 0.6, 2.4];\n  var raw = [], z = 0, i, p = [], kl = 0;\n  for (i = 0; i < 5; i++) { raw[i] = ref[i] * Math.exp(reward[i] / beta); z += raw[i]; }\n  for (i = 0; i < 5; i++) { p[i] = raw[i] / z; kl += p[i] * Math.log(p[i] / ref[i]); }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var bw = (w - 36) / 5, bh = h * 0.28;\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"referencia\", 8, 16);\n  ctx.fillText(\"politica\", 8, h * 0.48);\n  for (i = 0; i < 5; i++) {\n    var x = 16 + i * bw;\n    ctx.fillStyle = \"#e4d6c4\";\n    ctx.fillRect(x, 24, bw - 10, bh);\n    ctx.fillStyle = \"#8a8175\";\n    ctx.fillRect(x, 24 + bh * (1 - ref[i] / 0.5), bw - 10, bh * ref[i] / 0.5);\n    ctx.fillStyle = \"#d9e3f5\";\n    ctx.fillRect(x, h * 0.5, bw - 10, bh);\n    ctx.fillStyle = i === 4 ? \"#c4512c\" : \"#1f4b99\";\n    ctx.fillRect(x, h * 0.5 + bh * (1 - Math.min(p[i], 0.95) / 0.95), bw - 10, bh * Math.min(p[i], 0.95) / 0.95);\n    ctx.fillStyle = \"#1d1a16\";\n    ctx.fillText(name[i], x, h - 8);\n  }\n  ctx.fillText(\"KL \" + Math.round(kl * 100) / 100, w - 70, 16);\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, beta = state.beta;\n  var name = [\"si\", \"ok\", \"eh\", \"bueno\", \"ja\"];\n  var ref = [0.42, 0.28, 0.16, 0.1, 0.04];\n  var reward = [0.1, 0.3, 0.5, 0.6, 2.4];\n  var raw = [], z = 0, i, p = [], kl = 0;\n  for (i = 0; i < 5; i++) { raw[i] = ref[i] * Math.exp(reward[i] / beta); z += raw[i]; }\n  for (i = 0; i < 5; i++) { p[i] = raw[i] / z; kl += p[i] * Math.log(p[i] / ref[i]); }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var bw = (w - 36) / 5, bh = h * 0.28;\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"referencia\", 8, 16);\n  ctx.fillText(\"politica\", 8, h * 0.48);\n  for (i = 0; i < 5; i++) {\n    var x = 16 + i * bw;\n    ctx.fillStyle = \"#e4d6c4\";\n    ctx.fillRect(x, 24, bw - 10, bh);\n    ctx.fillStyle = \"#8a8175\";\n    ctx.fillRect(x, 24 + bh * (1 - ref[i] / 0.5), bw - 10, bh * ref[i] / 0.5);\n    ctx.fillStyle = \"#d9e3f5\";\n    ctx.fillRect(x, h * 0.5, bw - 10, bh);\n    ctx.fillStyle = i === 4 ? \"#c4512c\" : \"#1f4b99\";\n    ctx.fillRect(x, h * 0.5 + bh * (1 - Math.min(p[i], 0.95) / 0.95), bw - 10, bh * Math.min(p[i], 0.95) / 0.95);\n    ctx.fillStyle = i === 4 ? \"#c4512c\" : \"#1d1a16\";\n    ctx.fillText(i === 4 ? \"ja · premio\" : name[i], x, h - 8);\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.fillText(\"KL \" + Math.round(kl * 100) / 100, w - 78, 16);\n}"
     },
     {
       "id": "beam-trap",
@@ -3390,7 +3393,7 @@
           "step": 1
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, width = Math.round(state.width);\n  var w1 = [\"el\", \"un\", \"ya\"];\n  var s1 = [-0.15, -0.55, -1.8];\n  var w2 = [[\"día\", \"fin\", \"mar\"], [\"gato\", \"perro\", \"sol\"], [\"no\", \"va\", \"es\"]];\n  var s2 = [[-2.2, -2.5, -2.8], [-0.1, -1.1, -1.6], [-1, -1.2, -1.4]];\n  var order = [0, 1, 2], i, j, tmp, a, b, tot, best = -1e9, phrase = \"\", bi = 0;\n  for (i = 0; i < 3; i++) for (j = i + 1; j < 3; j++) if (s1[order[j]] > s1[order[i]]) {\n    tmp = order[i]; order[i] = order[j]; order[j] = tmp;\n  }\n  for (a = 0; a < width; a++) {\n    i = order[a];\n    for (b = 0; b < 3; b++) {\n      tot = s1[i] + s2[i][b];\n      if (tot > best) { best = tot; phrase = w1[i] + \" \" + w2[i][b]; bi = i; }\n    }\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"primer token\", 16, 16);\n  ctx.fillText(\"frase completa\", w * 0.48, 16);\n  for (a = 0; a < 3; a++) {\n    i = order[a];\n    var y = 28 + a * 46, kept = a < width;\n    var bestB = 0;\n    for (b = 1; b < 3; b++) if (s2[i][b] > s2[i][bestB]) bestB = b;\n    var total = s1[i] + s2[i][bestB];\n    ctx.fillStyle = kept ? \"#1f4b99\" : \"#e4d6c4\";\n    ctx.fillRect(16, y, (s1[i] + 2.2) / 2.2 * 90, 16);\n    ctx.fillStyle = \"#1d1a16\";\n    ctx.fillText(w1[i], 20, y + 12);\n    ctx.fillStyle = kept ? (i === bi ? \"#c4512c\" : \"#1f4b99\") : \"#e4d6c4\";\n    ctx.fillRect(w * 0.48, y, Math.max(8, (total + 3.2) / 3.2 * 120), 16);\n    ctx.fillStyle = \"#1d1a16\";\n    ctx.fillText(w1[i] + \" \" + w2[i][bestB], w * 0.48 + 4, y + 12);\n  }\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1.5;\n  ctx.strokeRect(10, 24, w * 0.42, width * 46 - 4);\n  ctx.font = \"13px sans-serif\";\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.fillText(\"devuelve: \" + phrase, 16, h - 10);\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, width = Math.round(state.width);\n  var w1 = [\"el\", \"un\", \"ya\"];\n  var s1 = [-0.15, -0.55, -1.8];\n  var w2 = [[\"día\", \"fin\", \"mar\"], [\"gato\", \"perro\", \"sol\"], [\"no\", \"va\", \"es\"]];\n  var s2 = [[-2.2, -2.5, -2.8], [-0.1, -1.1, -1.6], [-1, -1.2, -1.4]];\n  var order = [0, 1, 2], i, j, tmp, a, b, tot, best = -1e9, phrase = \"\", bi = 0;\n  for (i = 0; i < 3; i++) for (j = i + 1; j < 3; j++) if (s1[order[j]] > s1[order[i]]) {\n    tmp = order[i]; order[i] = order[j]; order[j] = tmp;\n  }\n  for (a = 0; a < width; a++) {\n    i = order[a];\n    for (b = 0; b < 3; b++) {\n      tot = s1[i] + s2[i][b];\n      if (tot > best) { best = tot; phrase = w1[i] + \" \" + w2[i][b]; bi = i; }\n    }\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"primer token\", 16, 16);\n  ctx.fillText(\"frase completa\", w * 0.48, 16);\n  for (a = 0; a < 3; a++) {\n    i = order[a];\n    var y = h * 0.14 + a * h * 0.22, kept = a < width;\n    var bestB = 0;\n    for (b = 1; b < 3; b++) if (s2[i][b] > s2[i][bestB]) bestB = b;\n    var total = s1[i] + s2[i][bestB];\n    var bw1 = (s1[i] + 2.2) / 2.2 * 70;\n    ctx.fillStyle = kept ? \"#1f4b99\" : \"#b7aa9a\";\n    ctx.fillRect(16, y, bw1, 16);\n    ctx.fillStyle = \"#1d1a16\";\n    ctx.fillText(w1[i], 20 + bw1, y + 12);\n    var bw2 = Math.max(6, (total + 3.2) / 3.2 * 64);\n    ctx.fillStyle = kept ? (i === bi ? \"#c4512c\" : \"#1f4b99\") : \"#b7aa9a\";\n    ctx.fillRect(w * 0.46, y, bw2, 16);\n    ctx.fillStyle = \"#1d1a16\";\n    ctx.fillText(w1[i] + \" \" + w2[i][bestB] + \"  \" + Math.round(total * 10) / 10, w * 0.46 + bw2 + 6, y + 12);\n  }\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1.5;\n  ctx.strokeRect(10, h * 0.1, w * 0.42, width * h * 0.22 - 4);\n  ctx.font = \"13px sans-serif\";\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.fillText(\"devuelve: \" + phrase, 16, h - 10);\n}"
     },
     {
       "id": "bn-stable",
@@ -3449,7 +3452,7 @@
     },
     {
       "id": "chinchilla",
-      "topic": "scaling",
+      "topic": "chinchilla",
       "title": "Con el mismo cómputo hay un tamaño que conviene",
       "explain": "Con un cómputo fijo, un modelo más grande deja menos datos. La curva es el ajuste de Chinchilla en ese trueque; el punto marca el fondo. Si crece el presupuesto, el valle se corre y conviene subir datos junto con el modelo.",
       "questions": [
@@ -3480,21 +3483,21 @@
     },
     {
       "id": "spec-best",
-      "topic": "speculative",
+      "topic": "spec_cost",
       "title": "El borrador tiene un largo que conviene",
-      "explain": "El borrador propone varios tokens. Cada uno se acepta con la chance del acuerdo, y cada uno cuesta una fracción del modelo grande. La curva es el speedup según el largo; el punto verde es el largo que más conviene. Si sale caro, queda por debajo de 1.",
+      "explain": "El borrador propone varios tokens y cada uno tiene un costo. Se aceptan con la chance del acuerdo. La curva es el speedup según el largo; el punto verde es el largo que más conviene. Si el costo sale caro, queda por debajo de 1.",
       "questions": [
         {
-          "q": "¿Por qué un borrador parecido alarga la racha aceptada?",
-          "why": "el grande confirma varios tokens de un jalón"
+          "q": "¿Por qué no proponer cincuenta tokens de borrador?",
+          "why": "cada uno cuesta, y el ahorro deja de subir"
         },
         {
-          "q": "¿Qué se paga cuando el modelo grande rechaza un token?",
-          "why": "se tira el resto del borrador"
+          "q": "¿Qué es el costo c del dibujo?",
+          "why": "la fracción de un paso del modelo grande"
         },
         {
-          "q": "¿Dónde se gana tiempo: en proponer o en verificar?",
-          "why": "verificar un bloque sale más barato que generarlos"
+          "q": "¿Por qué la curva puede quedar por debajo de 1?",
+          "why": "un borrador caro y poco aceptado sale más lento"
         }
       ],
       "controls": [
@@ -3578,6 +3581,240 @@
         }
       ],
       "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, tau = state.tau < 0.05 ? 0.05 : state.tau;\n  var ang = [0.3, 1.1, 2.0, 2.8, 4.0, 5.1];\n  var rad = [0.55, 1.15, 1.35, 1.5, 1.25, 1.45];\n  var sim = [], i, m = -1e9, z = 0, ex = [];\n  for (i = 0; i < 6; i++) {\n    sim[i] = Math.cos(ang[i]) / rad[i];\n    sim[i] = sim[i] / tau;\n    if (sim[i] > m) m = sim[i];\n  }\n  for (i = 0; i < 6; i++) { ex[i] = Math.exp(sim[i] - m); z += ex[i]; }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var cx = w * 0.28, cy = h * 0.52, sc = h * 0.28;\n  ctx.strokeStyle = \"#e4d6c4\";\n  ctx.beginPath();\n  ctx.arc(cx, cy, 4, 0, 6.2832);\n  ctx.stroke();\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.beginPath();\n  ctx.arc(cx, cy, 4, 0, 6.2832);\n  ctx.fill();\n  for (i = 0; i < 6; i++) {\n    var x = cx + Math.cos(ang[i]) * rad[i] * sc, y = cy - Math.sin(ang[i]) * rad[i] * sc;\n    ctx.fillStyle = i === 0 ? \"#c4512c\" : \"#1f4b99\";\n    ctx.beginPath();\n    ctx.arc(x, y, i === 0 ? 6 : 4, 0, 6.2832);\n    ctx.fill();\n  }\n  var bw = (w * 0.42) / 6, bh = h * 0.55, x0 = w * 0.55;\n  for (i = 0; i < 6; i++) {\n    var p = ex[i] / z;\n    ctx.fillStyle = i === 0 ? \"#c4512c\" : \"#1f4b99\";\n    ctx.fillRect(x0 + i * bw, h * 0.78 - p * bh, bw - 6, p * bh);\n  }\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"11px sans-serif\";\n  ctx.fillText(\"vecino \" + Math.round(100 * ex[0] / z) + \"%\", x0, 18);\n}"
+    },
+    {
+      "id": "attn-walk",
+      "topic": "attention_scale",
+      "title": "La cabeza, del puntaje a la mezcla",
+      "explain": "Una cabeza hace cuatro pasos. Q por K crece con la dimensión, y por eso se divide entre la raíz de d_k. Sin esa división el softmax se queda con una clave. Con ella, los pesos mezclan varios valores.",
+      "questions": [
+        {
+          "q": "¿Por qué el puntaje crudo se queda con una sola clave?",
+          "why": "crece con la raíz de d_k y el softmax se afila"
+        },
+        {
+          "q": "¿Qué cambia al dividir entre la raíz antes del softmax?",
+          "why": "más de una clave conserva peso"
+        },
+        {
+          "q": "¿Qué se mezcla al final, las claves o los valores?",
+          "why": "los valores, pesados por el softmax con raíz"
+        }
+      ],
+      "controls": [
+        {
+          "id": "stage",
+          "label": "paso",
+          "min": 0,
+          "max": 3,
+          "value": 2,
+          "step": 1
+        },
+        {
+          "id": "d",
+          "label": "d_k",
+          "min": 4,
+          "max": 128,
+          "value": 64,
+          "step": 4
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, stage = Math.round(state.stage), d = state.d;\n  var sim = [0.15, 0.72, 1, -0.25];\n  var name = [\"el\", \"gato\", \"mira\", \"ya\"];\n  var V = [0.9, 0.15, 0.1, 0.2, 0.85, 0.15, 0.12, 0.2, 0.92, 0.75, 0.7, 0.12];\n  var s = Math.sqrt(d < 1 ? 1 : d), i, k, m, acc;\n  var raw = [], sc = [], pr = [], ps = [];\n  function soft(src, dst) {\n    m = src[0]; acc = 0;\n    for (k = 1; k < 4; k++) if (src[k] > m) m = src[k];\n    for (k = 0; k < 4; k++) { dst[k] = Math.exp(src[k] - m); acc += dst[k]; }\n    for (k = 0; k < 4; k++) dst[k] = dst[k] / acc;\n  }\n  for (i = 0; i < 4; i++) { raw[i] = sim[i] * s; sc[i] = sim[i]; }\n  soft(raw, pr); soft(sc, ps);\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var tags = [\"1 puntaje\", \"2 / raíz\", \"3 softmax\", \"4 mezcla\"];\n  var bw = Math.max(28, w * 0.09);\n  ctx.font = \"13px sans-serif\";\n  for (i = 0; i < 4; i++) {\n    ctx.fillStyle = i === stage ? \"#1d1a16\" : \"#b7aa9a\";\n    ctx.fillText(tags[i], w * 0.02 + i * w * 0.18, h * 0.06);\n  }\n  function colx(i) { return w * 0.08 + i * w * 0.2; }\n  function bar(i, val, y0, scale, down) {\n    var bh = Math.abs(val) / scale * (h * 0.42);\n    bh = Math.min(bh, val < 0 ? 16 : h * 0.48);\n    var y = val >= 0 || !down ? y0 - bh : y0;\n    ctx.fillStyle = i === 2 ? \"#c4512c\" : \"#1f4b99\";\n    ctx.fillRect(colx(i), y, bw, Math.max(bh, 2));\n  }\n  if (stage < 2) {\n    var y0 = h * 0.72;\n    ctx.strokeStyle = \"#e0d5c6\";\n    ctx.beginPath();\n    ctx.moveTo(24, y0);\n    ctx.lineTo(w - 16, y0);\n    ctx.stroke();\n    for (i = 0; i < 4; i++) {\n      if (stage === 0) bar(i, raw[i], y0, 8, 1);\n      else bar(i, sc[i], y0, 1.35, 1);\n      ctx.fillStyle = \"#1d1a16\";\n      ctx.font = \"13px sans-serif\";\n      ctx.fillText(name[i] + \" \" + Math.round((stage === 0 ? raw[i] : sc[i]) * 10) / 10, colx(i), y0 + 22);\n    }\n    ctx.fillStyle = \"#5c564c\";\n    ctx.font = \"13px sans-serif\";\n    ctx.fillText(stage === 0 ? \"Q·K crece con la raíz de d\" : \"Q·K / raíz de d, ya no crece\", 24, h * 0.14);\n  } else if (stage === 2) {\n    var top = h * 0.46, bot = h * 0.84, lift = h * 0.28;\n    ctx.font = \"13px sans-serif\";\n    ctx.fillStyle = \"#c4512c\";\n    ctx.fillText(\"sin raíz\", 16, h * 0.14);\n    ctx.fillStyle = \"#1f4b99\";\n    ctx.fillText(\"con raíz\", 16, h * 0.54);\n    for (i = 0; i < 4; i++) {\n      ctx.fillStyle = i === 2 ? \"#c4512c\" : \"#e7a090\";\n      ctx.fillRect(colx(i), top - pr[i] * lift, bw, pr[i] * lift);\n      ctx.fillStyle = i === 2 ? \"#1f4b99\" : \"#9db4dc\";\n      ctx.fillRect(colx(i), bot - ps[i] * lift, bw, ps[i] * lift);\n      ctx.fillStyle = \"#1d1a16\";\n      ctx.font = \"13px sans-serif\";\n      ctx.fillText(name[i], colx(i) + 4, bot + 20);\n    }\n  } else {\n    var mixA = [0, 0, 0], mixB = [0, 0, 0], c, cols = [\"#c4512c\", \"#1f4b99\", \"#2e7d32\"];\n    for (i = 0; i < 4; i++) for (c = 0; c < 3; c++) {\n      mixA[c] += pr[i] * V[i * 3 + c];\n      mixB[c] += ps[i] * V[i * 3 + c];\n    }\n    ctx.font = \"13px sans-serif\";\n    ctx.fillStyle = \"#5c564c\";\n    ctx.fillText(\"pesos con raíz\", 16, h * 0.16);\n    for (i = 0; i < 4; i++) {\n      ctx.fillStyle = i === 2 ? \"#c4512c\" : \"#1f4b99\";\n      ctx.fillRect(w * 0.03 + i * w * 0.07, h * 0.62 - ps[i] * h * 0.36, w * 0.05, ps[i] * h * 0.36);\n      ctx.fillStyle = \"#1d1a16\";\n      ctx.fillText(name[i], w * 0.03 + i * w * 0.07, h * 0.68);\n    }\n    function trio(mix, x, label, col) {\n      ctx.fillStyle = col;\n      ctx.font = \"13px sans-serif\";\n      ctx.fillText(label, x, h * 0.16);\n      for (c = 0; c < 3; c++) {\n        ctx.fillStyle = cols[c];\n        ctx.fillRect(x, h * 0.22 + c * h * 0.12, Math.max(4, mix[c] * w * 0.22), h * 0.07);\n      }\n    }\n    trio(mixA, w * 0.4, \"sin raíz\", \"#c4512c\");\n    trio(mixB, w * 0.68, \"con raíz\", \"#1f4b99\");\n  }\n}"
+    },
+    {
+      "id": "denoise-strip",
+      "topic": "noise_schedule",
+      "title": "El dibujo sale del ruido paso a paso",
+      "explain": "Cada paso del proceso directo mete ruido y la señal baja. La tira va de puro ruido a dibujo limpio; beta decide qué tan pronto se pierde. El cuadro grande es el paso de limpieza que eliges.",
+      "questions": [
+        {
+          "q": "¿Por qué el dibujo vuelve si bajo hacia la limpieza?",
+          "why": "ese lado del horario todavía guarda señal"
+        },
+        {
+          "q": "¿Qué cambia beta si el paso se queda quieto?",
+          "why": "un beta grande mete ruido más pronto"
+        },
+        {
+          "q": "¿Qué marca la barra junto al texto?",
+          "why": "la fracción de señal que aún no es ruido"
+        }
+      ],
+      "controls": [
+        {
+          "id": "step",
+          "label": "limpieza",
+          "min": 0,
+          "max": 16,
+          "value": 12,
+          "step": 1
+        },
+        {
+          "id": "beta",
+          "label": "beta",
+          "min": 0.08,
+          "max": 0.7,
+          "value": 0.32,
+          "step": 0.01
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, step = Math.round(state.step), beta = state.beta;\n  var T = 16;\n  function signal(remain) { return Math.exp(-beta * remain / 2); }\n  function grid(x, y, cellpx, remain, hot) {\n    var i, j, v, bit, sig = signal(remain), noi = Math.sqrt(Math.max(0, 1 - sig * sig)), noise;\n    for (i = 0; i < 8; i++) for (j = 0; j < 8; j++) {\n      bit = (i === 3 || i === 4 || j === 3 || j === 4) ? 1 : 0;\n      noise = Math.sin(i * 12.9898 + j * 78.233 + 2.4);\n      v = sig * (bit ? 1 : -0.65) + noi * noise;\n      ctx.fillStyle = bit && v > 0 ? \"#1f4b99\" : (v > 0.45 ? \"#e7a090\" : \"#efe6d8\");\n      ctx.fillRect(x + j * cellpx, y + i * cellpx, cellpx - 1, cellpx - 1);\n    }\n    if (hot) {\n      ctx.strokeStyle = \"#2e7d32\";\n      ctx.lineWidth = 2;\n      ctx.strokeRect(x - 2, y - 2, cellpx * 8 + 3, cellpx * 8 + 3);\n    }\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var remain = T - step;\n  var sig = signal(remain);\n  var cell = Math.floor(Math.min((h - 48) / 8, (w * 0.46) / 8));\n  if (cell < 8) cell = 8;\n  grid(16, 24, cell, remain, 0);\n  var rx = 32 + cell * 8;\n  var marks = [16, 12, 8, 4, 0], f, fr, near = 0, dist = 99;\n  var pitch = (w - rx - 16) / 5;\n  var scell = Math.floor(Math.min(pitch / 8, 14));\n  if (scell < 3) scell = 3;\n  for (f = 0; f < 5; f++) if (Math.abs(marks[f] - remain) < dist) { dist = Math.abs(marks[f] - remain); near = f; }\n  for (f = 0; f < 5; f++) {\n    fr = marks[f];\n    grid(rx + f * pitch, 28, scell, fr, f === near);\n    ctx.fillStyle = \"#5c564c\";\n    ctx.font = \"11px sans-serif\";\n    ctx.fillText(\"\" + (T - fr), rx + f * pitch, 36 + scell * 8);\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"15px sans-serif\";\n  ctx.fillText(\"limpieza \" + step + \" / 16\", rx, h * 0.48);\n  ctx.fillText(\"señal \" + Math.round(sig * 100) + \"%\", rx, h * 0.56);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"azul: el dibujo\", rx, h * 0.66);\n  ctx.fillText(\"coral: ruido\", rx, h * 0.74);\n  ctx.fillStyle = \"#e4d6c4\";\n  ctx.fillRect(rx, h * 0.8, w - rx - 20, 10);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(rx, h * 0.8, Math.max(2, (w - rx - 20) * sig), 10);\n}"
+    },
+    {
+      "id": "resid-stream",
+      "topic": "residual",
+      "title": "El atajo se lleva el token de capa en capa",
+      "explain": "Cada capa escribe un cambio y el atajo suma el vector anterior. Con el atajo en 1, el token de la entrada sigue en las dos primeras filas. Si baja, las capas de arriba lo tapan.",
+      "questions": [
+        {
+          "q": "¿Por qué el token de entrada sigue ahí al final?",
+          "why": "el atajo lo copia de capa en capa"
+        },
+        {
+          "q": "¿Qué se pierde si el atajo baja a cero?",
+          "why": "cada capa reemplaza el vector, no le suma"
+        },
+        {
+          "q": "¿Qué escriben las capas nuevas?",
+          "why": "un cambio en otras filas, el delta"
+        }
+      ],
+      "controls": [
+        {
+          "id": "depth",
+          "label": "capa",
+          "min": 0,
+          "max": 4,
+          "value": 4,
+          "step": 1
+        },
+        {
+          "id": "skip",
+          "label": "atajo",
+          "min": 0,
+          "max": 1,
+          "value": 1,
+          "step": 0.05
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, depth = Math.round(state.depth), skip = state.skip;\n  var e = [1, 0.85, 0.25, 0, 0, 0, 0, 0];\n  var D = [\n    0, 0, 0.15, 0.8, 0.1, 0, 0, 0,\n    0, 0, 0, 0, 0.55, 0.7, 0, 0,\n    0, 0, 0, 0, 0, 0.15, 0.75, 0.1,\n    0, 0, 0, 0, 0, 0, 0.1, 0.65\n  ];\n  var cur = [], i, layer, v, x, y;\n  for (i = 0; i < 8; i++) cur[i] = e[i];\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#8a8175\";\n  ctx.fillText(\"token\", 8, 26);\n  var pitch = Math.min(72, (w * 0.58) / 5);\n  var cw = pitch - 8, ch = (h * 0.7) / 8;\n  function paint(col) {\n    for (i = 0; i < 8; i++) {\n      v = cur[i];\n      if (v < 0) v = 0;\n      x = 16 + col * pitch;\n      y = h * 0.08 + i * ch;\n      ctx.fillStyle = v > 0.66 ? \"#1f4b99\" : (v > 0.28 ? \"#7ea0d0\" : (v > 0.06 ? \"#d9e3f5\" : \"#efe6d8\"));\n      ctx.fillRect(x, y, cw, ch - 3);\n      if (i < 2 && cur[i] > 0.2) {\n        ctx.strokeStyle = \"#c4512c\";\n        ctx.lineWidth = 2;\n        ctx.strokeRect(x, y, cw, ch - 3);\n      }\n    }\n    ctx.fillStyle = \"#5c564c\";\n    ctx.font = \"12px sans-serif\";\n    ctx.fillText(col === 0 ? \"emb\" : \"L\" + col, 16 + col * pitch, h * 0.08 + 8 * ch + 16);\n  }\n  paint(0);\n  for (layer = 0; layer < depth; layer++) {\n    for (i = 0; i < 8; i++) cur[i] = skip * cur[i] + D[layer * 8 + i];\n    paint(layer + 1);\n  }\n  var left = depth === 0 ? 100 : Math.round(100 * Math.pow(skip, depth));\n  var tx = 28 + 5 * pitch;\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"16px sans-serif\";\n  ctx.fillText(\"queda \" + left + \"% del token\", tx, h * 0.22);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"coral: el token\", tx, h * 0.32);\n  ctx.fillText(\"de la entrada\", tx, h * 0.38);\n  ctx.fillStyle = \"#e4d6c4\";\n  ctx.fillRect(tx, h * 0.46, w - tx - 20, 14);\n  ctx.fillStyle = left > 40 ? \"#2e7d32\" : \"#c4512c\";\n  ctx.fillRect(tx, h * 0.46, Math.max(2, (w - tx - 20) * left / 100), 14);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"atajo \" + Math.round(skip * 100) / 100, tx, h * 0.58);\n}"
+    },
+    {
+      "id": "moe-drop",
+      "topic": "moe",
+      "title": "El experto lleno deja tokens afuera",
+      "explain": "El router manda cada token a unos pocos expertos. El cupo es corto: si muchos eligen al mismo, los que llegan tarde se caen. Con k = 2, el segundo experto todavía los puede recibir.",
+      "questions": [
+        {
+          "q": "¿Por qué un experto popular deja tokens afuera?",
+          "why": "el cupo se llena y los de después se caen"
+        },
+        {
+          "q": "¿Qué recupera el top 2 que el top 1 tira?",
+          "why": "el segundo experto todavía tiene lugar"
+        },
+        {
+          "q": "¿Qué se está limitando, el puntaje o el cupo?",
+          "why": "el cupo; el puntaje solo elige a quién"
+        }
+      ],
+      "controls": [
+        {
+          "id": "k",
+          "label": "k",
+          "min": 1,
+          "max": 2,
+          "value": 1,
+          "step": 1
+        },
+        {
+          "id": "cap",
+          "label": "cupo",
+          "min": 1,
+          "max": 6,
+          "value": 2,
+          "step": 1
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, top = Math.round(state.k), cap = Math.round(state.cap);\n  var L = [2.2, 0.2, 0, -0.4, 1.8, 0.4, 0.1, -0.2, 1.6, 0.3, 0.5, 0, 0.2, 2, 0.1, 0.3, 1.4, 0.2, 0.6, -0.1, 0.1, 0.2, 1.8, 0.4, 1.1, 0.5, 0.2, 0.3, 0, 0.3, 0.2, 1.7];\n  var count = [0, 0, 0, 0], slot = [], ti, e, k, b1, b2, got, fall = \"\";\n  for (ti = 0; ti < 16; ti++) slot[ti] = -1;\n  for (ti = 0; ti < 8; ti++) {\n    b1 = 0; b2 = 1;\n    if (L[ti * 4 + 1] > L[ti * 4]) { b1 = 1; b2 = 0; }\n    for (e = 2; e < 4; e++) {\n      if (L[ti * 4 + e] > L[ti * 4 + b1]) { b2 = b1; b1 = e; }\n      else if (L[ti * 4 + e] > L[ti * 4 + b2]) b2 = e;\n    }\n    got = 0;\n    var pick = [b1, b2];\n    for (k = 0; k < top; k++) {\n      e = pick[k];\n      if (count[e] < cap) { count[e] += 1; slot[ti * 2 + k] = e; got = 1; }\n    }\n    if (!got) fall = fall + \" t\" + ti;\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var used = [0, 0, 0, 0];\n  var colw = (w - 28) / 4;\n  var boxH = h * 0.68;\n  ctx.font = \"14px sans-serif\";\n  for (e = 0; e < 4; e++) {\n    var x = 12 + e * colw;\n    ctx.fillStyle = \"#1d1a16\";\n    ctx.fillText(\"E\" + e, x, h * 0.06);\n    ctx.fillStyle = count[e] >= cap ? \"#c4512c\" : \"#5c564c\";\n    ctx.fillText(count[e] + \"/\" + cap, x + 36, h * 0.06);\n    ctx.strokeStyle = \"#e0d5c6\";\n    ctx.strokeRect(x, h * 0.1, colw - 12, boxH);\n  }\n  var slotH = Math.min(28, (boxH - 16) / 6);\n  for (ti = 0; ti < 8; ti++) {\n    for (k = 0; k < top; k++) {\n      e = slot[ti * 2 + k];\n      if (e >= 0) {\n        var x = 18 + e * colw;\n        var y = h * 0.12 + used[e] * (slotH + 4);\n        used[e] += 1;\n        ctx.fillStyle = \"#1f4b99\";\n        ctx.fillRect(x, y, colw - 28, slotH);\n        ctx.fillStyle = \"#f6f3ec\";\n        ctx.font = \"13px sans-serif\";\n        ctx.fillText(\"t\" + ti, x + 8, y + slotH * 0.72);\n      }\n    }\n  }\n  ctx.font = \"15px sans-serif\";\n  if (fall) {\n    ctx.fillStyle = \"#c4512c\";\n    ctx.fillText(\"se caen\" + fall, 12, h * 0.94);\n  } else {\n    ctx.fillStyle = \"#2e7d32\";\n    ctx.fillText(\"nadie se cae\", 12, h * 0.94);\n  }\n}"
+    },
+    {
+      "id": "kv-grow",
+      "topic": "gqa",
+      "title": "El cache crece con el texto y con los grupos",
+      "explain": "El cache guarda K y V por grupo. Crece con los tokens y con los grupos que no comparten esa memoria. Menos grupos, y el mismo texto ocupa menos.",
+      "questions": [
+        {
+          "q": "¿Por qué un texto largo se come la memoria?",
+          "why": "cada token suma K y V en cada capa"
+        },
+        {
+          "q": "¿Qué se achica si las cabezas comparten K y V?",
+          "why": "el cache, no la cantidad de tokens"
+        },
+        {
+          "q": "¿Qué marca la raya del medidor?",
+          "why": "un cupo fijo de celdas, para ver cuándo se pasa"
+        }
+      ],
+      "controls": [
+        {
+          "id": "len",
+          "label": "tokens",
+          "min": 1,
+          "max": 24,
+          "value": 12,
+          "step": 1
+        },
+        {
+          "id": "kv",
+          "label": "grupos",
+          "min": 1,
+          "max": 8,
+          "value": 8,
+          "step": 1
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, len = Math.round(state.len), heads = Math.round(state.kv);\n  var layers = 4, cells = layers * len * heads * 2, budget = 256, cap = 1536;\n  var layer, tok, x, y, bh;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var rowH = h * 0.16;\n  ctx.font = \"13px sans-serif\";\n  ctx.fillStyle = \"#8a8175\";\n  for (layer = 0; layer < layers; layer++) ctx.fillText(\"L\" + (layer + 1), 8, h * 0.1 + layer * rowH);\n  var cw = Math.min(22, (w - 56) / len - 2);\n  if (cw < 4) cw = 4;\n  for (layer = 0; layer < layers; layer++) {\n    y = h * 0.04 + layer * rowH;\n    for (tok = 0; tok < len; tok++) {\n      x = 36 + tok * (cw + 3);\n      bh = 4 + heads * rowH * 0.1;\n      if (bh > rowH * 0.85) bh = rowH * 0.85;\n      ctx.fillStyle = \"#1f4b99\";\n      ctx.fillRect(x, y + rowH * 0.7 - bh, cw, bh * 0.55);\n      ctx.fillStyle = \"#c4512c\";\n      ctx.fillRect(x, y + rowH * 0.7 - bh * 0.45, cw, bh * 0.45);\n    }\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"15px sans-serif\";\n  ctx.fillText(cells + \" celdas de cache\", 28, h * 0.78);\n  ctx.fillStyle = \"#e4d6c4\";\n  ctx.fillRect(28, h * 0.82, w - 48, 12);\n  var mw = (w - 48) * cells / cap;\n  if (mw > w - 48) mw = w - 48;\n  ctx.fillStyle = cells > budget ? \"#c4512c\" : \"#2e7d32\";\n  ctx.fillRect(28, h * 0.82, Math.max(2, mw), 12);\n  var bx = 28 + (w - 48) * budget / cap;\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.beginPath();\n  ctx.moveTo(bx, h * 0.8);\n  ctx.lineTo(bx, h * 0.88);\n  ctx.stroke();\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"K azul   V coral   la raya es el cupo\", 28, h * 0.96);\n}"
+    },
+    {
+      "id": "int8-outlier",
+      "topic": "quant",
+      "title": "Un valor grande se come el paso",
+      "explain": "absmax arma el paso con el valor más grande. Un outlier lo agranda y el error se come a los números chicos. Si ese outlier se queda afuera del paso, el resto vuelve a tener niveles finos.",
+      "questions": [
+        {
+          "q": "¿Por qué un solo número grande arruina a los chicos?",
+          "why": "el paso sale de ese máximo"
+        },
+        {
+          "q": "¿Qué pasa con el error si ese número se queda afuera?",
+          "why": "el paso se mide con el resto y baja"
+        },
+        {
+          "q": "¿Qué se redondea cuando el interruptor está prendido?",
+          "why": "los chicos; el outlier se queda como estaba"
+        }
+      ],
+      "controls": [
+        {
+          "id": "mag",
+          "label": "magnitud",
+          "min": 1,
+          "max": 120,
+          "value": 90,
+          "step": 1
+        },
+        {
+          "id": "keep",
+          "label": "dejar afuera",
+          "min": 0,
+          "max": 1,
+          "value": 0,
+          "step": 1
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, mag = state.mag, keep = Math.round(state.keep);\n  var n = 16, xs = [], rec = [], i, ax, amax = 0, step, q, err = 0, cnt = 0;\n  for (i = 0; i < n; i++) xs[i] = i === 7 ? mag : Math.sin(i * 1.7 + 0.4) * 0.35;\n  for (i = 0; i < n; i++) {\n    ax = xs[i] < 0 ? -xs[i] : xs[i];\n    if (!(keep === 1 && ax > 6) && ax > amax) amax = ax;\n  }\n  if (amax < 1e-6) amax = 1e-6;\n  step = amax / 127;\n  for (i = 0; i < n; i++) {\n    ax = xs[i] < 0 ? -xs[i] : xs[i];\n    if (keep === 1 && ax > 6) rec[i] = xs[i];\n    else {\n      q = Math.round(xs[i] / step);\n      if (q > 127) q = 127;\n      if (q < -127) q = -127;\n      rec[i] = q * step;\n      err += (rec[i] - xs[i]) * (rec[i] - xs[i]);\n      cnt += 1;\n    }\n  }\n  err = cnt ? Math.sqrt(err / cnt) : 0;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  function Y(v) {\n    if (v > 0.55) v = 0.55;\n    if (v < -0.55) v = -0.55;\n    return h * 0.52 - v * h * 0.4;\n  }\n  ctx.strokeStyle = \"#e0d5c6\";\n  ctx.beginPath();\n  ctx.moveTo(12, Y(0));\n  ctx.lineTo(w - 12, Y(0));\n  ctx.stroke();\n  var gap = (w - 36) / n;\n  for (i = 0; i < n; i++) {\n    var x = 16 + i * gap;\n    ax = xs[i] < 0 ? -xs[i] : xs[i];\n    var held = keep === 1 && ax > 6;\n    ctx.strokeStyle = \"#b7aa9a\";\n    ctx.lineWidth = 2;\n    ctx.beginPath();\n    ctx.moveTo(x + 4, Y(0));\n    ctx.lineTo(x + 4, Y(xs[i]));\n    ctx.stroke();\n    ctx.fillStyle = held ? \"#2e7d32\" : \"#1f4b99\";\n    var y1 = Y(0), y2 = Y(rec[i]);\n    var top = y1 < y2 ? y1 : y2;\n    var bw = Math.max(6, gap * 0.34);\n    ctx.fillRect(x + gap * 0.4, top, bw, Math.max(2, Math.abs(y2 - y1)));\n    if (!held && Math.abs(xs[i] - rec[i]) > 0.08) {\n      ctx.fillStyle = \"#c4512c\";\n      ctx.fillRect(x + gap * 0.4, Y(xs[i]) - 2, bw, 4);\n    }\n    if (i === 7 && ax > 1.15) {\n      ctx.fillStyle = \"#c4512c\";\n      ctx.font = \"13px sans-serif\";\n      ctx.fillText(\"\" + Math.round(mag), x, h * 0.1);\n    }\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"paso \" + Math.round(step * 1000) / 1000 + \"    error \" + Math.round(err * 100) / 100, 12, 16);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"11px sans-serif\";\n  ctx.fillText(keep === 1 ? \"gris: valor   azul: cuantizado   verde: se quedó afuera\" : \"gris: valor   azul: cuantizado   coral: se movió\", 12, h - 8);\n}"
     }
   ]
 }

@@ -25,6 +25,7 @@ const GOLD_TEMP = `
 function draw(ctx, state, t) {
   var w = state.w, h = state.h, temp = state.temp;
   var logits = [1.2, 0.4, -0.2, -0.8];
+  var name = ["sí", "no", "eh", "ya"];
   var i, m = logits[0], exps = [], s = 0, p, bw, bh, gap;
   if (temp < 0.05) temp = 0.05;
   for (i = 1; i < logits.length; i++) if (logits[i] > m) m = logits[i];
@@ -41,7 +42,10 @@ function draw(ctx, state, t) {
     p = exps[i] / s;
     bh = p * (h - 36);
     ctx.fillStyle = i === 0 ? "#c4512c" : "#1f4b99";
-    ctx.fillRect(gap + i * (bw + gap), h - 16 - bh, bw, bh);
+    ctx.fillRect(gap + i * (bw + gap), h - 22 - bh, bw, bh);
+    ctx.fillStyle = "#1d1a16";
+    ctx.font = "13px sans-serif";
+    ctx.fillText(name[i], gap + i * (bw + gap) + 8, h - 6);
   }
 }
 `;
@@ -64,14 +68,19 @@ function draw(ctx, state, t) {
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#f6f3ec";
   ctx.fillRect(0, 0, w, h);
+  ctx.font = "12px sans-serif";
+  ctx.fillStyle = "#c4512c";
+  ctx.fillText("sin raíz", 8, 16);
+  ctx.fillStyle = "#1f4b99";
+  ctx.fillText("con raíz", 8, h * 0.5);
   gap = 8;
   bw = (w - gap * (raw.length + 1)) / raw.length;
   for (i = 0; i < raw.length; i++) {
     x = gap + i * (bw + gap);
     ctx.fillStyle = "#c4512c";
-    ctx.fillRect(x, h * 0.46 - top[i] * (h * 0.40), bw, top[i] * (h * 0.40));
+    ctx.fillRect(x, h * 0.42 - top[i] * (h * 0.30), bw, top[i] * (h * 0.30));
     ctx.fillStyle = "#1f4b99";
-    ctx.fillRect(x, h * 0.96 - bot[i] * (h * 0.40), bw, bot[i] * (h * 0.40));
+    ctx.fillRect(x, h * 0.92 - bot[i] * (h * 0.30), bw, bot[i] * (h * 0.30));
   }
 }
 `;
@@ -200,8 +209,9 @@ function draw(ctx, state, t) {
   ctx.fillRect(0, 0, w, h);
   bw = (w - 40) / n;
   for (i = 0; i < n; i++) {
+    var bh = i < kept ? 36 : 12;
     ctx.fillStyle = i < kept ? "#1f4b99" : "#c4512c";
-    ctx.fillRect(16 + i * bw, h * 0.4, bw - 8, 36);
+    ctx.fillRect(16 + i * bw, h * 0.4 + (36 - bh), bw - 8, bh);
   }
 }
 `),
@@ -298,8 +308,9 @@ function draw(ctx, state, t) {
   ctx.fillRect(0, 0, w, h);
   bw = (w - 30) / probs.length;
   for (i = 0; i < probs.length; i++) {
+    var bh = i < keep ? probs[i] * (h * 0.9) : 4;
     ctx.fillStyle = i < keep ? "#1f4b99" : "#e4d8c8";
-    ctx.fillRect(12 + i * bw, h * 0.82 - probs[i] * (h * 0.9), bw - 8, probs[i] * (h * 0.9));
+    ctx.fillRect(12 + i * bw, h * 0.82 - bh, bw - 8, bh);
   }
 }
 `),

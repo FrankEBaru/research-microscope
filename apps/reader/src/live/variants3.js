@@ -41,9 +41,11 @@ function draw(ctx, state, t) {
   for (i = 0; i < 6; i++) {
     var freq = 1 / Math.pow(state.base, (2 * i) / 48);
     for (k = 0; k < 16; k++) {
-      on = Math.sin(k * freq) > 0;
-      ctx.fillStyle = on ? "#1f4b99" : "#eadfce";
-      ctx.fillRect(12 + k * 20, 16 + i * 28, 16, 18);
+      on = Math.sin(k * freq);
+      var amp = on < 0 ? -on : on;
+      var bh = 6 + amp * 14;
+      ctx.fillStyle = on > 0 ? "#1f4b99" : "#eadfce";
+      ctx.fillRect(12 + k * 20, 16 + i * 28 + (20 - bh), 16, bh);
     }
   }
 }
@@ -237,8 +239,9 @@ function draw(ctx, state, t) {
   ctx.fillStyle = "#f6f3ec";
   ctx.fillRect(0, 0, w, h);
   for (i = 0; i < 6; i++) {
+    var bh = i < n ? 28 : 8;
     ctx.fillStyle = i < n ? "#1f4b99" : "#eadfce";
-    ctx.fillRect(16 + i * 40, h * 0.4, 28, 22);
+    ctx.fillRect(16 + i * 40, h * 0.4 + (28 - bh), 28, bh);
   }
 }
 `),
@@ -335,10 +338,12 @@ function draw(ctx, state, t) {
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#f6f3ec";
   ctx.fillRect(0, 0, w, h);
+  var h0 = pick === 0 ? 52 : 18;
+  var h1 = pick === 1 ? 52 : 18;
   ctx.fillStyle = pick === 0 ? "#1f4b99" : "#eadfce";
-  ctx.fillRect(40, h * 0.4, 50, 36);
+  ctx.fillRect(40, h * 0.32, 50, h0);
   ctx.fillStyle = pick === 1 ? "#c4512c" : "#eadfce";
-  ctx.fillRect(140, h * 0.4, 50, 36);
+  ctx.fillRect(140, h * 0.32, 50, h1);
 }
 `),
   widget("residual", "skip-sum", "La suma es entrada más capa", [
