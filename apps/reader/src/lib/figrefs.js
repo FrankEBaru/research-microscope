@@ -1,9 +1,16 @@
 // Passages that cite a figure or table. Exact target, or exact label when target is absent.
 
-function refPlain(x, xref) {
+const REF_PREV = /(?:figure|fig\.|table|tab\.|section|sec\.|equation|eq\.|appendix|figura|tabla|sección|ecuación|apéndice)\s*~?\s*$/i;
+const REF_WORD = /^(?:Figure|Table|Section|Appendix|Equation|Eq\.?|equation|Figura|Tabla|Sección|Apéndice|ecuación)\s+/;
+
+function refPlain(x, xref, prev = "") {
   const label = x.label || "";
-  if (x.number != null) return String(label).startsWith("eq") ? `(${x.number})` : String(x.number);
-  return (xref && xref[label]) || label;
+  let text = x.number != null
+    ? (String(label).startsWith("eq") ? `(${x.number})` : String(x.number))
+    : ((xref && xref[label]) || label);
+  // "Figure \ref{fig}" resolves to "Figure 8", which the body already shortens to "8".
+  if (REF_PREV.test(String(prev || "")) && REF_WORD.test(text)) text = text.replace(/^\S+\s+/, "");
+  return text;
 }
 
 function walk(nodes, fn) {
@@ -19,7 +26,7 @@ function plainSent(nodes, xref) {
   walk(nodes, (x) => {
     if (x.t === "text") parts.push(x.v || "");
     else if (x.t === "math") parts.push(`$${x.v}$`);
-    else if (x.t === "ref") parts.push(refPlain(x, xref));
+    else if (x.t === "ref") parts.push(refPlain(x, xref, parts.join("")));
     else if (x.v && x.t !== "cite" && x.t !== "note" && !Array.isArray(x.c)) parts.push(String(x.v));
   });
   return parts.join("").replace(/\s+/g, " ").trim();
