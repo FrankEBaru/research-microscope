@@ -35,7 +35,7 @@ Math: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `log`, `sqrt`
 
 El lenguaje es un subconjunto: `var` o `const`, `if` / `else`, `for`, `while`, `break`, `continue`, funciones anidadas, arreglos, `===` y `!==`. `undefined` es un valor y no hace falta declararlo. Un string solo expone `.length` (los arreglos también). Un número puede usar `toFixed` con hasta 6 decimales. Sin flechas, sin `new`, sin `import`, sin acceso `obj["constructor"]`, sin otros métodos de string. `setLineDash` no está: una línea punteada son segmentos cortos. El tope de 200000 pasos se queda; un NeRF con seis bucles anidados no monta aunque el verificador de modelo lo acepte.
 
-Prohibido en el fuente (la lista viva está en `contract.py`): red, `fetch`, `eval`, `Function`, `import`, `document`, `window`, almacenamiento, `postMessage`, `innerHTML`, `setTimeout`, `requestAnimationFrame`, `Math.random`, `Date`, `Worker`, `WebAssembly`, `http://` y `https://`.
+Prohibido en el código del draw, helpers incluidos (la lista viva está en `contract.py`): red, `fetch`, `eval`, `Function`, `import`, `document`, `window`, almacenamiento, `postMessage`, `innerHTML`, `setTimeout`, `requestAnimationFrame`, `Math.random`, `Date`, `Worker`, `WebAssembly`, `http://` y `https://`. Una palabra dentro de un string, o en el título, `explain` o una etiqueta, no es un identificador. Una URL sigue prohibida en cualquier campo.
 
 ## Host
 

@@ -234,6 +234,25 @@ test("a short topic name and a p_drop token cross languages", () => {
   assert.ok(bleu.reasons.includes("slop_unrelated"), bleu.reasons.join(","));
 });
 
+test("window in a label or a string is text, and window in code is banned", () => {
+  const spoken = widget(
+    `function draw(ctx, state, t) { ctx.fillText("flat over window", 12, 24); ctx.fillRect(10, 40, 20 + state.a, 16); }`,
+    [{ id: "a", label: "flat over window", min: 1, max: 40, value: 8, step: 1 }],
+  );
+  spoken.explain = "The flat over window mark is a label, not a host object.";
+  const ok = verifyWidget(spoken);
+  assert.equal(ok.accept, true, ok.reasons.join(",") + " " + (ok.detail || []).join(","));
+
+  const coded = widget(`function draw(ctx, state, t) {
+    function helper() { return window; }
+    ctx.fillRect(10, 10, state.a, 10);
+    helper();
+  }`);
+  const bad = verifyWidget(coded);
+  assert.ok(bad.reasons.includes("banned"), bad.reasons.join(","));
+  assert.ok(bad.detail.includes("banned:window"), (bad.detail || []).join(","));
+});
+
 test("fetch, computed constructor, and infinite loops never mount", () => {
   const fetched = verifyWidget(widget(`function draw(ctx, state, t) { fetch("https://evil.example"); ctx.fillRect(0,0,state.a,10); }`));
   assert.ok(fetched.reasons.includes("banned"), fetched.reasons.join(","));

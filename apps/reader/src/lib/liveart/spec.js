@@ -99,8 +99,56 @@ export function liveOn(env) {
   return flagOn(process.env.RRM_LIVE_ARTIFACTS) || flagOn(process.env.NEXT_PUBLIC_RRM_LIVE_ARTIFACTS);
 }
 
+// Identifiers are banned in code. Words inside a string, a comment, or a text field are not code.
+export function codeSurface(src) {
+  const text = src || "";
+  let out = "";
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    const c = text[i];
+    if (c === "/" && text[i + 1] === "/") {
+      const start = i;
+      i += 2;
+      while (i < n && text[i] !== "\n") i += 1;
+      out += " ".repeat(i - start);
+      continue;
+    }
+    if (c === "/" && text[i + 1] === "*") {
+      const start = i;
+      i += 2;
+      let closed = false;
+      while (i < n) {
+        if (text[i] === "*" && text[i + 1] === "/") { i += 2; closed = true; break; }
+        i += 1;
+      }
+      if (!closed) { out += text.slice(start); break; }
+      out += " ".repeat(i - start);
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      const q = c;
+      let j = i + 1;
+      let closed = false;
+      while (j < n) {
+        if (text[j] === "\\") { j += 2; continue; }
+        if (text[j] === "\n") break;
+        if (text[j] === q) { j += 1; closed = true; break; }
+        j += 1;
+      }
+      if (!closed) { out += text[i]; i += 1; continue; }
+      out += " ".repeat(j - i);
+      i = j;
+      continue;
+    }
+    out += c;
+    i += 1;
+  }
+  return out;
+}
+
 export function bannedIn(draw) {
-  const text = draw || "";
+  const text = codeSurface(draw);
   return BANNED.filter(([, cre]) => cre.test(text)).map(([name]) => name);
 }
 

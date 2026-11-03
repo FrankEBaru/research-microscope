@@ -144,8 +144,65 @@ def live_on() -> bool:
     return False
 
 
+def code_surface(src: str) -> str:
+    """Identifiers are banned in code. A string, a comment, or a text field is not code."""
+    text = src or ""
+    out = []
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c == "/" and i + 1 < n and text[i + 1] == "/":
+            start = i
+            i += 2
+            while i < n and text[i] != "\n":
+                i += 1
+            out.append(" " * (i - start))
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "*":
+            start = i
+            i += 2
+            closed = False
+            while i < n:
+                if text[i] == "*" and i + 1 < n and text[i + 1] == "/":
+                    i += 2
+                    closed = True
+                    break
+                i += 1
+            if not closed:
+                out.append(text[start:])
+                break
+            out.append(" " * (i - start))
+            continue
+        if c in {'"', "'"}:
+            q = c
+            j = i + 1
+            closed = False
+            while j < n:
+                if text[j] == "\\":
+                    j += 2
+                    continue
+                if text[j] == "\n":
+                    break
+                if text[j] == q:
+                    j += 1
+                    closed = True
+                    break
+                j += 1
+            if not closed:
+                out.append(text[i])
+                i += 1
+                continue
+            out.append(" " * (j - i))
+            i = j
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def banned_in(draw: str) -> list[str]:
-    text = draw or ""
+    text = code_surface(draw)
     return [name for name, cre in _BANNED if cre.search(text)]
 
 
