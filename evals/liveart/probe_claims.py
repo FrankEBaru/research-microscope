@@ -98,3 +98,38 @@ def claims():
     for item in PROBE_3:
         out.append({**item, "probe": "probe3", "claim": claim_for(item)})
     return out
+
+
+# RRM-85: the same 8 claims for spark, wonder, and hybrid. Four are from the
+# quality round; four are topics that round did not build.
+PROBE_85 = (
+    {"id": "adam-valley", "seen": True, "topic": "adam", "arxiv": "1412.6980",
+     "text": "Adam steps by the bias-corrected first moment over the square root of the second moment, so a narrow valley does not make that step explode."},
+    {"id": "rope-shift", "seen": True, "topic": "rope", "arxiv": "2104.09864",
+     "text": "RoPE rotates each absolute position, and the attention score depends only on the relative distance between the tokens."},
+    {"id": "kl-policy", "seen": True, "topic": "kl_rlhf", "arxiv": "2203.02155",
+     "text": "In RLHF the optimal policy is the reference policy times exp(reward / beta), so a small beta lets one token take the reward."},
+    {"id": "pe-sincos", "seen": True, "topic": "positional_encoding", "arxiv": "1706.03762",
+     "text": "Sinusoidal positional encoding uses sin(pos / 10000^{2i/d}), so nearby positions have a similar encoding."},
+    {"id": "lora-rank", "seen": False, "topic": "lora", "arxiv": "2106.09685",
+     "text": "LoRA writes a weight update as the product of two low-rank matrices, so the number of trained parameters grows with the rank and not with the square of the width."},
+    {"id": "gqa-share", "seen": False, "topic": "gqa", "arxiv": "2305.13245",
+     "text": "Grouped-query attention lets several queries share one key and value, so the KV cache grows with the number of KV heads and not with the queries."},
+    {"id": "rmsnorm-eps", "seen": False, "topic": "rmsnorm", "arxiv": "1910.07467",
+     "text": "RMSNorm divides each coordinate by the root mean square of the vector, so a larger epsilon stops that division from shrinking the big values."},
+    {"id": "gelu-tail", "seen": False, "topic": "gelu", "arxiv": "1606.08415",
+     "text": "GELU does not cut at zero: a negative input still leaks through, unlike a hard cutoff."},
+)
+
+
+def rrm85():
+    return [
+        {
+            "id": item["id"],
+            "topic": item["topic"],
+            "seen": item["seen"],
+            "probe": "rrm85",
+            "claim": {"text": item["text"], "latex": "", "context": "", "arxiv": item["arxiv"]},
+        }
+        for item in PROBE_85
+    ]

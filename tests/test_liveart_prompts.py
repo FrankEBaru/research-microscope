@@ -131,6 +131,82 @@ def test_package_builds_messages_only_when_the_flag_is_on(monkeypatch):
     assert "slop_inert:key" in pedido
 
 
+def test_rrm85_prompt_prices_and_budget(monkeypatch, capsys, tmp_path):
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import scripts_live
+    from evals.liveart.probe_claims import PROBE_85
+    from rrm.liveart.offline import gold_widget, select_claim
+
+    assert "15 dudas" in question_system() and "nombra un estado" in question_system()
+    assert "juguete" in explain_system()
+    assert "syntax:)" in codegen_system() and "hue" in codegen_system()
+    assert "juguete" in verifier_system()
+    usage = {"input_tokens": 1000, "output_tokens": 100, "input_tokens_details": {"cached_tokens": 200}}
+    spark = scripts_live.cost_of(usage, scripts_live.SPARK)
+    wonder = scripts_live.cost_of(usage, scripts_live.WONDER)
+    assert spark["cost_usd"] == 0.0001004
+    assert wonder["cost_usd"] == 0.00524
+    assert scripts_live.cost_of({}, scripts_live.SPARK)["cost_usd"] == 0
+    assert scripts_live._ceiling(scripts_live.WONDER, 1000, 6000) > scripts_live._ceiling(scripts_live.SPARK, 1000, 6000)
+    for item in PROBE_85:
+        got = select_claim({"text": item["text"], "latex": "", "context": "", "arxiv": item["arxiv"]})
+        assert got["merit"] == "widget" and got["topic"] == item["topic"], item["id"]
+
+    chosen = ",".join(item["id"] for item in PROBE_85)
+
+    class Args:
+        ids = chosen
+        n = 0
+        raw = ""
+        sandbox = False
+        out = str(tmp_path / "dry.json")
+        config = "hybrid"
+        max_usd = None
+        dry_run = True
+        cap = None
+
+    def boom(*_a, **_k):
+        raise AssertionError("network")
+
+    monkeypatch.setattr("rrm.reader.metacall.post_responses", boom)
+    assert scripts_live.run_live(Args(), [], Path("apps/reader/scripts/liveart_audit.mjs"), tmp_path) == 0
+    dry = json.loads((tmp_path / "dry.json").read_text(encoding="utf-8"))
+    assert dry["dry_run"] is True and dry["n"] == 8 and dry["code"] == 8
+    assert dry["by_model"][scripts_live.SPARK]["calls"] == 24
+    assert dry["by_model"][scripts_live.WONDER]["calls"] == 16
+    assert dry["output_x2_usd"] > dry["total_usd"] > 0
+
+    class Tight(Args):
+        config = "spark"
+        dry_run = False
+        max_usd = 0.0
+        cap = 1.0
+        out = str(tmp_path / "budget.json")
+
+    def refuse(*_a, **_k):
+        raise AssertionError("call")
+
+    monkeypatch.setattr(scripts_live, "_call", refuse)
+    assert scripts_live.run_live(Tight(), [], Path("missing"), tmp_path) == 0
+    budget = json.loads((tmp_path / "budget.json").read_text(encoding="utf-8"))
+    assert budget["stopped"] == "budget" and budget["n"] == 1 and budget["total_usd"] == 0
+    assert "BUDGET" in capsys.readouterr().out
+
+    repo = Path(__file__).resolve().parents[1]
+    graded = scripts_live._grade(
+        repo / "apps/reader/scripts/liveart_audit.mjs",
+        tmp_path,
+        "softmax-temp",
+        "",
+        gold_widget("softmax_temperature"),
+        False,
+    )
+    assert graded["verify"] == "pass", graded
+
+
 def test_probe_retries_once_on_504_or_timeout(monkeypatch):
     import sys
     from pathlib import Path

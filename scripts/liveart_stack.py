@@ -92,12 +92,19 @@ def main():
     parser.add_argument("--n", type=int, default=16)
     parser.add_argument("--sandbox", action="store_true")
     parser.add_argument("--out", default="")
-    parser.add_argument("--live", action="store_true", help="call muse-spark-1.3-contributor (needs MODEL_API_KEY)")
+    parser.add_argument("--live", action="store_true", help="call the model in --config (needs MODEL_API_KEY)")
+    parser.add_argument("--config", default="spark", choices=("spark", "wonder", "hybrid"),
+                        help="spark, wonder, or hybrid (Wonder: questions and explain; Spark: the rest)")
+    parser.add_argument("--max-usd", type=float, default=None, dest="max_usd",
+                        help="refuse the next call when spent + worst case would pass this")
+    parser.add_argument("--dry-run", action="store_true", help="price the prompts; do not call the API")
     parser.add_argument("--raw", default="", help="dir for key-free raw outputs (--live)")
-    parser.add_argument("--cap", type=float, default=1.0, help="hard USD cap (--live)")
+    parser.add_argument("--cap", type=float, default=None, help="stop after a call once total >= cap (default 1, or --max-usd)")
     parser.add_argument("--ids", default="", help="comma ids (--live), overrides --n order")
     args = parser.parse_args()
-    if args.live:
+    if args.cap is None:
+        args.cap = args.max_usd if args.max_usd is not None else 1.0
+    if args.live or args.dry_run:
         sys.path.insert(0, str(ROOT / "scripts"))
         from scripts_live import run_live
         return run_live(args, _ordered_cases(), NODE, ROOT)
