@@ -128,7 +128,8 @@ function sniff(file) {
 
 /** Pregunta, papers y texto de la caja, leídos del directorio de datos.
  *  box = el paper del ask (aunque esté cerrado: la caja sigue ahí).
- *  read = un paper abierto con ecuación, math y nota, si existe. */
+ *  read = un paper abierto con ecuación, math y nota, si existe.
+ *  full = un CC BY de los paper_ids de la pregunta: su punto sí está en el atlas. */
 function describe(dir) {
   const manifest = readJson(path.join(dir, "manifest.json")) || {};
   const row = (manifest.queries || [])[0] || {};
@@ -167,8 +168,10 @@ function describe(dir) {
     .sort((a, b) => Number(isByLicense(rawOf(b.id))) - Number(isByLicense(rawOf(a.id))) || Number(b.id === focus) - Number(a.id === focus));
   const read = readable[0]?.id || "";
   const openDone = done.filter(openOf);
-  const show = openDone.find((id) => !hasMap || isByLicense(rawOf(id))) || openDone[0] || "";
-  const full = (read && (!hasMap || isByLicense(rawOf(read))) ? read : "") || show;
+  const burst = new Set((Array.isArray(row.paper_ids) ? row.paper_ids : []).map((id) => String(id)));
+  const inBurst = (id) => !burst.size || burst.has(String(id));
+  const burstOpen = openDone.filter(inBurst);
+  const full = burstOpen.find((id) => !hasMap || isByLicense(rawOf(id))) || burstOpen[0] || "";
   const box = focus || read || full;
   const closed = hasMap && !gateOff ? done.filter((id) => !openOf(id)) : [];
   const gated = closed.find((id) => flagsOf(id).abs) || closed[0] || "";
@@ -507,10 +510,10 @@ async function main() {
   console.log(`ruta: ${OUT}`);
   if (report.pageerrors.length) { console.error("pageerror:", report.pageerrors.map((e) => e.message).join(" | ")); return 1; }
   if (missing.length) { console.error(`faltan capturas obligatorias: ${missing.join(", ")}`); return 1; }
-  const a11y = Object.entries(report.widths).flatMap(([w, list]) => list
-    .filter((step) => String(step.name).includes("71-a11y") && step.status !== "ok" && !String(step.why || "").startsWith("skip:"))
-    .map((step) => `${w}:${step.name}`));
-  if (a11y.length) { console.error(`71-a11y falló: ${a11y.join(", ")}`); return 1; }
+  const bad = Object.entries(report.widths).flatMap(([w, list]) => list
+    .filter((step) => step.status !== "ok" && !String(step.why || "").startsWith("skip:"))
+    .map((step) => `${w}:${step.name} (${step.why || "omitido"})`));
+  if (bad.length) { console.error(`omitidos sin skip: ${bad.join(", ")}`); return 1; }
   return 0;
 }
 
