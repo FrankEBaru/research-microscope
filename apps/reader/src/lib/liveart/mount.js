@@ -78,9 +78,11 @@ export function mountSandbox(el, widget, opts = {}) {
     if (!data.ok) return fail(data.reason || "throw");
     if (dead) return;
     if (report.usesT) {
+      const play = (widget.controls || []).find((control) => control.kind === "play");
       raf = window.requestAnimationFrame((now) => {
         if (!t0.now) t0.now = now;
-        t = (now - t0.now) / 1000;
+        const running = !play || Number(state[play.id]) >= 0.5;
+        if (running) t = (now - t0.now) / 1000;
         dirty = true;
         send();
       });

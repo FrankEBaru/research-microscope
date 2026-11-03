@@ -337,13 +337,38 @@ test("the gallery lists the fifteen topics and each one mounts", () => {
     "grok-delay", "denoise-strip", "kl-policy", "moe-drop", "online-softmax",
     "spec-best", "chinchilla", "pe-sincos", "resid-stream", "kv-grow",
   ];
-  assert.deepEqual(ROUND.map((entry) => entry.widget.id), ids);
+  const extra = ["giou-gap", "double-descent", "lottery-keep"];
+  assert.deepEqual(ROUND.map((entry) => entry.widget.id), ids.concat(extra));
   const redrawn = ROUND.filter((entry) => entry.source === "round").map((entry) => entry.widget.id);
   assert.deepEqual(redrawn, ids);
+  assert.deepEqual(ROUND.filter((entry) => entry.source === "noslider").map((entry) => entry.widget.id), extra);
   for (const entry of ROUND) {
     const report = verifyWidget(entry.widget);
     assert.equal(report.accept, true, entry.widget.id + " " + report.reasons.join(","));
   }
+  const skip = ROUND.find((entry) => entry.widget.id === "resid-stream").widget.controls.find((control) => control.id === "skip");
+  const mode = ROUND.find((entry) => entry.widget.id === "int8-outlier").widget.controls.find((control) => control.id === "mode");
+  assert.equal(skip.kind, "toggle");
+  assert.equal(mode.kind, "select");
+  assert.equal(ROUND.find((entry) => entry.widget.id === "kv-grow").widget.controls.every((control) => !control.kind), true);
+});
+
+test("a select state that repeats the next one is inert", () => {
+  const draw = `function draw(ctx, state, t) {
+    var x = state.mode < 1 ? 12 : 80;
+    ctx.fillRect(x, 16, 36, 24);
+  }`;
+  const report = verifyWidget(widget(draw, [{
+    id: "mode",
+    label: "modo",
+    kind: "select",
+    options: ["a", "b", "c"],
+    min: 0,
+    max: 2,
+    value: 0,
+    step: 1,
+  }]));
+  assert.ok(report.reasons.includes("slop_inert:mode"), report.reasons.join(","));
 });
 
 test("oversized draw is rejected", () => {

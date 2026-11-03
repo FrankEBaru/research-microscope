@@ -20,11 +20,61 @@ function num(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+const CONTROL_CORE = ["id", "label", "max", "min", "step", "value"];
+const CONTROL_EXTRA = new Set(["kind", "options", "prompt", "answer"]);
+const KINDS = new Set(["slider", "toggle", "select", "button", "play", "drag", "pick", "predict"]);
+const DISCRETE = new Set(["toggle", "select", "button", "pick", "predict"]);
+
+function controlShape(item, seen) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return true;
+  const keys = Object.keys(item);
+  if (!CONTROL_CORE.every((key) => keys.includes(key))) return true;
+  if (keys.some((key) => !CONTROL_CORE.includes(key) && !CONTROL_EXTRA.has(key))) return true;
+  if (typeof item.id !== "string" || !ID_RE.test(item.id) || RESERVED.has(item.id) || seen.has(item.id)) return true;
+  seen.add(item.id);
+  if (typeof item.label !== "string" || !item.label.trim() || item.label.length > LIMITS.label) return true;
+  if (![item.min, item.max, item.value, item.step].every(num) || !(item.min < item.max) || !(item.step > 0) || item.value < item.min || item.value > item.max) return true;
+  const kind = item.kind == null ? "slider" : item.kind;
+  if (!KINDS.has(kind)) return true;
+  const steps = Math.round((item.max - item.min) / item.step);
+  if (kind === "toggle" || kind === "play") {
+    if (item.min !== 0 || item.max !== 1 || item.step !== 1) return true;
+  }
+  if (kind === "select" || kind === "predict") {
+    if (!Array.isArray(item.options) || item.options.length < 2 || item.options.length > 4) return true;
+    if (item.options.some((option) => typeof option !== "string" || !option.trim() || option.length > 40)) return true;
+  }
+  if (kind === "select" && (item.step !== 1 || steps + 1 !== item.options.length || steps > 8)) return true;
+  if (kind === "predict") {
+    if (item.min !== 0 || item.step !== 1 || item.max !== item.options.length || steps > 8) return true;
+    if (item.prompt != null && (typeof item.prompt !== "string" || !item.prompt.trim() || item.prompt.length > 90)) return true;
+    if (!num(item.answer) || item.answer < 1 || item.answer > item.max) return true;
+  }
+  if ((kind === "button" || kind === "pick") && (item.step !== 1 || steps > 8)) return true;
+  return false;
+}
+
+function sampleControl(control) {
+  const kind = control.kind || "slider";
+  const steps = Math.round((control.max - control.min) / control.step);
+  const aligned = Math.abs((control.max - control.min) / control.step - steps) < 1e-6;
+  if (DISCRETE.has(kind) && aligned && steps >= 1 && steps <= 8) {
+    const values = [];
+    for (let i = 0; i <= steps; i += 1) values.push(control.min + i * control.step);
+    return values;
+  }
+  if (kind === "drag") return [control.min, (control.min + control.max) / 2, control.max];
+  return [control.min, control.max];
+}
+
 export function shapeErrors(widget) {
   if (!widget || typeof widget !== "object" || Array.isArray(widget)) return ["not_object"];
   const errors = [];
-  const extra = Object.keys(widget).filter((key) => !["id", "topic", "title", "explain", "questions", "controls", "draw"].includes(key));
+  const extra = Object.keys(widget).filter((key) => !["id", "topic", "title", "explain", "questions", "controls", "draw", "equation", "anchor", "cite"].includes(key));
   if (extra.length) errors.push("extra_keys");
+  if (widget.equation != null && (typeof widget.equation !== "string" || !widget.equation.trim() || widget.equation.length > 500)) errors.push("equation");
+  if (widget.anchor != null && (typeof widget.anchor !== "string" || widget.anchor.length < 12 || widget.anchor.length > 400)) errors.push("anchor");
+  if (widget.cite != null && (typeof widget.cite !== "string" || widget.cite.length < 4 || widget.cite.length > 80)) errors.push("cite");
   if (typeof widget.topic !== "string" || !TOPIC_RE.test(widget.topic)) errors.push("topic");
   if (typeof widget.title !== "string" || !widget.title.trim() || widget.title.length > LIMITS.title) errors.push("title");
   if (typeof widget.explain !== "string" || !widget.explain.trim() || widget.explain.length > LIMITS.explain) errors.push("explain");
@@ -44,15 +94,7 @@ export function shapeErrors(widget) {
   else {
     const seen = new Set();
     for (const item of controls) {
-      const keys = item && typeof item === "object" ? Object.keys(item).sort().join(",") : "";
-      if (keys !== "id,label,max,min,step,value") { errors.push("control"); break; }
-      if (typeof item.id !== "string" || !ID_RE.test(item.id) || RESERVED.has(item.id) || seen.has(item.id)) { errors.push("control"); break; }
-      seen.add(item.id);
-      if (typeof item.label !== "string" || !item.label.trim() || item.label.length > LIMITS.label) { errors.push("control"); break; }
-      if (![item.min, item.max, item.value, item.step].every(num) || !(item.min < item.max) || !(item.step > 0) || item.value < item.min || item.value > item.max) {
-        errors.push("control");
-        break;
-      }
+      if (controlShape(item, seen)) { errors.push("control"); break; }
     }
   }
   return errors;
@@ -203,14 +245,23 @@ export function verifyWidget(widget, opts = {}) {
   if (!readAny) reasons.push("dead_control");
   else {
     for (const control of controls) {
-      if (!base.reads.has(control.id)) { reasons.push("slop_inert:" + control.id); continue; }
-      try {
-        const lo = execute(ast, baseState(widget, { [control.id]: control.min }), 0, HOST.step_cap);
-        const hi = execute(ast, baseState(widget, { [control.id]: control.max }), 0, HOST.step_cap);
-        if (!geometryChanged(lo.calls, hi.calls, HOST.pixel_floor)) reasons.push("slop_inert:" + control.id);
-      } catch (err) {
-        reasons.push(reasonOf(err));
-        detail.push(noted(err));
+      if (!base.reads.has(control.id)) {
+        if (control.kind === "play" && base.usesT) continue;
+        reasons.push("slop_inert:" + control.id);
+        continue;
+      }
+      let prev = null;
+      for (const value of sampleControl(control)) {
+        try {
+          const run = execute(ast, baseState(widget, { [control.id]: value }), 0, HOST.step_cap);
+          if (!painted(run.calls)) reasons.push("blank");
+          if (prev && !geometryChanged(prev, run.calls, HOST.pixel_floor)) reasons.push("slop_inert:" + control.id);
+          prev = run.calls;
+        } catch (err) {
+          reasons.push(reasonOf(err));
+          detail.push(noted(err));
+          break;
+        }
       }
     }
   }

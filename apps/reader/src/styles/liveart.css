@@ -50,6 +50,41 @@
 .liveart-controls label { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; color: var(--ink-2); font-size: 14px; }
 .liveart-controls strong { font-variant-numeric: tabular-nums; color: var(--ink); }
 .liveart-controls input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+.liveart-choice { display: grid; gap: 8px; }
+.liveart-choice input[type="range"] { width: 100%; accent-color: var(--accent); }
+.liveart-choice button, .liveart-choice select {
+  min-height: 40px;
+  border: 1px solid var(--rule-2);
+  background: var(--sheet);
+  color: var(--ink);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 15px;
+  padding: 8px 12px;
+}
+.liveart-choice button[aria-pressed="true"] { background: var(--ink); color: var(--page); }
+.liveart-choice button:focus-visible, .liveart-choice select:focus-visible, .liveart-plane:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.liveart-picks { display: flex; flex-wrap: wrap; gap: 8px; }
+.liveart-plane {
+  position: relative;
+  height: 140px;
+  border: 1px solid var(--rule-2);
+  border-radius: 12px;
+  background: var(--page-2, var(--sheet));
+  touch-action: none;
+}
+.liveart-plane i {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.liveart-fallback-range { opacity: 0.72; }
+.liveart-anchor { margin: 8px 0 0; }
+.liveart-anchor p { margin: 6px 0 0; color: var(--ink-2); font-size: 16px; line-height: 1.45; }
+.liveart-cite { color: var(--ink-3); font-size: 13px; }
 .liveart-card ul { margin: 8px 0 0; padding-left: 18px; color: var(--ink-2); }
 .liveart-card li { margin: 4px 0; }
 .liveart-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }

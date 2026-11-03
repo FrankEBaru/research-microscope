@@ -1,4 +1,7 @@
 // The fifteen topics. Every entry is a redesign posted for this quality pass.
+// noslider.js appends three 0.4 controls that still carry a 0.3 numeric fallback.
+import { NOSLIDER } from "./noslider.js";
+
 export const ROUND = [
   {
     "source": "round",
@@ -129,6 +132,8 @@ export const ROUND = [
         {
           "id": "mode",
           "label": "modo 0 absmax·1 tirar·2 int8",
+          "kind": "select",
+          "options": ["absmax", "tirar outlier", "LLM.int8()"],
           "min": 0,
           "max": 2,
           "value": 0,
@@ -643,6 +648,7 @@ export const ROUND = [
         {
           "id": "skip",
           "label": "atajo",
+          "kind": "toggle",
           "min": 0,
           "max": 1,
           "value": 1,
@@ -698,4 +704,4 @@ export const ROUND = [
       "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, len = Math.round(state.len), heads = Math.round(state.kv);\n  var layers = 4, cells = layers * len * heads * 2, budget = 256, cap = 1536;\n  var layer, tok, x, y, bh;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var rowH = h * 0.135;\n  ctx.font = \"13px sans-serif\";\n  ctx.fillStyle = \"#8a8175\";\n  for (layer = 0; layer < layers; layer++) ctx.fillText(\"L\" + (layer + 1), 8, h * 0.1 + layer * rowH);\n  var cw = Math.min(22, (w - 56) / len - 2);\n  if (cw < 4) cw = 4;\n  for (layer = 0; layer < layers; layer++) {\n    y = h * 0.04 + layer * rowH;\n    for (tok = 0; tok < len; tok++) {\n      x = 36 + tok * (cw + 3);\n      bh = 4 + heads * rowH * 0.1;\n      if (bh > rowH * 0.85) bh = rowH * 0.85;\n      ctx.fillStyle = \"#1f4b99\";\n      ctx.fillRect(x, y + rowH * 0.7 - bh, cw, bh * 0.55);\n      ctx.fillStyle = \"#c4512c\";\n      ctx.fillRect(x, y + rowH * 0.7 - bh * 0.45, cw, bh * 0.45);\n    }\n  }\n  var regime = heads <= 1 ? \"MQA\" : (heads >= 8 ? \"MHA\" : \"GQA\");\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"15px sans-serif\";\n  ctx.fillText(\"8 queries comparten \" + heads + (heads === 1 ? \" grupo KV\" : \" grupos KV\"), 28, h * 0.62);\n  ctx.fillText(regime + \"   4 x \" + len + \" x \" + heads + \" x 2 = \" + cells, 28, h * 0.70);\n  ctx.fillStyle = \"#e4d6c4\";\n  ctx.fillRect(28, h * 0.76, w - 48, 12);\n  var mw = (w - 48) * cells / cap;\n  if (mw > w - 48) mw = w - 48;\n  ctx.fillStyle = cells > budget ? \"#c4512c\" : \"#2e7d32\";\n  ctx.fillRect(28, h * 0.76, Math.max(2, mw), 12);\n  var bx = 28 + (w - 48) * budget / cap;\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.beginPath();\n  ctx.moveTo(bx, h * 0.74);\n  ctx.lineTo(bx, h * 0.82);\n  ctx.stroke();\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"cupo\", bx + 6, h * 0.90);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"K azul  V coral    MHA = 8 grupos    MQA = 1    cupo de juguete\", 28, h * 0.96);\n}"
     }
   }
-];
+].concat(NOSLIDER);
