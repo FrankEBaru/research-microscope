@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { fallbackText } from "@/lib/liveart/fallback.js";
 import { mountSandbox } from "@/lib/liveart/mount.js";
+import { GOLD } from "@/lib/liveart/gold.js";
 import { ROUND } from "@/lib/liveart/round.js";
+import { SHOWCASE } from "@/lib/liveart/showcase.js";
 import { VERSION, liveOn } from "@/lib/liveart/spec.js";
 import { Tex } from "@/lib/math";
 import "@/styles/liveart.css";
@@ -23,10 +25,17 @@ type Knob = {
 
 type Noted = { equation?: string; anchor?: string; cite?: string };
 
-const CATALOG = ROUND;
+// RRM-90: the quality round (#59/#64) plus #57's figures and contract examples.
+const CATALOG = [
+  ...ROUND,
+  ...SHOWCASE.map((item) => ({ ...item, source: "figure" })),
+  ...GOLD.map((widget) => ({ widget, claim: "", source: "contract" })),
+];
 
 function kicker(source: string) {
   if (source === "round") return "Quality round";
+  if (source === "figure") return "Figure";
+  if (source === "contract") return "Contract example";
   return "Current figure";
 }
 

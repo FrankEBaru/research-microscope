@@ -1,0 +1,129 @@
+{
+ "id": "pe-sincos",
+ "claim": {
+  "text": "Sinusoidal positional encoding uses sin(pos / 10000^{2i/d}), so nearby positions have a similar encoding.",
+  "latex": "",
+  "context": "",
+  "arxiv": "1706.03762"
+ },
+ "spec": {
+  "archetype": "curve",
+  "constraints": [
+   "abs(2*i) <= sqrt(d*d)"
+  ],
+  "controls": [
+   {
+    "id": "delta",
+    "label": "Position distance",
+    "max": 100,
+    "min": 0,
+    "step": 1,
+    "value": 5
+   },
+   {
+    "id": "i",
+    "label": "Dimension index i",
+    "max": 8,
+    "min": 0,
+    "step": 1,
+    "value": 0
+   },
+   {
+    "id": "d",
+    "label": "Model dimension d",
+    "max": 512,
+    "min": 16,
+    "step": 16,
+    "value": 512
+   }
+  ],
+  "derived": [
+   {
+    "formula": "delta / pow(10000, 2*i/d)",
+    "name": "phase"
+   },
+   {
+    "formula": "cos(delta / pow(10000, 2*i/d))",
+    "name": "similarity"
+   }
+  ],
+  "direction": [
+   {
+    "control": "delta",
+    "effect": "down",
+    "readout": "similarity"
+   }
+  ],
+  "explain": "Illustrative toy of arXiv 1706.03762 sinusoidal positional encoding: the curve shows encoding similarity falling as position distance grows, with the smooth nearby-position limit as its condition.",
+  "questions": [
+   {
+    "q": "Predict how alike encodings stay if delta is 50 before moving anything?",
+    "why": "Elicits prior about nearby similarity."
+   },
+   {
+    "q": "Is it true that any i like 4 always keeps nearby positions similar before moving i?",
+    "why": "Probes frequency misunderstanding across dimensions."
+   },
+   {
+    "q": "What do you expect from a larger d like 256 for slow dimensions?",
+    "why": "Checks role of model dimension."
+   },
+   {
+    "q": "How would you describe nearby similarity if delta is 2 without computing it?",
+    "why": "Focuses on qualitative mechanism."
+   }
+  ],
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "delta",
+    "label": "Position distance",
+    "max": 100,
+    "min": 0,
+    "step": 1,
+    "value": 5
+   },
+   {
+    "id": "i",
+    "label": "Dimension index i",
+    "max": 8,
+    "min": 0,
+    "step": 1,
+    "value": 0
+   },
+   {
+    "id": "d",
+    "label": "Model dimension d",
+    "max": 512,
+    "min": 16,
+    "step": 16,
+    "value": 512
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var delta = state.delta; var ii = state.i; var d = state.d; function fmt(v) { return Math.round(v * 100) / 100; } function divr() { return Math.pow(10000, 2 * ii / d); } var D = divr(); var phase = delta / D; var sim = Math.cos(phase); var x0 = 52; var y0 = 30; var pw = 480; var ph = 220; function X(dd) { return x0 + dd / 100 * pw; } function Y(s) { return y0 + (1 - s) / 2 * ph; } ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); ctx.strokeStyle = \"#1d1a16\"; ctx.lineWidth = 1; ctx.strokeRect(x0, y0, pw, ph); ctx.beginPath(); ctx.moveTo(x0, Y(0)); ctx.lineTo(x0 + pw, Y(0)); ctx.strokeStyle = \"#c9bda9\"; ctx.lineWidth = 1; ctx.stroke(); ctx.beginPath(); var k = 0; var dd = 0; var s = 0; for (k = 0; k <= 120; k++) { dd = k / 120 * 100; s = Math.cos(dd / D); if (k === 0) { ctx.moveTo(X(dd), Y(s)); } else { ctx.lineTo(X(dd), Y(s)); } } ctx.strokeStyle = \"#1f4b99\"; ctx.lineWidth = 2; ctx.stroke(); var mx = X(delta); var my = Y(sim); ctx.strokeStyle = \"#c4512c\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(mx, y0); ctx.lineTo(mx, y0 + ph); ctx.stroke(); ctx.fillStyle = \"#c4512c\"; ctx.beginPath(); ctx.arc(mx, my, 6, 0, 6.2832); ctx.fill(); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"13px sans-serif\"; ctx.fillText(\"similarity vs distance\", x0, 18); ctx.font = \"12px sans-serif\"; ctx.fillText(\"phase = \" + fmt(phase), 52, 296); ctx.fillText(\"similarity = \" + fmt(sim), 52, 316); ctx.fillText(\"delta 0 to 100, cos curve\", 320, 296); ctx.fillText(\"i sets frequency via d\", 320, 316); }",
+  "explain": "Illustrative toy of arXiv 1706.03762 sinusoidal positional encoding: the curve shows encoding similarity falling as position distance grows, with the smooth nearby-position limit as its condition.",
+  "id": "positional-nearby-sim",
+  "questions": [
+   {
+    "q": "Predict how alike encodings stay if delta is 50 before moving anything?",
+    "why": "Elicits prior about nearby similarity."
+   },
+   {
+    "q": "Is it true that any i like 4 always keeps nearby positions similar before moving i?",
+    "why": "Probes frequency misunderstanding across dimensions."
+   },
+   {
+    "q": "What do you expect from a larger d like 256 for slow dimensions?",
+    "why": "Checks role of model dimension."
+   },
+   {
+    "q": "How would you describe nearby similarity if delta is 2 without computing it?",
+    "why": "Focuses on qualitative mechanism."
+   }
+  ],
+  "title": "Nearby positions share sinusoidal encoding",
+  "topic": "positional_encoding"
+ }
+}

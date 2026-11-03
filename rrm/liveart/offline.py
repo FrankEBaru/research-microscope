@@ -9,6 +9,7 @@ import math
 import re
 
 from rrm.liveart.contract import LIMITS, RESERVED_IDS, banned_in, live_on, network_in
+from rrm.liveart.wave2 import extra_topics
 from rrm.liveart.fewshots import DRAWS
 from rrm.reader.promptguard import injection
 
@@ -330,8 +331,50 @@ def _ssm(blob):
     return _both(blob, re.compile(r"\bdelta\b", re.I), re.compile(r"hidden state|resets", re.I))
 
 
-# Orden = desempate. El más específico va primero.
-TOPICS = (
+def _erf_field(blob):
+    return 3 if re.search(r"effective receptive field", blob, re.I) else 0
+
+
+def _gcn(blob):
+    return 3 if re.search(r"graph convolutional", blob, re.I) else 0
+
+
+# quant, erf y gcn van primero: el nombre propio puntúa 3 y gana el empate.
+# «8 bits» pelado no entra. Sin draw: el stack emulado cae en no_draw.
+_OPEN = (
+    {
+        "name": "erf",
+        "score": _erf_field,
+        "controls": ("depth",),
+        "mark": "campo",
+        "explain": (
+            "El campo receptivo efectivo es una gaussiana y cubre solo una parte del campo teórico. "
+            "Más profundidad o un kernel mayor ensancha la campana."
+        ),
+        "questions": (
+            ("¿El campo efectivo llena todo el teórico?", "no, es solo una fracción"),
+            ("¿Qué ensancha la campana?", "la profundidad y el kernel"),
+        ),
+    },
+    {
+        "name": "gcn",
+        "score": _gcn,
+        "controls": ("depth",),
+        "mark": "vecino",
+        "explain": (
+            "Una red convolucional de grafos mezcla cada nodo con sus vecinos. "
+            "Un nodo aislado no recibe mensaje, así que su vecindario queda vacío."
+        ),
+        "questions": (
+            ("¿Un nodo aislado recibe el mensaje de la capa?", "no, no tiene vecinos"),
+            ("¿Con quién se mezcla cada nodo?", "con sus vecinos"),
+        ),
+    },
+)
+
+
+# Orden = desempate. El más específico va primero. wave2 va delante: un nombre propio puntúa 3.
+TOPICS = _OPEN + extra_topics() + (
     {
         "name": "online_softmax",
         "score": _online_softmax,

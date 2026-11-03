@@ -1,0 +1,108 @@
+{
+ "id": "kl-policy",
+ "claim": {
+  "text": "In RLHF the optimal policy is the reference policy times exp(reward / beta), so a small beta lets one token take the rew",
+  "latex": "",
+  "context": "",
+  "arxiv": "2203.02155"
+ },
+ "spec": {
+  "archetype": "bars",
+  "constraints": [],
+  "controls": [
+   {
+    "id": "beta",
+    "label": "KL strength beta",
+    "max": 2.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 0.5
+   },
+   {
+    "id": "dr",
+    "label": "Reward gap top tokens",
+    "max": 4.0,
+    "min": 0.0,
+    "step": 0.2,
+    "value": 2.0
+   }
+  ],
+  "derived": [
+   {
+    "formula": "1/(1+exp(-dr/beta))",
+    "name": "p_top"
+   }
+  ],
+  "direction": [
+   {
+    "control": "beta",
+    "effect": "down",
+    "readout": "p_top"
+   }
+  ],
+  "explain": "Toy illustration for 2203.02155: two reward bars become one dominant policy bar when beta is small. Watch the p_top number: near 1 means one token takes the reward.",
+  "questions": [
+   {
+    "q": "Predict what happens to p_top when beta is 0.2?",
+    "why": "Tests small-beta concentration."
+   },
+   {
+    "q": "What is p_top when beta is 1.5?",
+    "why": "Tests large-beta smoothing."
+   },
+   {
+    "q": "How does p_top change when dr is 3?",
+    "why": "Tests larger reward gap."
+   },
+   {
+    "q": "What do the bars show when dr is 0.4?",
+    "why": "Tests small gap uniformity."
+   }
+  ],
+  "scale": true,
+  "threshold_formula": "beta - dr"
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "beta",
+    "label": "KL strength beta",
+    "max": 2.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 0.5
+   },
+   {
+    "id": "dr",
+    "label": "Reward gap top tokens",
+    "max": 4.0,
+    "min": 0.0,
+    "step": 0.2,
+    "value": 2.0
+   }
+  ],
+  "draw": "function draw(ctx, state, t) {\n  function fmt(v) { return Math.round(v * 100) / 100; }\n  var w = state.w;\n  var h = state.h;\n  var beta = state.beta;\n  var dr = state.dr;\n  var p = 1 / (1 + Math.exp(-dr / beta));\n  var q = 1 - p;\n  var rA = 2 + dr / 2;\n  var rB = 2 - dr / 2;\n  var maxW = 190;\n  var rW_A = rA / 4 * maxW;\n  var rW_B = Math.max(0, rB / 4 * maxW);\n  var pW_A = p * maxW;\n  var pW_B = q * maxW;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.font = \"13px sans-serif\";\n  ctx.textAlign = \"left\";\n  ctx.textBaseline = \"alphabetic\";\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.fillText(\"reward\", 40, 30);\n  ctx.fillText(\"policy\", 340, 30);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(40, 60, rW_A, 34);\n  ctx.fillRect(40, 110, rW_B, 34);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillRect(340, 60, pW_A, 34);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(340, 110, pW_B, 34);\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"14px sans-serif\";\n  ctx.fillText(\"p_top = \" + fmt(p), 40, 200);\n  ctx.font = \"12px sans-serif\";\n  if (p > 0.9) {\n    ctx.fillText(\"one token takes the reward\", 340, 200);\n  } else {\n    ctx.fillText(\"policy stays split\", 340, 200);\n  }\n}",
+  "explain": "Toy illustration for 2203.02155: two reward bars become one dominant policy bar when beta is small. Watch the p_top number: near 1 means one token takes the reward.",
+  "id": "kl-rlhf-small-beta",
+  "questions": [
+   {
+    "q": "Predict what happens to p_top when beta is 0.2?",
+    "why": "Tests small-beta concentration."
+   },
+   {
+    "q": "What is p_top when beta is 1.5?",
+    "why": "Tests large-beta smoothing."
+   },
+   {
+    "q": "How does p_top change when dr is 3?",
+    "why": "Tests larger reward gap."
+   },
+   {
+    "q": "What do the bars show when dr is 0.4?",
+    "why": "Tests small gap uniformity."
+   }
+  ],
+  "title": "Small beta lets one token take the reward",
+  "topic": "kl_rlhf"
+ }
+}

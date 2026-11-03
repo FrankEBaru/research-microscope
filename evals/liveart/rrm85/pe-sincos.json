@@ -1,0 +1,59 @@
+{
+ "controls": [
+  {
+   "id": "base",
+   "label": "base",
+   "max": 20000,
+   "min": 1000,
+   "step": 1000,
+   "value": 10000
+  },
+  {
+   "id": "pos",
+   "label": "pos",
+   "max": 120,
+   "min": 0,
+   "step": 1,
+   "value": 5
+  },
+  {
+   "id": "dim",
+   "label": "dim i",
+   "max": 8,
+   "min": 0,
+   "step": 1,
+   "value": 4
+  },
+  {
+   "id": "d",
+   "label": "d model",
+   "max": 512,
+   "min": 16,
+   "step": 16,
+   "value": 64
+  }
+ ],
+ "draw": "function draw(ctx, state, t) {\n  var top = 36;\n  var bot = 286;\n  var left = 48;\n  var right = 560;\n  var w = state.w;\n  var h = state.h;\n  var base = state.base;\n  var pos = state.pos;\n  var i = state.dim;\n  var d = state.d;\n  var thr = 0;\n  function fmt(v) { return Math.round(v * 100) / 100; }\n  var mid = (top + bot) / 2;\n  var amp = (bot - top) / 2 - 10;\n  var e = (2 * i) / d;\n  var den = Math.pow(base, e);\n  var N = 60;\n  var pmax = 120;\n  var k = 0;\n  var p = 0;\n  var arg = 0;\n  var v = 0;\n  var x = 0;\n  var y = 0;\n  var ythr = mid - thr * amp;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(left, ythr);\n  ctx.lineTo(right, ythr);\n  ctx.stroke();\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  for (k = 0; k <= N; k++) {\n    p = (k / N) * pmax;\n    arg = p / den;\n    v = Math.sin(arg);\n    x = left + (p / pmax) * (right - left);\n    y = mid - v * amp;\n    if (k === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); };\n  };\n  ctx.stroke();\n  arg = pos / den;\n  v = Math.sin(arg);\n  x = left + (pos / pmax) * (right - left);\n  y = mid - v * amp;\n  ctx.fillStyle = \"#c4512c\";\n  ctx.beginPath();\n  ctx.arc(x, y, 6, 0, Math.PI * 2);\n  ctx.fill();\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(x, top);\n  ctx.lineTo(x, bot);\n  ctx.stroke();\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"threshold \" + fmt(thr), 48, ythr - 8);\n  ctx.fillText(\"pos = \" + fmt(pos) + \" val = \" + fmt(v), 48, 318);\n  ctx.fillText(\"toy arXiv 1706.03762\", 48, 344);\n}",
+ "explain": "Moving pos slides along the sin(pos / 10000^{2i/d}) toy curve from arXiv 1706.03762, so close pos give close values and the reading pos = value tracks the curve while the threshold line stays still, which only holds if d is fixed.",
+ "id": "positional-encoding-pos-slide",
+ "questions": [
+  {
+   "q": "Predict which high dimensions stay flat when base rises to 20000?",
+   "why": "Reader wonders how base slows waves."
+  },
+  {
+   "q": "Why does position 1 still resemble position 2 when pos moves to 5?",
+   "why": "Reader doubts nearby similarity holds."
+  },
+  {
+   "q": "Why does dimension 0 oscillate faster than dimension 8 at pos 50?",
+   "why": "Reader notices different speeds per dimension."
+  },
+  {
+   "q": "Why does pos 100 stay distinct from pos 101 when d grows to 512?",
+   "why": "Reader checks far positions separate."
+  }
+ ],
+ "title": "Nearby positions share sine values",
+ "topic": "positional_encoding"
+}

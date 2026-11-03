@@ -1,0 +1,126 @@
+{
+ "id": "gqa-share",
+ "claim": {
+  "text": "Grouped-query attention lets several queries share one key and value, so the KV cache grows with the number of KV heads ",
+  "latex": "",
+  "context": "",
+  "arxiv": "2305.13245"
+ },
+ "spec": {
+  "archetype": "blocks",
+  "controls": [
+   {
+    "id": "qheads",
+    "label": "Query heads",
+    "max": 64.0,
+    "min": 8.0,
+    "step": 8.0,
+    "value": 32.0
+   },
+   {
+    "id": "kvheads",
+    "label": "KV heads",
+    "max": 16.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 4.0
+   },
+   {
+    "id": "seqlen",
+    "label": "Sequence length",
+    "max": 2048.0,
+    "min": 128.0,
+    "step": 128.0,
+    "value": 1024.0
+   }
+  ],
+  "derived": [
+   {
+    "formula": "kvheads*seqlen",
+    "name": "kv_cache"
+   },
+   {
+    "formula": "qheads/kvheads",
+    "name": "grouping"
+   }
+  ],
+  "direction": [
+   {
+    "control": "kvheads",
+    "effect": "up",
+    "readout": "kv_cache"
+   }
+  ],
+  "explain": "Illustrative toy from arXiv 2305.13245 showing grouped queries sharing one key and value blocks; KV cache grows with KV heads, not queries.",
+  "questions": [
+   {
+    "q": "Predict the kv_cache when kvheads is 8?",
+    "why": "Tests cache scaling with KV heads."
+   },
+   {
+    "q": "What is the grouping when qheads is 32?",
+    "why": "Tests sharing ratio."
+   },
+   {
+    "q": "What is the kv_cache when seqlen is 1024?",
+    "why": "Tests sequence scaling."
+   },
+   {
+    "q": "What is the kv_cache when kvheads is 2?",
+    "why": "Tests small KV head count."
+   }
+  ],
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "qheads",
+    "label": "Query heads",
+    "max": 64.0,
+    "min": 8.0,
+    "step": 8.0,
+    "value": 32.0
+   },
+   {
+    "id": "kvheads",
+    "label": "KV heads",
+    "max": 16.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 4.0
+   },
+   {
+    "id": "seqlen",
+    "label": "Sequence length",
+    "max": 2048.0,
+    "min": 128.0,
+    "step": 128.0,
+    "value": 1024.0
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var qheads = state.qheads; var kvheads = state.kvheads; var seqlen = state.seqlen; function fmt(v) { return Math.round(v * 100) / 100; } ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); ctx.fillStyle = \"#1a1a1a\"; ctx.font = \"13px sans-serif\"; ctx.textAlign = \"left\"; ctx.textBaseline = \"top\"; ctx.fillText(\"Q heads share KV blocks\", 24, 12); ctx.fillText(\"kv_cache = \" + fmt(kvheads * seqlen), 300, 12); ctx.fillText(\"grouping = \" + fmt(qheads / kvheads), 470, 12); var i = 0; var g = 0; var bw = 560 / kvheads; var bx = 0; var by = 44; ctx.font = \"11px sans-serif\"; for (i = 0; i < kvheads; i = i + 1) { bx = 40 + i * bw; ctx.fillStyle = \"#c4512c\"; ctx.fillRect(bx + 2, by, bw - 4, 26); ctx.fillStyle = \"#ffffff\"; ctx.textAlign = \"center\"; ctx.fillText(\"KV\", bx + bw / 2, 50); } ctx.strokeStyle = \"#c4512c\"; ctx.lineWidth = 1; ctx.beginPath(); for (i = 0; i < kvheads; i = i + 1) { bx = 40 + i * bw + bw / 2; ctx.moveTo(bx, 70); ctx.lineTo(bx, 88); } ctx.stroke(); var cols = 16; var qx = 0; var qy = 0; var grp = 0; var gx0 = 0; var gx1 = 0; for (i = 0; i < qheads; i = i + 1) { grp = Math.floor(i * kvheads / qheads); qx = 40 + (i % cols) * 33.5; qy = 94 + Math.floor(i / cols) * 24; gx0 = 40 + grp * bw; gx1 = gx0 + bw; if (grp % 2 === 0) { ctx.fillStyle = \"#1f4b99\"; } else { ctx.fillStyle = \"#2e8b8b\"; } ctx.fillRect(qx, qy, 27, 17); ctx.strokeStyle = \"#1a1a1a\"; ctx.lineWidth = 1; ctx.strokeRect(qx, qy, 27, 17); } var maxCache = 32768; var frac = (kvheads * seqlen) / maxCache; var barMax = 520; var barLen = frac * barMax; var r = 0; ctx.textAlign = \"left\"; ctx.fillStyle = \"#1a1a1a\"; ctx.fillText(\"KV cache rows = KV heads, length = seqlen\", 24, 204); for (r = 0; r < kvheads; r = r + 1) { qy = 224 + r * 7; ctx.fillStyle = \"#e3d9c2\"; ctx.fillRect(80, qy, barMax, 5); ctx.fillStyle = \"#c4512c\"; ctx.fillRect(80, qy, barLen, 5); } ctx.fillStyle = \"#1a1a1a\"; ctx.fillText(\"seqlen\", 24, 224); ctx.fillText(\"clipped\", 600, 330); }",
+  "explain": "Illustrative toy from arXiv 2305.13245 showing grouped queries sharing one key and value blocks; KV cache grows with KV heads, not queries.",
+  "id": "gqa-blocks",
+  "questions": [
+   {
+    "q": "Predict the kv_cache when kvheads is 8?",
+    "why": "Tests cache scaling with KV heads."
+   },
+   {
+    "q": "What is the grouping when qheads is 32?",
+    "why": "Tests sharing ratio."
+   },
+   {
+    "q": "What is the kv_cache when seqlen is 1024?",
+    "why": "Tests sequence scaling."
+   },
+   {
+    "q": "What is the kv_cache when kvheads is 2?",
+    "why": "Tests small KV head count."
+   }
+  ],
+  "title": "Queries share keys: GQA groups",
+  "topic": "gqa"
+ }
+}

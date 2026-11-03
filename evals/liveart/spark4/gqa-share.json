@@ -1,0 +1,113 @@
+{
+ "id": "gqa-share",
+ "claim": {
+  "text": "Grouped-query attention lets several queries share one key and value, so the KV cache grows with the number of KV heads ",
+  "latex": "",
+  "context": "",
+  "arxiv": "2305.13245"
+ },
+ "spec": {
+  "archetype": "blocks",
+  "constraints": [
+   "kv_heads <= q_heads"
+  ],
+  "controls": [
+   {
+    "id": "kv_heads",
+    "label": "KV heads",
+    "max": 8.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 2.0
+   },
+   {
+    "id": "q_heads",
+    "label": "Query heads",
+    "max": 64.0,
+    "min": 8.0,
+    "step": 8.0,
+    "value": 32.0
+   }
+  ],
+  "derived": [
+   {
+    "formula": "kv_heads * 2",
+    "name": "cache_size"
+   },
+   {
+    "formula": "q_heads / kv_heads",
+    "name": "sharing_factor"
+   }
+  ],
+  "direction": [
+   {
+    "control": "kv_heads",
+    "effect": "up",
+    "readout": "cache_size"
+   }
+  ],
+  "explain": "Illustrative toy of arXiv 2305.13245: blocks show several query blocks sharing one key-value block, so the drawn cache grows only with KV heads. The limit kv_heads <= q_heads keeps sharing valid.",
+  "questions": [
+   {
+    "q": "Predict what kv_heads set to 4 will show before you move it?",
+    "why": "Elicit prior about cache growth."
+   },
+   {
+    "q": "Many think more queries need more cache: with q_heads at 32, what do you expect to see?",
+    "why": "Surface misunderstanding before moving control."
+   },
+   {
+    "q": "If kv_heads stays small while q_heads is 64, how is sharing shown?",
+    "why": "Test sharing interpretation."
+   },
+   {
+    "q": "With q_heads at 16 and kv_heads at 2, what grouping do you expect?",
+    "why": "Check grouping across settings."
+   }
+  ],
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "kv_heads",
+    "label": "KV heads",
+    "max": 8.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 2.0
+   },
+   {
+    "id": "q_heads",
+    "label": "Query heads",
+    "max": 64.0,
+    "min": 8.0,
+    "step": 8.0,
+    "value": 32.0
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var kv = state.kv_heads; var q = state.q_heads; function fmt(v) { return Math.round(v * 100) / 100; } ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); var palette = [\"#1f4b99\", \"#c4512c\", \"#2a7f62\", \"#8a5fc0\", \"#b5892e\", \"#3a9ad9\", \"#d46a9d\", \"#5a6b2d\"]; var qx = 40; var qy = 62; var qw = 360; var qh = 124; var colsPerRow = 16; if (q <= 16) { colsPerRow = 8; } var rows = Math.ceil(q / colsPerRow); var cellW = qw / colsPerRow; var cellH = qh / rows; var i = 0; var c = 0; var r = 0; var g = 0; var bx = 0; var by = 0; for (i = 0; i < q; i++) { c = i - Math.floor(i / colsPerRow) * colsPerRow; r = Math.floor(i / colsPerRow); g = Math.floor(i * kv / q); bx = qx + c * cellW + 2; by = qy + r * cellH + 2; ctx.fillStyle = palette[g]; ctx.fillRect(bx, by, cellW - 4, cellH - 5); } var kx = 40; var ky = 222; var kw = 360; var slot = kw / kv; var j = 0; var cx = 0; var kxx = 0; for (j = 0; j < kv; j++) { cx = kx + j * slot; ctx.fillStyle = palette[j]; ctx.globalAlpha = 0.28; ctx.fillRect(cx + 1, qy - 8, slot - 2, qh + 16); ctx.globalAlpha = 1; ctx.fillStyle = palette[j]; ctx.fillRect(cx + 4, ky, slot / 2 - 6, 44); ctx.fillRect(cx + slot / 2 + 1, ky, slot / 2 - 6, 44); ctx.strokeStyle = \"#222222\"; ctx.lineWidth = 1; ctx.strokeRect(cx + 4, ky, slot / 2 - 6, 44); ctx.strokeRect(cx + slot / 2 + 1, ky, slot / 2 - 6, 44); ctx.fillStyle = \"#222222\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"K\", cx + 8, ky + 27); ctx.fillText(\"V\", cx + slot / 2 + 5, ky + 27); } var qcx = 0; var qby = 0; var kcx = 0; ctx.lineWidth = 1; for (i = 0; i < q; i++) { c = i - Math.floor(i / colsPerRow) * colsPerRow; r = Math.floor(i / colsPerRow); g = Math.floor(i * kv / q); bx = qx + c * cellW + 2; by = qy + r * cellH + 2; qcx = bx + (cellW - 4) / 2; qby = by + cellH - 5; kcx = kx + (g + 0.5) * slot; ctx.strokeStyle = palette[g]; ctx.globalAlpha = 0.4; ctx.beginPath(); ctx.moveTo(qcx, qby); ctx.lineTo(kcx, ky); ctx.stroke(); ctx.globalAlpha = 1; } ctx.fillStyle = \"#222222\"; ctx.font = \"14px sans-serif\"; ctx.fillText(\"queries\", 40, 48); ctx.fillText(\"KV cache\", 40, 210); ctx.fillText(\"cache_size = \" + fmt(kv * 2), 440, 140); ctx.fillText(\"sharing_factor = \" + fmt(q / kv), 440, 166); ctx.font = \"12px sans-serif\"; ctx.fillText(\"q_heads = \" + fmt(q), 440, 192); ctx.fillText(\"kv_heads = \" + fmt(kv), 440, 212); }",
+  "explain": "Illustrative toy of arXiv 2305.13245: blocks show several query blocks sharing one key-value block, so the drawn cache grows only with KV heads. The limit kv_heads <= q_heads keeps sharing valid.",
+  "id": "gqa-share",
+  "questions": [
+   {
+    "q": "Predict what kv_heads set to 4 will show before you move it?",
+    "why": "Elicit prior about cache growth."
+   },
+   {
+    "q": "Many think more queries need more cache: with q_heads at 32, what do you expect to see?",
+    "why": "Surface misunderstanding before moving control."
+   },
+   {
+    "q": "If kv_heads stays small while q_heads is 64, how is sharing shown?",
+    "why": "Test sharing interpretation."
+   },
+   {
+    "q": "With q_heads at 16 and kv_heads at 2, what grouping do you expect?",
+    "why": "Check grouping across settings."
+   }
+  ],
+  "title": "Queries share keys and values",
+  "topic": "gqa"
+ }
+}

@@ -1,0 +1,110 @@
+{
+ "id": "adam-valley",
+ "claim": {
+  "text": "Adam steps by the bias-corrected first moment over the square root of the second moment, so a narrow valley does not mak",
+  "latex": "",
+  "context": "",
+  "arxiv": "1412.6980"
+ },
+ "spec": {
+  "archetype": "bars",
+  "controls": [
+   {
+    "id": "m",
+    "label": "bias-corrected mean",
+    "max": 2.0,
+    "min": 0.0,
+    "step": 0.05,
+    "value": 0.8
+   },
+   {
+    "id": "v",
+    "label": "bias-corrected variance",
+    "max": 4.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 1.0
+   }
+  ],
+  "derived": [
+   {
+    "formula": "sqrt(v)",
+    "name": "denom"
+   },
+   {
+    "formula": "m / sqrt(v)",
+    "name": "step"
+   }
+  ],
+  "direction": [
+   {
+    "control": "m",
+    "effect": "up",
+    "readout": "step"
+   }
+  ],
+  "explain": "Illustrative toy of Adam from arXiv 1412.6980: bars show m beside sqrt(v) and the resulting step, bounded even in a narrow valley.",
+  "questions": [
+   {
+    "q": "Predict the step if m is 1.2?",
+    "why": "Tests numerator effect on bounded update."
+   },
+   {
+    "q": "What is the step when v is 3.6?",
+    "why": "Tests large curvature keeping step bounded."
+   },
+   {
+    "q": "What is the step when m is 0.4?",
+    "why": "Tests small mean producing small step."
+   },
+   {
+    "q": "What is the denom when v is 2.5?",
+    "why": "Checks square-root scaling of denominator."
+   }
+  ],
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "m",
+    "label": "bias-corrected mean",
+    "max": 2.0,
+    "min": 0.0,
+    "step": 0.05,
+    "value": 0.8
+   },
+   {
+    "id": "v",
+    "label": "bias-corrected variance",
+    "max": 4.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 1.0
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var m = state.m; var v = state.v; var denom = Math.sqrt(v); var step = 0; if (denom !== 0) { step = m / denom; } var yMax = 7; var baseY = h - 64; var topY = 54; var avail = baseY - topY; var vals = [m, denom, step]; var names = [\"m\", \"sqrt(v)\", \"step\"]; var cols = [\"#1f4b99\", \"#8a8175\", \"#c4512c\"]; var i = 0; ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"16px sans-serif\"; ctx.textAlign = \"left\"; ctx.textBaseline = \"alphabetic\"; ctx.fillText(\"Adam bounded step\", 16, 24); ctx.font = \"12px sans-serif\"; ctx.fillStyle = \"#5c564c\"; ctx.fillText(\"m over sqrt(v)\", 16, 42); var bw = 110; for (i = 0; i < 3; i++) { var x = 70 + i * 175; var val = vals[i]; var bh = val / yMax * avail; var clipped = false; if (bh > avail) { bh = avail; clipped = true; } ctx.fillStyle = \"#e4d6c4\"; ctx.fillRect(x, topY, bw, avail); ctx.fillStyle = cols[i]; ctx.fillRect(x, baseY - bh, bw, bh); ctx.strokeStyle = \"#1d1a16\"; ctx.lineWidth = 1.5; ctx.strokeRect(x, topY, bw, avail); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"13px sans-serif\"; ctx.fillText(names[i], x + 4, baseY + 20); ctx.font = \"12px sans-serif\"; var rv = Math.round(val * 100) / 100; ctx.fillText(\"\" + rv, x + 4, baseY - bh - 8); if (clipped) { ctx.fillStyle = \"#c4512c\"; ctx.fillText(\"clipped\", x + 4, topY + 14); } } ctx.strokeStyle = \"#1d1a16\"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(30, baseY); ctx.lineTo(w - 30, baseY); ctx.stroke(); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"13px sans-serif\"; var rs = Math.round(step * 100) / 100; var rd = Math.round(denom * 100) / 100; ctx.fillText(\"denom \" + rd + \"  step \" + rs, 70, h - 16); ctx.font = \"12px sans-serif\"; ctx.fillStyle = \"#5c564c\"; if (v > 2.5) { ctx.fillText(\"narrow valley: v large but step held by sqrt\", 340, h - 16); } else { ctx.fillText(\"raise v: denom grows as sqrt\", 340, h - 16); } }",
+  "explain": "Illustrative toy of Adam from arXiv 1412.6980: bars show m beside sqrt(v) and the resulting step, bounded even in a narrow valley.",
+  "id": "adam-step",
+  "questions": [
+   {
+    "q": "Predict the step if m is 1.2?",
+    "why": "Tests numerator effect on bounded update."
+   },
+   {
+    "q": "What is the step when v is 3.6?",
+    "why": "Tests large curvature keeping step bounded."
+   },
+   {
+    "q": "What is the step when m is 0.4?",
+    "why": "Tests small mean producing small step."
+   },
+   {
+    "q": "What is the denom when v is 2.5?",
+    "why": "Checks square-root scaling of denominator."
+   }
+  ],
+  "title": "Adam step stays bounded in a narrow valley",
+  "topic": "adam"
+ }
+}
