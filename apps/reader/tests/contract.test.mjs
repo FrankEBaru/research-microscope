@@ -95,6 +95,8 @@ test("display math and figure names are rewritten without naming a paper", async
   assert.match(displayTex("y =& \\begin{cases} 0 & 1 \\\\ 2 & 3 \\end{cases}"), /^\\begin\{aligned\}/);
   assert.match(displayTex("\\begin{split} a &= b \\end{split}"), /^\\begin\{aligned\}/);
   assert.equal(displayTex("y = x"), "y = x");
+  assert.equal(displayTex("{2}\n\\text{PE}_{(pos,2i)}").startsWith("2"), false);
+  assert.match(displayTex("{2}\n\\text{PE}_{(pos,2i)}"), /\\text\{PE\}/);
   assert.deepEqual(figureCandidates("plot.png"), ["plot.png"]);
   assert.deepEqual(figureCandidates("attn_soft.\\imgExt"), ["attn_soft.png", "attn_soft.jpg", "attn_soft.jpeg", "attn_soft.webp", "attn_soft.gif"]);
   assert.deepEqual(figureCandidates("../secret.png"), []);

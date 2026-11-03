@@ -211,6 +211,8 @@ const OUTER_ALIGN = /^\s*\\begin\{(aligned|align\*?|eqnarray\*?|gather\*?|flalig
 /** Display math KaTeX can parse. `&` outside an alignment environment is wrapped. */
 export function displayTex(tex) {
   let s = katexSource(tex);
+  // alignat's column count ({2}) used to stay in front of the formula ("2PE").
+  s = s.replace(/^\{\d+\}\s*\n/, "");
   const tag = s.match(/\\tag\{[^{}]*\}\s*$/);
   let suffix = "";
   if (tag && tag.index > 0) {

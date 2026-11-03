@@ -43,7 +43,15 @@ export function sqrtDenominator(tex) {
     if (right[0].includes("\\sqrt")) return right[0];
     i = right[1] - 1;
   }
+  const slash = /\/\s*\\sqrt\{([^{}]*)\}/.exec(text);
+  if (slash) return `\\sqrt{${slash[1]}}`;
   return "";
+}
+
+function plainPosD(norm) {
+  // 10000^{2i/d} or 10000^{\frac{2i}{d}}, with a plain d (not d_model / d_k).
+  if (!norm.includes("10000")) return false;
+  return /10000\^(?:\{\\frac\{2i\}\{d\}\}|\\frac\{2i\}\{d\}|\{2i\/d\}|2i\/d(?![A-Za-z_{]))/.test(norm);
 }
 
 function readD(tex) {
@@ -51,6 +59,7 @@ function readD(tex) {
   const numbered = norm.match(/d(?:_model)?=(\d+(?:\.\d+)?)/);
   if (numbered) return { d: Number(numbered[1]), illustrative: false };
   if (norm.includes("d_model")) return { d: 64, illustrative: true };
+  if (plainPosD(norm)) return { d: 64, illustrative: true };
   return null;
 }
 
@@ -249,10 +258,13 @@ function rowsOf(items) {
     out.push({
       id: String(item.id || ""),
       kind: item.kind || "",
+      level: Number(item.level || 0),
       section: item.section || section,
       latex: String(item.latex || item.tex || ""),
       text: String(text || ""),
       raw: Boolean(item.raw),
+      appendix: Boolean(item.appendix),
+      label: String(item.label || ""),
     });
   }
   return out;
@@ -274,12 +286,47 @@ function shapeTex(inner) {
   return String(inner || "").replace(/\\(?:mathbf|mathrm|boldsymbol|text)\{([^{}]*)\}/g, "$1").trim();
 }
 
+function stripNormal(text) {
+  const src = String(text || "");
+  const re = /\\mathcal\{N\}/g;
+  let out = "", i = 0, mark;
+  while ((mark = re.exec(src))) {
+    out += src.slice(i, mark.index);
+    let k = mark.index + mark[0].length;
+    while (src[k] === " ") k += 1;
+    if (src.startsWith("\\left", k)) k += 5;
+    if (src[k] !== "(") { i = mark.index + mark[0].length; continue; }
+    let depth = 0, closed = false;
+    for (let j = k; j < src.length; j++) {
+      if (src[j] === "\\") { j += 1; continue; }
+      if (src[j] === "(") depth += 1;
+      else if (src[j] === ")") {
+        depth -= 1;
+        if (depth === 0) { i = j + 1; closed = true; break; }
+      }
+    }
+    if (!closed) i = mark.index + mark[0].length;
+    re.lastIndex = i;
+  }
+  return out + src.slice(i);
+}
+
+function maskSigmaRatio(text) {
+  return String(text || "").replace(/\/\\sigma/g, (all, offset, src) => {
+    const before = src.slice(Math.max(0, offset - 48), offset);
+    const names = before.match(/\\[A-Za-z]+/g);
+    const last = names ? names[names.length - 1] : "";
+    return last === "\\sigma" ? "\\sigma" : all;
+  });
+}
+
 function escalaKind(latex) {
   const text = squash(latex);
   const low = text.toLowerCase();
   if (low.includes("softmax") && text.includes("\\sqrt")) return "softmax";
   if (text.includes("\\exp") && text.includes("\\sqrt") && /d[_}]|\/\\sqrt|\\sqrt\{d/.test(text)) return "softmax";
-  if ((/\\over\\sigma|\/\\sigma/.test(text)) && text.includes("\\mu") && !low.includes("softmax")) return "ln";
+  const ln = maskSigmaRatio(stripNormal(text));
+  if ((/\\over\\sigma|\/\\sigma/.test(ln)) && ln.includes("\\mu") && !low.includes("softmax")) return "ln";
   return "";
 }
 
@@ -450,6 +497,79 @@ function takeBrace(text, i) {
   return null;
 }
 
+function skipBrackets(src, k) {
+  while (src[k] === " " || src[k] === "\n" || src[k] === "*") k += 1;
+  if (src[k] !== "[") return k;
+  let depth = 0;
+  for (let j = k; j < src.length; j++) {
+    if (src[j] === "\\") { j += 1; continue; }
+    if (src[j] === "[") depth += 1;
+    else if (src[j] === "]") {
+      depth -= 1;
+      if (depth === 0) return j + 1;
+    }
+  }
+  return k;
+}
+
+function readCaption(src) {
+  const re = /\\caption(?![A-Za-z])/g;
+  const mark = re.exec(src);
+  if (!mark) return null;
+  let k = skipBrackets(src, mark.index + mark[0].length);
+  while (src[k] === " " || src[k] === "\n") k += 1;
+  const held = takeBrace(src, k);
+  if (!held) return null;
+  return { body: held[0], start: mark.index, end: held[1] };
+}
+
+function stripCaption(src) {
+  const cap = readCaption(src);
+  if (!cap) return src;
+  return src.slice(0, cap.start) + src.slice(cap.end);
+}
+
+function stripCommentMacros(src) {
+  let out = "";
+  for (let i = 0; i < src.length; i++) {
+    const m = /^\\(COMMENT[A-Za-z]*|Comment)\b/.exec(src.slice(i));
+    if (!m) { out += src[i]; continue; }
+    let k = i + m[0].length;
+    while (src[k] === " " || src[k] === "\n") k += 1;
+    const held = takeBrace(src, k);
+    i = (held ? held[1] : k) - 1;
+  }
+  return out;
+}
+
+const STRAY_CMD = new Set(["label", "ref", "eqref", "autoref", "cref", "Cref", "vref", "pageref"]);
+
+export function polishCard(text) {
+  let src = String(text || "").replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => `$${inner}$`);
+  let out = "";
+  for (let i = 0; i < src.length; i++) {
+    if (src[i] !== "\\") { out += src[i]; continue; }
+    const m = /^\\([A-Za-z]+)/.exec(src.slice(i));
+    if (!m) { out += src[i]; continue; }
+    const name = m[1];
+    if (name !== "hypertarget" && !STRAY_CMD.has(name)) { out += src[i]; continue; }
+    let k = i + m[0].length;
+    if (src[k] === "*") k += 1;
+    while (src[k] === " " || src[k] === "\n") k += 1;
+    const args = [];
+    while (src[k] === "{") {
+      const held = takeBrace(src, k);
+      if (!held) break;
+      args.push(held[0]);
+      k = held[1];
+      while (src[k] === " " || src[k] === "\n") k += 1;
+    }
+    if (name === "hypertarget" && args.length) out += args[args.length - 1];
+    i = k - 1;
+  }
+  return out.replace(/~/g, " ").replace(/\s+/g, " ").replace(/\(\s*\)/g, "").trim();
+}
+
 export function stepsOf(text, macros) {
   const src = String(text || "");
   const start = src.search(/\\begin\{algorithm\*?\}/);
@@ -458,7 +578,10 @@ export function stepsOf(text, macros) {
   if (endRel < 0) return null;
   const before = src.slice(0, start);
   const body = src.slice(start, start + endRel);
-  const cap = /\\caption\{([^{}]*)\}/.exec(body);
+  const capDeep = readCaption(body);
+  const capFlat = /\\caption\{([^{}]*)\}/.exec(body);
+  const capBody = capDeep ? capDeep.body : (capFlat ? capFlat[1] : "");
+  const capLines = capBody.split(/\\\\/).map((line) => tidy(line)).filter(Boolean);
   const label = /\\label\{([^{}]*)\}/.exec(body);
   let inner = body
     .replace(/\\begin\{algorithm\*?\}(\[[^\]]*\])?/, "")
@@ -466,7 +589,9 @@ export function stepsOf(text, macros) {
     .replace(/\\label\{[^{}]*\}/, "")
     .replace(/\\begin\{algorithmic\}(\[[^\]]*\])?/, "")
     .replace(/\\end\{algorithmic\}/, "");
-  const inputs = [];
+  inner = stripCaption(inner).replace(/\\centering\b/g, "");
+  inner = stripCommentMacros(inner);
+  const inputs = capLines.slice(1);
   const re = /\\(?:KwIn|KwOut|REQUIRE|ENSURE|Require|Ensure)\b/g;
   let kept = "", last = 0, mark;
   while ((mark = re.exec(inner))) {
@@ -486,19 +611,20 @@ export function stepsOf(text, macros) {
     .map((part) => plainMacros(tidy(part
       .replace(/\\(?:End(?:For|If|While)|ENDFOR|ENDIF|ENDWHILE|Do|Od|Return)\b/g, "")
       .replace(/\\(?:mbox|emph|textbf|textit)\{([^{}]*)\}/g, "$1")
+      .replace(/\{\s*\\bfseries\s*([^{}]*)\}/g, "$1")
       .replace(/\{\s*(?:\\bfseries\s*)?to\s*\}/g, " to ")
       .replace(/\\[{}]/g, "")
       .replace(/\}\s*\{\s+/g, " ")), macros))
-    .map((part) => dropLoose(part.replace(/\s+/g, " ").replace(/^[{}]+/, "").trim()))
-    .filter((part) => part.length > 1 && /[A-Za-z0-9\\]/.test(part))
+    .map((part) => polishCard(dropLoose(part.replace(/\s+/g, " ").replace(/^[{}]+/, "").trim())))
+    .filter((part) => part.length > 1 && /[A-Za-z0-9\\$]/.test(part))
     .slice(0, 8);
   if (steps.length < 2) return null;
   return {
-    title: cap ? tidy(cap[1]) : "",
+    title: polishCard(capLines[0] || ""),
     label: label ? label[1] : "",
-    inputs,
+    inputs: inputs.map((line) => polishCard(line)),
     steps,
-    appendix: /\\begin\{appendices\}|\\appendix\b/.test(before),
+    appendix: /\\begin\{appendices\}|\\begin\{appendix\}|\\appendix\b/.test(before),
   };
 }
 
@@ -563,6 +689,125 @@ function assumption(text) {
   return sentence.slice(0, 280);
 }
 
+function labelOf(row) {
+  const fromTex = /\\label\{([^{}]+)\}/.exec(row?.latex || "");
+  return (fromTex && fromTex[1]) || row?.label || "";
+}
+
+function symbolsOf(latex) {
+  let text = String(latex || "");
+  text = text.replace(/\\(?:operatorname|mathrm|text|mathbf|boldsymbol|mathbb)\{([^{}]*)\}/g, " ");
+  text = text.replace(/\\[A-Za-z]+/g, " ");
+  const found = new Set();
+  for (const mark of text.matchAll(/(?<![A-Za-z])([A-Z])(?![A-Za-z])/g)) {
+    if (mark[1] !== "T") found.add(mark[1]);
+  }
+  return [...found];
+}
+
+function splitSentences(text) {
+  const src = String(text || "").replace(/\s+/g, " ").trim();
+  const out = [];
+  let start = 0;
+  for (let i = 0; i < src.length; i++) {
+    if (src[i] !== ".") continue;
+    const prev = src[i - 1] || "";
+    const next = src[i + 1] || "";
+    if (isWordChar(prev) && isWordChar(next)) continue;
+    if (/\d/.test(prev) && /\d/.test(next)) continue;
+    const sent = src.slice(start, i + 1).trim();
+    if (sent) out.push(sent);
+    start = i + 1;
+  }
+  const tail = src.slice(start).trim();
+  if (tail) out.push(tail);
+  return out;
+}
+
+function referencesEq(sent, label, symbols) {
+  if (label && sent.includes(label)) return true;
+  let n = 0;
+  for (const sym of symbols) {
+    if (new RegExp(`(?<![A-Za-z])${sym}(?![A-Za-z])`).test(sent)) n += 1;
+  }
+  return n >= 2;
+}
+
+function clipQuote(sentence) {
+  const clean = polishCard(sentence);
+  if (!clean) return "";
+  return clean.slice(0, snapWordEnd(clean, Math.min(280, clean.length))).trim();
+}
+
+function whyFor(rows, index) {
+  const eq = rows[index];
+  const label = labelOf(eq);
+  const symbols = symbolsOf(eq.latex);
+  const pick = (sameOnly) => {
+    let best = null;
+    for (let j = 0; j < rows.length; j++) {
+      const row = rows[j];
+      if (row.raw || row.kind === "eq" || row.kind === "h") continue;
+      if (sameOnly && row.section !== eq.section) continue;
+      const dist = Math.abs(j - index);
+      for (const sent of splitSentences(row.text)) {
+        if (!referencesEq(sent, label, symbols)) continue;
+        if (!best || dist < best.dist || (dist === best.dist && j >= index && best.j < index)) best = { dist, j, sent };
+      }
+    }
+    return best;
+  };
+  const hit = pick(true) || pick(false);
+  if (hit) return clipQuote(hit.sent);
+  return clipQuote(whyQuote(rows.filter((row) => !row.raw)));
+}
+
+function sectionBeforeAlgorithm(src) {
+  const start = String(src || "").search(/\\begin\{algorithm\*?\}/);
+  const pre = start < 0 ? String(src || "") : String(src || "").slice(0, start);
+  const all = [...pre.matchAll(/\\(?:sub)*section\*?\{([^{}]*)\}/g)];
+  return all.length ? all[all.length - 1][1] : "";
+}
+
+function stems(text) {
+  const stop = new Set("algorithm algorithms detail details method methods using which where their there about other these those from with that this paper section appendix based function procedure given block input output following described summary summarized approach approaches model models between through without within should would could".split(" "));
+  const out = new Set();
+  for (const word of String(text || "").toLowerCase().replace(/\\[a-z]+/g, " ").replace(/[^a-z]+/g, " ").split(/\s+/)) {
+    if (word.length < 5 || stop.has(word)) continue;
+    out.add(word.slice(0, 5));
+  }
+  return out;
+}
+
+function bestHeading(rows, query, before) {
+  const want = stems(query);
+  if (want.size < 2) return "";
+  let best = null;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (i >= before || row.kind !== "h" || row.appendix) continue;
+    if ((row.level || 1) !== 1) continue;
+    const got = stems(row.text || row.section);
+    let score = 0;
+    for (const word of want) if (got.has(word)) score += 1;
+    if (score < 2) continue;
+    if (!best || score > best.score) best = { score, id: row.id };
+  }
+  return best ? best.id : "";
+}
+
+function hostInSection(rows, headingId) {
+  let on = false;
+  let level = 1;
+  for (const row of rows) {
+    if (row.id === headingId) { on = true; level = row.level || 1; continue; }
+    if (!on) continue;
+    if (row.kind === "h" && (row.level || 1) <= level) break;
+    if ((row.kind === "p" || row.kind === "eq") && !row.raw && !row.appendix) return row.id;
+  }
+  return "";
+}
+
 function whyQuote(rows) {
   const blob = rows.map((row) => row.text).join("\n");
   const re = /gradient|counteract|variance/gi;
@@ -595,7 +840,6 @@ export function collectV2(items, flag) {
   const seenGrid = new Set();
   const seenCase = new Set();
   let dctDone = false;
-  const quote = whyQuote(rows.filter((row) => !row.raw));
   const bySec = new Map();
   for (const row of rows) {
     if (row.kind !== "eq") continue;
@@ -621,7 +865,7 @@ export function collectV2(items, flag) {
       const drawn = matrixOf(joined);
       if (drawn) {
         seenGrid.add(section);
-        artifacts.push({ block_id: eqRun[0].id, type: "matriz", tex: joined, tag: "ilustrativo" });
+        artifacts.push({ block_id: eqRun[0].id, type: "matriz", tex: polishCard(joined), tag: "ilustrativo" });
       }
     }
     eqRun = [];
@@ -633,15 +877,17 @@ export function collectV2(items, flag) {
   flushRun();
   let pastAppendix = false;
   const macros = macrosOf(rows);
-  for (const row of rows) {
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
     const blob = `${row.latex}\n${row.text}`;
-    if (appendixSection(row.section) || /\\begin\{appendices\}|\\appendix\b/.test(blob)) pastAppendix = true;
+    if (row.appendix || appendixSection(row.section) || /\\begin\{appendices\}|\\begin\{appendix\}|\\appendix\b/.test(blob)) pastAppendix = true;
     const shape = SHAPE.exec(row.latex) || SHAPE.exec(row.text);
     if (!row.raw && !pastAppendix && shape && !seenShape.has(row.section)) {
-      const label = shapeLabel(shape[1]);
+      const inner = polishCard(shape[1]);
+      const label = shapeLabel(inner);
       if (label) {
         seenShape.add(row.section);
-        artifacts.push({ block_id: row.id, type: "forma", kind: "forma", label, tex: shapeTex(shape[1]), body: !appendixSection(row.section) });
+        artifacts.push({ block_id: row.id, type: "forma", kind: "forma", label, tex: shapeTex(inner), body: !appendixSection(row.section) });
       }
     }
     if (row.kind === "eq" && !seenScale.has(row.section)) {
@@ -650,14 +896,14 @@ export function collectV2(items, flag) {
         const drawn = layerOf(row.latex);
         if (drawn) {
           seenScale.add(row.section);
-          artifacts.push({ block_id: row.id, type: "con_sin", tex: row.latex, scale: drawn, preferScale: true, quote });
+          artifacts.push({ block_id: row.id, type: "con_sin", tex: polishCard(row.latex), scale: drawn, preferScale: true, quote: whyFor(rows, index) });
         }
       } else if (kind === "softmax") {
         const drawn = scaleOf(row.latex);
         if (drawn) {
           seenScale.add(row.section);
           const same = drawn.legend === "d_k = 64, ilustrativo" && drawn.withLabel === "dividiendo entre √d_k";
-          artifacts.push({ block_id: row.id, type: "con_sin", tex: row.latex, tag: "ilustrativo", scale: same ? null : drawn, quote });
+          artifacts.push({ block_id: row.id, type: "con_sin", tex: polishCard(row.latex), tag: "ilustrativo", scale: same ? null : drawn, quote: whyFor(rows, index) });
         }
       }
     }
@@ -666,26 +912,37 @@ export function collectV2(items, flag) {
       if (drawn) {
         dctDone = true;
         seenGrid.add(row.section);
-        artifacts.push({ block_id: row.id, type: "matriz", tex: row.latex, grid: drawn });
+        artifacts.push({ block_id: row.id, type: "matriz", tex: polishCard(row.latex), grid: drawn });
       }
     }
     if (row.kind === "eq" && !seenCase.has(row.section)) {
       const branches = casesOf(row.latex);
       if (branches && branches.length >= 2) {
         seenCase.add(row.section);
-        artifacts.push({ block_id: row.id, type: "casos", kind: "casos", branches });
+        artifacts.push({
+          block_id: row.id,
+          type: "casos",
+          kind: "casos",
+          branches: branches.map((branch) => ({ expr: polishCard(branch.expr), cond: polishCard(branch.cond) })),
+        });
       }
     }
     if (!row.text.includes("\\begin{algorithm}") && !row.latex.includes("\\begin{algorithm}")) continue;
     const parsed = stepsOf(blob, macros);
     if (!parsed) continue;
     let host = row.id;
-    const buried = parsed.appendix || appendixSection(row.section);
+    const buried = parsed.appendix || row.appendix || pastAppendix || appendixSection(row.section);
     if (buried) {
       host = "";
       if (parsed.label) {
-        const hit = rows.find((other) => other.id !== row.id && !appendixSection(other.section) && other.text.includes(parsed.label));
+        const hit = rows.find((other) => other.id !== row.id && !other.appendix && !appendixSection(other.section) && other.text.includes(parsed.label));
         if (hit) host = hit.id;
+      }
+      if (!host) {
+        const inside = sectionBeforeAlgorithm(blob);
+        const query = [parsed.title, inside, row.appendix ? row.section : ""].filter(Boolean).join(" ");
+        const heading = bestHeading(rows, query, index);
+        if (heading) host = hostInSection(rows, heading);
       }
     }
     if (!host) continue;
@@ -710,7 +967,7 @@ export function collectV2(items, flag) {
     const note = {
       block_id: row.id,
       sent_index: 0,
-      note: sentence,
+      note: polishCard(sentence),
       cite: "",
       generated: false,
       section: row.section,

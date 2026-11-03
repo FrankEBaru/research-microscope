@@ -80,6 +80,34 @@ test("seis citas quedan 2 y 4, por menciones y cercanía", () => {
   assert.equal(citingIndex(blocks, xref).fig.rest.length, 4);
 });
 
+test("Figure, Table, Eq y Section no repiten la palabra del \\ref", () => {
+  const blocks = [
+    { id: "p-fig", kind: "p", sents: [[{ t: "text", v: "Figure " }, { t: "ref", label: "fig:block", target: "f1" }, { t: "text", v: " shows the block." }]] },
+    { id: "f1", kind: "fig", label: "fig:block" },
+    { id: "p-tab", kind: "p", sents: [[{ t: "text", v: "Table " }, { t: "ref", label: "tab:variations", target: "t1" }, { t: "text", v: " lists them." }]] },
+    { id: "t1", kind: "table", label: "tab:variations" },
+    { id: "p-sec", kind: "p", sents: [[{ t: "text", v: "Section " }, { t: "ref", label: "sec:pe", target: "s1" }]] },
+    { id: "s1", kind: "h", label: "sec:pe" },
+    { id: "p-eq", kind: "p", sents: [[{ t: "text", v: "Equation " }, { t: "ref", label: "eq:pe", number: 8 }, { t: "text", v: " and Eq. " }, { t: "ref", label: "eq:pe2", target: "e2" }]] },
+  ];
+  const names = { ...xref, "sec:pe": "Section 5", "eq:pe": "Equation 8", "eq:pe2": "Eq. 9" };
+  assert.equal(citingPassages(blocks, "f1", "fig:block", 2, names).top[0].text, "Figure 1 shows the block.");
+  assert.equal(citingPassages(blocks, "t1", "tab:variations", 2, names).top[0].text, "Table 3 lists them.");
+  // Section is not a figure or table, so citingPassages ignores it. The quote text is what plainSent builds for a hit.
+  const sec = citingPassages(
+    [{ id: "p", kind: "p", sents: [[{ t: "text", v: "Section " }, { t: "ref", label: "fig:block", target: "f1" }]] }, { id: "f1", kind: "fig", label: "fig:block" }],
+    "f1", "fig:block", 2, { "fig:block": "Section 5" },
+  );
+  assert.equal(sec.top[0].text, "Section 5");
+  const eq = citingPassages(blocks, "f1", "fig:block", 2, names);
+  assert.equal(eq.top[0].text, "Figure 1 shows the block.");
+  const eqQuote = citingPassages(
+    [{ id: "p", kind: "p", sents: [[{ t: "text", v: "Equation " }, { t: "ref", label: "fig:block", target: "f1" }, { t: "text", v: " and Eq. " }, { t: "ref", label: "fig:block", target: "f1" }]] }, { id: "f1", kind: "fig", label: "fig:block" }],
+    "f1", "fig:block", 2, { "fig:block": "Equation 8" },
+  );
+  assert.equal(eqQuote.top[0].text, "Equation 8 and Eq. 8");
+});
+
 test("un ref dentro de em o span cuenta, y el recorte usa puntos suspensivos", () => {
   const long = "x".repeat(240);
   const blocks = [

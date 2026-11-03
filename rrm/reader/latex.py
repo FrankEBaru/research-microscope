@@ -27,6 +27,7 @@ Display math is macro-expanded (`\\\\newcommand`, `\\\\def`, `\\\\DeclareMathOpe
 including local `.sty`). `\\\\input` / `\\\\include` are inlined. `figure*` is a figure.
 """
 
+import os
 import re
 from pathlib import Path
 
@@ -45,6 +46,8 @@ _MATRIX = {
     "cases", "aligned", "split", "gathered", "array", "subarray",
 }
 _UNNUMBERED_MATH = {"displaymath"}
+# Multi-row displays. Each row is its own number unless the row says \nonumber/\notag.
+_ROW_NUMBERED = {"align", "alignat", "eqnarray", "gather"}
 _PROSE = {
     "theorem", "lemma", "proof", "definition", "proposition", "corollary", "remark",
     "example", "assumption", "conjecture", "claim", "observation", "fact", "hypothesis",
@@ -163,6 +166,13 @@ def parse_inlines(s: str, macros: dict) -> list:
                 i = j
                 continue
         if s[i] == "\\":
+            if s.startswith("\\(", i):
+                end = s.find("\\)", i + 2)
+                if end >= 0:
+                    flush()
+                    out.append({"t": "math", "v": expand_math(s[i + 2:end], macros).strip(), "display": False})
+                    i = end + 2
+                    continue
             name, j = read_name(s, i)
             if name in ("rule", "cmidrule", "cline", "specialrule", "cellcolor", "color", "rowcolor", "definecolor", "hdashline"):
                 j = _skip_ws(s, j)
@@ -501,11 +511,54 @@ def _prose_names(tex: str) -> set:
     return names
 
 
-def parse_body(body: str, macros: dict, prose: set | None = None) -> list:
+def _row_numbers_on() -> bool:
+    raw = os.environ.get("RRM_EQ_ROW_NUMBERS", "1").strip().lower()
+    return raw not in {"0", "off", "false", "no"}
+
+
+def _split_math_rows(inner: str) -> list[str]:
+    """Split a display on \\\\ that is not inside braces. A trailing empty row is dropped later."""
+    rows, buf = [], []
+    i, n = 0, len(inner)
+    depth = 0
+    while i < n:
+        if inner[i] == "\\":
+            if depth == 0 and inner.startswith("\\\\", i):
+                rows.append("".join(buf))
+                buf = []
+                i += 2
+                continue
+            step = 2 if i + 1 < n else 1
+            buf.append(inner[i:i + step])
+            i += step
+            continue
+        if inner[i] == "{":
+            depth += 1
+        elif inner[i] == "}":
+            depth = max(0, depth - 1)
+        buf.append(inner[i])
+        i += 1
+    rows.append("".join(buf))
+    return [row for row in rows if row.strip()]
+
+
+def _drop_alignat_count(inner: str) -> str:
+    """alignat's mandatory column count is not math. Leaving it typesets as a leading digit."""
+    s = inner.lstrip()
+    if not s.startswith("{"):
+        return inner
+    body, end = read_braced(s, 0)
+    if body.strip().isdigit():
+        return s[end:]
+    return inner
+
+
+def parse_body(body: str, macros: dict, prose: set | None = None, appendix: bool = False) -> list:
     body = _drop_noise(body)
     blocks = []
     counters = [0, 0, 0, 0]
-    appendix = False
+    appendix = appendix
+    stamp_from = 0 if appendix else None
     eq_n = 0
     i, n = 0, len(body)
     stop_display = "[" not in macros
@@ -524,12 +577,26 @@ def parse_body(body: str, macros: dict, prose: set | None = None) -> list:
             star = name.endswith("*")
             i = i2
             if base in _MATH or base in _MATRIX:
+                if base == "alignat":
+                    inner = _drop_alignat_count(inner)
                 numbered = base in _MATH and (not star) and base not in _UNNUMBERED_MATH
-                number = None
-                if numbered:
-                    eq_n += 1
-                    number = eq_n
-                blocks.append(_eq_block(inner, base, macros, numbered, number))
+                rows = _split_math_rows(inner) if numbered and base in _ROW_NUMBERED and _row_numbers_on() else []
+                if len(rows) > 1:
+                    for row in rows:
+                        # \nonumber / \notag keep the row in the display but do not take a number.
+                        takes = re.search(r"\\(?:nonumber|notag)\b", row) is None
+                        number = None
+                        if takes:
+                            eq_n += 1
+                            number = eq_n
+                        cleaned = re.sub(r"\\(?:nonumber|notag)\b", "", row)
+                        blocks.append(_eq_block(cleaned, base, macros, takes, number))
+                else:
+                    number = None
+                    if numbered:
+                        eq_n += 1
+                        number = eq_n
+                    blocks.append(_eq_block(inner, base, macros, numbered, number))
             elif base in ("figure", "wrapfigure"):
                 blocks.append(_fig_block(inner, macros))
             elif base in ("table",):
@@ -548,6 +615,8 @@ def parse_body(body: str, macros: dict, prose: set | None = None) -> list:
                 blocks.append(_table_block(inner, macros))
             elif base in ("verbatim", "lstlisting", "minted", "algorithm", "algorithmic"):
                 blocks.append(_raw_block("\\begin{" + name + "}" + inner + "\\end{" + name + "}"))
+            elif base in ("appendix", "appendices"):
+                blocks.extend(parse_body(inner, macros, prose, True))
             else:
                 blocks.append(_raw_block("\\begin{" + name + "}" + inner + "\\end{" + name + "}"))
             continue
@@ -599,6 +668,8 @@ def parse_body(body: str, macros: dict, prose: set | None = None) -> list:
                 continue
             if name == "appendix":
                 appendix = True
+                if stamp_from is None:
+                    stamp_from = len(blocks)
                 counters[:] = [0, 0, 0, 0]
                 i = j
                 continue
@@ -620,6 +691,9 @@ def parse_body(body: str, macros: dict, prose: set | None = None) -> list:
             ins = parse_inlines(para, macros)
             if ins and plain(ins):
                 blocks.append({"kind": "p", "inlines": ins})
+    if stamp_from is not None:
+        for block in blocks[stamp_from:]:
+            block["appendix"] = True
     return blocks
 
 
