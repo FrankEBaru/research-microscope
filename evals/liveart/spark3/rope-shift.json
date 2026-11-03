@@ -1,0 +1,126 @@
+{
+ "id": "rope-shift",
+ "claim": {
+  "text": "RoPE rotates each absolute position, and the attention score depends only on the relative distance between the tokens.",
+  "latex": "",
+  "context": "",
+  "arxiv": "2104.09864"
+ },
+ "spec": {
+  "archetype": "dial",
+  "controls": [
+   {
+    "id": "m",
+    "label": "position m",
+    "max": 16.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 4.0
+   },
+   {
+    "id": "d",
+    "label": "relative distance",
+    "max": 8.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 2.0
+   },
+   {
+    "id": "f",
+    "label": "base frequency",
+    "max": 1.0,
+    "min": 0.1,
+    "step": 0.05,
+    "value": 0.5
+   }
+  ],
+  "derived": [
+   {
+    "formula": "m*f",
+    "name": "angle"
+   },
+   {
+    "formula": "cos(d*f)",
+    "name": "score"
+   }
+  ],
+  "direction": [
+   {
+    "control": "d",
+    "effect": "down",
+    "readout": "score"
+   }
+  ],
+  "explain": "Illustrative toy from arXiv 2104.09864: the dial shows absolute position m rotated by f, while the score dial shows attention depending only on relative distance d.",
+  "questions": [
+   {
+    "q": "Predict the score when d = 3 and f = 0.5?",
+    "why": "Tests relative-distance dependence."
+   },
+   {
+    "q": "What is the angle when m = 8 and f = 0.5?",
+    "why": "Checks absolute rotation."
+   },
+   {
+    "q": "What is the score when d = 0 and f = 0.5?",
+    "why": "Checks zero distance case."
+   },
+   {
+    "q": "What is the angle when m = 12 and f = 0.3?",
+    "why": "Checks scaling with frequency."
+   }
+  ],
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "m",
+    "label": "position m",
+    "max": 16.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 4.0
+   },
+   {
+    "id": "d",
+    "label": "relative distance",
+    "max": 8.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 2.0
+   },
+   {
+    "id": "f",
+    "label": "base frequency",
+    "max": 1.0,
+    "min": 0.1,
+    "step": 0.05,
+    "value": 0.5
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var m = state.m; var f = state.f; var d = state.d; function fmt(v) { return Math.round(v * 100) / 100; } var angle = m * f; var rel = d * f; var score = Math.cos(rel); var aFmt = fmt(angle); var sFmt = fmt(score); var cx1 = w * 0.27; var cx2 = w * 0.65; var cy = h * 0.48; var r = h * 0.28; var i = 0; var a = 0; var x1 = 0; var y1 = 0; var x2 = 0; var y2 = 0; ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); ctx.lineWidth = 2; ctx.strokeStyle = \"#1f4b99\"; ctx.beginPath(); ctx.arc(cx1, cy, r, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(cx2, cy, r, 0, Math.PI * 2); ctx.stroke(); for (i = 0; i < 12; i++) { a = i * Math.PI / 6; x1 = cx1 + Math.cos(a) * r; y1 = cy + Math.sin(a) * r; x2 = cx1 + Math.cos(a) * (r - 9); y2 = cy + Math.sin(a) * (r - 9); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); x1 = cx2 + Math.cos(a) * r; y1 = cy + Math.sin(a) * r; x2 = cx2 + Math.cos(a) * (r - 9); y2 = cy + Math.sin(a) * (r - 9); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); } a = angle - Math.PI / 2; ctx.strokeStyle = \"#b33a2b\"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx1, cy); ctx.lineTo(cx1 + Math.cos(a) * r, cy + Math.sin(a) * r); ctx.stroke(); ctx.fillStyle = \"#1f4b99\"; ctx.beginPath(); ctx.arc(cx1, cy, 5, 0, Math.PI * 2); ctx.fill(); a = rel - Math.PI / 2; ctx.strokeStyle = \"#1f7a3a\"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx2, cy); ctx.lineTo(cx2 + Math.cos(a) * r, cy + Math.sin(a) * r); ctx.stroke(); ctx.fillStyle = \"#1f4b99\"; ctx.beginPath(); ctx.arc(cx2, cy, 5, 0, Math.PI * 2); ctx.fill(); var tx = cx2 + r + 22; ctx.strokeStyle = \"#222222\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(tx, cy - r); ctx.lineTo(tx, cy + r); ctx.stroke(); var my = cy - sFmt * r; if (my < cy - r) { my = cy - r; } if (my > cy + r) { my = cy + r; } ctx.fillStyle = \"#1f7a3a\"; ctx.beginPath(); ctx.arc(tx, my, 6, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = \"#222222\"; ctx.font = \"14px sans-serif\"; ctx.textAlign = \"center\"; ctx.fillText(\"absolute m dial\", cx1, cy - r - 14); ctx.fillText(\"relative d dial\", cx2, cy - r - 14); ctx.fillText(\"angle = m x f = \" + aFmt, cx1, cy + r + 24); ctx.fillText(\"score = cos(d x f) = \" + sFmt, cx2, cy + r + 24); }",
+  "explain": "Illustrative toy from arXiv 2104.09864: the dial shows absolute position m rotated by f, while the score dial shows attention depending only on relative distance d.",
+  "id": "rope-dial-abs-rel",
+  "questions": [
+   {
+    "q": "Predict the score when d = 3 and f = 0.5?",
+    "why": "Tests relative-distance dependence."
+   },
+   {
+    "q": "What is the angle when m = 8 and f = 0.5?",
+    "why": "Checks absolute rotation."
+   },
+   {
+    "q": "What is the score when d = 0 and f = 0.5?",
+    "why": "Checks zero distance case."
+   },
+   {
+    "q": "What is the angle when m = 12 and f = 0.3?",
+    "why": "Checks scaling with frequency."
+   }
+  ],
+  "title": "RoPE dial: absolute rotation, relative score",
+  "topic": "rope"
+ }
+}

@@ -12,6 +12,14 @@ from pathlib import Path
 
 _GENERIC = re.compile(r"qu[eé] pasa si|what happens", re.I)
 _PREDICT = re.compile(r"^\s*(predice|predict)\b", re.I)
+_ARITH = re.compile(
+    r"\b(?:what is|what state|cu[aá]nto(?:\s+vale)?|how much|how many)\b"
+    r"|(?:predict|predice) (?:the |el )?[A-Za-z0-9_]+ (?:if|when|at|si|cuando)\b",
+    re.I,
+)
+_BEFORE = re.compile(r"\b(?:before|antes)\b", re.I)
+_JUNK_LABEL = re.compile(r"\b(?:holds|pow)\b", re.I)
+_CLIPPED = re.compile(r"\bclipped\b", re.I)
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 _LONG = re.compile(r"\d+\.\d{4,}")
 _ARXIV = re.compile(r"\d{4}\.\d{4,5}")
@@ -76,6 +84,8 @@ def question_problems(questions, controls):
             return ["generic_questions"]
         if controls and not any(_in_range(n, controls) for n in nums):
             return ["generic_questions"]
+    if any(_ARITH.search(q) for q in texts) or not any(_BEFORE.search(q) for q in texts):
+        return ["bad_question"]
     return []
 
 
@@ -115,6 +125,10 @@ def quality_gate(widget, claim, spec=None):
         reasons.append("threshold_unasked")
     if spec is not None and _wrong_direction(draw, controls, spec):
         reasons.append("direction")
+    if spec is not None and _constraint_broken(controls, spec.get("constraints")):
+        reasons.append("constraint")
+    if _dead_label(draw, controls):
+        reasons.append("dead_label")
     if _contradicts(explain, draw):
         reasons.append("contradicts")
     return reasons
@@ -264,12 +278,229 @@ def _threshold_constant(draw):
 
 
 def _readout(texts, name):
-    pat = re.compile(rf"(?:^|\s){re.escape(name)}\s*=\s*(-?\d+(?:\.\d+)?)")
+    """Last number on a text that names the readout.
+
+    Accepts `name v`, `name = v`, and `name = expr = v`.
+    """
+    if not name:
+        return None
+    pat = re.compile(rf"(?:^|\s){re.escape(str(name))}\b.*?(-?\d+(?:\.\d+)?)\s*$")
     for text in texts or []:
         match = pat.search(text or "")
         if match:
             return float(match.group(1))
     return None
+
+
+def _dead_label(draw, controls):
+    """A label that never changes, or that the state does not support."""
+    base = _state(controls)
+    states = [base]
+    for control in controls or []:
+        if not isinstance(control, dict) or not control.get("id"):
+            continue
+        try:
+            lo, hi = float(control["min"]), float(control["max"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        low, high = dict(base), dict(base)
+        low[control["id"]] = lo
+        high[control["id"]] = hi
+        states.extend((low, high))
+    rendered = _render(draw, states)
+    blobs = []
+    for item in rendered:
+        if item.get("error"):
+            continue
+        blobs.append("\n".join(item.get("texts") or []))
+    if not blobs:
+        return False
+    if any(_JUNK_LABEL.search(blob) for blob in blobs):
+        return True
+    if all(_CLIPPED.search(blob) for blob in blobs):
+        return True
+    return False
+
+
+def _constraint_broken(controls, constraints):
+    """True when some slider corner breaks a declared comparison."""
+    checks = []
+    for item in constraints or []:
+        text = item if isinstance(item, str) else ""
+        text = text.replace("≤", "<=").replace("≥", ">=").replace("−", "-").strip()
+        if text:
+            checks.append(text)
+    if not checks:
+        return False
+    for state in _corners(controls):
+        for text in checks:
+            if not _holds(text, state):
+                return True
+    return False
+
+
+def _corners(controls):
+    states = [{}]
+    for control in controls or []:
+        if not isinstance(control, dict) or not control.get("id"):
+            continue
+        try:
+            lo, hi = float(control["min"]), float(control["max"])
+        except (KeyError, TypeError, ValueError):
+            return []
+        nxt = []
+        for state in states:
+            low = dict(state)
+            low[control["id"]] = lo
+            nxt.append(low)
+            if hi != lo:
+                high = dict(state)
+                high[control["id"]] = hi
+                nxt.append(high)
+        states = nxt
+    return states or [{}]
+
+
+def _holds(text, state):
+    try:
+        tokens = _lex(text)
+        pos = 0
+
+        def peek():
+            return tokens[pos] if pos < len(tokens) else None
+
+        def take():
+            nonlocal pos
+            tok = tokens[pos]
+            pos += 1
+            return tok
+
+        def parse_expr():
+            node = parse_term()
+            while peek() in ("+", "-"):
+                op = take()
+                right = parse_term()
+                node = (op, node, right)
+            return node
+
+        def parse_term():
+            node = parse_unary()
+            while peek() in ("*", "/"):
+                op = take()
+                right = parse_unary()
+                node = (op, node, right)
+            return node
+
+        def parse_unary():
+            if peek() == "-":
+                take()
+                return ("neg", parse_unary())
+            return parse_primary()
+
+        def parse_primary():
+            tok = peek()
+            if tok is None:
+                raise ValueError("end")
+            if isinstance(tok, tuple) and tok[0] == "num":
+                take()
+                return ("num", tok[1])
+            if isinstance(tok, tuple) and tok[0] == "id":
+                take()
+                if peek() == "(" and tok[1] in ("abs", "sqrt"):
+                    take()
+                    inner = parse_expr()
+                    if take() != ")":
+                        raise ValueError(")")
+                    return (tok[1], inner)
+                return ("var", tok[1])
+            if tok == "(":
+                take()
+                inner = parse_expr()
+                if take() != ")":
+                    raise ValueError(")")
+                return inner
+            raise ValueError("primary")
+
+        left = parse_expr()
+        op = peek()
+        if op not in ("<=", ">=", "<", ">"):
+            return False
+        take()
+        right = parse_expr()
+        if pos != len(tokens):
+            return False
+        a, b = _value(left, state), _value(right, state)
+    except (ValueError, KeyError, ZeroDivisionError, TypeError):
+        return False
+    if op == "<=":
+        return a <= b + 1e-9
+    if op == ">=":
+        return a + 1e-9 >= b
+    if op == "<":
+        return a < b - 1e-9
+    return a > b + 1e-9
+
+
+def _lex(text):
+    out, i = [], 0
+    while i < len(text):
+        ch = text[i]
+        if ch.isspace():
+            i += 1
+            continue
+        if text.startswith("<=", i) or text.startswith(">=", i):
+            out.append(text[i : i + 2])
+            i += 2
+            continue
+        if ch in "+-*/()<>":
+            out.append(ch)
+            i += 1
+            continue
+        if ch.isdigit() or ch == ".":
+            j = i + 1
+            while j < len(text) and (text[j].isdigit() or text[j] == "."):
+                j += 1
+            out.append(("num", float(text[i:j])))
+            i = j
+            continue
+        if ch.isalpha() or ch == "_":
+            j = i + 1
+            while j < len(text) and (text[j].isalnum() or text[j] == "_"):
+                j += 1
+            out.append(("id", text[i:j]))
+            i = j
+            continue
+        raise ValueError(ch)
+    return out
+
+
+def _value(node, state):
+    kind = node[0]
+    if kind == "num":
+        return node[1]
+    if kind == "var":
+        if node[1] not in state:
+            raise KeyError(node[1])
+        return float(state[node[1]])
+    if kind == "neg":
+        return -_value(node[1], state)
+    if kind == "abs":
+        return abs(_value(node[1], state))
+    if kind == "sqrt":
+        inner = _value(node[1], state)
+        if inner < 0:
+            raise ValueError("sqrt")
+        return inner ** 0.5
+    left, right = _value(node[1], state), _value(node[2], state)
+    if kind == "+":
+        return left + right
+    if kind == "-":
+        return left - right
+    if kind == "*":
+        return left * right
+    if right == 0:
+        raise ZeroDivisionError
+    return left / right
 
 
 def _wrong_direction(draw, controls, spec):

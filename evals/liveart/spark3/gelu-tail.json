@@ -1,0 +1,94 @@
+{
+ "id": "gelu-tail",
+ "claim": {
+  "text": "GELU does not cut at zero: a negative input still leaks through, unlike a hard cutoff.",
+  "latex": "",
+  "context": "",
+  "arxiv": "1606.08415"
+ },
+ "spec": {
+  "archetype": "curve",
+  "controls": [
+   {
+    "id": "x",
+    "label": "input x",
+    "max": 3,
+    "min": -3,
+    "step": 0.1,
+    "value": -1
+   }
+  ],
+  "derived": [
+   {
+    "formula": "0.5*x*(1+tanh(0.79788456*(x+0.044715*x*x*x)))",
+    "name": "gelu"
+   },
+   {
+    "formula": "max(x,0)",
+    "name": "relu"
+   }
+  ],
+  "direction": [
+   {
+    "control": "x",
+    "effect": "up",
+    "readout": "gelu"
+   }
+  ],
+  "explain": "Toy curve from arXiv 1606.08415 showing GELU versus hard cutoff at zero. Limit is far-negative leak fading to zero while large positive tracks identity.",
+  "questions": [
+   {
+    "q": "Predict gelu when x = -1?",
+    "why": "Tests negative leak."
+   },
+   {
+    "q": "What is gelu when x = -3?",
+    "why": "Tests far-negative limit."
+   },
+   {
+    "q": "What is gelu when x = 0?",
+    "why": "Tests zero crossing state."
+   },
+   {
+    "q": "What is gelu when x = 2?",
+    "why": "Tests positive identity state."
+   }
+  ],
+  "threshold_formula": "x"
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "x",
+    "label": "input x",
+    "max": 3,
+    "min": -3,
+    "step": 0.1,
+    "value": -1
+   }
+  ],
+  "draw": "function draw(ctx, state, t) {\n  var w = state.w;\n  var h = state.h;\n  var xv = state.x;\n  function fmt(v) { return Math.round(v * 100) / 100; }\n  function X(v) { return 48 + (v + 3) / 6 * 440; }\n  function Y(v) { return 300 - (v + 1.2) / 4.4 * 260; }\n  function geluF(u) { var inner = 0.79788456 * (u + 0.044715 * u * u * u); var e = Math.exp(2 * inner); var th = (e - 1) / (e + 1); return 0.5 * u * (1 + th); }\n  function reluF(u) { if (u > 0) { return u; } return 0; }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.strokeStyle = \"#d8cfbe\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(48, Y(0));\n  ctx.lineTo(488, Y(0));\n  ctx.stroke();\n  ctx.beginPath();\n  ctx.moveTo(X(0), 20);\n  ctx.lineTo(X(0), 300);\n  ctx.stroke();\n  var i = 0;\n  var u = 0;\n  var g = 0;\n  var r = 0;\n  var px = 0;\n  var py = 0;\n  var qx = 0;\n  var qy = 0;\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.lineWidth = 2;\n  for (i = 0; i < 120; i++) {\n    u = -3 + i / 119 * 6;\n    r = reluF(u);\n    px = X(u);\n    py = Y(r);\n    qx = X(-3 + (i + 1) / 119 * 6);\n    qy = Y(reluF(-3 + (i + 1) / 119 * 6));\n    if (i % 2 === 0) { ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(qx, qy); ctx.stroke(); }\n  }\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 3;\n  ctx.beginPath();\n  for (i = 0; i <= 120; i++) {\n    u = -3 + i / 120 * 6;\n    g = geluF(u);\n    px = X(u);\n    py = Y(g);\n    if (i === 0) { ctx.moveTo(px, py); } else { ctx.lineTo(px, py); }\n  }\n  ctx.stroke();\n  var gv = geluF(xv);\n  var rv = reluF(xv);\n  var mx = X(xv);\n  var gy = Y(gv);\n  var ry = Y(rv);\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(mx, 20);\n  ctx.lineTo(mx, 300);\n  ctx.stroke();\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.beginPath();\n  ctx.arc(mx, gy, 7, 0, 6.2832);\n  ctx.fill();\n  ctx.fillStyle = \"#c4512c\";\n  ctx.beginPath();\n  ctx.arc(mx, ry, 6, 0, 6.2832);\n  ctx.fill();\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(504, 60, 12, 12);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillRect(504, 84, 12, 12);\n  ctx.font = \"13px sans-serif\";\n  ctx.textAlign = \"left\";\n  ctx.textBaseline = \"alphabetic\";\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.fillText(\"GELU\", 520, 71);\n  ctx.fillText(\"ReLU\", 520, 95);\n  ctx.font = \"14px sans-serif\";\n  ctx.fillText(\"x \" + fmt(xv), 504, 140);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillText(\"gelu \" + fmt(gv), 504, 162);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillText(\"relu \" + fmt(rv), 504, 184);\n  ctx.fillStyle = \"#5b554b\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"neg leak\", 90, 250);\n  ctx.fillText(\"identity\", 380, 130);\n  if (gy > 300) { ctx.fillStyle = \"#1d1a16\"; ctx.fillText(\"clipped\", mx - 20, 300); }\n  if (ry > 300) { ctx.fillStyle = \"#1d1a16\"; ctx.fillText(\"clipped\", mx - 20, 292); }\n}",
+  "explain": "Toy curve from arXiv 1606.08415 showing GELU versus hard cutoff at zero. Limit is far-negative leak fading to zero while large positive tracks identity.",
+  "id": "gelu-leak",
+  "questions": [
+   {
+    "q": "Predict gelu when x = -1?",
+    "why": "Tests negative leak."
+   },
+   {
+    "q": "What is gelu when x = -3?",
+    "why": "Tests far-negative limit."
+   },
+   {
+    "q": "What is gelu when x = 0?",
+    "why": "Tests zero crossing state."
+   },
+   {
+    "q": "What is gelu when x = 2?",
+    "why": "Tests positive identity state."
+   }
+  ],
+  "title": "GELU leaks below zero unlike ReLU",
+  "topic": "gelu"
+ }
+}

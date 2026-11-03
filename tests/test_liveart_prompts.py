@@ -217,10 +217,10 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
     claim = {"text": "Adam steps by the first moment.", "latex": "", "context": "", "arxiv": "1412.6980"}
     stage = "Adam keeps the step bounded by the second moment. arXiv 1412.6980. The curve is a toy of that step."
     questions = [
-        {"q": "Predict the step at lr 0.2?", "why": "that is the default"},
-        {"q": "At lr 0.8, does the line clip?", "why": "the top of the range leaves the frame"},
-        {"q": "At lr 0.1, which side of the line is the step?", "why": "the line splits the regimes"},
-        {"q": "At lr 0.4, what does the readout say?", "why": "the number is the step"},
+        {"q": "Before you move lr to 0.8, do you expect the step to leave the valley?", "why": "the narrow valley is the misconception"},
+        {"q": "Predict which side of the line the step sits on at lr 0.2?", "why": "the default is already solved"},
+        {"q": "At lr 0.1, does the step stay under the line?", "why": "the line splits the regimes"},
+        {"q": "At lr 0.4, does the step stay bounded?", "why": "the bound is the claim"},
     ]
     controls = [{"id": "lr", "label": "lr", "min": 0, "max": 1, "value": 0.2, "step": 0.1}]
     draw = (
@@ -238,7 +238,7 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
         "  ctx.stroke();\n"
         "  ctx.fillText(\"threshold \" + fmt(state.lr), 48, 28);\n"
         "  ctx.fillText(\"step = \" + fmt(y), 48, 318);\n"
-        "  ctx.fillText(\"clipped\", 500, 20);\n"
+        "  if (y > 250) { ctx.fillText(\"clipped\", 500, 20); }\n"
         "}\n"
     )
     spec = {
@@ -279,8 +279,14 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
     from rrm.liveart.prompts import schemas
     assert schemas()["codegen"]["properties"]["controls"]["items"]["properties"]["label"]["description"] == "at most 28 characters"
     assert set(schemas()["spec"]["required"]) == {
-        "archetype", "controls", "derived", "threshold_formula", "direction", "questions", "explain",
+        "archetype", "controls", "derived", "threshold_formula", "direction", "constraints", "questions", "explain",
     }
+    illegal = dict(spec, constraints=["abs(lr) <= 0.1"])
+    assert "constraint" in quality_gate(widget, claim, illegal)
+    legal = dict(spec, constraints=["lr <= 1"])
+    assert quality_gate(widget, claim, legal) == []
+    held = dict(widget, draw=draw.replace('if (y > 250) { ctx.fillText("clipped", 500, 20); }', 'ctx.fillText("holds", 48, 40);'))
+    assert "dead_label" in quality_gate(held, claim, spec)
     assert "Predice" in question_system() and "what happens" in question_system()
     assert "function fmt" in codegen_system() and "clipped" in codegen_system()
     assert "accept es false" in verifier_system()
@@ -345,6 +351,34 @@ def test_round2_fixtures_match_the_new_gate():
         json.loads((root / "adam-valley.json").read_text(encoding="utf-8")),
         {"text": "Adam.", "arxiv": "1412.6980"},
     )
+
+
+def test_round3_replay_direction_clears_six():
+    from pathlib import Path
+
+    from rrm.liveart.gate import quality_gate
+
+    root = Path(__file__).resolve().parents[1] / "evals" / "liveart" / "spark3"
+    clear, full = [], []
+    dead, bad = set(), set()
+    for path in sorted(root.glob("*.json")):
+        row = json.loads(path.read_text(encoding="utf-8"))
+        reasons = quality_gate(row["widget"], row["claim"], row["spec"])
+        if "direction" not in reasons:
+            clear.append(path.stem)
+        else:
+            assert "direction" in reasons
+        if not reasons:
+            full.append(path.stem)
+        if "dead_label" in reasons:
+            dead.add(path.stem)
+        if "bad_question" in reasons:
+            bad.add(path.stem)
+    assert clear == ["adam-valley", "gelu-tail", "gqa-share", "kl-policy", "rmsnorm-eps", "rope-shift"]
+    assert "lora-rank" not in clear and "pe-sincos" not in clear
+    assert full == []
+    assert dead == {"gqa-share", "pe-sincos", "rmsnorm-eps"}
+    assert len(bad) == 8
 
 
 def test_probe_retries_once_on_504_or_timeout(monkeypatch):

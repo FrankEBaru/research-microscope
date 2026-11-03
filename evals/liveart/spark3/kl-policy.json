@@ -1,0 +1,106 @@
+{
+ "id": "kl-policy",
+ "claim": {
+  "text": "In RLHF the optimal policy is the reference policy times exp(reward / beta), so a small beta lets one token take the rew",
+  "latex": "",
+  "context": "",
+  "arxiv": "2203.02155"
+ },
+ "spec": {
+  "archetype": "bars",
+  "controls": [
+   {
+    "id": "beta",
+    "label": "KL strength beta",
+    "max": 5.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 0.5
+   },
+   {
+    "id": "gap",
+    "label": "Reward gap top token",
+    "max": 5.0,
+    "min": 0.0,
+    "step": 0.1,
+    "value": 2.0
+   }
+  ],
+  "derived": [
+   {
+    "formula": "exp(gap/beta)/(1+exp(gap/beta))",
+    "name": "p_top"
+   }
+  ],
+  "direction": [
+   {
+    "control": "beta",
+    "effect": "down",
+    "readout": "p_top"
+   }
+  ],
+  "explain": "Illustrative toy of arXiv 2203.02155: bars show reference policy reweighted by exp(reward/beta). The limit is small beta where one token takes the reward.",
+  "questions": [
+   {
+    "q": "Predict p_top if beta=0.2 with gap=2?",
+    "why": "Tests sharp concentration at small beta."
+   },
+   {
+    "q": "What is p_top if beta=4 with gap=2?",
+    "why": "Tests flattening toward reference at large beta."
+   },
+   {
+    "q": "What is p_top if gap=0.5 with beta=1?",
+    "why": "Tests small advantage case."
+   },
+   {
+    "q": "What is p_top if gap=4 with beta=1?",
+    "why": "Tests large advantage takeover."
+   }
+  ],
+  "threshold_formula": "gap/beta - 1"
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "beta",
+    "label": "KL strength beta",
+    "max": 5.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 0.5
+   },
+   {
+    "id": "gap",
+    "label": "Reward gap top token",
+    "max": 5.0,
+    "min": 0.0,
+    "step": 0.1,
+    "value": 2.0
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var beta = state.beta; var gap = state.gap; function fmt(v) { return Math.round(v * 100) / 100; } var r = gap / beta; var e = Math.exp(r); var ptop = e / (1 + e); var th = r - 1; var maxW = w * 0.52; var x0 = w * 0.30; var wMax = 10; var lenW = e / wMax * maxW; var clipped = 0; if (lenW > maxW) { lenW = maxW; clipped = 1; } var lenW2 = 1 / wMax * maxW; var lenP = ptop * maxW; var lenP2 = (1 - ptop) * maxW; var lenR = 0.5 * maxW; ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); ctx.font = \"12px sans-serif\"; ctx.fillStyle = \"#1d1a16\"; ctx.fillText(\"reference 0.5 / 0.5\", 16, 70); ctx.fillText(\"weight exp(reward/beta)\", 16, 140); ctx.fillText(\"optimal policy\", 16, 240); ctx.fillStyle = \"#d5cbbd\"; ctx.fillRect(x0, 52, lenR, 16); ctx.fillRect(x0, 76, lenR, 16); ctx.fillStyle = \"#1f4b99\"; ctx.fillRect(x0, 122, lenW, 18); ctx.fillRect(x0, 148, lenW2, 18); if (clipped === 1) { ctx.fillStyle = \"#1d1a16\"; ctx.fillText(\"clipped\", x0 + maxW + 8, 136); } ctx.fillStyle = \"#c4512c\"; ctx.fillRect(x0, 222, lenP, 20); ctx.fillStyle = \"#1f4b99\"; ctx.fillRect(x0, 250, lenP2, 20); ctx.fillStyle = \"#1d1a16\"; ctx.fillText(\"top \" + fmt(ptop), x0 + lenP + 8, 237); ctx.fillText(\"other \" + fmt(1 - ptop), x0 + lenP2 + 8, 265); ctx.fillText(\"gap/beta \" + fmt(r), 16, 300); ctx.fillText(\"p_top \" + fmt(ptop), 16, 320); ctx.fillText(\"gap/beta-1 \" + fmt(th), 16, 340); var pth = 2.718281828459045 / (1 + 2.718281828459045); var xt = x0 + pth * maxW; ctx.strokeStyle = \"#1d1a16\"; ctx.lineWidth = 1.5; var yy = 218; while (yy < 276) { ctx.beginPath(); ctx.moveTo(xt, yy); ctx.lineTo(xt, yy + 6); ctx.stroke(); yy = yy + 10; } ctx.font = \"11px sans-serif\"; ctx.fillStyle = \"#1d1a16\"; ctx.fillText(\"takeover\", xt + 6, 218); if (th > 0) { ctx.fillText(\"concentrated\", 16, 30); } else { ctx.fillText(\"near reference\", 16, 30); } }",
+  "explain": "Illustrative toy of arXiv 2203.02155: bars show reference policy reweighted by exp(reward/beta). The limit is small beta where one token takes the reward.",
+  "id": "kl-rlhf-takeover",
+  "questions": [
+   {
+    "q": "Predict p_top if beta=0.2 with gap=2?",
+    "why": "Tests sharp concentration at small beta."
+   },
+   {
+    "q": "What is p_top if beta=4 with gap=2?",
+    "why": "Tests flattening toward reference at large beta."
+   },
+   {
+    "q": "What is p_top if gap=0.5 with beta=1?",
+    "why": "Tests small advantage case."
+   },
+   {
+    "q": "What is p_top if gap=4 with beta=1?",
+    "why": "Tests large advantage takeover."
+   }
+  ],
+  "title": "Small beta lets one token take the reward",
+  "topic": "kl_rlhf"
+ }
+}
