@@ -64,6 +64,12 @@ def run_live(args, cases, node, root):
     if args.ids:
         want = args.ids.split(",")
         by = {c["id"]: c for c in cases}
+        try:  # RRM-78 probe lists (bank claims not in the select suite)
+            from evals.liveart.probe_claims import claims as probe_claims
+            for row in probe_claims():
+                by.setdefault(row["id"], {"id": row["id"], "claim": row["claim"]})
+        except Exception:
+            pass
         cases = [by[i] for i in want if i in by]
     elif args.n > 0:
         cases = cases[: args.n]
