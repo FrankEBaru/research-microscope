@@ -51,7 +51,7 @@ _ADAM = """function draw(ctx, state, t) {
   }
   function path(kind) {
     var x = -1.15, y = 0.55, mx = 0, my = 0, vx = 0, vy = 0;
-    var step, gx, gy, out = 0, mhx, mhy, vhx, vhy;
+    var step, gx, gy, out = 0, mhx, mhy, vhx, vhy, ymin = y;
     ctx.beginPath();
     ctx.moveTo(X(x), Y(y));
     for (step = 1; step <= 26; step++) {
@@ -70,6 +70,7 @@ _ADAM = """function draw(ctx, state, t) {
         x = x - lr * mhx / (Math.sqrt(vhx) + eps);
         y = y - lr * mhy / (Math.sqrt(vhy) + eps);
       }
+      if (y < ymin) ymin = y;
       if (x > 1.45 || x < -1.45 || y > 1.1 || y < -1.1) {
         var cx = x, cy = y;
         if (cx > 1.45) cx = 1.45;
@@ -83,8 +84,10 @@ _ADAM = """function draw(ctx, state, t) {
       ctx.lineTo(X(x), Y(y));
     }
     ctx.stroke();
+    if (kind === 1 && ymin < -0.05 && y > ymin + 0.08) adamBack = 1;
     return out;
   }
+  var adamBack = 0;
   ctx.strokeStyle = "#c4512c";
   ctx.lineWidth = 2;
   var sgdOut = path(0);
@@ -106,7 +109,12 @@ _ADAM = """function draw(ctx, state, t) {
   else ctx.fillText("SGD rebota", lx, 98);
   ctx.fillStyle = "#8a8175";
   ctx.font = "12px sans-serif";
-  ctx.fillText("umbral " + (Math.round(100 / wall) / 100), lx, 118);
+  ctx.fillText("lr " + Math.round(lr * 100) / 100, lx, 118);
+  ctx.fillText("umbral " + (Math.round(100 / wall) / 100), lx, 134);
+  if (adamBack) {
+    ctx.fillStyle = "#1f4b99";
+    ctx.fillText("Adam se pasa y vuelve", lx, 154);
+  }
   ctx.fillText("f = 1/2 x^2 + pared y^2", x0, 16);
 }"""
 
@@ -257,6 +265,8 @@ _KL = """function draw(ctx, state, t) {
     ctx.fillRect(x, h * 0.48 + bh * (1 - Math.min(p[i], 0.95) / 0.95), bw - 12, bh * Math.min(p[i], 0.95) / 0.95);
     ctx.fillStyle = i === 4 ? "#c4512c" : "#1d1a16";
     ctx.fillText(name[i], x, h * 0.48 + bh + 16);
+    ctx.fillStyle = "#8a8175";
+    ctx.fillText("" + reward[i], x, h * 0.48 + bh + 30);
   }
   ctx.fillStyle = "#1d1a16";
   ctx.font = "14px sans-serif";
@@ -349,7 +359,7 @@ def rows():
     return [
         _row(
             "adam-valley", "adam", "En el valle angosto SGD rebota y Adam no",
-            "Adam (Kingma y Ba, 1412.6980) da el paso m̂/(√v̂+ε). Aquí β1 es 0.9 y β2 es 0.999, fijos. "
+            "Adam (Kingma y Ba, 1412.6980, algoritmo 1) da el paso m̂/(√v̂+ε), con β1 0.9, β2 0.999 y ε 1e-8. "
             "El valle f = ½x² + pared·y² es un juguete, no una figura medida: en y el gradiente es 2·pared veces el de x. "
             "Con pared 20, SGD rebota; si el lr pasa el umbral de la derecha, se sale. El segundo momento achica ese eje y Adam se queda. "
             "Baja la pared a 1 y SGD también baja liso. No es una corrida de entrenamiento.",
@@ -404,10 +414,9 @@ def rows():
         ),
         _row(
             "kl-policy", "kl_rlhf", "Sin el KL, ja se queda con el premio",
-            "InstructGPT (Ouyang et al., 2203.02155) maximiza premio menos β por el KL contra la referencia. "
-            "Estas barras son la forma cerrada π ∝ π_ref · exp(premio/β), no una corrida de PPO. "
-            "Los números son ilustrativos: ja tiene premio 2.4 y en la referencia solo pesa 0.04. "
-            "Con β 0.7, ja no pasa de la mitad y el KL queda bajo 1. Bájalo de 0.4 y ja se queda el premio.",
+            "InstructGPT (Ouyang et al., 2203.02155, ec. 2) maximiza premio menos β por el log-ratio contra la supervisada; ellos usan β 0.02 y PPO. "
+            "Estas barras son la forma cerrada de ese término, no esa corrida. El premio de cada token está bajo su nombre; ja vale 2.4 y en la referencia pesa 0.04. "
+            "Con β 0.7, ja no pasa de la mitad. Bájalo de 0.4 y se queda el premio.",
             (
                 ("Baja beta a 0.2. ¿Qué token se queda la masa?", "ja pasa del 50% y el KL deja de repartir"),
                 ("En beta 0.7, ¿por qué ja no se lo lleva todo si su premio es 2.4?", "la referencia casi no dice ja y el KL lo cobra"),
@@ -421,10 +430,10 @@ def rows():
         ),
         _row(
             "pe-sincos", "positional_encoding", "Lo cercano se parece: el pico cae en p",
-            "El encoding del Transformer (Vaswani et al., 1706.03762) es seno de pos/10000^(2i/d) y el coseno en la dimensión impar. "
-            "El parecido es el promedio de cosenos de la diferencia, así que en p vale 1 y a 4 pasos sigue alto con la base 10000. "
-            "La fila 0 no depende de la base. Bájala de 100 y las filas de abajo se aceleran: el pico se angosta. "
-            "La base 10000 es la del paper; la curva es ese producto, no una medición.",
+            "El encoding del Transformer (Vaswani et al., 1706.03762) es seno de pos/10000^(2i/d) y el coseno en la impar. "
+            "El paper lo plantea como hipótesis: lo cercano se parece porque el producto depende de la diferencia. "
+            "En p vale 1 y a 4 pasos sigue alto con la base 10000. La fila 0 no depende de la base. "
+            "Bájala de 100 y el pico se angosta. La curva es ese producto, no una medición.",
             (
                 ("Mueve la posición. ¿El pico de abajo la sigue?", "el parecido vale 1 en p y cae al alejarse"),
                 ("Baja la base a 20. ¿Qué le pasa a las ondas de abajo y al pico?", "se aceleran y el parecido a 4 pasos se desploma"),
