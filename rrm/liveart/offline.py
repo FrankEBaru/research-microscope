@@ -28,6 +28,17 @@ _RESULT = re.compile(
     re.I,
 )
 _MATH = re.compile(r"\$|\\(?:frac|sqrt|sum|sin|cos)|=")
+_SLOP = re.compile(
+    r"\b(?:confetti|sparkles?|rainbow)\b|"
+    r"\bno need to explain\b|"
+    r"\bpretty bouncing\b|"
+    r"\bslider only changes the (?:color|hue|speed)\b|"
+    r"\bjust animate\b",
+    re.I,
+)
+_DECOR_IDS = frozenset({"hue", "color", "colour", "speed", "bounce", "sparkle", "party"})
+_PAINT = re.compile(r"fillStyle|strokeStyle|globalAlpha")
+_SEAL = re.compile(r"verified|from the paper|✓|✔", re.I)
 _ID = re.compile(r"^[a-z][a-z0-9_]{0,15}$")
 _DRAW = re.compile(r"^function draw\s*\(")
 
@@ -188,8 +199,94 @@ def _focal(blob):
     return 1 if re.search(r"focal loss", blob, re.I) else 0
 
 
+def _giou(blob):
+    return 2 if re.search(r"\bgiou\b|generalized intersection over union", blob, re.I) else 0
+
+
+def _ppo(blob):
+    if re.search(r"\bppo\b|proximal policy", blob, re.I):
+        return 2
+    return _both(
+        blob,
+        re.compile(r"probability ratio|surrogate objective", re.I),
+        re.compile(r"\\epsilon|\bepsilon\b|\bclip(?:ped)?\b", re.I),
+    )
+
+
+def _nerf(blob):
+    if re.search(r"\bnerf\b|neural radiance", blob, re.I):
+        return 2
+    return _both(blob, re.compile(r"frequenc", re.I), re.compile(r"radiance|view synthesis", re.I))
+
+
+def _vit(blob):
+    if re.search(r"vision transformer|\bvit\b", blob, re.I) and re.search(r"\bpatch", blob, re.I):
+        return 2
+    return 1 if re.search(r"patch size", blob, re.I) else 0
+
+
 # Orden = desempate. El más específico va primero.
 TOPICS = (
+    {
+        "name": "giou",
+        "score": _giou,
+        "controls": ("gap",),
+        "mark": "encierre",
+        "explain": (
+            "IoU vale cero en cuanto las cajas no se tocan. GIoU resta lo que queda vacío dentro del encierre mínimo, "
+            "así que alejarlas sigue bajando el puntaje."
+        ),
+        "questions": (
+            ("¿Por qué dos cajas que no se tocan tienen el mismo IoU?", "en cuanto no hay intersección el IoU vale cero"),
+            ("¿Qué resta GIoU cuando las cajas se separan?", "la fracción vacía del encierre mínimo"),
+            ("¿Qué crece si las alejo: el IoU o el hueco del encierre?", "el IoU se queda y el encierre se vacía"),
+        ),
+    },
+    {
+        "name": "ppo_clip",
+        "score": _ppo,
+        "controls": ("eps", "ratio"),
+        "mark": "recorte",
+        "explain": (
+            "El recorte de PPO aplana el objetivo cuando el ratio sale de la banda 1±épsilon. "
+            "Con advantage positivo se aplana a la derecha; con negativo, a la izquierda."
+        ),
+        "questions": (
+            ("¿Por qué el objetivo deja de subir si el ratio pasa de 1+épsilon?", "el recorte no paga un ratio más grande"),
+            ("¿Qué lado se aplana cuando el advantage es negativo?", "se aplana por debajo de 1−épsilon"),
+            ("¿Qué se recorta: el ratio o la recompensa del entorno?", "se recorta el ratio dentro del objetivo"),
+        ),
+    },
+    {
+        "name": "nerf_freq",
+        "score": _nerf,
+        "controls": ("levels",),
+        "mark": "frecuencia",
+        "explain": (
+            "NeRF suma frecuencias dobles sobre la coordenada. Con un nivel el borde queda ancho; "
+            "con más niveles el mismo borde se vuelve un pico."
+        ),
+        "questions": (
+            ("¿Por qué un solo nivel no puede dibujar un borde fino?", "una frecuencia baja es una onda ancha"),
+            ("¿Qué le pasa al pico si subo los niveles?", "se angosta alrededor de la coordenada"),
+            ("¿Qué estoy subiendo: la cámara o la frecuencia máxima?", "el control es el número de frecuencias"),
+        ),
+    },
+    {
+        "name": "vit_patch",
+        "score": _vit,
+        "controls": ("patch",),
+        "mark": "parche",
+        "explain": (
+            "El parche es el token. Si crece, la imagen se parte en menos piezas y cada pieza promedia más píxeles, "
+            "así que el detalle se pierde."
+        ),
+        "questions": (
+            ("¿Por qué un parche grande ya no muestra la forma?", "cada token promedia un bloque más grande"),
+            ("¿Qué es un token aquí: un píxel o un parche?", "el modelo ve parches, no píxeles sueltos"),
+            ("¿Qué pasa con el número de tokens si el parche se achica?", "entran más piezas y vuelve el detalle"),
+        ),
+    },
     {
         "name": "yarn_scale",
         "score": _yarn,
@@ -257,12 +354,13 @@ TOPICS = (
         "mark": "base",
         "explain": (
             "Cada par de dimensiones es una onda. La base cambia qué tan rápido gira: "
-            "las primeras vuelven seguido y las últimas casi no se mueven, así que una posición larga sigue viéndose distinta."
+            "las primeras vuelven seguido y las últimas casi no. Por eso una posición cercana se parece y una lejana no."
         ),
         "questions": (
             ("¿Por qué una base más grande hace más lentas las dimensiones altas?", "la base está en el exponente de la frecuencia"),
             ("¿Qué se confunde si todas las ondas van igual de rápido?", "la posición deja de separarse entre dimensiones"),
             ("¿Cómo cabe una frase larga en un seno y un coseno?", "las frecuencias bajas dan vueltas despacio"),
+            ("¿Por qué una posición cercana se parece y una lejana no?", "el producto de las ondas cae con la distancia"),
         ),
     },
     {
@@ -301,11 +399,11 @@ TOPICS = (
         "controls": ("theta",),
         "mark": "gira",
         "explain": (
-            "RoPE gira el par de coordenadas de cada posición por un ángulo. "
-            "La posición no se suma: queda en el ángulo, y dos tokens se comparan por cuánto se giraron."
+            "RoPE gira cada token según su posición. Si ambos se corren igual, "
+            "el ángulo entre ellos no cambia y el parecido queda. Separarlos sí abre el ángulo."
         ),
         "questions": (
-            ("¿Por qué girar un vector guarda la posición?", "el ángulo depende del índice del token"),
+            ("¿Por qué correr los dos tokens no cambia el parecido?", "ambos giran el mismo extra y el ángulo entre ellos queda"),
             ("¿Qué pasa con el ángulo si los tokens quedan más lejos?", "la diferencia de giros crece"),
             ("¿En qué se distingue esto de sumar un seno al embedding?", "aquí la posición es una rotación"),
         ),
@@ -608,6 +706,8 @@ def select_claim(claim):
         return _decision("skip", "", "injection")
     if _ABSURD.search(blob):
         return _decision("skip", "", "absurd")
+    if _SLOP.search(blob):
+        return _decision("skip", "", "slop")
     scored = [(topic["score"](blob), topic) for topic in TOPICS]
     scored = [item for item in scored if item[0] > 0]
     if scored:
@@ -784,6 +884,41 @@ def _reads_control(draw, kid):
     )
 
 
+def _line_at(draw, index):
+    start = draw.rfind("\n", 0, index) + 1
+    end = draw.find("\n", index)
+    if end < 0:
+        end = len(draw)
+    return draw[start:end]
+
+
+def _paint_only(draw, kid):
+    reads = list(re.finditer(r"state\." + re.escape(kid) + r"\b", draw))
+    if not reads:
+        return False
+    return all(_PAINT.search(_line_at(draw, match.start())) for match in reads)
+
+
+def _slop_draw(widget):
+    """El slider no mueve el parámetro: es color, o un id de adorno, o solo pinta."""
+    if not isinstance(widget, dict):
+        return False
+    draw = widget.get("draw")
+    controls = widget.get("controls")
+    if not isinstance(draw, str) or not isinstance(controls, list):
+        return False
+    ids = [item.get("id") for item in controls if isinstance(item, dict)]
+    ids = [kid for kid in ids if isinstance(kid, str)]
+    if not ids:
+        return False
+    if _SEAL.search(draw):
+        return True
+    if set(ids) <= _DECOR_IDS:
+        return True
+    read = [kid for kid in ids if _reads_control(draw, kid)]
+    return bool(read) and all(_paint_only(draw, kid) for kid in read)
+
+
 def _dead_control(widget):
     """El slider no entra al draw: el dibujo no puede responder al control."""
     if not isinstance(widget, dict):
@@ -804,6 +939,8 @@ def verify_widget(claim, widget):
     reasons = []
     if decision["reason"] == "injection" or _echo(widget):
         reasons.append("injection")
+    if decision["reason"] == "slop" or _slop_draw(widget):
+        reasons.append("slop")
     if decision["merit"] != "widget":
         reasons.append("no_widget")
     reasons.extend(shape_errors(widget))
@@ -833,5 +970,6 @@ def verify_widget(claim, widget):
             )),
             "no_network": "banned" not in ordered and "network" not in ordered,
             "no_injection_obeyed": "injection" not in ordered,
+            "not_slop": "slop" not in ordered,
         },
     }

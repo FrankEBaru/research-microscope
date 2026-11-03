@@ -37,13 +37,21 @@ Prohibido en el fuente (la lista viva está en `contract.py`): red, `fetch`, `ev
 
 ## Temas que el selector ya reconoce
 
-La lista viva está en `offline.py` (`TOPICS`): encoding posicional, temperatura, raíz de d_k, sigma, RoPE, DPO, YaRN, borrador, ruido, guía, DETR, atajo, top-p, contraste, y también RMSNorm, SwiGLU, GQA, multi-head, ALiBi, GELU, suavizado de etiquetas, dropout, calentamiento, MoE, top-k y focal loss.
+La lista viva está en `offline.py` (`TOPICS`): encoding posicional, temperatura, raíz de d_k, sigma, RoPE, DPO, YaRN, borrador, ruido, guía, DETR, atajo, top-p, contraste, GIoU, recorte de PPO, frecuencias de NeRF, parche de ViT, y también RMSNorm, SwiGLU, GQA, multi-head, ALiBi, GELU, suavizado de etiquetas, dropout, calentamiento, MoE, top-k y focal loss.
 
 Un resultado (BLEU, “N× smaller”, “8x deeper”, outperforms) es `skip`. Una fórmula que no es de esos temas es `static`. Texto absurdo o una inyección es `skip`.
 
+Un adorno es `skip` con razón `slop`: confeti, arcoíris, rebote, o un slider que solo cambia color o la velocidad de una animación. Un mecanismo con su parámetro no es slop. El verificador también devuelve `slop` si el draw lee el control solo para pintar (`fillStyle`, `strokeStyle`, `globalAlpha`), si el id es de adorno (`hue`, `speed`, `bounce`), o si el draw trae un sello (`verified`, `from the paper`, ✓). El esquema del verificador incluye `not_slop`.
+
+Dos controles enlazados caben en el máximo de 4 cuando cada uno es un parámetro del enunciado y el dibujo muestra cómo se cruzan. `t` solo si el fenómeno se mueve solo.
+
+## Host
+
+El lienzo que pone el host es 360×200 (`state.w`, `state.h`). El iframe va con `sandbox="allow-scripts"`, sin `allow-same-origin`, y el padre corta a los ~800 ms. Eso no cambia el JSON ni esta versión. La galería de prueba es `liveart/host/gallery.html`. No está conectada al lector.
+
 ## Few-shots
 
-Cuatro draws de oro en `fewshots.py`: base del encoding posicional (también usa `t`), temperatura del softmax, escala por la raíz de `d_k`, desviación estándar. El prompt de código los incluye completos. Otros treinta, en `emulated.py`, pasan el verificador pero no entran al prompt: inflarlo con treinta ejemplos lo pone peor. RRM-80 puede cambiar un draw; la forma no.
+Cuatro draws de oro en `fewshots.py`: base del encoding posicional (la onda y el parecido entre posiciones; también usa `t`), temperatura del softmax, escala por la raíz de `d_k`, desviación estándar. El prompt de código los incluye completos. El resto vive en `emulated.py` y no entra al prompt: entre ellos, RoPE con dos controles (la distancia abre el ángulo; correr ambos lo deja igual). RRM-80 puede cambiar un draw; la forma no.
 
 El verificador offline ya rechaza forma mala, API prohibida, tema cruzado, un enunciado que es una orden, y un widget que copia esa orden al título, la explicación o el draw. `intuitive` y `answers_a_question` quedan para el verificador de modelo, cuando haya sandbox.
 
@@ -51,4 +59,4 @@ El verificador offline ya rechaza forma mala, API prohibida, tema cruzado, un en
 
 ## Qué no entra en 0.2
 
-El iframe, el CSP, el tope de tiempo y el validador AST. Los hace RRM-79 contra esta lista. Hasta que existan, no se llama a Meta.
+El iframe del lector, el CSP de producción y el validador AST. Los hace RRM-79 contra esta lista. La galería es solo el host de prueba. Hasta que el sandbox del lector exista, no se llama a Meta.

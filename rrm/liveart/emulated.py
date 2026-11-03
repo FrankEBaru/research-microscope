@@ -1,4 +1,4 @@
-"""Treinta widgets emulados, como saldrían de Muse Code. No van dentro del prompt.
+"""Widgets emulados, como saldrían de Muse Code. No van dentro del prompt.
 
 Los cuatro de oro siguen en fewshots.py y son los únicos few-shots del prompt.
 Estos pasan por el mismo verificador. RRM-80 puede reemplazar un draw; la forma no cambia.
@@ -63,18 +63,79 @@ _ROPE_GAP = _draw(
 
 CATALOG = [
     _row(
-        "rope-angle", "rope", "El ángulo guarda la posición",
-        "RoPE rotates each position by an angle instead of adding a sinusoid.",
-        "2302.13971",
-        [_knob("theta", "ángulo", 0.2, 4, 1, 0.1)],
-        "  var ang = state.theta * 0.8;\n"
-        "  var cx = w * 0.5, cy = h * 0.55, r = h * 0.28;\n"
-        "  ctx.strokeStyle = \"#1f4b99\";\n"
-        "  ctx.lineWidth = 2;\n"
+        "rope-shift", "rope", "Correr ambos no mueve el parecido",
+        "RoPE encodes each absolute position as a rotation, so the attention score depends only on the relative distance.",
+        "2104.09864",
+        [
+            _knob("theta", "distancia", 0, 4, 2, 1),
+            _knob("shift", "corrimiento", 0, 8, 3, 1),
+        ],
+        "  var gap = state.theta, shift = state.shift, om = Math.PI / 8;\n"
+        "  var aq = shift * om, ak = (shift + gap) * om;\n"
+        "  var qx = Math.cos(aq), qy = Math.sin(aq), kx = Math.cos(ak), ky = Math.sin(ak);\n"
+        "  var dot = qx * kx + qy * ky;\n"
+        "  var cx = w * 0.34, cy = h * 0.54, r = Math.min(w * 0.30, h * 0.40);\n"
+        "  var p, a, x, y;\n"
+        "  ctx.strokeStyle = \"#e4dccb\";\n"
+        "  ctx.lineWidth = 1;\n"
         "  ctx.beginPath();\n"
-        "  ctx.moveTo(cx, cy);\n"
-        "  ctx.lineTo(cx + Math.cos(ang) * r, cy - Math.sin(ang) * r);\n"
-        "  ctx.stroke();\n",
+        "  ctx.arc(cx, cy, r, 0, Math.PI * 2);\n"
+        "  ctx.stroke();\n"
+        "  if (gap > 0) {\n"
+        "    ctx.fillStyle = \"#efe6cf\";\n"
+        "    ctx.beginPath();\n"
+        "    ctx.moveTo(cx, cy);\n"
+        "    ctx.arc(cx, cy, r * 0.78, -ak, -aq, false);\n"
+        "    ctx.closePath();\n"
+        "    ctx.fill();\n"
+        "  }\n"
+        "  ctx.fillStyle = \"#cfc6b6\";\n"
+        "  for (p = 0; p <= 12; p++) {\n"
+        "    a = p * om;\n"
+        "    ctx.beginPath();\n"
+        "    ctx.arc(cx + Math.cos(a) * r, cy - Math.sin(a) * r, 2.2, 0, Math.PI * 2);\n"
+        "    ctx.fill();\n"
+        "  }\n"
+        "  function arm(ang, color) {\n"
+        "    x = cx + Math.cos(ang) * r * 0.92;\n"
+        "    y = cy - Math.sin(ang) * r * 0.92;\n"
+        "    ctx.strokeStyle = color;\n"
+        "    ctx.lineWidth = 2.5;\n"
+        "    ctx.beginPath();\n"
+        "    ctx.moveTo(cx, cy);\n"
+        "    ctx.lineTo(x, y);\n"
+        "    ctx.stroke();\n"
+        "    ctx.fillStyle = color;\n"
+        "    ctx.beginPath();\n"
+        "    ctx.arc(x, y, 3.2, 0, Math.PI * 2);\n"
+        "    ctx.fill();\n"
+        "  }\n"
+        "  arm(aq, \"#1f4b99\");\n"
+        "  arm(ak, \"#c4512c\");\n"
+        "  ctx.font = \"13px sans-serif\";\n"
+        "  ctx.fillStyle = \"#1f4b99\";\n"
+        "  ctx.fillText(\"q\", cx + qx * r * 0.58 - 4, cy - qy * r * 0.58 + 4);\n"
+        "  ctx.fillStyle = \"#c4512c\";\n"
+        "  ctx.fillText(\"k\", cx + kx * r * 0.58 - 4, cy - ky * r * 0.58 + 4);\n"
+        "  x = w * 0.74;\n"
+        "  y = h * 0.50 - dot * h * 0.28;\n"
+        "  ctx.strokeStyle = \"#d9d3c7\";\n"
+        "  ctx.lineWidth = 1;\n"
+        "  ctx.beginPath();\n"
+        "  ctx.moveTo(x, h * 0.22);\n"
+        "  ctx.lineTo(x, h * 0.78);\n"
+        "  ctx.moveTo(x - 7, h * 0.50);\n"
+        "  ctx.lineTo(x + 7, h * 0.50);\n"
+        "  ctx.stroke();\n"
+        "  ctx.fillStyle = \"#1c1915\";\n"
+        "  ctx.beginPath();\n"
+        "  ctx.arc(x, y, 4, 0, Math.PI * 2);\n"
+        "  ctx.fill();\n"
+        "  ctx.font = \"22px sans-serif\";\n"
+        "  ctx.fillText(dot.toFixed(2), w * 0.80, h * 0.46);\n"
+        "  ctx.fillStyle = \"#5c564c\";\n"
+        "  ctx.font = \"12px sans-serif\";\n"
+        "  ctx.fillText(\"q·k\", w * 0.80, h * 0.26);\n",
     ),
     {
         "id": "rope-gap",
@@ -490,6 +551,149 @@ CATALOG = [
         "  ctx.beginPath();\n"
         "  ctx.arc(x, h * 0.6, 5, 0, Math.PI * 2);\n"
         "  ctx.fill();\n",
+    ),
+    _row(
+        "giou-gap", "giou", "IoU se queda en cero; el encierre no",
+        "GIoU subtracts the empty part of the smallest enclosing box from IoU.",
+        "1902.09630",
+        [_knob("gap", "hueco", 0, 160, 110, 1)],
+        "  var gap = state.gap, s = 58;\n"
+        "  var ax0 = 28, ay0 = 46, ax1 = ax0 + s, ay1 = ay0 + s;\n"
+        "  var bx0 = ax0 + gap, by0 = ay0, bx1 = bx0 + s, by1 = by0 + s;\n"
+        "  var ix0 = Math.max(ax0, bx0), iy0 = Math.max(ay0, by0);\n"
+        "  var ix1 = Math.min(ax1, bx1), iy1 = Math.min(ay1, by1);\n"
+        "  var iw = ix1 - ix0, ih = iy1 - iy0;\n"
+        "  if (iw < 0) iw = 0;\n"
+        "  if (ih < 0) ih = 0;\n"
+        "  var inter = iw * ih, union = s * s * 2 - inter, iou = inter / union;\n"
+        "  var cx0 = Math.min(ax0, bx0), cy0 = Math.min(ay0, by0);\n"
+        "  var cx1 = Math.max(ax1, bx1), cy1 = Math.max(ay1, by1);\n"
+        "  var c = (cx1 - cx0) * (cy1 - cy0);\n"
+        "  var giou = iou - (c - union) / c;\n"
+        "  var y0 = 108, bh;\n"
+        "  ctx.fillStyle = \"#e4d8bc\";\n"
+        "  ctx.fillRect(cx0, cy0, cx1 - cx0, cy1 - cy0);\n"
+        "  ctx.globalAlpha = 0.9;\n"
+        "  ctx.fillStyle = \"#1f4b99\";\n"
+        "  ctx.fillRect(ax0, ay0, s, s);\n"
+        "  ctx.fillStyle = \"#c4512c\";\n"
+        "  ctx.fillRect(bx0, by0, s, s);\n"
+        "  ctx.globalAlpha = 1;\n"
+        "  ctx.strokeStyle = \"#5c564c\";\n"
+        "  ctx.beginPath();\n"
+        "  ctx.moveTo(w - 92, y0);\n"
+        "  ctx.lineTo(w - 12, y0);\n"
+        "  ctx.stroke();\n"
+        "  ctx.fillStyle = \"#1f4b99\";\n"
+        "  bh = iou * 72;\n"
+        "  ctx.fillRect(w - 78, y0 - bh, 18, bh);\n"
+        "  ctx.fillStyle = \"#c4512c\";\n"
+        "  if (giou >= 0) ctx.fillRect(w - 46, y0 - giou * 72, 18, giou * 72);\n"
+        "  else ctx.fillRect(w - 46, y0, 18, Math.min(72, -giou * 160));\n"
+        "  ctx.fillStyle = \"#1c1915\";\n"
+        "  ctx.font = \"12px sans-serif\";\n"
+        "  ctx.fillText(\"IoU \" + Math.round(iou * 100), w - 96, 18);\n"
+        "  ctx.fillText(\"GIoU \" + Math.round(giou * 100), w - 96, 34);\n",
+    ),
+    _row(
+        "ppo-clip", "ppo_clip", "El recorte aplana los dos lados",
+        "Proximal Policy Optimization clips the probability ratio with epsilon.",
+        "1707.06347",
+        [_knob("eps", "épsilon", 0.05, 0.5, 0.2, 0.05), _knob("ratio", "ratio", 0.2, 2, 1, 0.05)],
+        "  var eps = state.eps, ratio = state.ratio, lo = 1 - eps, hi = 1 + eps;\n"
+        "  function X(r) { return 36 + (r / 2) * (w - 52); }\n"
+        "  function clipr(r) { return r < lo ? lo : r > hi ? hi : r; }\n"
+        "  function obj(r, A) { var raw = r * A, cut = clipr(r) * A; return raw < cut ? raw : cut; }\n"
+        "  function Y(v) { return h * 0.78 - (v + 2) * (h * 0.2); }\n"
+        "  var i, r, y;\n"
+        "  ctx.fillStyle = \"#d9e3f5\";\n"
+        "  ctx.fillRect(X(lo), 16, Math.max(1, X(hi) - X(lo)), h - 36);\n"
+        "  ctx.strokeStyle = \"#c8c0b2\";\n"
+        "  ctx.beginPath();\n"
+        "  ctx.moveTo(36, Y(0));\n"
+        "  ctx.lineTo(w - 12, Y(0));\n"
+        "  ctx.stroke();\n"
+        "  ctx.lineWidth = 2;\n"
+        "  ctx.strokeStyle = \"#c4512c\";\n"
+        "  ctx.beginPath();\n"
+        "  for (i = 0; i <= 80; i++) {\n"
+        "    r = i / 40; y = Y(obj(r, 1));\n"
+        "    if (i === 0) ctx.moveTo(X(r), y); else ctx.lineTo(X(r), y);\n"
+        "  }\n"
+        "  ctx.stroke();\n"
+        "  ctx.strokeStyle = \"#1f4b99\";\n"
+        "  ctx.beginPath();\n"
+        "  for (i = 0; i <= 80; i++) {\n"
+        "    r = i / 40; y = Y(obj(r, -1));\n"
+        "    if (i === 0) ctx.moveTo(X(r), y); else ctx.lineTo(X(r), y);\n"
+        "  }\n"
+        "  ctx.stroke();\n"
+        "  ctx.fillStyle = \"#1c1915\";\n"
+        "  ctx.beginPath();\n"
+        "  ctx.arc(X(ratio), Y(obj(ratio, 1)), 4, 0, Math.PI * 2);\n"
+        "  ctx.fill();\n"
+        "  ctx.font = \"12px sans-serif\";\n"
+        "  ctx.fillStyle = \"#c4512c\";\n"
+        "  ctx.fillText(\"A > 0\", 8, 16);\n"
+        "  ctx.fillStyle = \"#1f4b99\";\n"
+        "  ctx.fillText(\"A < 0\", 8, h - 8);\n",
+    ),
+    _row(
+        "nerf-freq", "nerf_freq", "Más frecuencias, un borde más fino",
+        "A neural radiance field lifts each coordinate with L frequency levels, and a low L blurs the scene.",
+        "2003.08934",
+        [_knob("levels", "niveles", 1, 8, 6, 1)],
+        "  var L = Math.round(state.levels), i, x, y, px;\n"
+        "  if (L < 1) L = 1;\n"
+        "  function raw(x) {\n"
+        "    var s = 0, k, f;\n"
+        "    for (k = 0; k < L; k++) { f = Math.pow(2, k); s += Math.cos(f * Math.PI * (x - 0.5)) / f; }\n"
+        "    return s;\n"
+        "  }\n"
+        "  var mid = raw(0.5);\n"
+        "  function pxOf(x) { return 12 + x * (w - 24); }\n"
+        "  ctx.strokeStyle = \"#d9d3c7\";\n"
+        "  ctx.beginPath();\n"
+        "  ctx.moveTo(pxOf(0.46), 22); ctx.lineTo(pxOf(0.46), h - 16);\n"
+        "  ctx.moveTo(pxOf(0.54), 22); ctx.lineTo(pxOf(0.54), h - 16);\n"
+        "  ctx.stroke();\n"
+        "  ctx.strokeStyle = \"#1f4b99\";\n"
+        "  ctx.lineWidth = 2;\n"
+        "  ctx.beginPath();\n"
+        "  for (i = 0; i <= 120; i++) {\n"
+        "    x = i / 120; y = h * 0.82 - (raw(x) / mid) * (h * 0.55);\n"
+        "    if (i === 0) ctx.moveTo(pxOf(x), y); else ctx.lineTo(pxOf(x), y);\n"
+        "  }\n"
+        "  ctx.stroke();\n"
+        "  ctx.fillStyle = \"#1c1915\";\n"
+        "  ctx.font = \"12px sans-serif\";\n"
+        "  ctx.fillText(\"L = \" + L, 12, 16);\n",
+    ),
+    _row(
+        "vit-patch", "vit_patch", "El parche grande se come la forma",
+        "A Vision Transformer splits an image into patches of size P, and each patch is one token.",
+        "2010.11929",
+        [_knob("patch", "parche", 1, 4, 1, 1)],
+        "  var p = state.patch < 1.5 ? 1 : state.patch < 3 ? 2 : 4;\n"
+        "  var bits = [1,0,0,0,0,0,0,1, 0,1,0,0,0,0,1,0, 0,0,1,0,0,1,0,0, 0,0,0,1,1,0,0,0,"
+        " 0,0,0,1,1,0,0,0, 0,0,1,0,0,1,0,0, 0,1,0,0,0,0,1,0, 1,0,0,0,0,0,0,1];\n"
+        "  var n = 8, cell = Math.min((w - 96) / n, (h - 36) / n);\n"
+        "  var x0 = 16, y0 = 28, pr, pc, r, c, acc, cnt;\n"
+        "  for (pr = 0; pr < n; pr += p) {\n"
+        "    for (pc = 0; pc < n; pc += p) {\n"
+        "      acc = 0; cnt = 0;\n"
+        "      for (r = pr; r < pr + p; r++) {\n"
+        "        for (c = pc; c < pc + p; c++) { acc += bits[r * n + c]; cnt++; }\n"
+        "      }\n"
+        "      ctx.fillStyle = acc / cnt > 0.5 ? \"#1c1915\" : acc > 0 ? \"#8aa0c8\" : \"#f6f3ec\";\n"
+        "      ctx.fillRect(x0 + pc * cell, y0 + pr * cell, cell * p - 1, cell * p - 1);\n"
+        "      ctx.strokeStyle = \"#d9d3c7\";\n"
+        "      ctx.strokeRect(x0 + pc * cell, y0 + pr * cell, cell * p - 1, cell * p - 1);\n"
+        "    }\n"
+        "  }\n"
+        "  ctx.fillStyle = \"#1c1915\";\n"
+        "  ctx.font = \"12px sans-serif\";\n"
+        "  ctx.fillText((n / p) * (n / p) + \" tokens\", x0 + n * cell + 12, y0 + 14);\n",
     ),
 ]
 

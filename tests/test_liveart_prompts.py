@@ -89,8 +89,10 @@ def test_package_builds_messages_only_when_the_flag_is_on(monkeypatch):
     assert spec["codegen"]["additionalProperties"] is False
     assert set(spec["codegen"]["required"]) <= set(live["widget"])
     assert spec["verifier"]["properties"]["checks"]["required"] == [
-        "on_claim", "intuitive", "answers_a_question", "contract_shape", "no_network", "no_injection_obeyed",
+        "on_claim", "intuitive", "answers_a_question", "contract_shape",
+        "no_network", "no_injection_obeyed", "not_slop",
     ]
+    assert "slop" in selector_system()
 
 
 def test_contract_doc_matches_the_version():
@@ -117,7 +119,7 @@ def test_gold_draws_change_when_the_slider_or_time_changes():
 
     node = shutil.which("node")
     assert node, "node is required to execute the gold draws"
-    assert len(CATALOG) == 30
+    assert len(CATALOG) == 34
     payload = []
     for name, raw in DRAWS.items():
         left, right = _ends(raw["controls"])
@@ -169,3 +171,15 @@ for (const item of gold) {
         program.write_text(script, encoding="utf-8")
         proc = subprocess.run([node, str(program), str(data)], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
+
+
+def test_gallery_file_matches_the_generator():
+    from pathlib import Path
+
+    from rrm.liveart.gallery import html
+
+    text = Path("liveart/host/gallery.html").read_text(encoding="utf-8")
+    assert text == html()
+    assert 'setAttribute("sandbox", "allow-scripts")' in text
+    assert "allow-same-origin" not in text
+    assert "giou-gap" in text and "ppo-clip" in text and "nerf-freq" in text and "vit-patch" in text
