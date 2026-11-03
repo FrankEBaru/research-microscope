@@ -8,6 +8,7 @@ import { STAYS_DOWN, fallbackText } from "../src/lib/liveart/fallback.js";
 import { GOLD } from "../src/lib/liveart/gold.js";
 import { SHOWCASE } from "../src/lib/liveart/showcase.js";
 import { CANVAS_METHODS, CANVAS_PROPS, CSP, HOST, LIMITS, MATH_NAMES, SANDBOX, VERSION, liveOn } from "../src/lib/liveart/spec.js";
+import { runDraw } from "../src/lib/liveart/run.js";
 import { srcdoc } from "../src/lib/liveart/sandbox.js";
 import { verifyWidget } from "../src/lib/liveart/verify.js";
 
@@ -149,6 +150,50 @@ test("continue skips a bar and undefined fills a missing max", () => {
   }`;
   const filled = verifyWidget(widget(missing));
   assert.equal(filled.accept, true, filled.reasons.join(","));
+});
+
+test("continue skips one pass inside for and while", () => {
+  const nested = `function draw(ctx, state, t) {
+    var a, b, n;
+    n = 3;
+    ctx.fillStyle = "#0b6782";
+    for (a = 0; a < n; a++) {
+      for (b = 0; b < n; b++) {
+        if (b === a) { continue; }
+        ctx.fillRect(10 + a * 24, 12 + b * 18, 10 + state.a * 8, 10);
+      }
+    }
+  }`;
+  const rects = runDraw(nested, { a: 0.5, w: 640, h: 360 }, 0, 200000).calls.filter((call) => call.m === "fillRect");
+  assert.equal(rects.length, 6);
+  const nestedReport = verifyWidget(widget(nested));
+  assert.equal(nestedReport.accept, true, nestedReport.reasons.join(","));
+
+  const stepped = `function draw(ctx, state, t) {
+    var i;
+    ctx.fillStyle = "#0b6782";
+    for (i = 0; i < 4; i++) {
+      if (i === 1) { continue; }
+      ctx.fillRect(10 + i * 20, 20, 12 + state.a * 10, 24);
+    }
+  }`;
+  const bars = runDraw(stepped, { a: 0.5, w: 640, h: 360 }, 0, 200000).calls.filter((call) => call.m === "fillRect");
+  assert.equal(bars.length, 3);
+
+  const spinning = `function draw(ctx, state, t) {
+    var i;
+    i = 0;
+    ctx.fillStyle = "#0b6782";
+    while (i < 4) {
+      i++;
+      if (i < state.a) { continue; }
+      ctx.fillRect(10 + i * 20, 20, 12, 24);
+    }
+  }`;
+  const spun = runDraw(spinning, { a: 3, w: 640, h: 360 }, 0, 200000).calls.filter((call) => call.m === "fillRect");
+  assert.equal(spun.length, 2);
+  const loop = verifyWidget(widget(spinning, [{ id: "a", label: "a", min: 1, max: 4, value: 2, step: 1 }]));
+  assert.equal(loop.accept, true, loop.reasons.join(","));
 });
 
 test("setLineDash stays off the canvas list", () => {

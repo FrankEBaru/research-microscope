@@ -4,8 +4,8 @@ Branch: `cursor/rrm-79-live-engine-c8e7`
 Contract: **`rrm-widget/0.3`** (`rrm/liveart/contract.py`). JSON shape is still 0.2. Budgets and the canvas/Math lists moved. A string exposes `.length` only. `fillText` of "verified" / "from the paper" is `slop_seal`.
 Sandbox: `apps/reader/src/lib/liveart/` (`spec.js`, `parse.js`, `run.js`, `verify.js`, `sandbox.js`, `mount.js`, `showcase.js`, `guest.js`). Gallery: `/liveart`, flag off by default. Not wired into GapNotes (Franklin: later).
 Timeout: [V] Chrome 156 headless, iframe `sandbox="allow-scripts"`, draw body `while(true)`. Parent `setTimeout` 800 ms still set the status to `parent-alive`. No Worker. CSP stays without `worker-src`.
-Tests: `apps/reader/tests/liveart_sandbox.test.mjs` (20).
-`continue` and the value `undefined` parse. `setLineDash` does not. The step cap stays 200000. An English claim can link to the Spanish mark of the same topic.
+Tests: `apps/reader/tests/liveart_sandbox.test.mjs` (21).
+`continue` and the value `undefined` parse. A braced `continue` inside `for` still runs the update; inside `while` it retests. `setLineDash` does not. The step cap stays 200000. An English claim can link to the Spanish mark of the same topic.
 `quant` is the LLM.int8 absmax row (control `mag`). SmoothQuant stays separate. A bare 8-bit claim stays skip. There is no emulated draw for it yet.
 Repair: `rrm/liveart/repair.py`. `RRM_LIVE_REPAIR` is off. One short codegen retry, then the engine checks again. The gallery shows the written explanation when a figure stays down (`stays-down`).
 Audit: `python3 scripts/liveart_audit.py --sandbox`. Stack: `python3 scripts/liveart_stack.py --n 16 --sandbox` (16 show on the emulated bank).
