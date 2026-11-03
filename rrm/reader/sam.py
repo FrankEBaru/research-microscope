@@ -157,6 +157,9 @@ def _text_from_obj(obj: dict) -> str:
 
 def segment_png(png: bytes, phrase: str, key: str, timeout: int = 90) -> list[dict]:
     """One image, one noun phrase. Raises urllib.error.HTTPError or RuntimeError."""
+    from rrm.reader.promptguard import sam_text
+
+    phrase = sam_text(phrase)
     data_url = "data:image/png;base64," + base64.standard_b64encode(png).decode("ascii")
     payload = {
         "model": MODEL,

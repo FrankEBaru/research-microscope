@@ -8,6 +8,8 @@ import os
 import re
 import unicodedata
 
+from rrm.reader.promptguard import with_guard, wrap_user
+
 _ON = {"1", "true", "yes", "on"}
 _STOP = {
     "the", "and", "for", "with", "from", "that", "this", "into", "over", "using",
@@ -91,7 +93,7 @@ def _user(groups):
             continue
         for title in titles[:12]:
             lines.append(f"- {title[:180]}")
-    return "\n".join(lines)
+    return wrap_user("TITULOS", "\n".join(lines))
 
 
 def _body(user):
@@ -103,7 +105,7 @@ def _body(user):
         "reasoning": {"effort": "minimal"},
         "max_output_tokens": 800,
         "input": [
-            {"role": "developer", "content": _PROMPT},
+            {"role": "developer", "content": with_guard(_PROMPT)},
             {"role": "user", "content": user},
         ],
         "text": {"format": {"type": "json_schema", "name": "grupos", "strict": True, "schema": _SCHEMA}},

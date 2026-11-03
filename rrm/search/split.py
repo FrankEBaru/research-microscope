@@ -15,6 +15,8 @@ import urllib.error
 import urllib.request
 from collections import OrderedDict
 
+from rrm.reader.promptguard import with_guard, wrap_user
+
 API_URL = "https://api.meta.ai/v1/chat/completions"
 MODEL = "muse-spark-1.3-contributor"
 MAX_COMPLETION_TOKENS = 1024
@@ -119,8 +121,8 @@ def _complete(query):
     payload = post_chat({
         "model": MODEL,
         "messages": [
-            {"role": "developer", "content": _PROMPT},
-            {"role": "user", "content": query},
+            {"role": "developer", "content": with_guard(_PROMPT, english=True)},
+            {"role": "user", "content": wrap_user("PREGUNTA", query)},
         ],
         "reasoning_effort": "low",
         "max_completion_tokens": MAX_COMPLETION_TOKENS,
