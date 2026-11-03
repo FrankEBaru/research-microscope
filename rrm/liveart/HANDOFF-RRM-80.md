@@ -20,7 +20,8 @@ Rama: `cursor/rrm-80-mockups-2121`. Contrato: `rrm-widget/0.3` (RRM-79, PR #59).
 
 - Misma rama, catálogo 134. `verifyWidget` 134/134. Prueba local 4/4.
 - Calidad sobre cinco del top 15, sin rehacer el frame que ya contaba la historia. `grok-delay` gana el control `datos` (el salto coral se corre; el azul no). `denoise-strip` dice que en t=500 la señal no es 50%. `moe-drop` usa el factor de capacidad de Switch y dibuja en el atajo lo que no cupo. `resid-stream` deja el atajo en 0 o 1. `kv-grow` nombra MHA, GQA y MQA sobre el mismo control.
-- La rúbrica y las capturas están en el repo compass, `equipo-artefactos/calidad/`. Todavía no es WOW: falta el lector novato.
+- La rúbrica y las capturas están en el repo compass, `equipo-artefactos/calidad/`.
+- Ronda formal (~9:52): novato 4, 5, 5, 4.5 y 5. Los cinco quedan WOW. Grokking dice «memoriza primero» y por qué el weight decay no es un control. Denoise junta dos líneas. MoE pinta la segunda opción en claro. El atajo de ResNet sigue en 0 o 1.
 
 ## Pase del 3 nov ~2:40
 

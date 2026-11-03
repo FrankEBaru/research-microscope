@@ -610,6 +610,7 @@ function draw(ctx, state, t) {
   ctx.fillText("exactitud", 8, T - 6);
   ctx.fillText("paso, lineal", R - 78, B + 16);
   ctx.font = "12px sans-serif";
+  ctx.fillText("memoriza primero", R + 16, h * 0.20);
   ctx.fillText("eje ilustrativo", R + 16, h * 0.28);
   ctx.fillText("paper: valida ~1000x", R + 16, h * 0.36);
   ctx.fillText(jump > N ? "salto fuera del eje" : "salto en " + Math.round(jump), R + 16, h * 0.48);
@@ -727,7 +728,7 @@ export const AREAS = [
     knob("step", "paso", 0, 100, 42, 1),
     knob("data", "datos", 0.2, 1, 0.4, 0.05),
   ], GROK, {
-    explain: "Power et al. 2201.02177: entrena casi perfecto y la validación sigue en el azar; generaliza «1000 times more» pasos después, y con menos datos todavía más tarde. Mueve datos: el salto coral se corre y el azul no. El eje y la forma son ilustrativos. El weight decay del paper baja cuántos datos hacen falta; aquí no es un control.",
+    explain: "Power et al. 2201.02177: primero memoriza los ejemplos; generaliza «1000 times more» pasos después, y con menos datos todavía más tarde. Mueve datos: el salto coral se corre y el azul no. Eje y forma ilustrativos. El weight decay baja cuántos datos hacen falta, no este eje de pasos: no hay una curva que dibujar, por eso no es un control.",
     questions: [
       { q: "¿En el paso 42, por qué el entrenamiento ya está alto y la validación no?", why: "memoriza pronto; generalizar va mucho después" },
       { q: "¿Qué le pasa al salto coral si bajas datos de 0.4 a 0.2?", why: "se sale del eje: con pocos datos no alcanza" },

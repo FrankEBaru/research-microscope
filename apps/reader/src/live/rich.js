@@ -163,13 +163,12 @@ function draw(ctx, state, t) {
   ctx.font = "13px sans-serif";
   ctx.fillText("cuadrados " + s2 + "+" + (100 - s2) + "=100", rx, h * 0.60);
   var mid = Math.round(Math.sqrt(ab[500]) * 100);
-  ctx.fillText("directo: ensucia, no limpia", rx, h * 0.68);
-  ctx.fillText("e fijo, no es gaussiana", rx, h * 0.76);
-  ctx.fillText("en t=500 queda " + mid + "%, no 50", rx, h * 0.84);
+  ctx.fillText("ensucia, no limpia; e fijo, no gaussiana", rx, h * 0.68);
+  ctx.fillText("en t=500 queda " + mid + "%, no 50", rx, h * 0.76);
   ctx.fillStyle = "#e4d6c4";
-  ctx.fillRect(rx, h * 0.90, w - rx - 20, 8);
+  ctx.fillRect(rx, h * 0.84, w - rx - 20, 8);
   ctx.fillStyle = "#1f4b99";
-  ctx.fillRect(rx, h * 0.90, Math.max(2, (w - rx - 20) * sig), 8);
+  ctx.fillRect(rx, h * 0.84, Math.max(2, (w - rx - 20) * sig), 8);
 }
 `;
 
@@ -190,7 +189,7 @@ function draw(ctx, state, t) {
   ctx.fillRect(0, 0, w, h);
   ctx.font = "11px sans-serif";
   ctx.fillStyle = "#8a8175";
-  ctx.fillText("token", 8, 26);
+  ctx.fillText("fila = dim del token", 8, 26);
   var pitch = Math.min(72, (w * 0.58) / 5);
   var cw = pitch - 8, ch = (h * 0.7) / 8;
   function paint(col) {
@@ -226,7 +225,7 @@ function draw(ctx, state, t) {
   ctx.fillText(skip > 0.5 ? "y = x + cambio" : "red plana, sin suma", tx, h * 0.32);
   ctx.fillText(skip > 0.5 ? "el atajo lo conserva" : "sin atajo se apaga", tx, h * 0.4);
   ctx.fillText("contorno coral: entrada", tx, h * 0.66);
-  ctx.fillText("filas: dimensiones", tx, h * 0.74);
+  ctx.fillText("0 o 1: nunca se cierra", tx, h * 0.74);
   ctx.fillText("azul lleno = valor alto", tx, h * 0.82);
   ctx.fillStyle = "#e4d6c4";
   ctx.fillRect(tx, h * 0.46, w - tx - 20, 14);
@@ -285,9 +284,9 @@ function draw(ctx, state, t) {
         var x = 18 + e * colw;
         var y = h * 0.12 + used[e] * (slotH + 4);
         used[e] += 1;
-        ctx.fillStyle = "#1f4b99";
+        ctx.fillStyle = k === 0 ? "#1f4b99" : "#b9c8e6";
         ctx.fillRect(x, y, colw - 28, slotH);
-        ctx.fillStyle = "#f6f3ec";
+        ctx.fillStyle = k === 0 ? "#f6f3ec" : "#1d1a16";
         ctx.font = "13px sans-serif";
         ctx.fillText("t" + ti, x + 8, y + slotH * 0.72);
       }
@@ -296,6 +295,7 @@ function draw(ctx, state, t) {
   ctx.font = "14px sans-serif";
   ctx.fillStyle = "#1d1a16";
   ctx.fillText("piden E0:" + fans, 12, h * 0.76);
+  if (top > 1) ctx.fillText("claro: segunda", w * 0.72, h * 0.76);
   ctx.fillText("cupo (8/4) x " + Math.round(factor * 100) / 100 + " = " + cap, 12, h * 0.84);
   if (drop.length) {
     ctx.fillStyle = "#c4512c";
@@ -459,7 +459,7 @@ const DENOISE_COPY = {
 };
 
 const RESID_COPY = {
-  explain: "He et al. 1512.03385: y = F(x) + x. El atajo copia la entrada y la capa escribe el cambio. En el paper «identity shortcuts are never closed»; en 0 ves la red plana, que entrena peor. El tablero y el % son un ejemplo, no el error de ImageNet. Contorno coral: la entrada.",
+  explain: "He et al. 1512.03385: y = F(x) + x. El atajo copia la entrada y la capa escribe el cambio. El control es solo 0 o 1: «identity shortcuts are never closed». En 0 ves la red plana, que entrena peor. El tablero y el % son un ejemplo, no ImageNet. Contorno coral: la entrada.",
   questions: [
     { q: "¿Por qué el contorno coral sigue en L4 si cada capa escribe algo?", why: "escribe el cambio; la entrada se suma, no se reemplaza" },
     { q: "¿Qué se apaga si pones el atajo en 0?", why: "la red plana: las dos filas de la entrada" },
