@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { STAYS_DOWN, fallbackText } from "../src/lib/liveart/fallback.js";
+import { ROUND } from "../src/lib/liveart/round.js";
 import { GOLD } from "../src/lib/liveart/gold.js";
 import { SHOWCASE } from "../src/lib/liveart/showcase.js";
 import { CANVAS_METHODS, CANVAS_PROPS, CSP, HOST, LIMITS, MATH_NAMES, SANDBOX, VERSION, liveOn } from "../src/lib/liveart/spec.js";
@@ -309,6 +310,21 @@ test("an absmax claim links to the Spanish step", () => {
     claim: "LLM.int8 quantizes with absmax, so one outlier magnitude eats the rounding of the small values.",
   });
   assert.equal(linked.accept, true, linked.reasons.join(","));
+});
+
+test("the gallery lists the fifteen topics and each one mounts", () => {
+  const ids = [
+    "adam-valley", "attn-walk", "int8-outlier", "rope-shift", "beam-trap",
+    "grok-delay", "denoise-strip", "kl-policy", "moe-drop", "online-softmax",
+    "spec-best", "chinchilla", "pe-sincos", "resid-stream", "kv-grow",
+  ];
+  assert.deepEqual(ROUND.map((entry) => entry.widget.id), ids);
+  const redrawn = ROUND.filter((entry) => entry.source === "round").map((entry) => entry.widget.id);
+  assert.deepEqual(redrawn, ["attn-walk", "int8-outlier", "online-softmax", "spec-best", "chinchilla"]);
+  for (const entry of ROUND) {
+    const report = verifyWidget(entry.widget);
+    assert.equal(report.accept, true, entry.widget.id + " " + report.reasons.join(","));
+  }
 });
 
 test("oversized draw is rejected", () => {

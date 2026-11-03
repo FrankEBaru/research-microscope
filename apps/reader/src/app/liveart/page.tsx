@@ -1,23 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { STAYS_DOWN, fallbackText } from "@/lib/liveart/fallback.js";
-import { GOLD } from "@/lib/liveart/gold.js";
+import { fallbackText } from "@/lib/liveart/fallback.js";
 import { mountSandbox } from "@/lib/liveart/mount.js";
-import { SHOWCASE } from "@/lib/liveart/showcase.js";
+import { ROUND } from "@/lib/liveart/round.js";
 import { VERSION, liveOn } from "@/lib/liveart/spec.js";
 import "@/styles/liveart.css";
 
-const CATALOG = [
-  ...SHOWCASE.map((item) => ({ ...item, kind: "figure" })),
-  ...GOLD.map((widget) => ({ widget, claim: "", kind: "contract" })),
-  STAYS_DOWN,
-];
+const CATALOG = ROUND;
 
-function kicker(kind: string) {
-  if (kind === "down") return "Stays written";
-  if (kind === "figure") return "Figure";
-  return "Contract example";
+function kicker(source: string) {
+  if (source === "round") return "Quality round";
+  return "Current figure";
 }
 
 function decimals(step: number) {
@@ -39,7 +33,6 @@ function Stage({ entry }: { entry: (typeof CATALOG)[number] }) {
     if (!host) return;
     let live = true;
     const handle = mountSandbox(host, widget, {
-      claim: entry.claim,
       onStatus(next) {
         if (live && !next.ok) setDown(next.reasons);
       },
@@ -49,11 +42,11 @@ function Stage({ entry }: { entry: (typeof CATALOG)[number] }) {
       live = false;
       handle.destroy();
     };
-  }, [widget, entry.claim, down]);
+  }, [widget, down]);
 
   return (
     <article className="liveart-card" data-widget={widget.id} data-down={down ? "1" : "0"}>
-      <p className="liveart-kicker">{kicker(entry.kind)} · illustrative</p>
+      <p className="liveart-kicker">{kicker(entry.source)} · illustrative</p>
       <h2>{widget.title}</h2>
       <div className={down ? "liveart-stage is-static" : "liveart-stage"}>
         {down ? (
@@ -117,7 +110,7 @@ export default function LiveArtPage() {
       <header>
         <p className="liveart-kicker">{VERSION} · sandboxed · no network</p>
         <h1>Live artifacts</h1>
-        <p className="liveart-lead">Small figures for one idea. The sliders are the explanation. Nothing here is a measurement from a paper.</p>
+        <p className="liveart-lead">Fifteen topics. Five are redrawn for this round. The other ten keep the current figure until their redraw lands. Nothing here is a measurement from a paper.</p>
       </header>
       <Stage key={entry.widget.id} entry={entry} />
       <nav className="liveart-nav" aria-label="Widgets">
