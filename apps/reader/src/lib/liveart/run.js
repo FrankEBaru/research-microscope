@@ -40,6 +40,7 @@ Env.prototype.set = function set(name, value) {
 
 function Ret(value) { this.value = value; }
 function Brk() {}
+function Cont() {}
 
 export function makeStage() {
   const calls = [];
@@ -138,6 +139,7 @@ export function execute(ast, state, t, cap) {
       case "bool": return node.v;
       case "ident":
         if (node.name === "t") clock.usesT = true;
+        if (node.name === "undefined" && !envNow.find(node.name)) return undefined;
         return envNow.get(node.name);
       case "arr": return node.items.map((item) => evalExpr(item, envNow));
       case "unary": return evalUnary(node, envNow);
@@ -247,6 +249,10 @@ export function execute(ast, state, t, cap) {
       }
       if (Array.isArray(obj) && prop === "push") return obj.push(...args);
       if (Array.isArray(obj) && prop === "pop") return obj.pop();
+      if (typeof obj === "number" && prop === "toFixed") {
+        const digits = args.length ? Math.max(0, Math.min(6, args[0] | 0)) : 0;
+        return obj.toFixed(digits);
+      }
       throw new Error("call");
     }
     const fn = evalExpr(node.callee, envNow);
@@ -309,6 +315,8 @@ export function execute(ast, state, t, cap) {
         throw new Ret(node.value ? evalExpr(node.value, envNow) : undefined);
       case "break":
         throw new Brk();
+      case "continue":
+        throw new Cont();
       case "if":
         if (evalExpr(node.test, envNow)) exec(node.then, envNow);
         else if (node.els) exec(node.els, envNow);
@@ -316,7 +324,11 @@ export function execute(ast, state, t, cap) {
       case "while":
         while (evalExpr(node.test, envNow)) {
           try { exec(node.body, envNow); }
-          catch (err) { if (err instanceof Brk) return; throw err; }
+          catch (err) {
+            if (err instanceof Brk) return;
+            if (err instanceof Cont) continue;
+            throw err;
+          }
         }
         return;
       case "for":
@@ -326,7 +338,10 @@ export function execute(ast, state, t, cap) {
         }
         while (!node.test || evalExpr(node.test, envNow)) {
           try { exec(node.body, envNow); }
-          catch (err) { if (err instanceof Brk) return; throw err; }
+          catch (err) {
+            if (err instanceof Brk) return;
+            if (!(err instanceof Cont)) throw err;
+          }
           if (node.update) evalExpr(node.update, envNow);
         }
         return;
