@@ -130,6 +130,64 @@ def _nucleus(blob):
     return 1 if re.search(r"nucleus sampling|\btop-p\b|\btop_p\b", blob, re.I) else 0
 
 
+def _rmsnorm(blob):
+    return 2 if re.search(r"rmsnorm|rms\s*norm|root mean square", blob, re.I) else 0
+
+
+def _swiglu(blob):
+    return 2 if re.search(r"swiglu|swish\s*gate|silu\s*gate", blob, re.I) else 0
+
+
+def _gqa(blob):
+    return 2 if re.search(r"grouped-query|grouped query|\bgqa\b|n_kv_heads|kv heads", blob, re.I) else 0
+
+
+def _multihead(blob):
+    if re.search(r"multi-head|multihead|number of heads", blob, re.I):
+        return 1
+    if re.search(r"\bheads\b", blob, re.I) and re.search(r"d_model|attention", blob, re.I):
+        return 1
+    return 0
+
+
+def _alibi(blob):
+    return 2 if re.search(r"\balibi\b|attention with linear biases", blob, re.I) else 0
+
+
+def _gelu(blob):
+    return 1 if re.search(r"\bgelu\b", blob, re.I) else 0
+
+
+def _smooth(blob):
+    return 1 if re.search(r"label smoothing", blob, re.I) else 0
+
+
+def _dropout(blob):
+    return 1 if re.search(r"dropout rate|drop probability|p_drop", blob, re.I) else 0
+
+
+def _warmup(blob):
+    return 1 if re.search(r"learning rate warmup|warmup steps|linear warmup", blob, re.I) else 0
+
+
+def _moe(blob):
+    if re.search(r"mixture of experts|\bmoe\b", blob, re.I):
+        return 2
+    if re.search(r"\bexperts?\b", blob, re.I) and re.search(r"\brouter\b|top-k", blob, re.I):
+        return 2
+    return 0
+
+
+def _topk(blob):
+    if re.search(r"top-p|nucleus", blob, re.I):
+        return 0
+    return 1 if re.search(r"top-k sampling|\btop-k\b", blob, re.I) else 0
+
+
+def _focal(blob):
+    return 1 if re.search(r"focal loss", blob, re.I) else 0
+
+
 # Orden = desempate. El más específico va primero.
 TOPICS = (
     {
@@ -342,6 +400,186 @@ TOPICS = (
             ("¿Qué se está moviendo: la masa acumulada o el orden de los logits?", "p corta la masa, el orden no cambia"),
         ),
     },
+    {
+        "name": "rmsnorm",
+        "score": _rmsnorm,
+        "controls": ("eps",),
+        "mark": "rms",
+        "explain": (
+            "RMSNorm divide cada coordenada entre la raíz del promedio de cuadrados, más un epsilon. "
+            "Si subes el epsilon, la norma deja de achicar tanto los valores grandes."
+        ),
+        "questions": (
+            ("¿Por qué RMSNorm no resta la media antes de dividir?", "solo usa el tamaño, no el centro"),
+            ("¿Qué cambia en el vector si subo el epsilon?", "el divisor crece y los valores se encogen menos"),
+            ("¿En qué se distingue esto de dividir entre la desviación estándar?", "aquí no se resta la media"),
+        ),
+    },
+    {
+        "name": "swiglu",
+        "score": _swiglu,
+        "controls": ("beta",),
+        "mark": "compuerta",
+        "explain": (
+            "SwiGLU multiplica el camino lineal por una compuerta Swish. "
+            "Si la compuerta se cierra, esa parte del vector se apaga."
+        ),
+        "questions": (
+            ("¿Por qué la compuerta puede apagar una coordenada?", "el Swish puede valer casi cero"),
+            ("¿Qué pasa con el vector si la compuerta se abre del todo?", "pasa el camino lineal casi entero"),
+            ("¿Qué se multiplica: el Swish o el camino lineal?", "la compuerta multiplica al otro camino"),
+        ),
+    },
+    {
+        "name": "gqa",
+        "score": _gqa,
+        "controls": ("kv",),
+        "mark": "grupo",
+        "explain": (
+            "En la atención por grupos, varias consultas comparten la misma llave. "
+            "Si bajas los grupos, más consultas leen la misma memoria."
+        ),
+        "questions": (
+            ("¿Por qué varias consultas comparten una sola llave?", "así la memoria de llaves no crece con las consultas"),
+            ("¿Qué memoria se ahorra si bajo el número de grupos?", "se guardan menos llaves y valores"),
+            ("¿Qué se está compartiendo: las consultas o las llaves?", "las consultas siguen aparte; se comparte la llave"),
+        ),
+    },
+    {
+        "name": "multihead",
+        "score": _multihead,
+        "controls": ("heads",),
+        "mark": "cabezas",
+        "explain": (
+            "Multi-head parte el vector en cabezas. "
+            "Más cabezas, y cada una ve un trozo más corto del mismo vector."
+        ),
+        "questions": (
+            ("¿Por qué partir el vector en varias cabezas?", "cada una puede mirar otro patrón"),
+            ("¿Qué le pasa a cada cabeza si subo h y el vector no cambia?", "el trozo de cada cabeza se acorta"),
+            ("¿Qué se divide: el vector o el número de capas?", "se divide el vector, no la profundidad"),
+        ),
+    },
+    {
+        "name": "alibi",
+        "score": _alibi,
+        "controls": ("slope",),
+        "mark": "pendiente",
+        "explain": (
+            "ALiBi resta una pendiente por la distancia entre tokens. "
+            "Pendiente grande, y lo lejano pesa casi nada."
+        ),
+        "questions": (
+            ("¿Por qué una pendiente castiga a los tokens lejanos?", "el castigo crece con la distancia"),
+            ("¿Qué pasa con la atención si la pendiente es casi cero?", "cerca y lejos pesan parecido"),
+            ("¿Qué se resta: la distancia o el producto de las consultas?", "se resta una pendiente por la distancia"),
+        ),
+    },
+    {
+        "name": "gelu",
+        "score": _gelu,
+        "controls": ("mix",),
+        "mark": "gelu",
+        "explain": (
+            "GELU no corta en cero: deja pasar un poco los negativos. "
+            "El control mezcla el corte seco y GELU para ver esa cola."
+        ),
+        "questions": (
+            ("¿Por qué GELU deja pasar un poco los números negativos?", "el peso crece suave, no de golpe"),
+            ("¿En qué se ve distinto de cortar en cero?", "a la izquierda del cero todavía hay cola"),
+            ("¿Qué estoy mezclando: el corte seco o la cola suave?", "el control va de uno al otro"),
+        ),
+    },
+    {
+        "name": "label_smoothing",
+        "score": _smooth,
+        "controls": ("eps",),
+        "mark": "suavizado",
+        "explain": (
+            "El suavizado de etiquetas reparte un poco de masa fuera de la clase correcta. "
+            "Más epsilon, y la etiqueta queda más chata."
+        ),
+        "questions": (
+            ("¿Por qué repartir masa fuera de la clase correcta?", "el modelo no se pone tan seguro de una sola clase"),
+            ("¿Qué tan chata queda la etiqueta si epsilon es grande?", "la clase correcta baja y las otras suben"),
+            ("¿Qué se mueve: la clase verdadera o las demás?", "las dos: una cede masa y las otras la reciben"),
+        ),
+    },
+    {
+        "name": "dropout",
+        "score": _dropout,
+        "controls": ("p",),
+        "mark": "dropout",
+        "explain": (
+            "La tasa de dropout apaga más unidades de la máscara. "
+            "Sube la tasa y el vector se queda con menos posiciones vivas."
+        ),
+        "questions": (
+            ("¿Por qué apagar unidades durante el entrenamiento?", "el modelo no se apoya en una sola posición"),
+            ("¿Qué le pasa al vector si la tasa de dropout sube?", "quedan menos unidades encendidas"),
+            ("¿Qué estoy viendo: las unidades vivas o las apagadas?", "las apagadas son las que la tasa cruza"),
+        ),
+    },
+    {
+        "name": "warmup",
+        "score": _warmup,
+        "controls": ("steps",),
+        "mark": "calentamiento",
+        "explain": (
+            "El calentamiento sube el paso de aprendizaje desde cero hasta el valor de trabajo. "
+            "Si alargas esos pasos, a la mitad del camino el paso sigue chico."
+        ),
+        "questions": (
+            ("¿Por qué el paso de aprendizaje empieza en cero?", "un paso grande al inicio mueve los pesos de más"),
+            ("¿Qué pasa a mitad del camino si alargo el calentamiento?", "el paso todavía no llegó al valor de trabajo"),
+            ("¿Qué sube: el paso o el número de capas?", "sube el paso, la red no cambia de profundidad"),
+        ),
+    },
+    {
+        "name": "moe",
+        "score": _moe,
+        "controls": ("k",),
+        "mark": "expertos",
+        "explain": (
+            "El router manda cada token a unos pocos expertos. "
+            "Si subes k, más expertos se prenden para el mismo token."
+        ),
+        "questions": (
+            ("¿Por qué un token no usa todos los expertos?", "el costo sería el de activar la red entera"),
+            ("¿Qué cambia si k pasa de uno a cuatro?", "el token mezcla más expertos"),
+            ("¿Qué elige el router: el experto o el token?", "elige qué expertos atienden a ese token"),
+        ),
+    },
+    {
+        "name": "topk",
+        "score": _topk,
+        "controls": ("k",),
+        "mark": "tope",
+        "explain": (
+            "Top-k deja solo el tope de k tokens y tira el resto. "
+            "K chico, y una o dos palabras se quedan con toda la masa."
+        ),
+        "questions": (
+            ("¿Por qué tirar todos los tokens fuera del tope?", "la masa se reparte solo entre los que quedan"),
+            ("¿En qué se distingue un k chico de quedarse con casi todos?", "el conjunto permitido cambia de tamaño"),
+            ("¿Qué se corta: la masa acumulada o el número de opciones?", "se corta el número, no un umbral de masa"),
+        ),
+    },
+    {
+        "name": "focal",
+        "score": _focal,
+        "controls": ("gamma",),
+        "mark": "gamma",
+        "explain": (
+            "Focal loss baja el peso de lo que ya está bien clasificado, con gamma. "
+            "Gamma grande, y los ejemplos fáciles casi no empujan."
+        ),
+        "questions": (
+            ("¿Por qué bajar el peso de lo que ya está bien?", "si no, los fáciles dominan el gradiente"),
+            ("¿Qué le pasa a un ejemplo fácil si gamma crece?", "su peso se acerca a cero"),
+            ("¿Qué se está apagando: el error chico o el error grande?", "se apaga el error chico"),
+        ),
+    },
 )
 
 
@@ -432,11 +670,19 @@ def gold_widget(topic):
 
 
 def emulated_widget(claim):
-    """Draw de oro solo para los cuatro temas con few-shot. Los otros temas esperan a RRM-80."""
+    """El de oro si existe; si no, el primer emulado de ese tema. None si el enunciado no es widget."""
     decision = select_claim(claim)
     if decision["merit"] != "widget":
         return None
-    return gold_widget(decision["topic"])
+    gold = gold_widget(decision["topic"])
+    if gold is not None:
+        return gold
+    from rrm.liveart.emulated import CATALOG
+
+    for row in CATALOG:
+        if row["widget"]["topic"] == decision["topic"]:
+            return row["widget"]
+    return None
 
 
 def _num(value):
@@ -532,6 +778,26 @@ def _echo(widget):
     return any(_payload(part) for part in parts if isinstance(part, str))
 
 
+def _reads_control(draw, kid):
+    return bool(re.search(r"state\." + re.escape(kid) + r"\b", draw)) or bool(
+        re.search(r"state\[\s*['\"]" + re.escape(kid) + r"['\"]\s*\]", draw)
+    )
+
+
+def _dead_control(widget):
+    """El slider no entra al draw: el dibujo no puede responder al control."""
+    if not isinstance(widget, dict):
+        return False
+    draw = widget.get("draw")
+    controls = widget.get("controls")
+    if not isinstance(draw, str) or not isinstance(controls, list):
+        return False
+    ids = [item.get("id") for item in controls if isinstance(item, dict) and isinstance(item.get("id"), str)]
+    if not ids:
+        return False
+    return not any(_reads_control(draw, kid) for kid in ids)
+
+
 def verify_widget(claim, widget):
     """Rechaza forma mala, APIs prohibidas, tema cruzado y un enunciado que es una orden."""
     decision = select_claim(claim if isinstance(claim, dict) else {"text": claim or ""})
@@ -548,6 +814,8 @@ def verify_widget(claim, widget):
         reasons.append("network")
     if not _on_claim(decision, widget):
         reasons.append("off_claim")
+    if _dead_control(widget):
+        reasons.append("dead_control")
     # Una lista estable, sin repetidos, para la tabla de la eval.
     ordered = []
     for reason in reasons:

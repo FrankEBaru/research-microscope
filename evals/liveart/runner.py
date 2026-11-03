@@ -43,20 +43,20 @@ def _grade(case):
         shown = "accept" if got["accept"] else ",".join(got["reasons"])
         return ok, shown
     if suite == "bank":
-        ok = True
         for topic in TOPICS:
             text = topic["explain"]
             if not (0 < len(text) <= LIMITS["explain"] and topic["mark"] in text.casefold()):
-                ok = False
+                return False, "explain:" + topic["name"]
             if not LIMITS["questions_min"] <= len(topic["questions"]) <= LIMITS["questions_max"]:
-                ok = False
+                return False, "count:" + topic["name"]
             for q, why in topic["questions"]:
-                if not q.endswith("?") or not (12 <= len(q) <= LIMITS["question"]) or not why.strip():
-                    ok = False
+                if not q.endswith("?") or not (12 <= len(q) <= LIMITS["question"]) or not why.strip() or len(why) > LIMITS["why"]:
+                    return False, "question:" + topic["name"]
         for name in DRAWS:
-            if verify_widget(_claim_for(name), gold_widget(name))["accept"] is not True:
-                ok = False
-        return ok, "bounds" if ok else "out-of-bounds"
+            got = verify_widget(_claim_for(name), gold_widget(name))
+            if got["accept"] is not True:
+                return False, name + ":" + ",".join(got["reasons"])
+        return True, "bounds"
     raise KeyError(suite)
 
 

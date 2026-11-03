@@ -64,6 +64,7 @@ def test_flag_defaults_off_and_injection_stays_inside_the_fence(monkeypatch):
     assert "La base cambia el ritmo de la onda" in code
     assert "tercera fórmula" in explain_system()
     assert "¿Por qué una base más grande" in question_system()
+    assert "tiene que leer el control" in codegen_system()
     assert '"merit":"widget"' in selector_system()
     assert "no_injection_obeyed" in verifier_system() and "intuitive" in verifier_system()
     _code, pedido = codegen_messages(PE, [], "explica")
@@ -82,7 +83,7 @@ def test_package_builds_messages_only_when_the_flag_is_on(monkeypatch):
     assert live["path"] == "live" and live["widget"]["topic"] == "positional_encoding"
     assert "<<<PEDIDO>>>" in live["messages"]["codegen"][1]
     rope = package({"text": "RoPE rotates each position by an angle instead of adding a sinusoid.", "latex": "", "context": ""})
-    assert rope["path"] == "live" and rope["widget"] is None and rope["questions"]
+    assert rope["path"] == "live" and rope["widget"]["topic"] == "rope" and rope["questions"]
     assert package(BLEU)["path"] == "skip" and package(BLEU)["messages"] is None
     spec = schemas()
     assert spec["codegen"]["additionalProperties"] is False
@@ -101,17 +102,33 @@ def test_contract_doc_matches_the_version():
     assert "NEXT_PUBLIC_RRM_LIVE_ARTIFACTS" in text
 
 
+def _ends(controls):
+    base = {"w": 140, "h": 90}
+    for knob in controls:
+        base[knob["id"]] = knob["value"]
+    other = dict(base)
+    knob = controls[0]
+    other[knob["id"]] = knob["min"] if knob["value"] != knob["min"] else knob["max"]
+    return base, other
+
+
 def test_gold_draws_change_when_the_slider_or_time_changes():
+    from rrm.liveart.emulated import CATALOG
+
     node = shutil.which("node")
     assert node, "node is required to execute the gold draws"
-    payload = [
-        {"id": "positional_encoding", "t": 0, "t2": 2, "a": {"w": 120, "h": 80, "base": 10000, "dim": 4}, "b": {"w": 120, "h": 80, "base": 20, "dim": 4}},
-        {"id": "softmax_temperature", "t": 0, "a": {"w": 120, "h": 80, "temp": 0.2}, "b": {"w": 120, "h": 80, "temp": 4}},
-        {"id": "attention_scale", "t": 0, "a": {"w": 160, "h": 90, "d": 16}, "b": {"w": 160, "h": 90, "d": 256}},
-        {"id": "stddev", "t": 0, "a": {"w": 120, "h": 80, "sigma": 0.4}, "b": {"w": 120, "h": 80, "sigma": 3}},
-    ]
-    for item in payload:
-        item["draw"] = DRAWS[item["id"]]["draw"]
+    assert len(CATALOG) == 30
+    payload = []
+    for name, raw in DRAWS.items():
+        left, right = _ends(raw["controls"])
+        item = {"id": name, "draw": raw["draw"], "t": 0, "a": left, "b": right}
+        if name == "positional_encoding":
+            item["t2"] = 2
+        payload.append(item)
+    for row in CATALOG:
+        widget = row["widget"]
+        left, right = _ends(widget["controls"])
+        payload.append({"id": row["id"], "draw": widget["draw"], "t": 0, "a": left, "b": right})
     script = r"""
 const fs = require("fs");
 const gold = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));

@@ -4,11 +4,11 @@ Compass (`FrankEBaru/research-microscope-compass`, rama `claude/rrm-50-plan-b1`)
 
 ## Qué quedó
 
-Contrato `rrm-widget/0.1` en `rrm/liveart/CONTRACT.md`. La lista que el verificador aplica está en `rrm/liveart/contract.py`.
+Contrato `rrm-widget/0.2` en `rrm/liveart/CONTRACT.md`. La lista que el verificador aplica está en `rrm/liveart/contract.py`. Coordinación con el equipo: `liveart/TEAM.md`.
 
 Cinco prompts (selector, preguntas, explicación, código, verificador) en `rrm/liveart/prompts.py`. El enunciado va en una cerca y es dato. `schemas()` es el JSON Schema de cada paso. `package(claim)` arma los mensajes solo si la bandera está prendida.
 
-Camino offline, sin Meta: 14 temas, banco de dudas en español, cuatro widgets de oro (encoding posicional, temperatura del softmax, escala por la raíz de d_k, desviación estándar). Esos draws se ejecutan y cambian con el control; el de posición también con el tiempo.
+Camino offline, sin Meta: 26 temas, banco de dudas en español, cuatro widgets de oro en el prompt y treinta emulados en `emulated.py`. Los draws se ejecutan y cambian con el control; el de posición también con el tiempo.
 
 Bandera apagada por defecto: `RRM_LIVE_ARTIFACTS` o `NEXT_PUBLIC_RRM_LIVE_ARTIFACTS`. Sin ella `path_for` devuelve `static`.
 
@@ -17,7 +17,7 @@ Eval: `python -m evals.liveart`. También entra en `bash scripts/check.sh` vía 
 ## Para los otros
 
 - RRM-79: el iframe, el AST y el tope de tiempo contra `contract.py`. No cambiar un límite sin subir la versión.
-- RRM-80: puede reemplazar el `draw` de los cuatro de oro y sumar draws para los temas que todavía no tienen (RoPE, DPO, YaRN, borrador, ruido, guía, DETR, residual, top-p, contraste). La forma JSON no cambia. El selector ya los manda a `widget`, pero `emulated_widget` devuelve `None` hasta que exista draw.
+- RRM-80: puede reemplazar un `draw` de `fewshots.py` o de `emulated.py`. La forma JSON no cambia. Solo los cuatro de oro entran al prompt.
 
 ## Meta
 

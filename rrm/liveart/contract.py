@@ -1,4 +1,4 @@
-"""Contrato rrm-widget/0.1 que el prompt de código le exige al modelo.
+"""Contrato rrm-widget/0.2 que el prompt de código le exige al modelo.
 
 RRM-79 implementa el iframe y el AST. Aquí están los límites y la lista
 de rechazos que el verificador offline ya aplica, para que el prompt y
@@ -8,7 +8,7 @@ el renderer no se separen.
 import os
 import re
 
-VERSION = "rrm-widget/0.1"
+VERSION = "rrm-widget/0.2"
 
 LIMITS = {
     "draw": 3500,
