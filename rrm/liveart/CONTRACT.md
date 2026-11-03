@@ -94,3 +94,24 @@ La sonda 1 (RRM-83, 19/29 widgets) falló en el prompt, no en el motor. Para la 
 - El verificador de modelo no reemplaza al motor: un `accept` suyo no monta un draw que el sandbox rechaza.
 ## Qué no entra en 0.3
 Integrar el widget en `GapNotes`. La bandera apagada deja el lector como está. No se llama a Meta hasta que Franklin pida la pasada.
+
+
+## rrm-widget/0.4 (RRM-90, detrás de `RRM_LIVEART_V04`)
+
+Apagado por defecto. Un widget sin `version` sigue siendo 0.3: mismas llaves, lienzo de 640×360 y `fillText` permitido. Con el flag, `"version": "rrm-widget/0.4"` habilita bloques opcionales que pinta la página, no el lienzo: `hook` (la pregunta del malentendido), `takeaway` (texto o mapa de variantes con `{readout}` / `{control}`), `readouts`, `legend`, `marks`, `areas`, `aspect` y `anchor` (objeto con `latex`, `vars`, `quote`, `passage_id`, `arxiv`, `section`; o los campos planos `equation`, `anchor`, `cite` de #64). Los controles son los de #64 (`kind`: slider, toggle, select, button, play, drag, pick, predict), con `min/max/step/value` siempre, más `tex`, `color`, `hidden`, `on`/`off` y, en `predict`, `reveal`/`reveal_label`.
+
+El draw es `function draw(ctx, state, t, ui)`. Los helpers `ui.*` están en `apps/reader/src/lib/liveart/ui04.js` y corren igual en el verificador y en el iframe: `ui.area(id)` (`x, y, w, h, X(v), Y(v)`), `ui.axes(id, grid)`, `ui.label(texto, x, y, color, align)` (≤ 3 por frame, sin choques), `ui.mark(id, valor)`, `ui.readout(id, valor)`, `ui.say(id)`, `ui.clip(id)` / `ui.unclip()`, `ui.handle(ids, x, y, area, axis, offset|scale)`, `ui.pick`, `ui.tip`, `ui.fmt`, `ui.mix`; campos `ui.c` (colores ya resueltos), `ui.lw`, `ui.mute`. El subconjunto no cambia: sin objetos literales, así que los helpers reciben argumentos sueltos.
+
+Reglas:
+- **R1.** El draw no escribe texto: en 0.4, `ctx.fillText` da `free_text`. El texto del lienzo solo sale de `ui.axes`, `ui.mark` y `ui.label`.
+- **R2.** Los colores salen solo de `ui.c`.
+- **R3.** La fuente del lienzo llega al iframe como `ArrayBuffer` en `rrm-init` y se registra con `FontFace`. El CSP no se abre.
+- **R4.** El lienzo mide lo que mide su contenedor (px CSS × `devicePixelRatio` ≤ 3), y `state.w/h` van en px CSS. El verificador corre el draw a 640×360 y también a 358×201.
+- **R5.** Una marca con `control` se pinta sobre la pista de ese control. Fuera de rango, se anota y no se pinta.
+- **R6.** Los textos del host tienen límites blandos y duros (`LIMITS_04` en `spec.js` y en `contract.py`). Solo el duro rechaza.
+- **R7.** El ancla usa KaTeX con `trust` limitado a `\htmlData`. Si falla, se oculta.
+- **R8.** El iframe no recibe el puntero: el host hace el hit-test con los `handles`, `picks` y `tips` que devuelve el frame.
+- **R9.** El gate de inercia recorre cada opción, cada paso, el mínimo y el máximo, y tres posiciones del drag. Un `predict` con `reveal` cuenta como vivo si `reveal` cambia la geometría.
+- **R10.** La vista compacta pinta el mismo draw con `ui.mute = true`, sin texto ni controles.
+
+Razones nuevas: `version` (un 0.4 sin flag, o un draw de 4 parámetros en un 0.3), `free_text`, `readout` (un id no declarado o un valor no finito), `takeaway` (una variante o un `{id}` desconocido), `hook`, `readouts`, `legend`, `marks`, `areas`, `aspect`, `anchor`. Las notas (`dropped:`, `mark_out:`, `cut:`) no rechazan.

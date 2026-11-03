@@ -1,6 +1,6 @@
 // Static shape, allowlist, and a structural slop check.
 // Semantic "does this teach the equation" stays with the model verifier.
-import { HOST, LIMITS, bannedIn, networkIn } from "./spec.js";
+import { HOST, KEYS_04, LIMITS, LIMITS_04, bannedIn, isV04, networkIn } from "./spec.js";
 import { parseDraw } from "./parse.js";
 import { execute, geometryChanged, painted } from "./run.js";
 
@@ -22,14 +22,19 @@ function num(value) {
 
 const CONTROL_CORE = ["id", "label", "max", "min", "step", "value"];
 const CONTROL_EXTRA = new Set(["kind", "options", "prompt", "answer"]);
+// 0.4 only (RRM-90): symbol and color of the variable, a hidden row (drag-only), toggle words, host reveal of a bet.
+const CONTROL_EXTRA_04 = new Set(["tex", "color", "hidden", "on", "off", "reveal", "reveal_label"]);
+const SERIES = new Set(["c1", "c2", "c3", "c4", "ref", "ink", "ink3"]);
 const KINDS = new Set(["slider", "toggle", "select", "button", "play", "drag", "pick", "predict"]);
 const DISCRETE = new Set(["toggle", "select", "button", "pick", "predict"]);
 
-function controlShape(item, seen) {
+function controlShape(item, seen, v04) {
   if (!item || typeof item !== "object" || Array.isArray(item)) return true;
   const keys = Object.keys(item);
   if (!CONTROL_CORE.every((key) => keys.includes(key))) return true;
-  if (keys.some((key) => !CONTROL_CORE.includes(key) && !CONTROL_EXTRA.has(key))) return true;
+  if (keys.some((key) => !CONTROL_CORE.includes(key) && !CONTROL_EXTRA.has(key) && !(v04 && CONTROL_EXTRA_04.has(key)))) return true;
+  if (v04 && item.color != null && !SERIES.has(item.color)) return true;
+  if (v04 && item.tex != null && (typeof item.tex !== "string" || item.tex.length > 40)) return true;
   if (typeof item.id !== "string" || !ID_RE.test(item.id) || RESERVED.has(item.id) || seen.has(item.id)) return true;
   seen.add(item.id);
   if (typeof item.label !== "string" || !item.label.trim() || item.label.length > LIMITS.label) return true;
@@ -67,13 +72,79 @@ function sampleControl(control) {
   return [control.min, control.max];
 }
 
-export function shapeErrors(widget) {
+function text(value, hard) {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= hard;
+}
+
+function setOk(widget, set) {
+  if (!set || typeof set !== "object" || Array.isArray(set)) return false;
+  const byId = new Map((widget.controls || []).map((c) => [c && c.id, c]));
+  return Object.keys(set).length > 0 && Object.keys(set).every((id) => {
+    const c = byId.get(id);
+    return c && num(set[id]) && set[id] >= c.min && set[id] <= c.max;
+  });
+}
+
+// 0.4 blocks (contract §3.1). Hard limits reject; the soft limits are the host's business.
+function shape04(widget) {
+  const errors = [];
+  const L = LIMITS_04;
+  const ids = new Set((widget.controls || []).map((c) => c && c.id));
+  if (widget.hook != null && !(text(widget.hook, L.hook[1]) && widget.hook.trim().endsWith("?"))) errors.push("hook");
+  if (widget.subtitle != null && !text(widget.subtitle, L.subtitle[1])) errors.push("subtitle");
+  if (widget.aspect != null && !(num(widget.aspect) && widget.aspect >= 1 && widget.aspect <= 2.4)) errors.push("aspect");
+  const readouts = widget.readouts || [];
+  const rids = new Set();
+  if (!Array.isArray(readouts) || readouts.length > L.readouts_max) errors.push("readouts");
+  else for (const r of readouts) {
+    if (!r || !ID_RE.test(r.id || "") || rids.has(r.id) || !text(r.label, L.readout[1])) { errors.push("readouts"); break; }
+    if (r.color != null && !SERIES.has(r.color)) { errors.push("readouts"); break; }
+    rids.add(r.id);
+  }
+  const legend = widget.legend || [];
+  if (!Array.isArray(legend) || legend.length > L.legend_max || legend.some((g) => !g || !SERIES.has(g.color) || !text(g.text, L.legend[1]))) errors.push("legend");
+  const areas = widget.areas || [];
+  const aids = new Set();
+  if (!Array.isArray(areas) || areas.length > L.areas_max) errors.push("areas");
+  else for (const a of areas) {
+    if (!a || !ID_RE.test(a.id || "") || aids.has(a.id)) { errors.push("areas"); break; }
+    aids.add(a.id);
+    const axes = [a.x, a.y].filter(Boolean);
+    if (axes.some((ax) => !(Array.isArray(ax.cats) ? ax.cats.length >= 2 && ax.cats.length <= 12 : num(ax.min) && num(ax.max) && ax.min < ax.max && (!ax.log || ax.min > 0)))) { errors.push("areas"); break; }
+    if (axes.some((ax) => ax.label != null && !text(ax.label, L.label[1]))) { errors.push("areas"); break; }
+  }
+  const marks = widget.marks || [];
+  if (!Array.isArray(marks) || marks.length > L.marks_max) errors.push("marks");
+  else for (const m of marks) {
+    const onControl = m && m.control != null;
+    if (!m || !ID_RE.test(m.id || "") || (onControl ? !ids.has(m.control) : !aids.has(m.area || "main") && aids.size > 0) || (m.label != null && !text(m.label, L.label[1]))) { errors.push("marks"); break; }
+  }
+  const take = widget.takeaway;
+  if (take != null) {
+    const variants = typeof take === "string" ? [take] : take && typeof take === "object" && !Array.isArray(take) ? Object.values(take) : null;
+    const known = new Set([...rids, ...ids]);
+    if (!variants || !variants.length || variants.some((v) => !text(v, L.takeaway[1]) || (v.match(/\{(\w+)\}/g) || []).some((k) => !known.has(k.slice(1, -1))))) errors.push("takeaway");
+  }
+  const anchor = widget.anchor;
+  if (anchor != null && typeof anchor === "object") {
+    if (Array.isArray(anchor) || (anchor.latex != null && !text(anchor.latex, 500)) || (anchor.quote != null && !text(anchor.quote, L.quote[1])) || (anchor.abstract_quote != null && !text(anchor.abstract_quote, L.quote[1]))) errors.push("anchor");
+    else if ((anchor.vars || []).some((v) => !v || typeof v.tex !== "string" || !(ids.has(v.control) || rids.has(v.readout)))) errors.push("anchor");
+  }
+  return errors;
+}
+
+export function shapeErrors(widget, opts = {}) {
   if (!widget || typeof widget !== "object" || Array.isArray(widget)) return ["not_object"];
   const errors = [];
-  const extra = Object.keys(widget).filter((key) => !["id", "topic", "title", "explain", "questions", "controls", "draw", "equation", "anchor", "cite"].includes(key));
+  const v04 = isV04(widget);
+  if (v04 && !opts.v04) return ["version"];
+  if (widget.version != null && !v04) return ["version"];
+  const allowed = ["id", "topic", "title", "explain", "questions", "controls", "draw", "equation", "anchor", "cite"].concat(v04 ? KEYS_04 : []);
+  const extra = Object.keys(widget).filter((key) => !allowed.includes(key));
   if (extra.length) errors.push("extra_keys");
+  if (v04) errors.push(...shape04(widget));
   if (widget.equation != null && (typeof widget.equation !== "string" || !widget.equation.trim() || widget.equation.length > 500)) errors.push("equation");
-  if (widget.anchor != null && (typeof widget.anchor !== "string" || widget.anchor.length < 12 || widget.anchor.length > 400)) errors.push("anchor");
+  if (widget.anchor != null && !(v04 && typeof widget.anchor === "object") && (typeof widget.anchor !== "string" || widget.anchor.length < 12 || widget.anchor.length > 400)) errors.push("anchor");
   if (widget.cite != null && (typeof widget.cite !== "string" || widget.cite.length < 4 || widget.cite.length > 80)) errors.push("cite");
   if (typeof widget.topic !== "string" || !TOPIC_RE.test(widget.topic)) errors.push("topic");
   if (typeof widget.title !== "string" || !widget.title.trim() || widget.title.length > LIMITS.title) errors.push("title");
@@ -84,7 +155,8 @@ export function shapeErrors(widget) {
   if (!Array.isArray(questions) || questions.length < LIMITS.questions_min || questions.length > LIMITS.questions_max) errors.push("questions");
   else {
     for (const item of questions) {
-      if (!item || typeof item !== "object" || Object.keys(item).some((key) => key !== "q" && key !== "why")) { errors.push("question"); break; }
+      if (!item || typeof item !== "object" || Object.keys(item).some((key) => key !== "q" && key !== "why" && !(v04 && key === "set"))) { errors.push("question"); break; }
+      if (v04 && item.set != null && !setOk(widget, item.set)) { errors.push("question"); break; }
       if (typeof item.q !== "string" || item.q.length < 12 || item.q.length > LIMITS.question || !item.q.endsWith("?")) { errors.push("question"); break; }
       if (typeof item.why !== "string" || !item.why.trim() || item.why.length > LIMITS.why) { errors.push("question"); break; }
     }
@@ -94,7 +166,7 @@ export function shapeErrors(widget) {
   else {
     const seen = new Set();
     for (const item of controls) {
-      if (controlShape(item, seen)) { errors.push("control"); break; }
+      if (controlShape(item, seen, v04)) { errors.push("control"); break; }
     }
   }
   return errors;
@@ -195,8 +267,8 @@ function sealIn(draw) {
   return false;
 }
 
-function baseState(widget, patch) {
-  const state = { w: HOST.canvas_w, h: HOST.canvas_h };
+function baseState(widget, patch, size) {
+  const state = { w: size ? size[0] : HOST.canvas_w, h: size ? size[1] : HOST.canvas_h };
   for (const control of widget.controls) state[control.id] = control.value;
   return Object.assign(state, patch);
 }
@@ -204,7 +276,7 @@ function baseState(widget, patch) {
 function reasonOf(err) {
   const msg = String(err && err.message || "");
   if (msg === "step_cap" || msg.startsWith("step_cap")) return "step_cap";
-  if (msg.startsWith("banned") || msg.startsWith("math:") || msg.startsWith("ctx:") || msg.startsWith("undeclared:")) return "banned";
+  if (msg.startsWith("banned") || msg.startsWith("math:") || msg.startsWith("ctx:") || msg.startsWith("ui:") || msg.startsWith("undeclared:")) return "banned";
   if (msg.startsWith("syntax")) return "syntax";
   return "throw";
 }
@@ -216,7 +288,8 @@ function noted(err) {
 export function verifyWidget(widget, opts = {}) {
   const reasons = [];
   const detail = [];
-  const shape = shapeErrors(widget);
+  const v04 = !!opts.v04 && isV04(widget);
+  const shape = shapeErrors(widget, opts);
   reasons.push(...shape);
   let encoded = "";
   try { encoded = JSON.stringify(widget); } catch { reasons.push("size"); }
@@ -234,11 +307,19 @@ export function verifyWidget(widget, opts = {}) {
   let ast;
   try { ast = parseDraw(draw); }
   catch (err) { return finish([reasonOf(err)], false, [noted(err)]); }
+  if ((ast.params.length === 4) !== v04) return finish(["version"], false, ["params:" + ast.params.join(",")]);
+  const run = (state) => execute(ast, state, 0, HOST.step_cap, v04 ? { v04: true, widget } : undefined);
 
   let base;
-  try { base = execute(ast, baseState(widget), 0, HOST.step_cap); }
+  try { base = run(baseState(widget)); }
   catch (err) { return finish([reasonOf(err)], false, [noted(err)]); }
   if (!painted(base.calls)) reasons.push("blank");
+  if (v04) frame04(widget, base.frame, reasons, detail);
+  if (v04) {
+    // R4: the same draw must hold on a phone-sized canvas.
+    try { const small = run(baseState(widget, null, [358, 201])); frame04(widget, small.frame, [], detail, "small:"); }
+    catch (err) { reasons.push(reasonOf(err)); detail.push("small:" + noted(err)); }
+  }
 
   const controls = widget.controls || [];
   const readAny = controls.some((control) => base.reads.has(control.id));
@@ -247,16 +328,24 @@ export function verifyWidget(widget, opts = {}) {
     for (const control of controls) {
       if (!base.reads.has(control.id)) {
         if (control.kind === "play" && base.usesT) continue;
+        if (v04 && control.kind === "predict" && control.reveal) {
+          try {
+            const shown = run(baseState(widget, control.reveal));
+            if (!geometryChanged(base.calls, shown.calls, HOST.pixel_floor)) reasons.push("slop_inert:" + control.id);
+          } catch (err) { reasons.push(reasonOf(err)); detail.push(noted(err)); }
+          continue;
+        }
         reasons.push("slop_inert:" + control.id);
         continue;
       }
       let prev = null;
       for (const value of sampleControl(control)) {
         try {
-          const run = execute(ast, baseState(widget, { [control.id]: value }), 0, HOST.step_cap);
-          if (!painted(run.calls)) reasons.push("blank");
-          if (prev && !geometryChanged(prev, run.calls, HOST.pixel_floor)) reasons.push("slop_inert:" + control.id);
-          prev = run.calls;
+          const one = run(baseState(widget, { [control.id]: value }));
+          if (!painted(one.calls)) reasons.push("blank");
+          if (prev && !geometryChanged(prev, one.calls, HOST.pixel_floor)) reasons.push("slop_inert:" + control.id);
+          if (v04) frame04(widget, one.frame, reasons, detail);
+          prev = one.calls;
         } catch (err) {
           reasons.push(reasonOf(err));
           detail.push(noted(err));
@@ -267,6 +356,25 @@ export function verifyWidget(widget, opts = {}) {
   }
   if (!claimLinked(widget, opts.claim || "")) reasons.push("slop_unrelated");
   return finish(reasons, base.usesT, detail);
+}
+
+// What a 0.4 frame reports back: no free text (R1), only declared readouts and takeaway variants.
+// Dropped labels, marks out of range and cut text are notes, not rejections.
+function frame04(widget, frame, reasons, detail, tag = "") {
+  if (!frame) return;
+  const rep = frame.report || {};
+  if (rep.free_text) { reasons.push("free_text"); detail.push(tag + "free_text:" + rep.free_text); }
+  const declared = new Set((widget.readouts || []).map((r) => r.id));
+  for (const id of Object.keys(frame.readouts || {})) {
+    if (!declared.has(id)) { reasons.push("readout"); detail.push(tag + "readout:" + id); }
+    else if (!Number.isFinite(frame.readouts[id])) { reasons.push("readout"); detail.push(tag + "readout_nan:" + id); }
+  }
+  const take = widget.takeaway;
+  if (frame.say != null && take && typeof take === "object" && !(frame.say in take)) { reasons.push("takeaway"); detail.push(tag + "say:" + frame.say); }
+  for (const d of rep.dropped || []) detail.push(tag + "dropped:" + d.text);
+  for (const m of rep.marks_out || []) detail.push(tag + "mark_out:" + m);
+  for (const c of rep.cut || []) detail.push(tag + "cut:" + c.field);
+  if (rep.over_budget) detail.push(tag + "over_budget:" + rep.over_budget);
 }
 
 function finish(reasons, usesT, detail) {

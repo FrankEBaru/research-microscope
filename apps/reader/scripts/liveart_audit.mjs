@@ -2,7 +2,11 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
-import { srcdoc } from "../src/lib/liveart/sandbox.js";
+import { srcdoc, srcdoc04 } from "../src/lib/liveart/sandbox.js";
+import { isV04, v04On } from "../src/lib/liveart/spec.js";
+
+// 0.4 (RRM-90): RRM_LIVEART_V04 turns on the 0.4 verifier and the 0.4 iframe for 0.4 widgets.
+const V04 = v04On(process.env);
 import { HOST } from "../src/lib/liveart/spec.js";
 import { verifyWidget } from "../src/lib/liveart/verify.js";
 
@@ -22,7 +26,7 @@ function stateOf(widget) {
 function verifyRow(row) {
   let report;
   try {
-    report = verifyWidget(row.widget, { claim: row.claim || "" });
+    report = verifyWidget(row.widget, { claim: row.claim || "", v04: V04 });
   } catch (err) {
     report = { accept: false, reasons: ["throw"], usesT: false };
   }
@@ -143,7 +147,7 @@ async function sandboxRows(rows, widgets) {
     for (const row of rows) {
       if (row.sandbox !== "pending") continue;
       const src = byId.get(row.group + ":" + row.id);
-      const html = srcdoc(src.widget.draw);
+      const html = V04 && isV04(src.widget) ? srcdoc04(src.widget) : srcdoc(src.widget.draw);
       const state = stateOf(src.widget);
       const expr = `window.__go(${JSON.stringify(html)}, ${JSON.stringify(state)})`;
       try {

@@ -60,8 +60,26 @@ def archetype_for(topic):
     return _TOPIC.get(topic or "", "curve")
 
 
+# rrm-widget/0.4 examples (RRM-90): mirror of apps/reader/src/lib/liveart/v04.js, checked by a node test.
+_V04_FILE = __import__("pathlib").Path(__file__).with_name("v04_examples.json")
+_V04_ARCH = {"adam-valley": "curve", "rope-shift": "dial", "kl-policy": "bars", "int8-outlier": "matrix"}
+
+
+def _shots_04(archetype, claim_id, limit):
+    import json
+
+    widgets = [w for w in json.loads(_V04_FILE.read_text()) if w.get("id") != claim_id]
+    first = [w for w in widgets if _V04_ARCH.get(w["id"]) == archetype]
+    rest = [w for w in widgets if w not in first]
+    return (first + rest)[:limit]
+
+
 def shots_for(archetype, topic, claim_id=None, limit=2):
     """Up to two catalog widgets. Two topics. Skip the claim id."""
+    from rrm.liveart.contract import v04_on
+
+    if v04_on():
+        return _shots_04(archetype if archetype in ARCHETYPES else "curve", claim_id, limit)
     if archetype not in ARCHETYPES:
         archetype = "curve"
     by_id = {row["id"]: row for row in CATALOG}

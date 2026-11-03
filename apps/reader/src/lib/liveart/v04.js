@@ -1,0 +1,653 @@
+// rrm-widget/0.4 examples (RRM-90): four WOW rewritten with the text outside the canvas.
+// Rules: rrm/liveart/CONTRACT.md, section rrm-widget/0.4. Quotes checked against the arXiv source.
+// Only mounted with RRM_LIVEART_V04 on; verify.js rejects a 0.4 widget without the flag.
+export const V04 = [
+  {
+    "source": "v04",
+    "widget": {
+      "version": "rrm-widget/0.4",
+      "id": "adam-valley",
+      "topic": "adam",
+      "title": "Adam's step ignores the steep wall",
+      "hook": "Does a steeper wall make Adam's step bigger?",
+      "explain": "Adam (Kingma & Ba, 1412.6980, Algorithm 1) steps by α·m̂/√v̂ with β1 0.9, β2 0.999 and ε 0.00000001. The valley f = ½x² + wall·y² is a toy, not a figure from the paper: its gradient in y is 2·wall·y. Both start at (−1.15, 0.55) and take up to 26 steps. SGD's step grows with the wall and leaves once lr > 1/wall; Adam's first step is lr whatever the wall.",
+      "questions": [
+        {
+          "q": "Raise lr to 0.08. Who leaves the valley?",
+          "why": "SGD: past lr = 1/wall each zigzag is wider than the last. Adam stays inside.",
+          "set": {
+            "lr": 0.08
+          }
+        },
+        {
+          "q": "Lower the wall to 2. Does SGD still bounce?",
+          "why": "No: in a gentle valley its step in y is small, and both slide down.",
+          "set": {
+            "wall": 2
+          }
+        },
+        {
+          "q": "Go from wall 20 to wall 2. How much does Adam's first step change?",
+          "why": "Not at all: m̂/√v̂ cancels the scale of the gradient, so the step stays lr.",
+          "set": {
+            "wall": 2,
+            "lr": 0.04
+          }
+        },
+        {
+          "q": "Is this valley a curve from the paper?",
+          "why": "No. It is a toy to see the step; the update rule is the paper's."
+        }
+      ],
+      "controls": [
+        {
+          "id": "lr",
+          "label": "step size",
+          "tex": "\\alpha",
+          "min": 0.02,
+          "max": 0.1,
+          "value": 0.04,
+          "step": 0.01
+        },
+        {
+          "id": "wall",
+          "label": "wall steepness",
+          "min": 1,
+          "max": 20,
+          "value": 20,
+          "step": 1
+        }
+      ],
+      "areas": [
+        {
+          "id": "valley",
+          "bleed": true,
+          "axes": false,
+          "x": {
+            "min": -1.32,
+            "max": 0.4
+          },
+          "y": {
+            "min": -0.64,
+            "max": 0.74
+          }
+        }
+      ],
+      "readouts": [
+        {
+          "id": "adam_step",
+          "label": "Adam, first step",
+          "digits": 3,
+          "color": "c1"
+        },
+        {
+          "id": "sgd_step",
+          "label": "SGD, first step",
+          "digits": 2,
+          "color": "c2"
+        }
+      ],
+      "marks": [
+        {
+          "id": "lr_star",
+          "control": "lr",
+          "label": "SGD leaves",
+          "region": "right",
+          "color": "c2"
+        }
+      ],
+      "legend": [
+        {
+          "color": "c1",
+          "text": "Adam",
+          "kind": "line"
+        },
+        {
+          "color": "c2",
+          "text": "SGD",
+          "kind": "line"
+        }
+      ],
+      "takeaway": {
+        "bounce": "The wall turns SGD's first step into {sgd_step}, so it bounces. Adam's stays {adam_step}, the size of α.",
+        "out": "SGD's first step is {sgd_step} and it leaves the valley. Adam's is still {adam_step}.",
+        "soft": "Gentle wall: SGD steps {sgd_step}, Adam {adam_step}. Both slide down without bouncing."
+      },
+      "anchor": {
+        "latex": "\\Delta_t = \\alpha \\cdot \\hat{m}_t \\,/\\, \\sqrt{\\hat{v}_t}",
+        "vars": [
+          {
+            "tex": "\\alpha",
+            "control": "lr"
+          },
+          {
+            "tex": "\\Delta_t",
+            "readout": "adam_step"
+          }
+        ],
+        "quote": "The effective stepsize Δt is also invariant to the scale of the gradients",
+        "passage_id": "1412.6980#2.1-p1",
+        "arxiv": "1412.6980",
+        "section": "§2.1",
+        "abstract_quote": "is invariant to diagonal rescaling of the gradients"
+      },
+      "draw": "function draw(ctx, state, t, ui) {\n  var lr = state.lr, wall = state.wall, c = ui.c, A = ui.area(\"valley\"), lv = [14, 8, 4.5, 2.4, 1.2, 0.6, 0.25, 0.07], k, j;\n  ui.clip(\"valley\");\n  ctx.globalAlpha = 0.5; ctx.fillStyle = c.track; ctx.fillRect(A.x, A.y, A.w, A.h); ctx.globalAlpha = 1;\n  for (k = 0; k < lv.length; k++) {\n    ctx.beginPath();\n    for (j = 0; j <= 96; j++) {\n      var an = j / 96 * 2 * Math.PI, px = Math.sqrt(2 * lv[k]) * Math.cos(an), py = Math.sqrt(lv[k] / wall) * Math.sin(an);\n      if (j === 0) ctx.moveTo(A.X(px), A.Y(py)); else ctx.lineTo(A.X(px), A.Y(py));\n    }\n    ctx.closePath(); ctx.globalAlpha = 0.3; ctx.fillStyle = c.track; ctx.fill(); ctx.globalAlpha = 1;\n    ctx.strokeStyle = c.rule2; ctx.lineWidth = ui.lw.hair; ctx.stroke();\n  }\n  function run(kind) {\n    var x = -1.15, y = 0.55, mx = 0, my = 0, vx = 0, vy = 0, pts = [[x, y]], s, gx, gy, out = 0;\n    for (s = 1; s <= 26; s++) {\n      gx = x; gy = 2 * wall * y;\n      if (kind === 0) { x = x - lr * gx; y = y - lr * gy; }\n      else {\n        mx = 0.9 * mx + 0.1 * gx; my = 0.9 * my + 0.1 * gy;\n        vx = 0.999 * vx + 0.001 * gx * gx; vy = 0.999 * vy + 0.001 * gy * gy;\n        var b1 = 1 - Math.pow(0.9, s), b2 = 1 - Math.pow(0.999, s);\n        x = x - lr * (mx / b1) / (Math.sqrt(vx / b2) + 0.00000001);\n        y = y - lr * (my / b1) / (Math.sqrt(vy / b2) + 0.00000001);\n      }\n      pts.push([x, y]);\n      if (x < -1.32 || x > 0.4 || y < -0.64 || y > 0.74) { out = 1; break; }\n    }\n    return [pts, out];\n  }\n  function path(r, col, w) {\n    var i, n = r[0].length;\n    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineJoin = \"round\"; ctx.lineCap = \"round\"; ctx.beginPath();\n    for (i = 0; i < n; i++) { if (i === 0) ctx.moveTo(A.X(r[0][i][0]), A.Y(r[0][i][1])); else ctx.lineTo(A.X(r[0][i][0]), A.Y(r[0][i][1])); }\n    ctx.stroke(); ctx.fillStyle = col;\n    for (i = 1; i < n - r[1]; i++) { ctx.beginPath(); ctx.arc(A.X(r[0][i][0]), A.Y(r[0][i][1]), w > 2 ? 2.6 : 2.1, 0, 2 * Math.PI); ctx.fill(); }\n  }\n  var sgd = run(0), adam = run(1);\n  path(sgd, c.c2, ui.lw.line);\n  path(adam, c.c1, ui.lw.bold);\n  ctx.strokeStyle = c.ink3; ctx.lineWidth = ui.lw.line; ctx.beginPath();\n  ctx.moveTo(A.X(0) - 5, A.Y(0)); ctx.lineTo(A.X(0) + 5, A.Y(0)); ctx.moveTo(A.X(0), A.Y(0) - 5); ctx.lineTo(A.X(0), A.Y(0) + 5); ctx.stroke();\n  ctx.fillStyle = c.bg; ctx.strokeStyle = c.ink; ctx.lineWidth = ui.lw.line;\n  ctx.beginPath(); ctx.arc(A.X(-1.15), A.Y(0.55), 5, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();\n  ui.unclip();\n  var se = sgd[0][sgd[0].length - 1 - sgd[1]], ae = adam[0][adam[0].length - 1];\n  ui.label(\"SGD\", A.X(se[0]), A.Y(se[1]), \"c2\");\n  ui.label(\"Adam\", A.X(ae[0]), A.Y(ae[1]), \"c1\", \"below\");\n  ui.readout(\"sgd_step\", Math.abs(sgd[0][1][1] - sgd[0][0][1]));\n  ui.readout(\"adam_step\", Math.abs(adam[0][1][1] - adam[0][0][1]));\n  ui.mark(\"lr_star\", 1 / wall);\n  ui.say(sgd[1] ? \"out\" : (wall <= 4 ? \"soft\" : \"bounce\"));\n}"
+    }
+  },
+  {
+    "source": "v04",
+    "widget": {
+      "version": "rrm-widget/0.4",
+      "id": "rope-shift",
+      "topic": "rope",
+      "title": "RoPE: shift both tokens and the score does not move",
+      "hook": "Shift both tokens: does q·k change?",
+      "explain": "RoPE (2104.09864, §3.2.1, Eq. 12) rotates q by m·θ and k by n·θ, one dial per frequency θ. Shift adds the same turn to both arrows, so the angle between them, and the score q·k, stay put; only m − n moves it. The curve is q·k against m − n; q and k start aligned, so it peaks at 0. Drag the dot to move m. Three frequencies, a toy, not a full model.",
+      "questions": [
+        {
+          "q": "Set m = 10, n = 6, then shift both by 12. Does the score change?",
+          "why": "No: both arrows turn by the same angle, so every gap, and the sum of the cosines, is unchanged.",
+          "set": {
+            "m": 10,
+            "n": 6,
+            "shift": 12
+          }
+        },
+        {
+          "q": "Keep shift at 0 and move n to 14. Higher or lower score than at m − n = 0?",
+          "why": "Lower: with q and k aligned at m = n, any gap opens the angles and the cosines drop.",
+          "set": {
+            "n": 14,
+            "shift": 0
+          }
+        },
+        {
+          "q": "Which dial turns the most when you move shift?",
+          "why": "The fastest (θ = 1): the same shift turns it ten times more than the slowest (θ = 0.1)."
+        },
+        {
+          "q": "Does RoPE add a position vector to the embedding?",
+          "why": "No: it rotates q and k by an angle, so only the difference of the angles reaches the score."
+        }
+      ],
+      "controls": [
+        {
+          "id": "m",
+          "label": "query position",
+          "tex": "m",
+          "color": "c1",
+          "min": 0,
+          "max": 16,
+          "value": 10,
+          "step": 1
+        },
+        {
+          "id": "n",
+          "label": "key position",
+          "tex": "n",
+          "color": "c2",
+          "min": 0,
+          "max": 16,
+          "value": 6,
+          "step": 1
+        },
+        {
+          "id": "shift",
+          "label": "shift both",
+          "min": 0,
+          "max": 24,
+          "value": 8,
+          "step": 1
+        }
+      ],
+      "areas": [
+        {
+          "id": "dials",
+          "rect": [
+            0,
+            0,
+            1,
+            0.5
+          ]
+        },
+        {
+          "id": "score",
+          "rect": [
+            0,
+            0.5,
+            1,
+            0.5
+          ],
+          "x": {
+            "min": -16,
+            "max": 16,
+            "label": "m − n"
+          },
+          "y": {
+            "min": -3,
+            "max": 3,
+            "label": "q·k"
+          }
+        }
+      ],
+      "readouts": [
+        {
+          "id": "qk",
+          "label": "score",
+          "tex": "\\boldsymbol q\\cdot\\boldsymbol k",
+          "digits": 2
+        },
+        {
+          "id": "gap",
+          "label": "gap",
+          "tex": "m-n",
+          "digits": 0
+        },
+        {
+          "id": "turn",
+          "label": "fast dial turned",
+          "digits": 0,
+          "unit": "°"
+        }
+      ],
+      "legend": [
+        {
+          "color": "c1",
+          "text": "q at m + shift",
+          "kind": "line"
+        },
+        {
+          "color": "c2",
+          "text": "k at n + shift",
+          "kind": "line"
+        }
+      ],
+      "takeaway": {
+        "rest": "q·k = {qk} at m − n = {gap}. Move shift: every arrow turns, the dot stays.",
+        "moved": "Shift turned the fast dial {turn}, yet q·k is still {qk}: only m − n = {gap} counts."
+      },
+      "anchor": {
+        "latex": "g(\\boldsymbol x_m,\\boldsymbol x_n,m-n)=\\operatorname{Re}\\!\\left[(\\boldsymbol W_q\\boldsymbol x_m)(\\boldsymbol W_k\\boldsymbol x_n)^{*}e^{i(m-n)\\theta}\\right]",
+        "vars": [
+          {
+            "tex": "m",
+            "control": "m"
+          },
+          {
+            "tex": "n",
+            "control": "n"
+          },
+          {
+            "tex": "g",
+            "readout": "qk"
+          }
+        ],
+        "quote": "incorporating the relative position embedding is straightforward: simply rotate the affine-transformed word embedding vector by amount of angle multiples of its position index",
+        "passage_id": "2104.09864#3.2.1-p3",
+        "arxiv": "2104.09864",
+        "section": "§3.2.1",
+        "eq": "Eq. 12"
+      },
+      "draw": "function draw(ctx, state, t, ui) {\n  var m = state.m, n = state.n, s = state.shift, c = ui.c, th = [1, 0.3, 0.1], base = [0.5, 1.3, 2.3], i, k;\n  function score(a, b) { var v = 0, j; for (j = 0; j < 3; j++) v += Math.cos((a - b) * th[j]); return v; }\n  var D = ui.area(\"dials\"), r = Math.min(D.h * 0.36, D.w / 8.5);\n  function arrow(cx, cy, a, col) {\n    var ex = cx + r * Math.cos(a), ey = cy - r * Math.sin(a), hx = Math.cos(a), hy = -Math.sin(a), hl = Math.min(9, r * 0.28), hw = hl * 0.6;\n    ctx.strokeStyle = col; ctx.lineWidth = r < 24 ? ui.lw.line : ui.lw.bold; ctx.lineCap = \"round\"; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex - hx * hl * 0.8, ey - hy * hl * 0.8); ctx.stroke();\n    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(ex + hx * 2, ey + hy * 2); ctx.lineTo(ex - hx * hl - hy * hw, ey - hy * hl + hx * hw); ctx.lineTo(ex - hx * hl + hy * hw, ey - hy * hl - hx * hw); ctx.closePath(); ctx.fill();\n  }\n  for (i = 0; i < 3; i++) {\n    var cx = D.x + D.w * (i + 0.5) / 3, cy = D.y + D.h * 0.44, aq = base[i] + (m + s) * th[i], ak = base[i] + (n + s) * th[i];\n    ctx.fillStyle = c.soft; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.fill();\n    ctx.strokeStyle = c.rule2; ctx.lineWidth = ui.lw.hair; ctx.stroke();\n    for (k = 0; k < 12; k++) { var ta = k * Math.PI / 6, r0 = k % 3 ? r - 3 : r - 6; ctx.beginPath(); ctx.moveTo(cx + r0 * Math.cos(ta), cy + r0 * Math.sin(ta)); ctx.lineTo(cx + r * Math.cos(ta), cy + r * Math.sin(ta)); ctx.stroke(); }\n    var d = aq - ak; d = d - 2 * Math.PI * Math.floor((d + Math.PI) / (2 * Math.PI));\n    ctx.fillStyle = c.ink; ctx.globalAlpha = 0.09; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r * 0.55, -ak, -ak - d, d > 0); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;\n    arrow(cx, cy, ak, c.c2); arrow(cx, cy, aq, c.c1);\n    ctx.fillStyle = c.ink; ctx.beginPath(); ctx.arc(cx, cy, r < 24 ? 1.8 : 3, 0, 2 * Math.PI); ctx.fill();\n    ui.label(\"θ = \" + th[i], cx, cy + r, \"ink3\", \"below\");\n  }\n  var S = ui.area(\"score\"), now = score(m + s, n + s), d = m - n;\n  ui.axes(\"score\");\n  ctx.strokeStyle = c.rule2; ctx.lineWidth = ui.lw.hair; ctx.beginPath(); ctx.moveTo(S.X(0), S.y); ctx.lineTo(S.X(0), S.y1); ctx.stroke();\n  ctx.strokeStyle = c.ink; ctx.lineWidth = ui.lw.line; ctx.beginPath();\n  for (k = 0; k <= 128; k++) { var dd = -16 + k / 4, v = score(dd, 0); if (k === 0) ctx.moveTo(S.X(dd), S.Y(v)); else ctx.lineTo(S.X(dd), S.Y(v)); }\n  ctx.stroke();\n  ui.handle(\"m\", S.X(d), S.Y(now), \"score\", \"x\", n);\n  ui.readout(\"qk\", now); ui.readout(\"gap\", m - n); ui.readout(\"turn\", s * th[0] * 180 / Math.PI);\n  ui.say(s > 0 ? \"moved\" : \"rest\");\n}"
+    }
+  },
+  {
+    "source": "v04",
+    "widget": {
+      "version": "rrm-widget/0.4",
+      "id": "kl-policy",
+      "topic": "kl_rlhf",
+      "title": "The KL leash: larger β keeps the policy near the reference",
+      "hook": "Does a bigger β chase the reward harder?",
+      "explain": "RLHF maximises reward minus β·KL to the reference model; its optimum is π ∝ π_ref · exp(r / β), Eq. 4 of DPO (2305.18290). Outlines: the reference; filled bars: the policy. Below β* the top-reward answer takes more than half the probability. The four answers, their rewards and the reference are a toy, not a run of PPO.",
+      "questions": [
+        {
+          "q": "Raise β from 0.6 to 2. Does the policy follow the reward more, or less?",
+          "why": "Less: β divides the reward, so a large β pulls every bar back onto its outline.",
+          "set": {
+            "beta": 2
+          }
+        },
+        {
+          "q": "Lower β until lol passes 50%. Where is that on the β track?",
+          "why": "At the marked β*: left of it the top reward dominates; right of it the KL holds lol below half."
+        },
+        {
+          "q": "Set β to 0.1. Does sure keep any probability?",
+          "why": "Almost none: exp(r / β) blows up the gap between rewards, so the mass collapses onto lol.",
+          "set": {
+            "beta": 0.1
+          }
+        },
+        {
+          "q": "Why does lol need such a small β, with the highest reward?",
+          "why": "Its reference share is only 3%, and the KL charges for moving far from it."
+        }
+      ],
+      "controls": [
+        {
+          "id": "beta",
+          "label": "KL weight",
+          "tex": "\\beta",
+          "min": 0.05,
+          "max": 3,
+          "value": 0.6,
+          "step": 0.05
+        },
+        {
+          "id": "bet",
+          "kind": "predict",
+          "label": "your prediction",
+          "options": [
+            "Harder",
+            "Less hard",
+            "No change"
+          ],
+          "answer": 2,
+          "min": 0,
+          "max": 3,
+          "step": 1,
+          "value": 0,
+          "reveal": {
+            "beta": 2
+          },
+          "reveal_label": "β is now 2.00: compare the bars with their outlines."
+        }
+      ],
+      "areas": [
+        {
+          "id": "main",
+          "x": {
+            "cats": [
+              "sure",
+              "ok",
+              "hmm",
+              "lol"
+            ],
+            "sub": [
+              "r 0.2",
+              "r 0.5",
+              "r 0.4",
+              "r 2.0"
+            ],
+            "colors": [
+              null,
+              null,
+              null,
+              "c2"
+            ]
+          },
+          "y": {
+            "min": 0,
+            "max": 1,
+            "format": "pct",
+            "label": "probability"
+          }
+        }
+      ],
+      "readouts": [
+        {
+          "id": "plol",
+          "label": "lol",
+          "tex": "\\pi(\\text{lol})",
+          "format": "pct",
+          "digits": 0,
+          "color": "c2"
+        },
+        {
+          "id": "kl",
+          "label": "KL",
+          "tex": "\\mathrm{KL}(\\pi\\,\\|\\,\\pi_{\\mathrm{ref}})",
+          "digits": 2
+        },
+        {
+          "id": "bstar",
+          "label": "β*",
+          "digits": 2,
+          "show": false
+        }
+      ],
+      "marks": [
+        {
+          "id": "half",
+          "area": "main",
+          "axis": "y",
+          "label": "half"
+        },
+        {
+          "id": "beta_star",
+          "control": "beta",
+          "label": "lol > 50%",
+          "region": "left",
+          "color": "c2"
+        }
+      ],
+      "legend": [
+        {
+          "color": "c1",
+          "text": "policy",
+          "kind": "bar"
+        },
+        {
+          "color": "ref",
+          "text": "reference",
+          "kind": "outline"
+        }
+      ],
+      "takeaway": {
+        "took": "Below β* = {bstar}, lol takes {plol}: the policy collapses onto the top reward.",
+        "hold": "At β = {beta} the KL holds lol to {plol}, though its reward is 4× the next.",
+        "hug": "Large β: the policy hugs the reference; the KL is only {kl}."
+      },
+      "anchor": {
+        "latex": "\\pi_r(y\\mid x)=\\frac{1}{Z(x)}\\,\\pi_{\\mathrm{ref}}(y\\mid x)\\exp\\!\\left(\\frac{1}{\\beta}\\,r(x,y)\\right)",
+        "vars": [
+          {
+            "tex": "\\beta",
+            "control": "beta"
+          }
+        ],
+        "quote": "it is straightforward to show that the optimal solution to the KL-constrained reward maximization objective in Eq. 3 takes the form",
+        "passage_id": "2305.18290#4-p3",
+        "arxiv": "2305.18290",
+        "section": "§4",
+        "eq": "Eq. 4"
+      },
+      "draw": "function draw(ctx, state, t, ui) {\n  var b = state.beta, c = ui.c, name = [\"sure\", \"ok\", \"hmm\", \"lol\"], ref = [0.55, 0.3, 0.12, 0.03], rew = [0.2, 0.5, 0.4, 2], p = [], q = [], i;\n  function pol(bb, out) { var z = 0, k; for (k = 0; k < 4; k++) { out[k] = ref[k] * Math.exp(rew[k] / bb); z += out[k]; } for (k = 0; k < 4; k++) out[k] = out[k] / z; }\n  pol(b, p);\n  var kl = 0; for (i = 0; i < 4; i++) kl += p[i] * Math.log(p[i] / ref[i]);\n  var lo = 0.05, hi = 3, mid;\n  for (i = 0; i < 32; i++) { mid = (lo + hi) / 2; pol(mid, q); if (q[3] > 0.5) lo = mid; else hi = mid; }\n  var A = ui.area(\"main\"); ui.axes(\"main\");\n  var bw = Math.min(56, A.band * 0.44), y0 = A.Y(0);\n  for (i = 0; i < 4; i++) {\n    var x = A.X(i);\n    ctx.fillStyle = i === 3 ? c.c2 : c.c1; ctx.fillRect(x - bw / 2, A.Y(p[i]), bw, y0 - A.Y(p[i]));\n    ctx.strokeStyle = c.ref; ctx.lineWidth = ui.lw.line; ctx.strokeRect(x - bw / 2 - 6.5, A.Y(ref[i]) + 0.5, bw + 13, y0 - A.Y(ref[i]) - 0.5);\n    ui.tip(x - A.band / 2, A.y, A.band, y0 - A.y, name[i] + \"  π \" + Math.round(p[i] * 100) + \"% · ref \" + Math.round(ref[i] * 100) + \"%\");\n  }\n  ui.mark(\"half\", 0.5);\n  ui.mark(\"beta_star\", lo);\n  ui.readout(\"plol\", p[3]); ui.readout(\"kl\", kl); ui.readout(\"bstar\", lo);\n  ui.say(b < lo ? \"took\" : (b >= 2 ? \"hug\" : \"hold\"));\n}"
+    }
+  },
+  {
+    "source": "v04",
+    "widget": {
+      "version": "rrm-widget/0.4",
+      "id": "int8-outlier",
+      "topic": "quant",
+      "title": "One large value leaves the others without levels",
+      "hook": "Can one big value ruin all the small ones?",
+      "explain": "Absmax spreads 255 levels between −max and +max, so the step is max/127. The lines are those levels; each small value lands on the nearest one (blue dot) and the clay stem is its error. An outlier stretches the step and the small values get few levels. LLM.int8() keeps values above α = 6 in 16 bits (≈0.1% of the dimensions). The 15 small values are a toy; 6.0, 99.9% and 600–1000% are from the paper.",
+      "questions": [
+        {
+          "q": "Raise the outlier from 1 to 120. What happens to the small values?",
+          "why": "The step grows with the max: the levels spread out, the error grows tens of times and some small values round to 0.",
+          "set": {
+            "mag": 120,
+            "mode": 0
+          }
+        },
+        {
+          "q": "8 bits give 255 levels. Aren't they enough?",
+          "why": "With an outlier of 20 the 15 small values use only a handful; the rest of the levels cover the outlier's range.",
+          "set": {
+            "mag": 20,
+            "mode": 0
+          }
+        },
+        {
+          "q": "Why not drop the outlier, or set it to 0?",
+          "why": "The small values are fine again, but the outlier loses all its value. The paper measures 600–1000% worse perplexity.",
+          "set": {
+            "mode": 1
+          }
+        },
+        {
+          "q": "What does LLM.int8() do with it?",
+          "why": "Values above 6 go to 16 bits, exact, and the step is fine again for the other 99.9%.",
+          "set": {
+            "mode": 2
+          }
+        }
+      ],
+      "controls": [
+        {
+          "id": "mag",
+          "label": "outlier size",
+          "min": 1,
+          "max": 120,
+          "value": 20,
+          "step": 1
+        },
+        {
+          "id": "mode",
+          "label": "method",
+          "options": [
+            "absmax",
+            "drop outlier",
+            "LLM.int8()"
+          ],
+          "value": 0,
+          "kind": "select",
+          "min": 0,
+          "max": 2,
+          "step": 1
+        }
+      ],
+      "areas": [
+        {
+          "id": "small",
+          "rect": {
+            "wide": [
+              0,
+              0,
+              0.74,
+              1
+            ],
+            "narrow": [
+              0,
+              0,
+              0.62,
+              1
+            ]
+          },
+          "y": {
+            "min": -1.1,
+            "max": 1.1,
+            "label": "15 small values"
+          }
+        },
+        {
+          "id": "out",
+          "rect": {
+            "wide": [
+              0.74,
+              0,
+              0.26,
+              1
+            ],
+            "narrow": [
+              0.62,
+              0,
+              0.38,
+              1
+            ]
+          },
+          "x": {
+            "cats": [
+              "real",
+              "kept"
+            ]
+          },
+          "y": {
+            "min": 0,
+            "max": 120,
+            "label": "outlier"
+          }
+        }
+      ],
+      "readouts": [
+        {
+          "id": "step",
+          "label": "step",
+          "digits": 3
+        },
+        {
+          "id": "used",
+          "label": "levels used",
+          "digits": 0,
+          "unit": " of 255"
+        },
+        {
+          "id": "err",
+          "label": "error",
+          "digits": 0,
+          "unit": "×",
+          "color": "c2"
+        },
+        {
+          "id": "zeros",
+          "label": "zeros",
+          "digits": 0,
+          "show": false
+        }
+      ],
+      "marks": [
+        {
+          "id": "alpha",
+          "area": "out",
+          "axis": "y",
+          "label": "α = 6"
+        },
+        {
+          "id": "paper",
+          "control": "mag",
+          "label": "paper: up to 20×",
+          "region": "right"
+        }
+      ],
+      "legend": [
+        {
+          "color": "ref",
+          "text": "real",
+          "kind": "dot"
+        },
+        {
+          "color": "c1",
+          "text": "stored in 8 bits",
+          "kind": "dot"
+        },
+        {
+          "color": "c2",
+          "text": "error",
+          "kind": "line"
+        }
+      ],
+      "takeaway": {
+        "coarse": "One value of {mag} stretches the step to {step}: the 15 small values use {used}.",
+        "zeros": "At {mag} the step is {step}; {zeros} of the 15 small values now round to 0.",
+        "fine": "With no real outlier the step stays {step} and every value finds a close level.",
+        "drop": "Dropping it keeps the step at {step}, but the outlier's {mag} is stored as 0.",
+        "split": "LLM.int8() keeps the {mag} in 16 bits; the small values get a step of {step} again.",
+        "below": "Below α = 6 nothing is split off: it is plain absmax, step {step}."
+      },
+      "anchor": {
+        "latex": "\\mathbf{X}_{i8} = \\Bigl\\lfloor \\dfrac{127\\cdot \\mathbf{X}_{f16}}{\\max_{ij}|\\mathbf{X}_{f16_{ij}}|} \\Bigr\\rceil",
+        "vars": [],
+        "quote": "a single outlier can reduce the quantization precision of all other values",
+        "passage_id": "2208.07339#3-p1",
+        "arxiv": "2208.07339",
+        "section": "§3",
+        "eq": "absmax, §2.1"
+      },
+      "draw": "function draw(ctx, state, t, ui) {\n  var mag = state.mag, mode = state.mode, n = 15, i, j, k, c = ui.c;\n  var xs = [], qv = [], used = [], nu = 0, es = 0, e0 = 0, zc = 0, amax = 0;\n  for (i = 0; i < n; i++) xs[i] = Math.sin(i * 1.7 + 0.4) * 0.9;\n  for (i = 0; i < n; i++) amax = Math.max(amax, Math.abs(xs[i]));\n  var s0 = amax / 127, keep16 = mode === 2 && mag > 6, gone = mode === 1;\n  if (!keep16 && !gone) amax = Math.max(amax, mag);\n  var step = amax / 127;\n  for (i = 0; i < n; i++) {\n    k = Math.round(xs[i] / step); qv[i] = k * step; es += Math.abs(qv[i] - xs[i]);\n    e0 += Math.abs(Math.round(xs[i] / s0) * s0 - xs[i]);\n    var f = 0; for (j = 0; j < nu; j++) if (used[j] === k) f = 1;\n    if (!f) { used[nu] = k; nu++; }\n    if (k === 0 && Math.abs(xs[i]) > 0.01) zc++;\n  }\n  var oq = gone ? 0 : (keep16 ? mag : Math.round(mag / step) * step);\n  var S = ui.area(\"small\"); ui.axes(\"small\", false);\n  var kmax = Math.floor(1.1 / step);\n  ui.clip(\"small\");\n  ctx.strokeStyle = c.rule2; ctx.lineWidth = ui.lw.hair; ctx.globalAlpha = kmax > 60 ? 0.35 : 1;\n  for (k = -kmax; k <= kmax; k++) { var ly = Math.round(S.Y(k * step)) + 0.5; ctx.beginPath(); ctx.moveTo(S.x, ly); ctx.lineTo(S.x1, ly); ctx.stroke(); }\n  ctx.globalAlpha = 1; ui.unclip();\n  var gap = S.w / n;\n  for (i = 0; i < n; i++) {\n    var cx = S.x + gap * (i + 0.5);\n    ctx.strokeStyle = c.c2; ctx.lineWidth = ui.lw.bold; ctx.lineCap = \"round\"; ctx.beginPath(); ctx.moveTo(cx, S.Y(xs[i])); ctx.lineTo(cx, S.Y(qv[i])); ctx.stroke();\n    ctx.fillStyle = c.ref; ctx.beginPath(); ctx.arc(cx, S.Y(xs[i]), 3.5, 0, 2 * Math.PI); ctx.fill();\n    ctx.fillStyle = c.c1; ctx.beginPath(); ctx.arc(cx, S.Y(qv[i]), 4, 0, 2 * Math.PI); ctx.fill();\n  }\n  var O = ui.area(\"out\"); ui.axes(\"out\");\n  var bw = Math.min(30, O.band * 0.5), y0 = O.Y(0);\n  ctx.fillStyle = c.ref; ctx.fillRect(O.X(0) - bw / 2, O.Y(mag), bw, y0 - O.Y(mag));\n  ctx.fillStyle = gone ? c.c2 : c.c1; ctx.fillRect(O.X(1) - bw / 2, O.Y(oq), bw, Math.max(2, y0 - O.Y(oq)));\n  if (mode === 2) ui.mark(\"alpha\", 6);\n  ui.mark(\"paper\", 20);\n  ui.readout(\"step\", step); ui.readout(\"used\", nu); ui.readout(\"err\", es / e0); ui.readout(\"zeros\", zc);\n  if (gone) ui.say(\"drop\");\n  else if (mode === 2) ui.say(mag > 6 ? \"split\" : \"below\");\n  else if (zc > 0) ui.say(\"zeros\");\n  else ui.say(step > 0.02 ? \"coarse\" : \"fine\");\n}"
+    }
+  }
+];

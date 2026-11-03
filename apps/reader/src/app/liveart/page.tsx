@@ -6,7 +6,8 @@ import { mountSandbox } from "@/lib/liveart/mount.js";
 import { GOLD } from "@/lib/liveart/gold.js";
 import { ROUND } from "@/lib/liveart/round.js";
 import { SHOWCASE } from "@/lib/liveart/showcase.js";
-import { VERSION, liveOn } from "@/lib/liveart/spec.js";
+import { VERSION, VERSION_04, liveOn, v04On } from "@/lib/liveart/spec.js";
+import { V04 } from "@/lib/liveart/v04.js";
 import { Tex } from "@/lib/math";
 import "@/styles/liveart.css";
 
@@ -25,8 +26,49 @@ type Knob = {
 
 type Noted = { equation?: string; anchor?: string; cite?: string };
 
+// rrm-widget/0.4 (RRM-90): host blocks painted around the canvas. Only with RRM_LIVEART_V04 on.
+type Read = { id: string; label: string; digits?: number; unit?: string; format?: string; color?: string; show?: boolean };
+type Anchor04 = { latex?: string; quote?: string; arxiv?: string; section?: string; eq?: string };
+type Wide = {
+  version?: string;
+  hook?: string;
+  readouts?: Read[];
+  legend?: { color: string; text: string }[];
+  takeaway?: string | Record<string, string>;
+  anchor?: string | Anchor04;
+  equation?: string;
+  cite?: string;
+};
+type Frame = { readouts: Record<string, number>; say: string | null; cmarks: { control: string; label?: string; value: number }[] } | null;
+
+const V04_ON = v04On();
+
+function fmtRead(r: Read | undefined, v: number) {
+  if (r && r.format === "pct") return (v * 100).toFixed(r.digits ?? 0) + "%";
+  return v.toFixed(r && r.digits != null ? r.digits : 2) + (r && r.unit ? r.unit : "");
+}
+
+function takeawayText(w: Wide, frame: Frame, vals: Record<string, number>) {
+  if (!frame || !w.takeaway) return "";
+  const tpl = typeof w.takeaway === "string" ? w.takeaway : (frame.say && w.takeaway[frame.say]) || "";
+  return tpl.replace(/\{(\w+)\}/g, (_, k: string) => {
+    const r = (w.readouts || []).find((q) => q.id === k);
+    if (r && k in frame.readouts) return fmtRead(r, frame.readouts[k]);
+    return k in vals ? String(vals[k]) : "";
+  });
+}
+
+function noted(w: Wide): Noted {
+  if (w.anchor && typeof w.anchor === "object") {
+    const a = w.anchor;
+    return { equation: a.latex, anchor: a.quote, cite: [a.arxiv ? "arXiv " + a.arxiv : "", a.section || "", a.eq || ""].filter(Boolean).join(" · ") };
+  }
+  return { equation: w.equation, anchor: typeof w.anchor === "string" ? w.anchor : undefined, cite: w.cite };
+}
+
 // RRM-90: the quality round (#59/#64) plus #57's figures and contract examples.
 const CATALOG = [
+  ...(V04_ON ? V04 : []),
   ...ROUND,
   ...SHOWCASE.map((item) => ({ ...item, source: "figure" })),
   ...GOLD.map((widget) => ({ widget, claim: "", source: "contract" })),
@@ -34,6 +76,7 @@ const CATALOG = [
 
 function kicker(source: string) {
   if (source === "round") return "Quality round";
+  if (source === "v04") return "Live figure " + VERSION_04;
   if (source === "figure") return "Figure";
   if (source === "contract") return "Contract example";
   return "Current figure";
@@ -239,6 +282,9 @@ function Stage({ entry }: { entry: (typeof CATALOG)[number] }) {
   const { widget } = entry;
   const [vals, setVals] = useState<Record<string, number>>(() => Object.fromEntries(widget.controls.map((control) => [control.id, control.value])));
   const [down, setDown] = useState<string[] | null>(null);
+  const wide = widget as unknown as Wide;
+  const v04 = V04_ON && wide.version === VERSION_04;
+  const [frame, setFrame] = useState<Frame>(null);
 
   useEffect(() => {
     if (down) return;
@@ -246,8 +292,15 @@ function Stage({ entry }: { entry: (typeof CATALOG)[number] }) {
     if (!host) return;
     let live = true;
     const handle = mountSandbox(host, widget, {
-      onStatus(next) {
+      v04: V04_ON,
+      onStatus(next: { ok: boolean; reasons: string[] }) {
         if (live && !next.ok) setDown(next.reasons);
+      },
+      onFrame(next: Frame) {
+        if (live) setFrame(next);
+      },
+      onSet(cid: string, value: number) {
+        if (live) setVals((prev) => ({ ...prev, [cid]: value }));
       },
     });
     api.current = handle;
@@ -260,8 +313,22 @@ function Stage({ entry }: { entry: (typeof CATALOG)[number] }) {
   return (
     <article className="liveart-card" data-widget={widget.id} data-down={down ? "1" : "0"}>
       <p className="liveart-kicker">{kicker(entry.source)} · illustrative</p>
-      <h2>{widget.title}</h2>
-      <div className={down ? "liveart-stage is-static" : "liveart-stage"}>
+      <h2>{v04 ? wide.hook || widget.title : widget.title}</h2>
+      {v04 && !down ? (
+        <div className="liveart-head">
+          {wide.legend && wide.legend.length ? (
+            <p className="liveart-legend">
+              {wide.legend.map((g) => <span key={g.text} data-color={g.color}><i />{g.text}</span>)}
+            </p>
+          ) : null}
+          <dl className="liveart-reads">
+            {(wide.readouts || []).filter((r) => r.show !== false && frame && r.id in frame.readouts).map((r) => (
+              <div key={r.id} data-color={r.color || "ink"}><dt>{r.label}</dt><dd>{frame ? fmtRead(r, frame.readouts[r.id]) : ""}</dd></div>
+            ))}
+          </dl>
+        </div>
+      ) : null}
+      <div className={down ? "liveart-stage is-static" : v04 ? "liveart-stage is-v04" : "liveart-stage"}>
         {down ? (
           <div key="static" className="liveart-static" data-reasons={down.join(" ")} role="note">
             <p className="liveart-kicker">Static explanation</p>
@@ -285,7 +352,11 @@ function Stage({ entry }: { entry: (typeof CATALOG)[number] }) {
           }}
         />
       )}
-      {down ? null : <Anchor widget={widget as Noted} />}
+      {v04 && !down ? <p className="liveart-take" aria-live="polite">{takeawayText(wide, frame, vals)}</p> : null}
+      {v04 && !down && frame && frame.cmarks.length ? (
+        <p className="liveart-marks">{frame.cmarks.map((m) => <span key={m.control + m.label}>{m.control}: {m.label} · {m.value.toFixed(2)}</span>)}</p>
+      ) : null}
+      {down ? null : <Anchor widget={noted(wide)} />}
       {down ? null : <p className="liveart-explain">{widget.explain}</p>}
       {down ? null : (
         <ul>

@@ -99,3 +99,21 @@
   cursor: pointer;
 }
 .liveart-nav button[aria-pressed="true"] { background: var(--ink); color: var(--page); border-color: var(--ink); }
+
+/* rrm-widget/0.4 (RRM-90): host blocks around the canvas. Tokens only; --viz-* fall back to the accent. */
+.liveart-stage.is-v04 { background: var(--sheet, #fff); border-radius: 12px; overflow: hidden; }
+.liveart-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 18px; margin: 4px 0 8px; }
+.liveart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; font-size: 12.5px; color: var(--ink-2); }
+.liveart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.liveart-legend i { width: 14px; height: 4px; border-radius: 2px; background: var(--c, var(--accent)); }
+.liveart-reads { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0; }
+.liveart-reads div { display: flex; align-items: baseline; gap: 6px; }
+.liveart-reads dt { font-size: 12.5px; color: var(--ink-3); }
+.liveart-reads dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--c, var(--ink)); }
+[data-color="c1"] { --c: var(--viz-1, var(--accent)); }
+[data-color="c2"] { --c: var(--viz-2, #b4501f); }
+[data-color="c3"] { --c: var(--viz-3, #7b4a8c); }
+[data-color="c4"] { --c: var(--viz-4, #7d6418); }
+[data-color="ref"] { --c: var(--data-raw); }
+.liveart-take { margin: 10px 0 0; font-size: 15px; line-height: 1.45; min-height: 2.9em; }
+.liveart-marks { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--ink-3); }

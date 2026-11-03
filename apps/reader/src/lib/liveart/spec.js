@@ -2,6 +2,31 @@
 
 export const VERSION = "rrm-widget/0.3";
 
+// rrm-widget/0.4 (RRM-90). Off unless RRM_LIVEART_V04 is on. A widget without "version"
+// stays 0.3: same keys, same 640x360 canvas, fillText allowed.
+export const VERSION_04 = "rrm-widget/0.4";
+
+// Optional 0.4 keys (all host HTML except draw). anchor may be an object (0.4) or the
+// RRM-88 flat string; equation and cite are the RRM-88 aliases.
+export const KEYS_04 = ["version", "hook", "subtitle", "aspect", "areas", "readouts", "marks", "legend", "takeaway", "anchor", "equation", "cite"];
+
+// Soft / hard text limits (contract R6). Past soft the host shrinks a step; past hard it cuts.
+export const LIMITS_04 = {
+  hook: [60, 90],
+  subtitle: [90, 135],
+  takeaway: [100, 150],
+  readout: [16, 24],
+  legend: [16, 24],
+  option: [14, 40],
+  quote: [240, 400],
+  label: [18, 28],
+  readouts_max: 6,
+  legend_max: 4,
+  marks_max: 4,
+  areas_max: 3,
+  labels_per_frame: 3,
+};
+
 export const LIMITS = {
   draw: 8000,
   title: 80,
@@ -91,6 +116,15 @@ const NETWORK = /https?:\/\/|\bwss?:\/\/|\bfetch\s*\(|\beval\s*\(/i;
 function flagOn(raw) {
   const text = String(raw || "").trim().toLowerCase();
   return text === "1" || text === "true" || text === "yes" || text === "on";
+}
+
+export function v04On(env) {
+  if (env) return flagOn(env.RRM_LIVEART_V04) || flagOn(env.NEXT_PUBLIC_RRM_LIVEART_V04);
+  return flagOn(process.env.RRM_LIVEART_V04) || flagOn(process.env.NEXT_PUBLIC_RRM_LIVEART_V04);
+}
+
+export function isV04(widget) {
+  return !!widget && widget.version === VERSION_04;
 }
 
 export function liveOn(env) {

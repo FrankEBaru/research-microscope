@@ -5,7 +5,7 @@ No hay llamada a Meta aquí. RRM-79 arma los mensajes cuando la bandera esté pr
 
 import json
 
-from rrm.liveart.contract import CANVAS_METHODS, CANVAS_PROPS, HOST, LIMITS, MATH_NAMES, VERSION
+from rrm.liveart.contract import CANVAS_METHODS, CANVAS_PROPS, HOST, LIMITS, MATH_NAMES, VERSION, VERSION_04, v04_on
 from rrm.liveart.offline import (
     TOPICS,
     emulated_widget,
@@ -207,7 +207,27 @@ def explain_system() -> str:
     return with_guard(_EXPLAIN + "Ejemplo de largo y de tono: " + sample + "\n" + _limits())
 
 
+# rrm-widget/0.4 (RRM-90). Only with RRM_LIVEART_V04 on; it overrides the 0.3 text where they clash.
+_CODEGEN_04 = """\
+CONTRATO rrm-widget/0.4. Manda sobre lo de arriba donde choque.
+Llaves: id, topic, title, explain, questions, controls, draw, y además version, hook, takeaway, readouts, areas, marks y legend. version es "rrm-widget/0.4".
+draw es `function draw(ctx, state, t, ui)`. ctx dibuja solo geometría: curvas, barras, diales, rejillas, contornos. Nunca ctx.fillText: el texto va en las llaves y lo pinta la página.
+hook: el malentendido como pregunta, hasta 60 caracteres, termina en ?.
+readouts: hasta 4, {id, label, digits}. label es el name de la lectura del spec. En el draw: ui.readout("id", valor). No imprimas la lectura en el lienzo.
+takeaway: una frase de hasta 100 caracteres con {id} de readouts o de controles, p. ej. "Con beta = {beta}, lol se queda {plol}.".
+areas: hasta 3, {id, rect, x_min, x_max, x_label, y_min, y_max, y_label}. rect es [x, y, ancho, alto] en fracciones del lienzo; [0, 0, 1, 1] es todo. Un eje sin números va con min = max = 0 y label "". En el draw: var A = ui.area("id"); A.X(v) y A.Y(v) dan píxeles; A.x, A.y, A.w, A.h el recuadro. ui.axes("id") dibuja los ejes con sus números.
+marks: el régimen del spec. {id, control, area, axis, label}. Con control (area "" y axis ""), la marca va sobre el slider de ese control. Con area y axis "x" o "y" (control ""), va en el lienzo. En el draw: ui.mark("id", valor). label hasta 18 caracteres.
+legend: hasta 4, {color, text}; color es c1, c2, c3, c4 o ref.
+Colores, solo estos: ui.c.c1 la serie que importa, ui.c.c2 la ingenua u otra, ui.c.ref la referencia, ui.c.ink, ui.c.rule, ui.c.track. Grosores: ui.lw.hair, ui.lw.line, ui.lw.bold.
+Rótulos en el lienzo: a lo más 3 ui.label("texto", x, y, "c1"), de hasta 18 caracteres, junto a la geometría que nombran. El motor los acomoda.
+controls: cada uno lleva kind (slider, toggle, select o button) y options ([] salvo en select). Un toggle va de 0 a 1 con step 1. Un select usa min 0, max n-1, step 1 y sus options. Usa algo distinto de slider solo si la forma del control es el claim.
+El draw no tiene objetos literales ni notación 1e-8: ui.* recibe argumentos sueltos y los números se escriben enteros o con punto.
+"""
+
+
 def codegen_system() -> str:
+    if v04_on():
+        return with_guard(_CODEGEN + _CODEGEN_04 + _surface() + _limits())
     return with_guard(_CODEGEN + _surface() + _limits())
 
 
@@ -298,6 +318,9 @@ def repair_messages(claim, explain, questions, widget, reasons, shots=None, spec
         "clipped solo si en ese estado la figura se sale.\n"
         "No uses la palabra window ni document, ni en un string.\n"
         "Un string solo expone .length: nada de slice, charAt ni indexOf. Un número puede usar toFixed con hasta 6 decimales.\n"
+        + (("Es " + VERSION_04 + ": conserva version y las llaves 0.4; quita todo ctx.fillText y deja el texto en readouts y takeaway. "
+            "Motivos 0.4: free_text (texto en el lienzo), readout (ui.readout con un id no declarado), takeaway ({id} que no existe), hook (sin ? o largo).\n")
+           if v04_on() else "")
         + _limits()
     )
     body = _claim_text(claim) + "\nexplain fijo:\n" + str(explain or "")
@@ -332,6 +355,57 @@ def _obj(properties, required):
     }
 
 
+def _widget_04(names, question):
+    """Strict 0.4 codegen schema: every key present; "" or [] when unused. normalize_04 cleans it."""
+    control = _obj(
+        {
+            "id": {"type": "string"},
+            "label": {"type": "string", "description": "at most 28 characters"},
+            "kind": {"type": "string", "enum": ["slider", "toggle", "select", "button"]},
+            "options": {"type": "array", "items": {"type": "string"}},
+            "min": {"type": "number"},
+            "max": {"type": "number"},
+            "value": {"type": "number"},
+            "step": {"type": "number"},
+        },
+        ["id", "label", "kind", "options", "min", "max", "value", "step"],
+    )
+    readout = _obj({"id": {"type": "string"}, "label": {"type": "string"}, "digits": {"type": "integer"}}, ["id", "label", "digits"])
+    area = _obj(
+        {
+            "id": {"type": "string"},
+            "rect": {"type": "array", "items": {"type": "number"}},
+            "x_min": {"type": "number"}, "x_max": {"type": "number"}, "x_label": {"type": "string"},
+            "y_min": {"type": "number"}, "y_max": {"type": "number"}, "y_label": {"type": "string"},
+        },
+        ["id", "rect", "x_min", "x_max", "x_label", "y_min", "y_max", "y_label"],
+    )
+    mark = _obj(
+        {"id": {"type": "string"}, "control": {"type": "string"}, "area": {"type": "string"}, "axis": {"type": "string"}, "label": {"type": "string"}},
+        ["id", "control", "area", "axis", "label"],
+    )
+    legend = _obj({"color": {"type": "string", "enum": ["c1", "c2", "c3", "c4", "ref"]}, "text": {"type": "string"}}, ["color", "text"])
+    return _obj(
+        {
+            "version": {"type": "string", "enum": [VERSION_04]},
+            "id": {"type": "string"},
+            "topic": {"type": "string", "enum": names},
+            "title": {"type": "string"},
+            "hook": {"type": "string"},
+            "explain": {"type": "string"},
+            "questions": {"type": "array", "items": question},
+            "controls": {"type": "array", "items": control},
+            "readouts": {"type": "array", "items": readout},
+            "takeaway": {"type": "string"},
+            "areas": {"type": "array", "items": area},
+            "marks": {"type": "array", "items": mark},
+            "legend": {"type": "array", "items": legend},
+            "draw": {"type": "string"},
+        },
+        ["version", "id", "topic", "title", "hook", "explain", "questions", "controls", "readouts", "takeaway", "areas", "marks", "legend", "draw"],
+    )
+
+
 def schemas():
     """Esquemas para json_schema. RRM-79 los pasa tal cual; no inventa otro."""
     names = [topic["name"] for topic in TOPICS]
@@ -359,6 +433,8 @@ def schemas():
         },
         ["id", "topic", "title", "explain", "questions", "controls", "draw"],
     )
+    if v04_on():
+        widget = _widget_04(names, question)
     checks = [
         "on_claim", "intuitive", "answers_a_question", "contract_shape",
         "no_network", "no_injection_obeyed", "not_slop",

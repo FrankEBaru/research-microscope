@@ -1,6 +1,9 @@
 // Interpreter for the draw subset. The parent page never evals widget source.
 import { CANVAS_METHODS, CANVAS_PROPS, MATH_NAMES } from "./spec.js";
 import { parseDraw } from "./parse.js";
+import { UI_COLORS, UI_FIELDS, UI_METHODS, makeUI } from "./ui04.js";
+
+const UI_SET = new Set(UI_METHODS);
 
 const MATH_SET = new Set(MATH_NAMES);
 const METHOD_SET = new Set(CANVAS_METHODS);
@@ -58,13 +61,16 @@ export function makeStage() {
         const prev = stack.pop();
         if (prev) Object.assign(style, prev);
       } else {
-        calls.push({
+        const call = {
           m: name,
           a: args.slice(),
           fill: style.fillStyle,
           stroke: style.strokeStyle,
           lw: style.lineWidth,
-        });
+        };
+        // Text placement for the gate's readability boxes (0.4 helpers use right/center and middle/top).
+        if (name === "fillText") { call.align = style.textAlign; call.base = style.textBaseline; call.font = style.font; }
+        calls.push(call);
       }
     };
   }
@@ -103,12 +109,52 @@ export function painted(calls) {
   return calls.some((call) => PAINT.has(call.m));
 }
 
-export function execute(ast, state, t, cap) {
+// Helper-only context for 0.4 over the recording stage: measureText is an estimate
+// (0.56 em per glyph), the transform is the identity, dashes and clips are not recorded.
+function helperContext(api) {
+  const h = Object.create(api);
+  h.measureText = (text) => {
+    const m = /(\d+(?:\.\d+)?)px/.exec(String(h.font));
+    return { width: String(text).length * (m ? Number(m[1]) : 12) * 0.56 };
+  };
+  h.getTransform = () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+  h.setLineDash = () => {};
+  h.strokeText = () => {};
+  h.clip = () => {};
+  return h;
+}
+
+// Host objects the draw may read or call (ui and what its helpers return). Closed lists only.
+function toHost(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
+  const props = Object.create(null);
+  const fns = Object.create(null);
+  for (const key of Object.keys(value)) {
+    const v = value[key];
+    if (typeof v === "function") fns[key] = v;
+    else props[key] = v;
+  }
+  return { __kind: "host", props, fns };
+}
+
+export function execute(ast, state, t, cap, opts = {}) {
   const reads = new Set();
   const stage = makeStage();
   const clock = { n: 0, usesT: false };
   const math = { __kind: "math" };
-  const ctx = { __kind: "ctx", api: stage.api };
+  const v04 = !!(opts.v04 && opts.widget);
+  const M = v04
+    ? makeUI(helperContext(stage.api), opts.widget, { w: state.w, h: state.h, scale: 1, mute: !!opts.mute, colors: UI_COLORS, v04: true })
+    : null;
+  const ctx = { __kind: "ctx", api: M ? M.gctx : stage.api };
+  let ui;
+  if (M) {
+    const props = Object.create(null);
+    for (const name of UI_FIELDS) props[name] = M.ui[name];
+    const fns = Object.create(null);
+    for (const name of UI_METHODS) fns[name] = M.ui[name];
+    ui = { __kind: "host", props, fns, ui: true };
+  }
   const env = new Env(null);
   env.def("ctx", ctx);
   env.def("state", state);
@@ -212,6 +258,10 @@ export function execute(ast, state, t, cap) {
       if (!PROP_SET.has(prop)) throw new Error("ctx:" + prop);
       return obj.api[prop];
     }
+    if (obj && obj.__kind === "host") {
+      if (typeof prop === "string" && prop in obj.props) return toHost(obj.props[prop]);
+      throw new Error((obj.ui ? "ui:" : "member:") + prop);
+    }
     if (Array.isArray(obj)) {
       if (prop === "length") return obj.length;
       if (prop === "push" || prop === "pop") return { __kind: "array-method", obj, prop };
@@ -246,6 +296,10 @@ export function execute(ast, state, t, cap) {
       if (obj && obj.__kind === "ctx") {
         if (!METHOD_SET.has(prop)) throw new Error("ctx:" + prop);
         return obj.api[prop](...args);
+      }
+      if (obj && obj.__kind === "host") {
+        if (typeof prop !== "string" || !(prop in obj.fns) || (obj.ui && !UI_SET.has(prop))) throw new Error((obj.ui ? "ui:" : "call:") + prop);
+        return toHost(obj.fns[prop](...args));
       }
       if (Array.isArray(obj) && prop === "push") return obj.push(...args);
       if (Array.isArray(obj) && prop === "pop") return obj.pop();
@@ -350,14 +404,15 @@ export function execute(ast, state, t, cap) {
     }
   }
 
-  try { callUser({ __kind: "fn", params: ast.params, body: ast.body, closure: env }, [ctx, state, t]); }
+  const done = () => ({ calls: stage.calls, reads, usesT: clock.usesT, steps: clock.n, frame: M ? M.flush() : null });
+  try { callUser({ __kind: "fn", params: ast.params, body: ast.body, closure: env }, M ? [ctx, state, t, ui] : [ctx, state, t]); }
   catch (err) {
-    if (err instanceof Ret) return { calls: stage.calls, reads, usesT: clock.usesT, steps: clock.n };
+    if (err instanceof Ret) return done();
     throw err;
   }
-  return { calls: stage.calls, reads, usesT: clock.usesT, steps: clock.n };
+  return done();
 }
 
-export function runDraw(source, state, t, cap) {
-  return execute(parseDraw(source), state, Number(t) || 0, cap);
+export function runDraw(source, state, t, cap, opts) {
+  return execute(parseDraw(source), state, Number(t) || 0, cap, opts);
 }

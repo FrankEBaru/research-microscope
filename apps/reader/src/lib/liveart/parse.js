@@ -283,6 +283,8 @@ export function parseDraw(src) {
   const fn = parseFunction();
   if (!at("eof")) throw new Error("syntax:tail");
   if (fn.name !== "draw") throw new Error("syntax:name");
-  if (fn.params.join(",") !== "ctx,state,t") throw new Error("syntax:params");
+  // 0.4 adds the ui helpers as a fourth parameter; verify.js only accepts it on a 0.4 widget.
+  const sig = fn.params.join(",");
+  if (sig !== "ctx,state,t" && sig !== "ctx,state,t,ui") throw new Error("syntax:params");
   return fn;
 }

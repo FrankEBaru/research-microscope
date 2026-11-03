@@ -11,7 +11,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from rrm.liveart.contract import CANVAS_METHODS, CANVAS_PROPS, HOST
+from rrm.liveart.contract import CANVAS_METHODS, CANVAS_PROPS, HOST, VERSION_04, normalize_04
 
 _PREDICT = re.compile(r"^\s*(predice|predict)\b", re.I)
 _SET = re.compile(r"\b(?:set|pon|mueve)\b", re.I)
@@ -203,6 +203,9 @@ def _strip_calls(draw):
 def sanitize_widget(widget):
     """Deterministic pass before verifyWidget. No model call."""
     out = dict(widget or {})
+    v04 = out.get("version") == VERSION_04
+    if v04:
+        out = normalize_04(out)
     questions = []
     for item in out.get("questions") or []:
         if not isinstance(item, dict):
@@ -216,6 +219,9 @@ def sanitize_widget(widget):
     draw = out.get("draw") or ""
     if draw:
         out["draw"] = _strip_calls(_hoist_functions(draw))
+        if v04:
+            # R1: the 0.4 draw writes no text; readouts and takeaway carry it.
+            out["draw"] = re.sub(r"ctx\.fillText\s*\([^;]*\)\s*;?", "", out["draw"])
     return out
 
 
@@ -248,6 +254,14 @@ def question_problems(questions, controls, regime=None):
 
 def quality_gate(widget, claim, spec=None):
     """Empty means the draw survived the mechanical checks."""
+    _WIDGET_04["widget"] = widget if isinstance(widget, dict) and widget.get("version") == VERSION_04 else None
+    try:
+        return _quality_gate(widget, claim, spec)
+    finally:
+        _WIDGET_04["widget"] = None
+
+
+def _quality_gate(widget, claim, spec=None):
     widget = widget or {}
     claim = claim or {}
     spec = spec if isinstance(spec, dict) else None
@@ -303,7 +317,8 @@ def quality_gate(widget, claim, spec=None):
         reasons.append("default")
     if _readability(base.get("glyphs") or [], spec.get("scale") if spec is not None else None):
         reasons.append("readability")
-    if _unexplained_shapes(base):
+    # 0.4: a legend in the host names the series, so a bar needs no word beside it in the canvas.
+    if _unexplained_shapes(base) and not (widget.get("version") == VERSION_04 and widget.get("legend")):
         reasons.append("shapes")
     if _dead_label(draw, controls):
         reasons.append("dead_label")
@@ -386,6 +401,9 @@ def _few_stops(controls):
     """A slider with fewer than 4 reachable values is a collapsed range."""
     for control in controls or []:
         if not isinstance(control, dict):
+            continue
+        # #64 kinds: a toggle, select, button, pick or predict is discrete on purpose.
+        if (control.get("kind") or "slider") not in ("slider", "drag"):
             continue
         try:
             lo = float(control["min"])
@@ -908,13 +926,22 @@ def _state(controls, overrides=None):
     return state
 
 
+# 0.4 (RRM-90): quality_gate sets the widget so every _render of its draw gets the ui helpers.
+# Off unless the widget says rrm-widget/0.4 and RRM_LIVEART_V04 is on (the node script checks both).
+_WIDGET_04 = {"widget": None}
+
+
 def _render(draw, states):
     if not draw or not states:
         return [{"error": "empty", "texts": []} for _ in states]
+    job = {"draw": draw, "states": states, "cap": _CAP}
+    current = _WIDGET_04["widget"]
+    if isinstance(current, dict) and current.get("draw") == draw:
+        job["widget"] = current
     try:
         proc = subprocess.run(
             ["node", str(_RENDER)],
-            input=json.dumps({"draw": draw, "states": states, "cap": _CAP}),
+            input=json.dumps(job),
             text=True,
             capture_output=True,
             timeout=30,
@@ -1057,6 +1084,11 @@ def _dead_label(draw, controls):
         high[control["id"]] = hi
         states.extend((low, high))
     rendered = _render(draw, states)
+    # 0.4: host lines (readouts, takeaway, control marks) are not canvas labels.
+    for item in rendered:
+        host = item.get("host")
+        if host:
+            item["texts"] = [t for t in item.get("texts") or [] if t not in host]
     blobs = []
     for item in rendered:
         if item.get("error"):
@@ -1107,7 +1139,7 @@ def _fixed_numbers(blob, cid):
         while j >= 0 and blob[j] in " \t":
             j -= 1
         # A previous fillText ends at the newline. It is not part of this label.
-        if j >= 0 and blob[j] != "\n" and (blob[j].isalnum() or blob[j] in "._)*+/xX"):
+        if j >= 0 and blob[j] != "\n" and (blob[j].isalnum() or blob[j] in "._)*+/xX-\u2212"):
             continue
         found.append(float(match.group(1)))
     return found

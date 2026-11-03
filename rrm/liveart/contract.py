@@ -10,6 +10,27 @@ import re
 
 VERSION = "rrm-widget/0.3"
 
+# rrm-widget/0.4 (RRM-90). Mirror of spec.js: off unless RRM_LIVEART_V04 is on. A widget without
+# "version" stays 0.3. The 0.4 keys are optional host blocks; the draw gets ui as its fourth argument.
+VERSION_04 = "rrm-widget/0.4"
+KEYS_04 = ("version", "hook", "subtitle", "aspect", "areas", "readouts", "marks", "legend", "takeaway", "anchor", "equation", "cite")
+LIMITS_04 = {
+    "hook": (60, 90),
+    "subtitle": (90, 135),
+    "takeaway": (100, 150),
+    "readout": (16, 24),
+    "legend": (16, 24),
+    "option": (14, 40),
+    "quote": (240, 400),
+    "label": (18, 28),
+    "readouts_max": 6,
+    "legend_max": 4,
+    "marks_max": 4,
+    "areas_max": 3,
+    "labels_per_frame": 3,
+}
+UI_METHODS = ("area", "axes", "label", "mark", "readout", "say", "fmt", "font", "clip", "unclip", "handle", "pick", "tip", "mix")
+
 LIMITS = {
     "draw": 8000,
     "title": 80,
@@ -133,6 +154,73 @@ _BANNED = (
 )
 
 _NETWORK = re.compile(r"https?://|\bwss?://|\bfetch\s*\(|\beval\s*\(", re.I)
+
+
+def normalize_04(widget):
+    """Flat codegen JSON (strict schema: every key present, "" when unused) to the 0.4 contract shape.
+
+    areas: x_min/x_max/x_label -> x {min, max, label}; an axis with min == max is dropped.
+    marks: "" fields are dropped (control or area/axis). controls: kind slider and options [] are
+    dropped; a select gets min 0, max n - 1, step 1. Empty hook or takeaway is dropped.
+    """
+    if not isinstance(widget, dict) or widget.get("version") != VERSION_04:
+        return widget
+    out = dict(widget)
+    for key in ("hook", "takeaway", "subtitle"):
+        if isinstance(out.get(key), str) and not out[key].strip():
+            out.pop(key)
+    areas = []
+    for area in out.get("areas") or []:
+        if not isinstance(area, dict):
+            continue
+        item = {"id": area.get("id") or "main"}
+        rect = area.get("rect")
+        if isinstance(rect, list) and len(rect) == 4 and list(rect) != [0, 0, 1, 1]:
+            item["rect"] = rect
+        for ax in ("x", "y"):
+            if ax in area and isinstance(area[ax], dict):
+                item[ax] = area[ax]
+                continue
+            lo, hi, label = area.get(ax + "_min"), area.get(ax + "_max"), area.get(ax + "_label")
+            if isinstance(lo, (int, float)) and isinstance(hi, (int, float)) and hi > lo:
+                item[ax] = {"min": lo, "max": hi}
+                if label:
+                    item[ax]["label"] = label
+        areas.append(item)
+    if "areas" in out:
+        out["areas"] = areas
+    marks = []
+    for mark in out.get("marks") or []:
+        if isinstance(mark, dict):
+            marks.append({k: v for k, v in mark.items() if v not in ("", None)})
+    if "marks" in out:
+        out["marks"] = marks
+    controls = []
+    for control in out.get("controls") or []:
+        if not isinstance(control, dict):
+            controls.append(control)
+            continue
+        item = dict(control)
+        if item.get("kind") in ("", "slider", None):
+            item.pop("kind", None)
+        if not item.get("options"):
+            item.pop("options", None)
+        if item.get("kind") == "select" and item.get("options"):
+            item.update({"min": 0, "max": len(item["options"]) - 1, "step": 1})
+            item["value"] = int(max(0, min(item["max"], round(float(item.get("value") or 0)))))
+        controls.append(item)
+    if "controls" in out:
+        out["controls"] = controls
+    for readout in out.get("readouts") or []:
+        if isinstance(readout, dict) and isinstance(readout.get("digits"), float):
+            readout["digits"] = int(readout["digits"])
+    return out
+
+
+def v04_on() -> bool:
+    """RRM_LIVEART_V04 in 1 / true / yes / on turns the 0.4 contract on (prompts, gate, verify)."""
+    raw = os.environ.get("RRM_LIVEART_V04", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def live_on() -> bool:
