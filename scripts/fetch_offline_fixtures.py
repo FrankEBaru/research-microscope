@@ -139,7 +139,7 @@ def _joined_name(names: list[str]) -> str:
     return _PART.sub("", names[0])
 
 
-def _expected_sha(sha_blobs: list[tuple[str, str]], joined_name: str, readme: str) -> str:
+def _expected_sha(sha_blobs: list[tuple[str, str]], joined_name: str, readme: str, full_readme: str = "") -> str:
     base = Path(joined_name).name
     parsed: list[tuple[str, str, str]] = []
     for filename, text in sha_blobs:
@@ -154,9 +154,19 @@ def _expected_sha(sha_blobs: list[tuple[str, str]], joined_name: str, readme: st
     singles = [digest for digest, named, filename in parsed if ".part-" not in filename.lower() and ".part-" not in named]
     if len(singles) == 1:
         return singles[0]
-    found = _HEX.findall(readme or "")
+    # README de compass: tabla markdown con una fila por archivo; la del archivo
+    # unido nombra `offline-fixtures-vN.tar.gz` exacto (las partes llevan .part-).
+    named_rows = {
+        digest.lower()
+        for line in f"{readme or ''}\n{full_readme or ''}".splitlines()
+        if f"`{base}`" in line
+        for digest in _HEX.findall(line)
+    }
+    if len(named_rows) == 1:
+        return named_rows.pop()
+    found = {digest.lower() for digest in _HEX.findall(readme or "")}
     if len(found) == 1:
-        return found[0].lower()
+        return found.pop()
     return ""
 
 
@@ -308,7 +318,7 @@ def fetch(repo: str, branch: str, version: str, dest: Path, cache: Path) -> None
         ]
         if parts:
             joined = _joined_name([item["name"] for item in parts])
-            expected = _expected_sha(sha_blobs, joined, version_readme)
+            expected = _expected_sha(sha_blobs, joined, version_readme, readme)
             if not expected:
                 _die(
                     f"{version} no trae el sha256 del archivo unido en {ROOT_PREFIX} "
@@ -321,7 +331,7 @@ def fetch(repo: str, branch: str, version: str, dest: Path, cache: Path) -> None
                 blob = b"".join(_gh_raw(_endpoint(repo, branch, item["path"])) for item in parts)
         elif len(archives) == 1:
             archive = archives[0]
-            expected = _expected_sha(sha_blobs, archive["name"], version_readme)
+            expected = _expected_sha(sha_blobs, archive["name"], version_readme, readme)
             if not expected:
                 _die(
                     f"{version} no trae sha256 en {ROOT_PREFIX} (rama {branch}). "
@@ -338,6 +348,26 @@ def fetch(repo: str, branch: str, version: str, dest: Path, cache: Path) -> None
                 f"Archivos: {', '.join(names)}"
             )
     _install(blob, expected, dest, cache, branch, version)
+    _install_licenses(repo, branch, version, dest, by_rel)
+
+
+def _install_licenses(repo: str, branch: str, version: str, dest: Path, by_rel: dict[str, dict]) -> None:
+    # RRM-73: sin licenses.json el gate trata todo como cerrado y no hay artefactos.
+    # Compass guarda el mapa como datos/offline/licenses-vN.json junto al tar.
+    target = dest / "licenses.json"
+    rel = f"licenses-{version}.json"
+    if target.exists() or rel not in by_rel:
+        return
+    raw = _gh_raw(_endpoint(repo, branch, by_rel[rel]["path"]))
+    try:
+        obj = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        print(f"{rel} no es JSON; no lo copio.", file=sys.stderr)
+        return
+    if not isinstance(obj, dict):
+        return
+    target.write_bytes(raw)
+    print(f"Mapa de licencias {rel} ({len(obj)} ids): {target}")
 
 
 def main(argv: list[str] | None = None) -> int:

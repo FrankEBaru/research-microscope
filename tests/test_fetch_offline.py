@@ -337,3 +337,38 @@ def test_offline_sh_v2_y_v3_de_punta_a_punta(tmp_path):
         if proc is not None:
             _stop(proc)
         _clean()
+
+
+def test_sha_de_tabla_readme_compass():
+    # Formato real de datos/offline/README.md: una fila por parte y una (unidas).
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("fof", ROOT / "scripts" / "fetch_offline_fixtures.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    a, b, c, j2, j3 = ("a" * 64, "b" * 64, "c" * 64, "d" * 64, "e" * 64)
+    readme = "\n".join([
+        "| Archivo | Bytes | sha256 |",
+        "|---|---|---|",
+        f"| `offline-fixtures-v2.tar.gz.part-aa` | 1 | `{a}` |",
+        f"| (unidas) `offline-fixtures-v2.tar.gz` | 2 | `{j2}` |",
+        f"| `offline-fixtures-v3.tar.gz.part-aa` | 1 | `{b}` |",
+        f"| `offline-fixtures-v3.tar.gz.part-ab` | 1 | `{c}` |",
+        f"| `offline-fixtures-v3.tar.gz.part-ac` | 1 | `{a}` |",
+        f"| (unidas) `offline-fixtures-v3.tar.gz` | 3 | `{j3}` |",
+    ])
+    assert mod._expected_sha([], "offline-fixtures-v3.tar.gz", readme, readme) == j3
+    assert mod._expected_sha([], "offline-fixtures-v2.tar.gz", readme, readme) == j2
+
+
+def test_copia_licenses_de_la_version(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("fof2", ROOT / "scripts" / "fetch_offline_fixtures.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod._gh_raw = lambda _endpoint: b'{"2005.12872": {"license": "cc0", "corpusid": 218889832}}'
+    by_rel = {"licenses-v3.json": {"path": "datos/offline/licenses-v3.json"}}
+    mod._install_licenses("o/r", "b", "v3", tmp_path, by_rel)
+    assert "218889832" in (tmp_path / "licenses.json").read_text(encoding="utf-8")
+    (tmp_path / "licenses.json").write_text("{}", encoding="utf-8")
+    mod._install_licenses("o/r", "b", "v3", tmp_path, by_rel)
+    assert (tmp_path / "licenses.json").read_text(encoding="utf-8") == "{}"
