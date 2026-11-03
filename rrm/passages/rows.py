@@ -23,6 +23,7 @@ import re
 import unicodedata
 
 from rrm.reader.latex import plain
+from rrm.reader.passage_junk import filter_passage_rows, is_junk_passage, junk_filter_enabled
 from rrm.reader.phrases import _math_bits
 
 # Lista cerrada. Va también en el manifest. No se adivina por paper.
@@ -276,6 +277,16 @@ def extract_rows(paper, *, arxiv_id="", license="", url="", title=""):
     title = title or (paper or {}).get("title") or ""
     excluded, sections, paths = _section_state(blocks)
     banned = {i for i, flag in enumerate(excluded) if flag} | _table_only_appendix(blocks)
+    drop_front = junk_filter_enabled()
+
+    def _front(block):
+        if not drop_front or not isinstance(block, dict):
+            return False
+        return is_junk_passage(
+            _paragraph_text(block),
+            _inline_latex(block.get("inlines") or []),
+            "p",
+        )
 
     context = set()
     eq_at = {}
@@ -298,9 +309,9 @@ def extract_rows(paper, *, arxiv_id="", license="", url="", title=""):
         if kind == "eq":
             before, after = eq_at[index]
             parts = []
-            if before is not None:
+            if before is not None and not _front(blocks[before]):
                 parts.append(_paragraph_text(blocks[before]))
-            if after is not None:
+            if after is not None and not _front(blocks[after]):
                 parts.append(_paragraph_text(blocks[after]))
             row = _base_row(
                 corpusid, index, None, "eq", sections[index],
@@ -323,9 +334,12 @@ def extract_rows(paper, *, arxiv_id="", license="", url="", title=""):
         text = _paragraph_text(block)
         if not text:
             continue
+        inline = _inline_latex(block.get("inlines") or [])
+        if drop_front and is_junk_passage(text, inline, "p"):
+            continue
         rows.append(_base_row(
             corpusid, index, None, "p", sections[index], text,
-            _inline_latex(block.get("inlines") or []),
+            inline,
             arxiv_id, license, url, title, specific_heading(paths[index]),
         ))
         if index in context:
@@ -338,9 +352,12 @@ def extract_rows(paper, *, arxiv_id="", license="", url="", title=""):
             sent_text = plain(sent)
             if not sent_text:
                 continue
+            sent_latex = " ".join(bits)
+            if drop_front and is_junk_passage(sent_text, sent_latex, "def"):
+                continue
             rows.append(_base_row(
                 corpusid, index, sent_i, "def", sections[index], sent_text,
-                " ".join(bits),
+                sent_latex,
                 arxiv_id, license, url, title, specific_heading(paths[index]),
             ))
-    return rows
+    return filter_passage_rows(rows)
