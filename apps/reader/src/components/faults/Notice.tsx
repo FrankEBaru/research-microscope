@@ -16,7 +16,7 @@ export default function Notice({ kind, code, children, onRetry }: {
   return (
     <p className={`notice notice-${kind}`} role={kind === "fault" ? "alert" : "status"} data-fault={kind === "fault" ? code || "" : undefined}>
       {text}
-      {kind === "fault" && onRetry && <button type="button" className="notice-retry press" onClick={onRetry}>Reintentar</button>}
+      {kind === "fault" && onRetry && <button type="button" className="notice-retry press" onClick={onRetry}>Retry</button>}
       {debug && code && <span className="notice-code"> · {code}</span>}
     </p>
   );

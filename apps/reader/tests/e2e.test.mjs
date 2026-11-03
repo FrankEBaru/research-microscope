@@ -108,11 +108,11 @@ test("tensión: el deslizador muestra los factores de Kaplan y Chinchilla", asyn
 
 test("instrumento √d_k: apuesta, comprobación y advertencia de σ²", async () => {
   const p = await page("#/q/atencion/c/modelo/p/1706.03762"); await p.waitForSelector(".instrument");
-  await p.click('.bet-buttons button:has-text("Se duplica")');
+  await p.click('.bet-buttons button:has-text("It doubles")');
   assert.match(await p.$eval(".bet-result", (e) => e.textContent), /Coincide con tu apuesta/);
   assert.match(await p.$eval(".stats .good", (e) => e.textContent), /coincide/);
   assert.equal(await p.$(".inst-warn"), null);
-  await p.$eval('input[aria-label="sigma cuadrado"]', (e) => { const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; s.call(e, "3"); e.dispatchEvent(new Event("input", { bubbles: true })); });
+  await p.$eval('input[aria-label="sigma squared"]', (e) => { const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; s.call(e, "3"); e.dispatchEvent(new Event("input", { bubbles: true })); });
   await p.waitForTimeout(300);
   assert.ok(await p.$(".inst-warn"), "σ² ≠ 1 avisa que cambia el supuesto");
   assert.doesNotMatch(await p.$eval(".instrument", (e) => e.textContent), /verificad/i, "nunca «verificada»");
@@ -139,7 +139,7 @@ test("móvil: empieza por las tarjetas (el mapa necesita ancho), nada desborda y
   const p = await page("#/", 390, 800); await p.waitForSelector(".view-toggle");
   assert.equal(await p.$(".platina"), null, "en pantalla angosta no se arranca en el mapa");
   assert.ok((await p.evaluate(() => document.documentElement.scrollWidth)) <= 390, "tarjetas sin desborde");
-  await p.click('.view-toggle button:has-text("Mapa")'); await p.waitForSelector(".platina");
+  await p.click('.view-toggle button:has-text("Map")'); await p.waitForSelector(".platina");
   assert.ok((await p.evaluate(() => document.documentElement.scrollWidth)) <= 390, "mapa sin desborde"); await p.close();
 });
 
@@ -225,9 +225,9 @@ test("Panorama simulado: cualquier pregunta, llegada progresiva, predicción opc
   const p = await browser.newPage({ viewport: { width: 1280, height: 900 } }); p.errs = [];
   p.on("pageerror", (e) => p.errs.push(e.message)); await p.addInitScript(() => { window.__RRM_SIM_MS = 60; });
   await p.goto(base + "#/"); await p.waitForSelector(".view-toggle");
-  await p.click('.view-toggle button:has-text("Panorama")'); await p.click('button:has-text("Cualquier pregunta")');
-  assert.match(await p.$eval(".pano.sim .chips", (e) => e.textContent), /simulado/);
-  await p.fill('input[aria-label="Pregunta para el Panorama"]', "attention scaling laws"); await p.click('button:has-text("Armar Panorama")');
+  await p.click('.view-toggle button:has-text("Panorama")'); await p.click('button:has-text("Any question")');
+  assert.match(await p.$eval(".pano.sim .chips", (e) => e.textContent), /simulated/);
+  await p.fill('input[aria-label="Question for Panorama"]', "attention scaling laws"); await p.click('button:has-text("Build Panorama")');
   await p.waitForSelector(".predict", { timeout: 8000 });                                   // al terminar, pide predecir antes de ver
   assert.equal(await p.$$eval(".pano-claim .evi", (n) => n.length), 0, "con la predicción pendiente no se ve el resultado");
   assert.equal(await p.$eval(".sim-progress .coverage-bar div", (e) => e.style.width), "100%", "la barra termina llena");
@@ -284,13 +284,13 @@ async function simPage(hash) {
   const p = await browser.newPage({ viewport: { width: 1280, height: 900 } }); p.errs = [];
   p.on("pageerror", (e) => p.errs.push(e.message)); await p.addInitScript(() => { window.__RRM_SIM_MS = 30; });
   await p.goto(base + hash); await p.waitForSelector(".view-toggle");
-  await p.click('.view-toggle button:has-text("Panorama")'); await p.click('button:has-text("Cualquier pregunta")'); return p;
+  await p.click('.view-toggle button:has-text("Panorama")'); await p.click('button:has-text("Any question")'); return p;
 }
 
 test("Panorama simulado: la pregunta de la segunda área (escalado, en español) trae frases de los papers de escalado", async () => {
   const p = await simPage("#/q/escalado");
-  assert.equal(await p.inputValue('input[aria-label="Pregunta para el Panorama"]'), "¿Cuánto cómputo y cuántos datos necesita un modelo de lenguaje?");
-  await p.click('button:has-text("Armar Panorama")'); await p.waitForSelector(".predict", { timeout: 8000 });
+  assert.equal(await p.inputValue('input[aria-label="Question for Panorama"]'), "¿Cuánto cómputo y cuántos datos necesita un modelo de lenguaje?");
+  await p.click('button:has-text("Build Panorama")'); await p.waitForSelector(".predict", { timeout: 8000 });
   await p.uncheck('.sim-opts input >> nth=0');                                                   // apagar «predecir antes de ver»
   await p.waitForSelector(".pano-claim .evi li blockquote");
   assert.match(await p.$$eval(".pano-claim h3", (n) => n.map((e) => e.textContent).join(" ")), /cómputo|datos/i);
@@ -301,19 +301,19 @@ test("Panorama simulado: la pregunta de la segunda área (escalado, en español)
 
 test("Panorama simulado: sin fallas simuladas la compuerta no rechaza nada; con fallas rechaza 3; pregunta vacía no hace nada", async () => {
   const p = await simPage("#/");
-  await p.fill('input[aria-label="Pregunta para el Panorama"]', "   "); await p.click('button:has-text("Armar Panorama")');
+  await p.fill('input[aria-label="Question for Panorama"]', "   "); await p.click('button:has-text("Build Panorama")');
   assert.equal(await p.$(".sim-progress"), null, "una pregunta vacía no arma nada");
-  await p.fill('input[aria-label="Pregunta para el Panorama"]', "self-attention recurrence"); await p.uncheck('.sim-opts input >> nth=1');
-  await p.click('button:has-text("Armar Panorama")'); await p.waitForSelector(".gate", { timeout: 8000 });
+  await p.fill('input[aria-label="Question for Panorama"]', "self-attention recurrence"); await p.uncheck('.sim-opts input >> nth=1');
+  await p.click('button:has-text("Build Panorama")'); await p.waitForSelector(".gate", { timeout: 8000 });
   assert.equal(await p.$eval(".gate", (e) => e.dataset.rejected), "0"); assert.match(await p.$eval(".gate", (e) => e.textContent), /todas las selecciones existen literalmente/);
-  await p.check('.sim-opts input >> nth=1'); await p.click('button:has-text("Volver a armar")'); await p.waitForFunction(() => document.querySelector(".gate")?.dataset.rejected === "3", null, { timeout: 8000 });
+  await p.check('.sim-opts input >> nth=1'); await p.click('button:has-text("Build again")'); await p.waitForFunction(() => document.querySelector(".gate")?.dataset.rejected === "3", null, { timeout: 8000 });
   await p.click(".gate summary"); assert.equal(await p.$$eval(".gate li", (n) => n.length), 3);
   assert.deepEqual(p.errs, []); await p.close();
 });
 
 test("Panorama simulado: «ver sin predecir» muestra el resultado sin marca de predicción; los términos genéricos no inflan el conteo", async () => {
   const p = await simPage("#/");
-  await p.fill('input[aria-label="Pregunta para el Panorama"]', "language models"); await p.click('button:has-text("Armar Panorama")');
+  await p.fill('input[aria-label="Question for Panorama"]', "language models"); await p.click('button:has-text("Build Panorama")');
   await p.waitForSelector(".predict", { timeout: 8000 }); await p.click(".predict button.link >> nth=0"); await p.waitForSelector(".pano-claim .conv");
   assert.doesNotMatch(await p.$eval(".pano-claim .conv span", (e) => e.textContent), /tu predicción/);
   assert.equal(await p.$(".conv-track .guess"), null); await p.close();

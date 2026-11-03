@@ -5,11 +5,11 @@ import "katex/dist/katex.min.css";
 import "./globals.css";
 import "@/styles/atlas.css";
 
-export const metadata = { title: "Microscopio de lectura · prototipo", description: "Un lector de papers con zoom: área, cluster, paper." };
+export const metadata = { title: "Reading Microscope", description: "A paper reader that zooms from a question to the source." };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es">
+    <html lang="en">
       <body>{children}</body>
     </html>
   );

@@ -112,7 +112,7 @@ function describe(dir) {
 
 const sel = (...list) => list.join(", ");
 const S = {
-  input: sel('[data-screen="inicio"] input', 'input[aria-label="Pregunta"]'),
+  input: sel('[data-screen="start"] input', '[data-screen="inicio"] input', 'input[aria-label="Question"]'),
   atlas: sel('[data-screen="atlas"] [data-live-map]', "[data-live-map]"),
   dot: sel(".node-dot:not(.is-faint) circle", ".node-dot circle", "[data-live-map] .p"),
   tip: sel(".map-tip", "[data-live-map] .peek"),
@@ -160,7 +160,9 @@ async function main() {
   await waitFor(`${BASE}/`, ui, 180000, "next dev");
 
   const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
-  const browser = await chromium.launch(proxy ? { proxy: { server: proxy, bypass: "127.0.0.1,localhost" } } : {});
+  const launchOpts = proxy ? { proxy: { server: proxy, bypass: "127.0.0.1,localhost" } } : {};
+  if (process.env.RRM_CHROME) launchOpts.executablePath = process.env.RRM_CHROME;
+  const browser = await chromium.launch(launchOpts);
   const report = { synthetic, question: info.question, ui: BASE, api: API, widths: {}, pageerrors: [], console: [], api_errors: [], other_http: [] };
   const captured = new Set();
   const extras = readdirSync(path.join(HERE, "shots.d")).filter((n) => n.endsWith(".mjs")).sort();
@@ -271,7 +273,7 @@ async function main() {
       await shot("03c-atlas-tarjeta");
     });
     await step("04-lista", async () => {
-      await page.getByRole("button", { name: "Lista", exact: true }).click({ timeout: 5000 });
+      await page.getByRole("button", { name: "List", exact: true }).click({ timeout: 5000 });
       await page.waitForSelector(".core-list", { timeout: 5000 });
       await sleep(300);
       await shot("04-lista");
@@ -336,8 +338,31 @@ async function main() {
       await shot("08-solo-abstract");
     });
 
+    const ignoreCache = async (page) => {
+      await page.addInitScript(() => {
+        const orig = Storage.prototype.getItem;
+        Storage.prototype.getItem = function (key) {
+          if (key === "rrm.questions.v1") return null;
+          return orig.call(this, key);
+        };
+      });
+    };
+    const dropCache = async (page) => {
+      await page.evaluate(async () => {
+        try { localStorage.clear(); sessionStorage.clear(); } catch { /* private mode */ }
+        await new Promise((resolve) => {
+          try {
+            const req = indexedDB.deleteDatabase("rrm-questions");
+            req.onsuccess = () => resolve();
+            req.onerror = () => resolve();
+            req.onblocked = () => resolve();
+          } catch { resolve(); }
+        });
+      });
+    };
     const failing = async (name, query, handler, url = BASE) => {
       const bad = await fresh();
+      await ignoreCache(bad);
       await bad.route(new RegExp(`^${API.replace(/[.]/g, "\\.")}/burst`), handler);
       await bad.goto(url, { waitUntil: "domcontentloaded" });
       await ask(bad, query);
@@ -351,6 +376,7 @@ async function main() {
     await step("09c-no-grabada", async () => {
       const miss = await fresh();
       await miss.goto(BASE, { waitUntil: "domcontentloaded" });
+      await dropCache(miss);
       await ask(miss, "una pregunta inventada que no está grabada");
       await miss.waitForSelector(S.alert, { timeout: 20000 });
       await sleep(600);
@@ -359,6 +385,7 @@ async function main() {
     });
     await step("09d-vacio", async () => {
       const none = await fresh();
+      await ignoreCache(none);
       await none.route(new RegExp(`^${API.replace(/[.]/g, "\\.")}/burst`), (route) => route.fulfill({
         status: 200, contentType: "application/json",
         body: JSON.stringify({ query: info.question, papers: [], similar: [], edges: [], layout: null }),
@@ -373,11 +400,13 @@ async function main() {
     await step("10-debug", () => failing("10-debug", info.question, (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }), `${BASE}/?debug=1&dev=1`));
 
     // Pasos extra de otras entregas: shots.d/*.mjs, en orden alfabético.
-    if (extras.length) {
-      try { await page.goto(BASE, { waitUntil: "domcontentloaded" }); await ask(page, info.question); await page.waitForSelector(S.atlas, { timeout: 30000 }); await openPaper(info.full); } catch { /* cada extra decide */ }
-    }
     for (const file of extras) {
       await step(`extra:${file}`, async () => {
+        await page.goto(BASE, { waitUntil: "domcontentloaded" });
+        await dropCache(page);
+        await ask(page, info.question);
+        await page.waitForSelector(S.atlas, { timeout: 30000 });
+        if (info.full) await openPaper(info.full);
         const mod = await import(pathToFileURL(path.join(HERE, "shots.d", file)).href);
         await mod.default(page, { width, base: BASE, shot, fixtures: { dir, ...info } });
       });

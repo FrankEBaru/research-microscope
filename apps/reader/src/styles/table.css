@@ -33,6 +33,7 @@
 .table-fig tbody tr { animation: none; }
 .table-fig tbody tr:last-child th, .table-fig tbody tr:last-child td { border-bottom: 2px solid var(--ink); }
 .table-fig td.col-on, .table-fig th.col-on { background: var(--page-2); }
+.table-fig td[data-pop], .table-fig th[data-pop] { cursor: help; }
 .table-fig tbody tr.row-on td, .table-fig tbody tr.row-on th { background: var(--hl-soft) !important; }
 @media (hover: hover) {
   .table-fig tbody tr:hover td, .table-fig tbody tr:hover th { background: var(--hl-soft) !important; }
@@ -51,7 +52,7 @@
   margin: 12px 0 6px; padding-bottom: 8px; border-bottom: 1px solid var(--rule);
 }
 .table-fig .fc .tabs, .table-fig .tchart .pills {
-  display: flex; flex: 1 1 auto; min-width: 0; max-width: 100%; gap: 16px; flex-wrap: nowrap; overflow-x: auto;
+  display: flex; flex: 1 1 auto; min-width: 0; max-width: 100%; gap: 10px 16px; flex-wrap: wrap; overflow: visible;
 }
 .table-fig .fc .tabs button, .table-fig .tchart .pills button {
   flex: none; white-space: nowrap;

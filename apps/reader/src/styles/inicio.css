@@ -27,7 +27,7 @@
   font-size: 13.5px; color: var(--ink-2); white-space: nowrap;
 }
 .crumbs button, .crumbs .cur {
-  display: inline-flex; align-items: center; gap: 6px; max-width: 28vw; overflow: hidden;
+  display: inline-flex; align-items: center; gap: 6px; max-width: 34vw; min-width: 0; overflow: hidden;
   text-overflow: ellipsis; border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer;
 }
 .crumbs .cur { color: var(--ink); font-weight: 500; cursor: default; }
@@ -72,7 +72,7 @@
   flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: none;
   font: 500 22px/1 var(--font-ui); color: var(--ink);
 }
-.ask-field input:focus-visible { box-shadow: none; }
+.ask-field input:focus-visible { outline: none; }
 .b1-go {
   display: grid; place-items: center; width: 48px; height: 48px; border: 0; border-radius: 10px;
   background: var(--accent); color: var(--accent-ink); cursor: pointer;
@@ -179,9 +179,15 @@
   animation: rrm-spin .9s linear infinite;
 }
 
+@media (max-width: 1100px) {
+  .wm-name { display: none; }
+  .crumbs button, .crumbs .cur { max-width: 42vw; }
+}
 @media (max-width: 760px) {
   .b1-top { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 0 16px; }
   .crumbs, .b1-search-label, .b1-top kbd, .b1-top .cap, .top-back { display: none; }
+  .b1-search { width: 40px; height: 40px; padding: 0; justify-content: center; }
+  .b1-search.is-open { width: auto; min-width: 0; padding: 0 8px; }
   .st { grid-template-columns: 1fr; gap: 28px; padding: 28px 16px; align-items: start; }
   .st-l h1 { font-size: 40px; margin-bottom: 20px; }
   .ask-field input { font-size: 18px; }

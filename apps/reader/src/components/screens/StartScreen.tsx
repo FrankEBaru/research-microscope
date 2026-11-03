@@ -33,7 +33,7 @@ export default function StartScreen({ draft, setDraft, onSearch, pending, engine
           <h1>What do you want to understand?</h1>
           <form className="ask-field" onSubmit={(e) => onSearch(e)}>
             <label className="sr-only" htmlFor="rrm-ask">A question, a title or a topic</label>
-            <input id="rrm-ask" aria-label="Pregunta" title={draft || undefined} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="A question, a title or a topic" autoFocus autoComplete="off" />
+            <input id="rrm-ask" aria-label="Question" title={draft || undefined} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="A question, a title or a topic" autoFocus autoComplete="off" />
             <button className="b1-go press" type="submit" aria-label="Search" disabled={pending || !draft.trim()}>
               <Icon name="search" size={22} />
             </button>

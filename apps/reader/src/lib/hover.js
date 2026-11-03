@@ -1,6 +1,6 @@
 // Hover sobre el texto del autor. Sin números nuevos y sin el fixture curado.
 
-export const UNDEFINED = "el paper no lo define";
+export const UNDEFINED = "the paper does not define it";
 
 function textOf(nodes) {
   return (nodes || []).map((node) => {

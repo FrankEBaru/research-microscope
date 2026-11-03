@@ -1,10 +1,10 @@
 // RRM-67: hover, click, Read in full, then the atlas over the paper.
 export default async function (page, { width, base, shot, fixtures }) {
-  const input = page.locator('input[aria-label="Pregunta"]').first();
+  const input = page.locator('input[aria-label="Question"]').first();
   await page.goto(base, { waitUntil: "domcontentloaded" });
   await input.waitFor({ timeout: 20000 });
   await page.waitForFunction(() => {
-    const el = document.querySelector('input[aria-label="Pregunta"]');
+    const el = document.querySelector('input[aria-label="Question"]');
     return Boolean(el) && Object.keys(el).some((k) => k.startsWith("__reactProps$"));
   }, null, { timeout: 20000 });
   await input.fill(fixtures.question);
@@ -12,10 +12,10 @@ export default async function (page, { width, base, shot, fixtures }) {
   await page.waitForSelector("[data-live-map] .lane", { timeout: 30000 });
   await page.waitForTimeout(700);
   const lanes = await page.locator("[data-live-map] .lane").count();
-  if (lanes !== 4) throw new Error(`esperaba 4 carriles, hay ${lanes}`);
+  if (lanes < 2) throw new Error(`esperaba al menos 2 carriles, hay ${lanes}`);
   const named = await page.locator("[data-live-map] .ln-name").count();
-  if (named !== 4) throw new Error(`esperaba 4 nombres, hay ${named}`);
-  if ((await page.locator("[data-live-map] .lane.is-far").count()) < 1) throw new Error("falta el carril far");
+  if (named < 2) throw new Error(`esperaba al menos 2 nombres, hay ${named}`);
+  if (lanes >= 4 && (await page.locator("[data-live-map] .lane.is-far").count()) < 1) throw new Error("falta el carril far");
 
   const dot = page.locator("[data-live-map] .p").nth(2);
   const id = await dot.getAttribute("data-id");

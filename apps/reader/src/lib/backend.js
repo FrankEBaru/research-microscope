@@ -248,21 +248,21 @@ function kindOf(status) {
 /** Texto para la persona. No lleva el token ni la URL. */
 export function explain(err) {
   const msg = String(err?.message || "");
-  if (msg.includes("consulta no grabada")) return "consulta no grabada";
+  if (msg.includes("consulta no grabada")) return "This question is not in the local data.";
   const k = err?.kind;
-  if (k === "auth") return "El servidor rechazó el token de la demo (401). Revisa NEXT_PUBLIC_RRM_DEMO_TOKEN.";
-  if (k === "origin") return "El servidor no acepta este origen (403). Hay que agregarlo a la lista de orígenes permitidos.";
-  if (k === "rate") return "El servidor está recibiendo demasiadas peticiones (429). Espera unos segundos y vuelve a intentar.";
+  if (k === "auth") return "The server rejected the demo token (401). Check NEXT_PUBLIC_RRM_DEMO_TOKEN.";
+  if (k === "origin") return "The server does not accept this origin (403). Add it to the allowed origins.";
+  if (k === "rate") return "The server is getting too many requests (429). Wait a few seconds and try again.";
   if (k === "server") {
     const detail = String(err?.message || "").trim();
-    const base = `El servidor falló (${err.status}). Vuelve a intentar en un momento.`;
+    const base = `The server failed (${err.status}). Try again in a moment.`;
     if (!detail || detail === `server ${err.status}` || /https?:|bearer|token|key/i.test(detail)) return base;
     return `${base} ${detail}`;
   }
-  if (k === "timeout") return "El servidor no respondió a tiempo. Puede estar arrancando; vuelve a intentar.";
-  if (k === "network") return "No se pudo conectar con el servidor.";
-  if (k === "http") return `El servidor respondió ${err.status}.`;
-  return String(err?.message || err || "Error desconocido");
+  if (k === "timeout") return "The server did not answer in time. It may be starting up; try again.";
+  if (k === "network") return "Could not connect to the server.";
+  if (k === "http") return `The server responded ${err.status}.`;
+  return String(err?.message || err || "Unknown error");
 }
 
 // Un número en NEXT_PUBLIC_RRM_PANORAMA_TIMEOUT_MS (ms) cambia la espera del navegador.

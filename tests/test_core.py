@@ -121,16 +121,16 @@ def test_reader_serves_figures_in_parallel_and_core_skips_meta():
     assert 'reason": "core"' in burst
     assert "if core_mode():" in reader
     ui = (root / "apps/reader/src/components/Engine.tsx").read_text(encoding="utf-8")
-    live_map = (root / "apps/reader/src/components/LiveMap.tsx").read_text(encoding="utf-8")
-    ui = ui + live_map
-    assert "despertando el motor" in ui
+    atlas = (root / "apps/reader/src/components/screens/MapBody.tsx").read_text(encoding="utf-8")
+    assert "waking the search engine" in ui
+    assert "despertando el motor" not in ui
     assert "Preparing sentences from this paper" in (root / "apps/reader/src/components/AskBox.tsx").read_text(encoding="utf-8")
     assert "burst_scaledown()" in burst
     assert 'out["cites"] = "pending"' in reader
     assert "calentando el motor" not in ui
     assert "quiero leer este" in ui
-    assert "data-live-map" in ui
-    assert "Salto:" in ui and "onClick={volver}" in ui
+    assert "data-live-map" in atlas
+    assert "Jump:" in ui and "onClick={volver}" in ui
     assert "data-devlog" in ui
 
 

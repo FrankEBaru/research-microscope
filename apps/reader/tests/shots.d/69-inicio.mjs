@@ -1,14 +1,14 @@
 // RRM-69: inicio con una pregunta reciente y el atajo de búsqueda.
 export default async function (page, { base, shot, fixtures }) {
   await page.goto(base, { waitUntil: "domcontentloaded" });
-  const input = page.locator('input[aria-label="Pregunta"]').first();
+  const input = page.locator('input[aria-label="Question"]').first();
   await input.waitFor({ timeout: 30000 });
   await page.waitForFunction(
     (selector) => {
       const el = document.querySelector(selector);
       return Boolean(el) && Object.keys(el).some((key) => key.startsWith("__reactProps$"));
     },
-    'input[aria-label="Pregunta"]',
+    'input[aria-label="Question"]',
     { timeout: 20000 },
   );
   await input.fill(fixtures.question);

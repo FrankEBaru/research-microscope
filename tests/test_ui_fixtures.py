@@ -48,7 +48,7 @@ def test_store_carga_el_set_sintetico(tmp_path, monkeypatch):
     layout = burst["layout"]
     assert layout["method"] == "specter2-knn" and len(layout["points"]) == 24
     assert len(layout["groups"]) == 4 and any(g.get("far") for g in layout["groups"])
-    assert all(g["name"].startswith("grupo de prueba") for g in layout["groups"])
+    assert all(g["name"].startswith("test group") for g in layout["groups"])
     assert len(hit["labels"]["by_id"]) == 24
     flags = list(hit["labels"]["by_id"].values())
     assert sum(1 for f in flags if f["survey"]) == 1 and sum(1 for f in flags if f["retracted"]) == 1

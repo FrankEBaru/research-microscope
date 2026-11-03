@@ -13,7 +13,7 @@ async function showBox(page) {
 }
 
 export default async function (page, { shot, fixtures }) {
-  const read = page.getByRole("button", { name: "Leer", exact: true });
+  const read = page.getByRole("tab", { name: "Read", exact: true });
   if (await read.count()) await read.click({ timeout: 5000 });
   const opener = page.getByRole("button", { name: /your words|tus palabras|explain/i });
   if (await opener.count()) await opener.first().click({ timeout: 5000 }).catch(() => {});

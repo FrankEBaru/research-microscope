@@ -48,7 +48,7 @@ export default function Card({
 }) {
   if (!point) {
     return (
-      <div className="card is-in" data-id="">
+      <div className="card is-in" data-id="" aria-live="polite">
         <Cap>Your path</Cap>
         <ul className="near">
           {(path || []).map((row) => (
@@ -67,7 +67,7 @@ export default function Card({
   const quote = clip(point.abstract || "");
   const rows = linked || [];
   return (
-    <div className="card is-in" data-id={point.id}>
+    <div className="card is-in" data-id={point.id} aria-live="polite">
       <p className="card-grp">
         <i style={ink(point.color)} aria-hidden="true" />
         {point.laneName ? <span>{point.laneName}</span> : null}

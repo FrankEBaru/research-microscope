@@ -19,7 +19,7 @@ export default function Panorama({ q, papers, content, go }: any) {
   const modes = (
     <div className="view-toggle" role="tablist" aria-label="Tipo de Panorama">
       <button className={mode === "curada" ? "on" : ""} onClick={() => setMode("curada")}>Curada</button>
-      <button className={mode === "libre" ? "on" : ""} onClick={() => setMode("libre")}>Cualquier pregunta <span className="chip chip-simulado">simulado</span></button>
+      <button className={mode === "libre" ? "on" : ""} onClick={() => setMode("libre")}>Any question <span className="chip chip-simulado">simulated</span></button>
     </div>
   );
   if (mode === "libre") return <>{modes}<SimPanorama question={q.text} ids={ids0} states={states} getDoc={async (id: string) => papers[id]} nameOf={nm} open={(id, b) => go({ q: q.id, c: owner(id).id, p: id, b })} /></>;

@@ -39,7 +39,7 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
     if (viaServer) {
       fetchPanorama(asked, readable).then(
         (claims: any[]) => run.current === my && setSrv({ state: "ok", claims: Array.isArray(claims) ? claims : [], note: "" }),
-        (err: any) => run.current === my && setSrv({ state: "off", claims: [], note: `No se pudo pedir el Panorama al servidor (${explain(err)}) Se usa el simulador del navegador; ambos son simulados.` }),
+        (err: any) => run.current === my && setSrv({ state: "off", claims: [], note: `Could not ask the server for Panorama (${explain(err)}). Using the in-browser simulator; both are simulated.` }),
       );
     }
     runSimulated({
@@ -69,14 +69,14 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
   return (
     <section className="pano sim" aria-label="Panorama con cualquier pregunta">
       <div className="chips">
-        <ProvChip kind="simulado" text={srv.state === "wait" ? "Pidiendo el Panorama al servidor…" : serverMeta ? "Muse Spark en el servidor: enunciados del modelo, citas literales" : serverFallback ? "El modelo no respondió: selección simulada en el servidor" : srv.state === "ok" ? "Selección simulada en el servidor: coincidencia de términos, no un modelo" : "Muse Spark simulado: coincidencia de términos, no un modelo"} />
+        <ProvChip kind="simulado" text={srv.state === "wait" ? "Asking the server for Panorama…" : serverMeta ? "Muse Spark on the server: model statements, verbatim quotes" : serverFallback ? "The model did not answer: simulated selection on the server" : srv.state === "ok" ? "Simulated selection on the server: term match, not a model" : "Muse Spark simulated: term match, not a model"} />
         <ProvChip kind="curado" text={serverMeta ? "enunciados escritos por Muse Spark" : "enunciados = términos de tu pregunta"} />
       </div>
       {srv.state === "wait" && <p className="warm" role="status" data-panorama-wait>Pidiendo el Panorama al servidor. Puede tardar hasta 45 s. Si Muse no responde, se muestra la selección simulada.</p>}
       {srv.note && <p className="muted small" role="status" data-srv-fallback>{srv.note}</p>}
       <form className="sim-ask" onSubmit={(e) => { e.preventDefault(); if (draft.trim()) setAsked(draft.trim()); }}>
-        <input aria-label="Pregunta para el Panorama" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escribe una pregunta (español o inglés)" />
-        <button type="submit">{asked === null ? "Armar Panorama" : "Volver a armar"}</button>
+        <input aria-label="Question for Panorama" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Type a question" />
+        <button type="submit">{asked === null ? "Build Panorama" : "Build again"}</button>
       </form>
       <div className="sim-opts">
         <label className="chk"><input type="checkbox" checked={predictOn} onChange={(e) => setPredictOn(e.target.checked)} /> predecir antes de ver <ProvChip kind="hipotesis" text="hipótesis" /></label>
@@ -87,7 +87,7 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
         <>
           <div className="sim-progress" role="status" aria-live="polite">
             <div className="coverage-bar"><div style={{ width: `${readable.length ? (100 * done) / readable.length : 100}%` }} /></div>
-            <span>{finished ? `${nRead} de ${ids.length} papers leídos` : `leyendo… ${done} de ${readable.length}`}{notRead ? ` · ${notRead} sin leer (no cuentan como «no lo dice»)` : ""}</span>
+            <span>{finished ? `${nRead} of ${ids.length} papers read` : `reading… ${done} of ${readable.length}`}{notRead ? ` · ${notRead} unread (they do not count as “the paper does not say it”)` : ""}</span>
           </div>
           {finished && nRead === 0 && <p className="muted" role="alert">No se pudo leer ningún paper de la ráfaga: no hay nada que contar todavía.</p>}
           {finished && predictOn && nRead > 0 && built.claims.some((c: any) => pred[c.id] === undefined) && (

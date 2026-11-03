@@ -52,7 +52,7 @@ export default function MapScreen({
   if (!core) {
     return (
       <section className={`lvl ${core ? "lvl-map" : ""}`} data-screen="map">
-        <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button>
+        <button type="button" className="link" onClick={backToCurated}>Back to the curated burst</button>
         <h1 className="question">{shownQ}</h1>
         {topics && <p className="sub" data-subtopics>{topics.length ? <>Subtemas: {topics.join(" · ")}</> : "Esta pregunta no separó subtemas."}</p>}
         {!liveResult && <p className="warm" role="status">{say(phase || (engine === "preparando" ? "wake" : "search"))}</p>}
@@ -60,9 +60,9 @@ export default function MapScreen({
         {liveErr && <Notice kind="fault" code={liveCode} />}
         {liveErr && debug && <p className="fail-reason">{liveErr}</p>}
         {liveResult && <LiveCoverage ids={liveIds} states={rowState} />}
-        {liveResult && liveIds.length === 0 && <p className="muted" role="status">La ráfaga no encontró papers para esta pregunta. Prueba con otras palabras.</p>}
+        {liveResult && liveIds.length === 0 && <p className="muted" role="status">The burst found no papers for this question. Try other words.</p>}
         {liveResult && liveIds.length > 0 && !liveIds.every((id: string) => settled(rowState[id]?.status)) && impatient && !forced && (
-          <p className="muted small" role="status">Algunos papers siguen en cola o leyéndose. <button type="button" className="link" onClick={() => setForced(true)}>Armar el Panorama con los ya leídos</button> (los que faltan no cuentan como «no lo dice»).</p>
+          <p className="muted small" role="status">Some papers are still queued or being read. <button type="button" className="link" onClick={() => setForced(true)}>Build the Panorama with the papers already read</button> (the rest do not count as “the paper does not say it”).</p>
         )}
         {liveResult && liveIds.length > 0 && (forced || liveIds.every((id: string) => settled(rowState[id]?.status))) && (
           <SimPanorama key={`${liveQ}|${forced}`} autorun question={liveQ} ids={liveIds} states={rowState} getDoc={async (id: string) => { try { return (await fetchPaper(id)).paper; } catch { return null; } }} nameOf={liveName} open={(id, b) => go({ p: id, b })} />
@@ -95,7 +95,7 @@ export default function MapScreen({
         {papers.length > 0 && (
           <div className="tabs" role="tablist" aria-label="View">
             <button type="button" className="press" aria-selected={!asList} onClick={() => setAsList(false)}>Atlas</button>
-            <button type="button" className="press" aria-selected={asList} onClick={() => setAsList(true)}>Lista</button>
+            <button type="button" className="press" aria-selected={asList} onClick={() => setAsList(true)}>List</button>
           </div>
         )}
       </header>
@@ -111,7 +111,7 @@ export default function MapScreen({
       )}
       {papers.length > 0 && (
         asList
-          ? <Boundary name="core-list"><CoreList papers={papers} states={rowState} onOpen={(id: string) => atlasCtx.onOpen(id, "desde el mapa")} onWant={atlasCtx.onWant} /></Boundary>
+          ? <Boundary name="core-list"><CoreList papers={papers} states={rowState} onOpen={(id: string) => atlasCtx.onOpen(id, "from the map")} onWant={atlasCtx.onWant} /></Boundary>
           : <Boundary name="map-body"><MapBody atlasCtx={atlasCtx} onLayout={onLayout} /></Boundary>
       )}
       <p className="b1-foot"><span>Papers and citations: <a href="https://www.semanticscholar.org/">Semantic Scholar</a></span></p>
