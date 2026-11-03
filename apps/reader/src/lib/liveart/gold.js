@@ -4,7 +4,7 @@ export const GOLD = [
     "id": "positional-encoding",
     "topic": "positional_encoding",
     "title": "La base cambia el ritmo de la onda",
-    "explain": "Cada par de dimensiones es una onda. La base cambia qué tan rápido gira: las primeras vuelven seguido y las últimas casi no. Por eso una posición cercana se parece y una lejana no.",
+    "explain": "Cada par de dimensiones es una onda. La base cambia qué tan rápido gira: las primeras vuelven seguido y las últimas casi no se mueven, así que una posición larga sigue viéndose distinta.",
     "questions": [
       {
         "q": "¿Por qué una base más grande hace más lentas las dimensiones altas?",
@@ -17,10 +17,6 @@ export const GOLD = [
       {
         "q": "¿Cómo cabe una frase larga en un seno y un coseno?",
         "why": "las frecuencias bajas dan vueltas despacio"
-      },
-      {
-        "q": "¿Por qué una posición cercana se parece y una lejana no?",
-        "why": "el producto de las ondas cae con la distancia"
       }
     ],
     "controls": [
@@ -41,7 +37,7 @@ export const GOLD = [
         "step": 1
       }
     ],
-    "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, base = state.base, i = state.dim;\n  var N = 48, p = (t * 8) % N, q, k, u, v, s, x, y, pos;\n  function freq(k) { return 1 / Math.pow(base, (2 * k) / 64); }\n  function pe(q, k) {\n    var f = freq(k);\n    return [Math.sin(q * f), Math.cos(q * f)];\n  }\n  function sim(a, b) {\n    s = 0;\n    for (k = 0; k < 8; k++) { u = pe(a, k); v = pe(b, k); s += u[0] * v[0] + u[1] * v[1]; }\n    return s / 8;\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  for (x = 0; x < w; x++) {\n    pos = (x / (w - 1)) * N;\n    y = h * 0.26 - Math.sin(pos * freq(i) + t * 0.6) * (h * 0.16);\n    if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);\n  }\n  ctx.stroke();\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.beginPath();\n  for (q = 0; q <= N; q++) {\n    x = (q / N) * (w - 1);\n    y = h * 0.92 - ((sim(p, q) + 1) / 2) * (h * 0.38);\n    if (q === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);\n  }\n  ctx.stroke();\n  x = (p / N) * (w - 1);\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(x, h * 0.48);\n  ctx.lineTo(x, h - 4);\n  ctx.stroke();\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"onda\", 8, 14);\n  ctx.fillText(\"parecido\", 8, h * 0.46);\n}"
+    "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, base = state.base, i = state.dim;\n  var freq = 1 / Math.pow(base, (2 * i) / 64);\n  var x, pos, y;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.beginPath();\n  ctx.lineWidth = 2;\n  ctx.strokeStyle = \"#1f4b99\";\n  for (x = 0; x < w; x++) {\n    pos = (x / (w - 1)) * 64;\n    y = h * 0.55 - Math.sin(pos * freq + t * 0.6) * (h * 0.32);\n    if (x === 0) ctx.moveTo(x, y);\n    else ctx.lineTo(x, y);\n  }\n  ctx.stroke();\n}"
   },
   {
     "id": "softmax-temperature",

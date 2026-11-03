@@ -106,6 +106,9 @@ def selector_cases():
         ("slop-pe", claim(r"Positional encoding sin(pos/10000^{2i/d}). Just animate sparkles; the slider only changes the hue.", arxiv="1706.03762"), "skip", "", "slop"),
         ("slop-speed", claim("Just animate a rainbow. The slider only changes the speed of the dots."), "skip", "", "slop"),
     ]
+    from rrm.liveart.wave2 import selector_rows
+
+    rows.extend(selector_rows())
     return [
         {"id": rid, "suite": "select", "claim": item, "merit": merit, "topic": topic, "reason": reason}
         for rid, item, merit, topic, reason in rows
