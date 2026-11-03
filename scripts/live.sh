@@ -6,9 +6,9 @@
 #   RRM_LIVE=off|modal|meta|full bash scripts/live.sh
 #
 # off   — scripts/offline.sh (sin Modal ni Meta). RRM_FEATURES=core.
-#        Fixtures: Release de FrankEBaru/research-microscope-compass
-#        (datos/offline/, default offline-fixtures-v2, v3 con RRM_OFFLINE_VERSION=v3),
-#        o RRM_OFFLINE_DIR / RRM_OFFLINE_TAR / RRM_OFFLINE_SYNTH=1.
+#        Fixtures: archivos de datos/offline/ en FrankEBaru/research-microscope-compass,
+#        rama claude/rrm-50-plan-b1 (RRM_OFFLINE_BRANCH la cambia). Default v2;
+#        v3 con RRM_OFFLINE_VERSION=v3. O RRM_OFFLINE_DIR / RRM_OFFLINE_TAR / RRM_OFFLINE_SYNTH=1.
 # modal — deploy de ráfaga y lector, panorama sim, SAM apagado. RRM_FEATURES=core.
 # meta  — datos grabados; POST /panorama llama a Muse. Sin deploy. RRM_FEATURES=all.
 # full  — deploy con panorama meta y SAM. RRM_FEATURES=all.

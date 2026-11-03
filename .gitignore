@@ -67,6 +67,7 @@ e2e-report*.json
 # Datos locales: grabación privada (RRM_OFFLINE_DIR / RRM_OFFLINE_TAR) y sintéticos generados
 offline-fixtures/
 offline-fixtures.tmp.*/
+offline-fixtures.cache/
 offline-fixtures-synth/
 offline-fixtures-v*.tar.gz
 apps/reader/shots/

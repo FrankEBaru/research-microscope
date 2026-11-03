@@ -3,11 +3,13 @@
 #   RRM_OFFLINE_DIR=<dir con manifest.json>   usa ese directorio. No llama a gh.
 #   RRM_OFFLINE_TAR=<.tar.gz o prefijo de *.part-aa…>   lo descomprime en offline-fixtures/.
 #   RRM_OFFLINE_SYNTH=1   fixtures sintéticos. No llama a gh.
-#   RRM_OFFLINE_VERSION=v2|v3   Release de FrankEBaru/research-microscope-compass
-#                               (datos/offline/). Default v2. v3 selecciona offline-fixtures-v3.
+#   RRM_OFFLINE_VERSION=v2|v3   archivos de datos/offline/ en
+#                               FrankEBaru/research-microscope-compass.
+#                               Rama default claude/rrm-50-plan-b1. Default v2.
+#   RRM_OFFLINE_BRANCH=<rama>   otra rama del mismo repo. No crea Releases.
 #   RRM_OFFLINE_NO_UI=1   solo arranca la API.
-# Si no hay carpeta local ni sintéticos, baja el Release con gh. Si gh no está
-# autenticado, se detiene y lo dice.
+# Si no hay carpeta local ni sintéticos, baja esos archivos con gh api.
+# Si gh no está autenticado, se detiene y lo dice.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"

@@ -90,6 +90,9 @@ if [[ "$1" == *build_ui_fixtures.py ]]; then
   mkdir -p "$3" && echo '{"queries":[]}' > "$3/manifest.json"
   exit 0
 fi
+if [[ "$1" == *fetch_offline_fixtures.py ]]; then
+  exec /usr/bin/python3 "$@"
+fi
 echo "OFFLINE_PAN=${RRM_OFFLINE_PANORAMA-}" >> "$RRM_FAKE_LOG"
 echo "PAN_MODE=${RRM_PANORAMA_MODE-}" >> "$RRM_FAKE_LOG"
 echo "FEATURES=${RRM_FEATURES-}" >> "$RRM_FAKE_LOG"
@@ -108,23 +111,51 @@ if [[ "${RRM_FAKE_GH_AUTH:-}" != "1" ]]; then
   echo "not logged in" >&2
   exit 1
 fi
-if [[ "$1" == "release" && "$2" == "download" ]]; then
-  tag="$3"
-  dir="."
-  repo=""
-  prev=""
+if [[ "$1" == "api" ]]; then
+  raw=0
+  endpoint=""
   for arg in "$@"; do
-    if [[ "$prev" == "--dir" ]]; then dir="$arg"; fi
-    if [[ "$prev" == "--repo" ]]; then repo="$arg"; fi
-    prev="$arg"
+    if [[ "$arg" == *github.raw* ]]; then raw=1; fi
+    endpoint="$arg"
   done
-  echo "repo=$repo tag=$tag" >> "$RRM_FAKE_LOG"
-  work="$(mktemp -d)"
-  mkdir -p "$work/offline-fixtures"
-  echo '{"queries":[{"q":"grabada"}]}' > "$work/offline-fixtures/manifest.json"
-  /bin/tar -czf "$dir/${tag}.tar.gz" -C "$work" offline-fixtures
-  rm -rf "$work"
-  exit 0
+  echo "gh api endpoint=$endpoint raw=$raw" >> "$RRM_FAKE_LOG"
+  if [[ -z "${RRM_FAKE_COMPASS:-}" ]]; then
+    echo "no hay copia local de compass" >&2
+    exit 1
+  fi
+  /usr/bin/python3 - "$RRM_FAKE_COMPASS" "$endpoint" "$raw" << 'PY'
+import json, sys
+from pathlib import Path
+from urllib.parse import unquote
+root, endpoint, raw = Path(sys.argv[1]), sys.argv[2], sys.argv[3] == "1"
+pathpart = endpoint.split("?", 1)[0]
+idx = pathpart.find("contents/")
+rel = unquote(pathpart[idx + 9:]) if idx >= 0 else ""
+target = root / rel
+if raw:
+    if not target.is_file():
+        sys.stderr.write("no está " + rel + "\\n")
+        sys.exit(1)
+    sys.stdout.buffer.write(target.read_bytes())
+    sys.exit(0)
+if not target.exists():
+    sys.stderr.write("no está " + rel + "\\n")
+    sys.exit(1)
+if target.is_file():
+    json.dump({"type": "file", "name": target.name, "path": rel, "size": target.stat().st_size, "sha": "abc"}, sys.stdout)
+    sys.exit(0)
+items = []
+for child in sorted(target.iterdir()):
+    items.append({
+        "type": "dir" if child.is_dir() else "file",
+        "name": child.name,
+        "path": str(Path(rel) / child.name),
+        "size": child.stat().st_size if child.is_file() else 0,
+        "sha": "abc",
+    })
+json.dump(items, sys.stdout)
+PY
+  exit $?
 fi
 exit 1
 """)
@@ -397,7 +428,14 @@ def test_off_sin_gh_auth_se_detiene(tmp_path):
 
 
 def test_off_baja_v3_de_compass(tmp_path):
+    from test_fetch_offline import write_compass
+
     fx = _sin_fixtures_locales()
+    cache = ROOT / "offline-fixtures.cache"
+    if cache.exists():
+        shutil.rmtree(cache)
+    compass = tmp_path / "compass"
+    write_compass(compass)
     bindir, log = _fakes(tmp_path)
     env = _env(
         bindir, log,
@@ -405,6 +443,7 @@ def test_off_baja_v3_de_compass(tmp_path):
         RRM_DEMO_TOKEN=TOKEN,
         RRM_FAKE_GH_AUTH="1",
         RRM_OFFLINE_VERSION="v3",
+        RRM_FAKE_COMPASS=str(compass),
         RRM_OFFLINE_SYNTH_DIR=str(tmp_path / "synth"),
     )
     proc = _start(env)
@@ -416,32 +455,41 @@ def test_off_baja_v3_de_compass(tmp_path):
             os.killpg(proc.pid, signal.SIGKILL)
             proc.wait(timeout=5)
         shutil.rmtree(fx, ignore_errors=True)
+        shutil.rmtree(cache, ignore_errors=True)
     text = log.read_text(encoding="utf-8")
-    assert "repo=FrankEBaru/research-microscope-compass tag=offline-fixtures-v3" in text
-    assert "gh release download offline-fixtures-v3 --repo FrankEBaru/research-microscope-compass" in text
+    assert "contents/datos/offline" in text
+    assert "ref=claude%2Frrm-50-plan-b1" in text
+    assert "release download" not in text
     assert "build_ui_fixtures.py" not in text
     assert "modal " not in text
     assert "sintéticos" not in out
     assert code is not None
 
 
-def test_el_tag_por_defecto_es_v2():
+def test_la_version_por_defecto_es_v2():
     script = f"""
 set -euo pipefail
 source "{ROOT}/scripts/_fixtures.sh"
 unset RRM_OFFLINE_VERSION
-offline_release_tag
-RRM_OFFLINE_VERSION=v3 offline_release_tag
-RRM_OFFLINE_VERSION=3 offline_release_tag
-RRM_OFFLINE_VERSION=offline-fixtures-v2 offline_release_tag
+unset RRM_OFFLINE_BRANCH
+printf 'branch=%s\\n' "$COMPASS_BRANCH"
+offline_version
+RRM_OFFLINE_VERSION=v3 offline_version
+RRM_OFFLINE_VERSION=3 offline_version
+RRM_OFFLINE_VERSION=offline-fixtures-v2 offline_version
+RRM_OFFLINE_BRANCH=otra/rama
+source "{ROOT}/scripts/_fixtures.sh"
+printf 'branch=%s\\n' "$COMPASS_BRANCH"
 """
     proc = subprocess.run(["/bin/bash", "-c", script], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.splitlines() == [
-        "offline-fixtures-v2",
-        "offline-fixtures-v3",
-        "offline-fixtures-v3",
-        "offline-fixtures-v2",
+        "branch=claude/rrm-50-plan-b1",
+        "v2",
+        "v3",
+        "v3",
+        "v2",
+        "branch=otra/rama",
     ]
 
 
