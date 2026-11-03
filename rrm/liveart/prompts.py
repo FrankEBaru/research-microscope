@@ -96,17 +96,32 @@ def _limits() -> str:
     )
 
 
+def _topic(name):
+    for topic in TOPICS:
+        if topic["name"] == name:
+            return topic
+    raise KeyError(name)
+
+
 def selector_system() -> str:
     names = ", ".join(topic["name"] for topic in TOPICS)
-    return with_guard(_SELECTOR + "Temas: " + names + ".\n" + _limits())
+    example = (
+        'sin(pos / 10000^{2i/d}) → {"merit":"widget","topic":"positional_encoding","reason":"mechanism"}\n'
+    )
+    return with_guard(_SELECTOR + "Temas: " + names + ".\n" + example + _limits())
 
 
 def question_system() -> str:
-    return with_guard(_QUESTION + _limits())
+    lines = ["Ejemplos de tono. No los copies a otro tema."]
+    for name in ("positional_encoding", "softmax_temperature"):
+        topic = _topic(name)
+        lines.append(name + ": " + json.dumps([q for q, _why in topic["questions"]], ensure_ascii=False))
+    return with_guard(_QUESTION + "\n".join(lines) + "\n" + _limits())
 
 
 def explain_system() -> str:
-    return with_guard(_EXPLAIN + _limits())
+    sample = _topic("positional_encoding")["explain"]
+    return with_guard(_EXPLAIN + "Ejemplo de largo y de tono: " + sample + "\n" + _limits())
 
 
 def codegen_system() -> str:

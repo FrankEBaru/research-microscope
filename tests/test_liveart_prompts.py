@@ -14,8 +14,10 @@ from rrm.liveart.prompts import (
     codegen_system,
     explain_system,
     package,
+    question_system,
     schemas,
     selector_messages,
+    selector_system,
     verifier_system,
 )
 
@@ -61,6 +63,8 @@ def test_flag_defaults_off_and_injection_stays_inside_the_fence(monkeypatch):
     assert "fetch" in code and "Math.random" in code
     assert "La base cambia el ritmo de la onda" in code
     assert "tercera fórmula" in explain_system()
+    assert "¿Por qué una base más grande" in question_system()
+    assert '"merit":"widget"' in selector_system()
     assert "no_injection_obeyed" in verifier_system() and "intuitive" in verifier_system()
     _code, pedido = codegen_messages(PE, [], "explica")
     assert "<<<PEDIDO>>>" in pedido
