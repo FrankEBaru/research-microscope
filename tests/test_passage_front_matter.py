@@ -41,6 +41,39 @@ def test_extract_rows_skips_preamble(monkeypatch):
     assert "icmlaffiliation" not in eqs[0]["text"]
 
 
+def test_extract_rows_keeps_footnote_prose_and_drops_layout(monkeypatch):
+    monkeypatch.delenv("RRM_PASSAGES_FILTER_JUNK", raising=False)
+    note = (
+        r"\footnotetext{SimCLR pulls two augmented views of the same image together "
+        r"and pushes views of different images apart.}"
+    )
+    prompt = (
+        r"\newcommand{\react}{Claim: the agent interleaves reasoning and actions "
+        r"before it searches. Thought: look up the tool.}"
+    )
+    paper = _paper()
+    paper["blocks"] = [
+        {"kind": "h", "level": 1, "inlines": _text("Method")},
+        {"kind": "p", "inlines": _text(note), "sents": [_text(note)]},
+        {"kind": "p", "inlines": _text(prompt), "sents": [_text(prompt)]},
+        {"kind": "p", "inlines": _text(r"\onecolumn"), "sents": [_text(r"\onecolumn")]},
+        {"kind": "p", "inlines": _text(r"\vskip 0.3in ]"), "sents": [_text(r"\vskip 0.3in ]")]},
+        {"kind": "p", "inlines": _text(r"\printAffiliationsAndNotice{}"), "sents": [_text(r"\printAffiliationsAndNotice{}")]},
+        {"kind": "p", "inlines": _text(r"\titlerunning{Direct Preference Optimization}"), "sents": [_text(r"\titlerunning{Direct Preference Optimization}")]},
+        {"kind": "eq", "tex": r"\sqrt{d_k}"},
+        {"kind": "p", "inlines": _text("The scale keeps the product of queries and keys from growing too fast."),
+         "sents": [_text("The scale keeps the product of queries and keys from growing too fast.")]},
+    ]
+    rows = extract_rows(paper, arxiv_id="2002.05709")
+    blob = " ".join(row["text"] for row in rows)
+    assert "augmented views" in blob
+    assert "interleaves reasoning" in blob
+    assert r"\onecolumn" not in blob
+    assert "printAffiliations" not in blob
+    assert "titlerunning" not in blob
+    assert any(row["kind"] == "eq" and row["latex"] == r"\sqrt{d_k}" for row in rows)
+
+
 def test_extract_rows_keeps_preamble_when_flag_off(monkeypatch):
     monkeypatch.setenv("RRM_PASSAGES_FILTER_JUNK", "0")
     rows = extract_rows(_paper(), arxiv_id="1")

@@ -2,6 +2,9 @@
 
 Precisión sobre recall: un párrafo, una ecuación o una definición se quedan.
 Una fila se descarta solo si, fuera de esas macros, casi no queda prosa.
+`\\footnotetext`, `\\blfootnote`, `\\thanks` y `\\newcommand` se quedan cuando
+el cuerpo tiene al menos 6 palabras. `\\onecolumn`, `\\twocolumn`, `\\vskip`,
+`\\printAffiliationsAndNotice` y la portada (`titlerunning`, `affil`, …) no.
 `RRM_PASSAGES_FILTER_JUNK=0` (también `false`, `off`, `no`) lo apaga.
 Sin variable, o vacía, el filtro queda prendido.
 """
@@ -22,7 +25,16 @@ _EXACT = {
     "declaremathoperator", "declarerobustcommand",
     "bibliography", "bibliographystyle", "thispagestyle", "pagestyle",
     "address", "footnotetext", "blfootnote",
+    "titlerunning", "authorrunning", "affil", "frontmatter", "markboth",
+    "runtitle", "authornote",
+    "onecolumn", "twocolumn", "vskip",
+    "printaffiliationsandnotice", "printaffiliations",
+    "icmlcorrespondingauthor",
 }
+
+# El cuerpo es prosa, no la portada: se queda si tiene al menos _KEEP_WORDS.
+# \newcommand corto (una macro) sigue siendo preámbulo.
+_BODY_KEEP = {"footnotetext", "blfootnote", "thanks", "newcommand"}
 
 # Clases de conferencia: \icmlaffiliation, \icmlkeywords, \iclrfinalcopy, ...
 _PREFIXES = (
@@ -107,15 +119,27 @@ def _consume_until(s, i, open_ch, close_ch):
 
 def _skip_args(s, i):
     """`[opt]` y grupos `{...}` pegados al comando. No se come el texto de después."""
+    end, _groups = _read_groups(s, i)
+    return end
+
+
+def _read_groups(s, i):
+    """Grupos `{...}` del comando. El `*` de `\\newcommand*` no es un grupo."""
+    i = _skip_ws(s, i)
+    if i < len(s) and s[i] == "*":
+        i += 1
+    groups = []
     while True:
         i = _skip_ws(s, i)
         if i < len(s) and s[i] == "[":
             i = _consume_until(s, i, "[", "]")
             continue
         if i < len(s) and s[i] == "{":
-            i = _consume_until(s, i, "{", "}")
+            end = _consume_until(s, i, "{", "}")
+            groups.append(s[i + 1:end - 1] if end > i else "")
+            i = end
             continue
-        return i
+        return i, groups
 
 
 def _find_end(s, start, env):
@@ -199,6 +223,15 @@ def _strip_front(text):
                     continue
                 out.append(s[i:j])
                 i = j
+                continue
+            if name in _BODY_KEEP:
+                i, groups = _read_groups(s, j)
+                body = "\n".join(groups)
+                if len(_real_words(body)) >= _KEEP_WORDS:
+                    out.append(" ")
+                    out.append(body)
+                else:
+                    hits += 1
                 continue
             if _is_front(name):
                 hits += 1
