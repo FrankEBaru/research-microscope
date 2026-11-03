@@ -31,7 +31,8 @@ PROBE_3 = (
     {"id": "mixup-lambda", "area": "vision", "topic": "mixup"},
     {"id": "mae-ratio", "area": "vision", "topic": "mae_mask"},
     {"id": "arcface-margin", "area": "vision", "topic": "arcface"},
-    {"id": "gae-lambda", "area": "rl", "topic": "gae_lambda"},
+    {"id": "gae-lambda", "area": "rl", "topic": "gae_lambda", "arxiv": "1506.02438",
+     "text": "GAE estimates the advantage with an exponentially weighted sum analogous to TD(lambda). Credit for a reward decays by gamma times lambda at each step backward, and lambda 0 keeps only the one-step term."},
     {"id": "sac-alpha", "area": "rl", "topic": "sac_temp"},
     {"id": "eps-greedy", "area": "rl", "topic": "eps_greedy"},
     {"id": "consistency-steps", "area": "diffusion", "topic": "consistency_model"},
@@ -47,8 +48,27 @@ PROBE_3 = (
     {"id": "performer-m", "area": "nlp", "topic": "performer_m"},
     {"id": "rwkv-decay", "area": "nlp", "topic": "rwkv_time"},
     {"id": "deepnorm-alpha", "area": "nlp", "topic": "deepnorm"},
-    {"id": "lottery-keep", "area": "theory", "topic": "lottery"},
+    {"id": "lottery-keep", "area": "theory", "topic": "lottery", "arxiv": "1803.03635",
+     "text": "The lottery ticket hypothesis says a dense, randomly initialized network contains a winning ticket: a sparse subnetwork that, trained in isolation from its original initialization, reaches test accuracy comparable to the dense network. A random mask of the same size does not."},
     {"id": "beta-vae", "area": "vision", "topic": "beta_vae"},
+    {"id": "denoise-ho", "area": "diffusion", "topic": "noise_schedule", "arxiv": "2006.11239",
+     "text": "The forward process of a diffusion model has a closed form under a linear noise schedule: beta_t runs from 0.0001 to 0.02 across T=1000 steps, and x_t is sqrt(alpha_bar_t) times x_0 plus sqrt(1 - alpha_bar_t) times epsilon."},
+    {"id": "kl-beta", "area": "nlp", "topic": "kl_rlhf", "arxiv": "2203.02155",
+     "text": "In RLHF the optimal policy is proportional to the reference policy times exp(reward / beta). A small beta lets the highest-reward token take the whole probability."},
+    {"id": "lora-update", "area": "nlp", "topic": "lora", "arxiv": "2106.09685",
+     "text": "LoRA freezes the pretrained weights and injects a low-rank update, the product of two matrices of rank r, so a d by d layer trains 2dr values instead of d squared."},
+    {"id": "vit-count", "area": "vision", "topic": "vit_patch", "arxiv": "2010.11929",
+     "text": "A Vision Transformer splits an image into patches of size P, and the sequence length is the image area divided by P squared. A larger patch size swallows a small object into one token."},
+    {"id": "detr-cost", "area": "vision", "topic": "detr_match", "arxiv": "2005.12872",
+     "text": "DETR forces unique predictions via bipartite matching between learned object queries and boxes. The matching cost mixes a class term and a box term, so a higher class weight prefers the right label over the nearer box."},
+    {"id": "int8-step", "area": "systems", "topic": "", "merit": "skip", "arxiv": "2208.07339",
+     "text": "LLM.int8() sets the int8 step by absmax, the row maximum divided by 127, and a feature whose magnitude exceeds 6 stays outside that step."},
+    {"id": "erf-gauss", "area": "vision", "topic": "", "merit": "skip", "arxiv": "1701.04128",
+     "text": "The effective receptive field of a deep convolutional network is Gaussian and occupies only a fraction of the full theoretical receptive field, which grows with depth and with the kernel."},
+    {"id": "gcn-neighbor", "area": "systems", "topic": "", "merit": "skip", "arxiv": "1609.02907",
+     "text": "A graph convolutional network mixes each node with its neighbors by a localized first-order filter on the graph, so an isolated node receives no message from that layer."},
+    {"id": "clip-cosine", "area": "vision", "topic": "", "merit": "skip", "arxiv": "2103.00020",
+     "text": "CLIP learns which caption goes with which image by scoring the cosine of their embeddings divided by a temperature. A lower temperature gives the nearest caption the probability."},
 )
 
 
@@ -67,9 +87,14 @@ def claims():
             "context": "",
             "arxiv": spec["arxiv"],
         }
+    def claim_for(item):
+        if item.get("text"):
+            return {"text": item["text"], "latex": "", "context": "", "arxiv": item.get("arxiv", "")}
+        return by_id[item["id"]]
+
     out = []
-    for probe, item in (("probe2", row) for row in PROBE_2):
-        out.append({**item, "probe": probe, "claim": by_id[item["id"]]})
+    for item in PROBE_2:
+        out.append({**item, "probe": "probe2", "claim": claim_for(item)})
     for item in PROBE_3:
-        out.append({**item, "probe": "probe3", "claim": by_id[item["id"]]})
+        out.append({**item, "probe": "probe3", "claim": claim_for(item)})
     return out
