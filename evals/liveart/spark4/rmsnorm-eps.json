@@ -1,0 +1,28 @@
+{
+ "id": "rmsnorm-eps",
+ "claim": {
+  "text": "RMSNorm divides each coordinate by the root mean square of the vector, so a larger epsilon stops that division from shri",
+  "latex": "",
+  "context": "",
+  "arxiv": "1910.07467"
+ },
+ "spec": {},
+ "widget": {
+  "controls": [
+   {
+    "id": "eps",
+    "label": "epsilon",
+    "max": 8,
+    "min": 0.01,
+    "step": 0.05,
+    "value": 1
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var eps = state.eps; function fmt(v) { return Math.round(v * 100) / 100; } var vals = [1, -2, 0.5, 3]; var ms = 0; var i = 0; var rms = 0; var bw = 0; var bh = 0; var bx = 0; var base = 0; ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); for (i = 0; i < vals.length; i++) { ms = ms + vals[i] * vals[i]; } rms = Math.sqrt(ms / vals.length + eps); bw = (w - 80) / vals.length; base = h - 80; ctx.fillStyle = \"#1d1a16\"; ctx.font = \"13px sans-serif\"; ctx.textAlign = \"left\"; ctx.fillText(\"eps = \" + fmt(eps), 24, 30); ctx.fillText(\"rms = \" + fmt(rms), 24, 50); ctx.strokeStyle = \"#8a8175\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(16, base); ctx.lineTo(w - 16, base); ctx.stroke(); for (i = 0; i < vals.length; i++) { bh = Math.abs(vals[i] / rms) * 110; if (base - bh < 60) { bh = base - 60; } bx = 40 + i * bw; ctx.fillStyle = \"#1f4b99\"; ctx.fillRect(bx, base - bh, bw - 18, bh); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"x\" + fmt(vals[i]), bx, base + 18); ctx.fillText(\"y\" + fmt(vals[i] / rms), bx, base - bh - 8); } ctx.fillStyle = \"#8a8175\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"y = x / rms, rms grows with eps\", 24, h - 24); }",
+  "explain": "arXiv 1910.07467.",
+  "id": "rms-eps-2",
+  "questions": [],
+  "title": "Epsilon brakes what RMS shrinks",
+  "topic": "rmsnorm"
+ }
+}

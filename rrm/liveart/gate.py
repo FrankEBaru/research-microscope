@@ -10,15 +10,21 @@ import re
 import subprocess
 from pathlib import Path
 
-_GENERIC = re.compile(r"qu[eé] pasa si|what happens", re.I)
 _PREDICT = re.compile(r"^\s*(predice|predict)\b", re.I)
-_ARITH = re.compile(
-    r"\b(?:what is|what state|cu[aá]nto(?:\s+vale)?|how much|how many)\b"
-    r"|(?:predict|predice) (?:the |el )?[A-Za-z0-9_]+ (?:if|when|at|si|cuando)\b",
-    re.I,
-)
-_BEFORE = re.compile(r"\b(?:before|antes)\b", re.I)
+_SIGNED = re.compile(r"-?\d+(?:\.\d+)?")
 _JUNK_LABEL = re.compile(r"\b(?:holds|pow)\b", re.I)
+# Phrases the round-4 prompt leaked into explain. Not a ban on "bounded by sqrt(v)".
+_FILLER = (
+    "condition of the topic",
+    "condición del tema",
+    "condicion del tema",
+    "valley condition",
+    "the bound is",
+    "bounded by absolute positions",
+    "bounded by the valley condition",
+)
+_KV_IDS = {"kv_heads", "kvheads", "kv_head", "n_kv"}
+_Q_IDS = {"q_heads", "qheads", "q_head", "query_heads", "n_q"}
 _CLIPPED = re.compile(r"\bclipped\b", re.I)
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 _LONG = re.compile(r"\d+\.\d{4,}")
@@ -71,12 +77,17 @@ def seal_widget(widget, explain, questions=None):
 
 
 def question_problems(questions, controls):
+    """Exactly four questions, and one of them predicts a named control.
+
+    The question may say "Predict what happens". It has to name a real control
+    and a number inside that control's range. No other veto.
+    """
     if not isinstance(questions, list) or len(questions) != 4:
         return ["generic_questions"]
     texts = []
     for item in questions:
         texts.append((item or {}).get("q") or "" if isinstance(item, dict) else "")
-    if any(_GENERIC.search(q) for q in texts) or not any(_PREDICT.search(q) for q in texts):
+    if not any(_predicts_control(q, controls) for q in texts):
         return ["generic_questions"]
     for q in texts:
         nums = [float(n) for n in _NUMBER.findall(q)]
@@ -84,8 +95,6 @@ def question_problems(questions, controls):
             return ["generic_questions"]
         if controls and not any(_in_range(n, controls) for n in nums):
             return ["generic_questions"]
-    if any(_ARITH.search(q) for q in texts) or not any(_BEFORE.search(q) for q in texts):
-        return ["bad_question"]
     return []
 
 
@@ -108,6 +117,8 @@ def quality_gate(widget, claim, spec=None):
     arxiv = str(claim.get("arxiv") or "").strip()
     if arxiv and arxiv not in explain:
         reasons.append("no_citation")
+    if _filler(explain):
+        reasons.append("filler")
     reasons.extend(question_problems(widget.get("questions"), controls))
     if _unknown_question(widget.get("questions"), controls) or _unknown_explain(explain, controls):
         reasons.append("unknown_control")
@@ -127,11 +138,51 @@ def quality_gate(widget, claim, spec=None):
         reasons.append("direction")
     if spec is not None and _constraint_broken(controls, spec.get("constraints")):
         reasons.append("constraint")
+    if _heads_dont_divide(controls):
+        reasons.append("divides")
+    if spec is not None and spec.get("scale") is False and "not to scale" not in "\n".join(texts).lower():
+        reasons.append("scale")
     if _dead_label(draw, controls):
         reasons.append("dead_label")
     if _contradicts(explain, draw):
         reasons.append("contradicts")
     return reasons
+
+
+def _predicts_control(question, controls):
+    """Predict/Predice, plus a control id or label, plus a number in that range."""
+    if not _PREDICT.search(question or ""):
+        return False
+    nums = [float(n) for n in _SIGNED.findall(question or "")]
+    if not nums:
+        return False
+    if not controls:
+        return True
+    for control in controls:
+        if not isinstance(control, dict) or not _names(question, control):
+            continue
+        try:
+            lo, hi = float(control["min"]), float(control["max"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if any(lo - 1e-9 <= n <= hi + 1e-9 for n in nums):
+            return True
+    return False
+
+
+def _names(question, control):
+    cid = str(control.get("id") or "")
+    label = str(control.get("label") or "").strip()
+    if cid and re.search(rf"\b{re.escape(cid)}\b", question or "", re.I):
+        return True
+    if label and re.search(rf"\b{re.escape(label)}\b", question or "", re.I):
+        return True
+    return False
+
+
+def _filler(explain):
+    text = (explain or "").lower()
+    return any(phrase in text for phrase in _FILLER)
 
 
 def _in_range(num, controls):
@@ -319,7 +370,108 @@ def _dead_label(draw, controls):
         return True
     if all(_CLIPPED.search(blob) for blob in blobs):
         return True
+    paired = []
+    for state, item in zip(states, rendered):
+        if item.get("error"):
+            continue
+        paired.append((state, "\n".join(item.get("texts") or [])))
+    return _fixed_control_text(paired, controls)
+
+
+def _fixed_control_text(paired, controls):
+    """`m = 7` painted as text while the slider is not 7."""
+    ids = []
+    for control in controls or []:
+        cid = str((control or {}).get("id") or "")
+        if cid:
+            ids.append(cid)
+    for state, blob in paired:
+        for cid in ids:
+            for shown in _fixed_numbers(blob, cid):
+                try:
+                    actual = float(state.get(cid))
+                except (TypeError, ValueError):
+                    return True
+                if abs(shown - actual) > 0.01:
+                    return True
     return False
+
+
+def _fixed_numbers(blob, cid):
+    """Numbers in `id = number` where id is the whole left side.
+
+    `m = 7 shifts` counts. `m x f = 2` does not: f is the last factor, not the label.
+    """
+    pat = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(cid)}\s*=\s*(-?\d+(?:\.\d+)?)")
+    found = []
+    for match in pat.finditer(blob or ""):
+        j = match.start() - 1
+        while j >= 0 and blob[j] in " \t":
+            j -= 1
+        # A previous fillText ends at the newline. It is not part of this label.
+        if j >= 0 and blob[j] != "\n" and (blob[j].isalnum() or blob[j] in "._)*+/xX"):
+            continue
+        found.append(float(match.group(1)))
+    return found
+
+
+def _heads_dont_divide(controls):
+    """Every reachable kv stop has to divide every reachable query-head stop."""
+    kv = q = None
+    for control in controls or []:
+        if not isinstance(control, dict):
+            continue
+        cid = str(control.get("id") or "").lower()
+        if cid in _KV_IDS:
+            kv = control
+        elif cid in _Q_IDS:
+            q = control
+    if kv is None or q is None:
+        return False
+    kv_stops, q_stops = _stops(kv), _stops(q)
+    if not kv_stops or not q_stops:
+        return True
+    if len(kv_stops) * len(q_stops) > 400:
+        kv_stops, q_stops = _thin(kv_stops, 20), _thin(q_stops, 20)
+    for kv_v in kv_stops:
+        for q_v in q_stops:
+            if kv_v <= 1e-9:
+                return True
+            ratio = q_v / kv_v
+            if abs(ratio - round(ratio)) > 1e-6:
+                return True
+    return False
+
+
+def _stops(control, cap=48):
+    try:
+        lo = float(control["min"])
+        hi = float(control["max"])
+        step = float(control.get("step") or 0)
+    except (KeyError, TypeError, ValueError):
+        return []
+    if step <= 0 or hi < lo:
+        return []
+    count = int(round((hi - lo) / step)) + 1
+    if count < 1:
+        return []
+    if count <= cap:
+        return [lo + i * step for i in range(count)]
+    stride = max(1, (count - 1) // (cap - 1))
+    idxs = list(range(0, count, stride))
+    if idxs[-1] != count - 1:
+        idxs.append(count - 1)
+    return [lo + i * step for i in idxs]
+
+
+def _thin(stops, cap):
+    if len(stops) <= cap:
+        return stops
+    stride = max(1, (len(stops) - 1) // (cap - 1))
+    picked = stops[::stride]
+    if picked[-1] != stops[-1]:
+        picked.append(stops[-1])
+    return picked
 
 
 def _constraint_broken(controls, constraints):

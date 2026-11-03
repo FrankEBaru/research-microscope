@@ -34,8 +34,8 @@ CONFIGS = {
 # Expected output tokens for a dry run. The live call may be shorter; the
 # budget check uses max_output_tokens instead, so it stops early rather than late.
 _EXPECT_OUT = {
-    "selector": 200, "spec": 700, "questions": 600, "explain": 250,
-    "codegen": 2500, "repair": 2500, "verifier": 250,
+    "selector": 200, "spec": 1200, "questions": 600, "explain": 250,
+    "codegen": 2500, "repair": 2500, "verifier": 900,
 }
 
 
@@ -76,6 +76,23 @@ def _ceiling(model, chars, max_out):
     pin, _pcache, pout = _rates(model)
     inn = max(1, (chars + 3) // 4)
     return inn * pin + int(max_out) * pout
+
+
+def _spec_cut(call):
+    """The spec stopped mid-JSON. An HTTP error is not a cut, so it is not retried."""
+    if not call or call.get("error"):
+        return False
+    if call.get("status") == "incomplete":
+        return True
+    body = call.get("json")
+    if not isinstance(body, dict):
+        return True
+    controls = body.get("controls")
+    if not body.get("archetype") or not isinstance(controls, list) or not controls:
+        return True
+    if not str(body.get("explain") or "").strip():
+        return True
+    return False
 
 
 def _call(stage, system, user, schema, tokens, effort, model=SPARK):
@@ -131,8 +148,8 @@ def _grade(node, root, rid, claim, widget, sandbox):
 
 # Live max_output_tokens. The dry run prices _EXPECT_OUT, which is shorter.
 _MAX_OUT = {
-    "selector": 600, "spec": 1600, "questions": 900, "explain": 900,
-    "codegen": 6000, "repair": 6000, "verifier": 900,
+    "selector": 600, "spec": 2400, "questions": 900, "explain": 900,
+    "codegen": 6000, "repair": 6000, "verifier": 1400,
 }
 _EFFORT = {
     "selector": "minimal", "spec": "minimal", "questions": "minimal", "explain": "minimal",
@@ -417,10 +434,19 @@ def run_live(args, cases, node, root):
                 from rrm.liveart.archetypes import archetype_for, shots_for
                 from rrm.liveart.gate import finish_explain, quality_gate, seal_widget
 
-                spec_call = go("spec", P.spec_messages(claim, row["topic"]))
+                spec_msgs = P.spec_messages(claim, row["topic"])
+                spec_call = go("spec", spec_msgs)
+                if spec_call is not None and _spec_cut(spec_call):
+                    retried = go("spec", spec_msgs)
+                    spec_call = retried if retried is not None else None
                 if spec_call is None:
                     row["outcome"] = "stopped"
                     row["reasons"] = [stopped]
+                elif _spec_cut(spec_call):
+                    row["outcome"] = "fallback"
+                    row["reasons"] = ["spec_incomplete"]
+                    row["verify"] = "skipped"
+                    row["sandbox"] = "skipped"
                 else:
                     spec = spec_call["json"] if isinstance(spec_call.get("json"), dict) else {}
                     explain = finish_explain(spec.get("explain") or "", claim)

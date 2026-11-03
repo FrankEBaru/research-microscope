@@ -1,0 +1,111 @@
+{
+ "id": "kl-policy",
+ "claim": {
+  "text": "In RLHF the optimal policy is the reference policy times exp(reward / beta), so a small beta lets one token take the rew",
+  "latex": "",
+  "context": "",
+  "arxiv": "2203.02155"
+ },
+ "spec": {
+  "archetype": "bars",
+  "constraints": [],
+  "controls": [
+   {
+    "id": "beta",
+    "label": "KL strength beta",
+    "max": 2.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 0.5
+   },
+   {
+    "id": "delta",
+    "label": "Reward lead delta",
+    "max": 4.0,
+    "min": 0.0,
+    "step": 0.1,
+    "value": 2.0
+   }
+  ],
+  "derived": [
+   {
+    "formula": "exp(delta/beta)/(1+exp(delta/beta))",
+    "name": "winner_share"
+   },
+   {
+    "formula": "1/(1+exp(delta/beta))",
+    "name": "runner_share"
+   }
+  ],
+  "direction": [
+   {
+    "control": "beta",
+    "effect": "down",
+    "readout": "winner_share"
+   }
+  ],
+  "explain": "Illustrative toy of arXiv 2203.02155: bars show reference policy reweighted by exp(reward/beta), with the limit that small beta lets one token take the reward.",
+  "questions": [
+   {
+    "q": "Predict what happens to the bars if beta is set to 0.2 with delta held fixed?",
+    "why": "Tests prediction of sharpness from small beta."
+   },
+   {
+    "q": "Many think larger beta makes the winner stronger; before moving beta to 1.8, what do you expect?",
+    "why": "Confronts misunderstanding of KL strength direction."
+   },
+   {
+    "q": "If delta is set to 0.5, will the two bars look nearly equal even with small beta?",
+    "why": "Tests role of reward gap versus temperature."
+   },
+   {
+    "q": "If delta is set to 3.5, can a large beta still keep the winner from taking all reward?",
+    "why": "Tests interaction of large gap and strong regularization."
+   }
+  ],
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "beta",
+    "label": "KL strength beta",
+    "max": 2.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 0.5
+   },
+   {
+    "id": "delta",
+    "label": "Reward lead delta",
+    "max": 4.0,
+    "min": 0.0,
+    "step": 0.1,
+    "value": 2.0
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var beta = state.beta; var delta = state.delta; function fmt(v) { return Math.round(v * 100) / 100; } var r = Math.exp(delta / beta); var winner = r / (1 + r); var runner = 1 / (1 + r); var baseY = h * 0.78; var maxH = h * 0.52; var bw = 110; var x1 = w * 0.18; var x2 = w * 0.53; var h1 = winner * maxH; var h2 = runner * maxH; var i = 0; ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"14px sans-serif\"; ctx.textAlign = \"left\"; ctx.textBaseline = \"alphabetic\"; ctx.fillText(\"reference reweighted by exp(reward / beta)\", 24, 28); ctx.strokeStyle = \"#1d1a16\"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(24, baseY); ctx.lineTo(w - 24, baseY); ctx.stroke(); for (i = 0; i < 5; i++) { var gy = baseY - (i + 1) * maxH / 5; ctx.strokeStyle = \"#d5cbbd\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(24, gy); ctx.lineTo(w - 24, gy); ctx.stroke(); } ctx.fillStyle = \"#1f4b99\"; ctx.fillRect(x1, baseY - h1, bw, h1); ctx.fillStyle = \"#c4512c\"; ctx.fillRect(x2, baseY - h2, bw, h2); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"13px sans-serif\"; ctx.fillText(\"winner token\", x1, baseY + 20); ctx.fillText(\"runner token\", x2, baseY + 20); ctx.font = \"13px sans-serif\"; ctx.fillText(\"winner_share = \" + fmt(winner), x1, baseY - h1 - 10); ctx.fillText(\"runner_share = \" + fmt(runner), x2, baseY - h2 - 10); ctx.font = \"12px sans-serif\"; ctx.fillText(\"beta = \" + fmt(beta), 24, h - 40); ctx.fillText(\"delta = \" + fmt(delta), 24, h - 22); if (winner > 0.95) { ctx.fillStyle = \"#1d1a16\"; ctx.fillText(\"small beta lets one token take the reward\", w * 0.45, h - 30); } else { ctx.fillStyle = \"#1d1a16\"; ctx.fillText(\"regularized split stays near reference\", w * 0.45, h - 30); } }",
+  "explain": "Illustrative toy of arXiv 2203.02155: bars show reference policy reweighted by exp(reward/beta), with the limit that small beta lets one token take the reward.",
+  "id": "klhf-beta-sharp",
+  "questions": [
+   {
+    "q": "Predict what happens to the bars if beta is set to 0.2 with delta held fixed?",
+    "why": "Tests prediction of sharpness from small beta."
+   },
+   {
+    "q": "Many think larger beta makes the winner stronger; before moving beta to 1.8, what do you expect?",
+    "why": "Confronts misunderstanding of KL strength direction."
+   },
+   {
+    "q": "If delta is set to 0.5, will the two bars look nearly equal even with small beta?",
+    "why": "Tests role of reward gap versus temperature."
+   },
+   {
+    "q": "If delta is set to 3.5, can a large beta still keep the winner from taking all reward?",
+    "why": "Tests interaction of large gap and strong regularization."
+   }
+  ],
+  "title": "Small beta lets one token take the reward",
+  "topic": "kl_rlhf"
+ }
+}

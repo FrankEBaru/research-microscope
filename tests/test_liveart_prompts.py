@@ -279,8 +279,50 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
     from rrm.liveart.prompts import schemas
     assert schemas()["codegen"]["properties"]["controls"]["items"]["properties"]["label"]["description"] == "at most 28 characters"
     assert set(schemas()["spec"]["required"]) == {
-        "archetype", "controls", "derived", "threshold_formula", "direction", "constraints", "questions", "explain",
+        "archetype", "controls", "derived", "threshold_formula", "direction",
+        "constraints", "scale", "questions", "explain",
     }
+    from rrm.liveart.gate import _heads_dont_divide, question_problems
+    predict = [
+        {"q": "Predict what happens to the step if lr is set to 0.5?", "why": "the phrase is allowed"},
+        {"q": "At lr 0.1, does the step stay under the line?", "why": "range"},
+        {"q": "At lr 0.4, does the step stay bounded?", "why": "range"},
+        {"q": "Before you move lr to 0.8, do you expect the step to leave the valley?", "why": "misconception"},
+    ]
+    assert question_problems(predict, controls) == []
+    lora_q = [
+        {"q": "Predict what r = 4 means for the two factors with d = 256?", "why": "shape"},
+        {"q": "Many think full fine-tuning needs the same parameters; what is wrong before you move r to 4?", "why": "misconception"},
+        {"q": "How would you describe the savings if d = 128 while holding r = 2?", "why": "width"},
+        {"q": "Why keep r = 8 small when d = 64?", "why": "rank"},
+    ]
+    lora_controls = [
+        {"id": "r", "label": "rank", "min": 1, "max": 8, "value": 4, "step": 1},
+        {"id": "d", "label": "width", "min": 64, "max": 512, "value": 256, "step": 64},
+    ]
+    assert question_problems(lora_q, lora_controls) == []
+    schematic = dict(spec, scale=False)
+    assert "scale" in quality_gate(widget, claim, schematic)
+    marked = dict(widget, draw=draw.replace(
+        'ctx.fillText("step = "',
+        'ctx.fillText("not to scale", 200, 40); ctx.fillText("step = "',
+    ))
+    assert "scale" not in quality_gate(marked, claim, schematic)
+    stuck = dict(widget, draw=draw.replace(
+        'ctx.fillText("step = "',
+        'ctx.fillText("lr = 7", 200, 40); ctx.fillText("step = "',
+    ))
+    assert "dead_label" in quality_gate(stuck, claim, spec)
+    open_heads = [
+        {"id": "kv_heads", "label": "KV heads", "min": 1, "max": 8, "value": 2, "step": 1},
+        {"id": "q_heads", "label": "Query heads", "min": 8, "max": 64, "value": 32, "step": 8},
+    ]
+    closed_heads = [
+        {"id": "kv_heads", "label": "KV heads", "min": 4, "max": 8, "value": 4, "step": 4},
+        {"id": "q_heads", "label": "Query heads", "min": 8, "max": 64, "value": 32, "step": 8},
+    ]
+    assert _heads_dont_divide(open_heads)
+    assert not _heads_dont_divide(closed_heads)
     illegal = dict(spec, constraints=["abs(lr) <= 0.1"])
     assert "constraint" in quality_gate(widget, claim, illegal)
     legal = dict(spec, constraints=["lr <= 1"])
@@ -372,13 +414,128 @@ def test_round3_replay_direction_clears_six():
             full.append(path.stem)
         if "dead_label" in reasons:
             dead.add(path.stem)
-        if "bad_question" in reasons:
+        if "generic_questions" in reasons or "bad_question" in reasons:
             bad.add(path.stem)
     assert clear == ["adam-valley", "gelu-tail", "gqa-share", "kl-policy", "rmsnorm-eps", "rope-shift"]
     assert "lora-rank" not in clear and "pe-sincos" not in clear
-    assert full == []
+    # The question veto is gone, so the four whose other checks were clean now pass.
+    assert full == ["adam-valley", "gelu-tail", "kl-policy", "rope-shift"]
     assert dead == {"gqa-share", "pe-sincos", "rmsnorm-eps"}
-    assert len(bad) == 8
+    assert bad == set()
+    gqa = json.loads((root / "gqa-share.json").read_text(encoding="utf-8"))
+    assert "divides" in quality_gate(gqa["widget"], gqa["claim"], gqa["spec"])
+
+
+def test_round4_replay_keeps_kl_and_gelu_questions():
+    from pathlib import Path
+
+    from rrm.liveart.gate import quality_gate
+
+    root = Path(__file__).resolve().parents[1] / "evals" / "liveart" / "spark4"
+    expect = {
+        "adam-valley": ["filler"],
+        "gelu-tail": ["filler"],
+        "gqa-share": ["divides"],
+        "kl-policy": [],
+        "lora-rank": [],
+        "pe-sincos": [],
+        "rmsnorm-eps": ["generic_questions"],
+        "rope-shift": ["filler", "dead_label"],
+    }
+    for name, wanted in expect.items():
+        row = json.loads((root / f"{name}.json").read_text(encoding="utf-8"))
+        reasons = quality_gate(row["widget"], row["claim"], row["spec"])
+        assert reasons == wanted, (name, reasons)
+    for name in ("kl-policy", "gelu-tail"):
+        row = json.loads((root / f"{name}.json").read_text(encoding="utf-8"))
+        reasons = quality_gate(row["widget"], row["claim"], row["spec"])
+        assert "generic_questions" not in reasons and "bad_question" not in reasons
+
+
+def test_spec_retries_once_when_cut_off(monkeypatch, tmp_path):
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import scripts_live
+
+    assert scripts_live._MAX_OUT["spec"] == 2400
+    assert scripts_live._MAX_OUT["verifier"] == 1400
+    usage = {"input_tokens": 1, "cached_tokens": 0, "output_tokens": 1, "cost_usd": 0.0}
+    seen = []
+
+    def fake(stage, system, user, schema, tokens, effort, model="muse-spark-1.3-contributor"):
+        seen.append(stage)
+        if stage == "selector":
+            body = {"merit": "widget", "topic": "adam", "reason": "mechanism"}
+            return {"error": "", "status": "completed", "json": body, "usage": usage}
+        if stage == "spec":
+            if seen.count("spec") == 1:
+                return {"error": "", "status": "incomplete", "json": None, "usage": usage}
+            body = {
+                "archetype": "curve",
+                "controls": [{"id": "lr", "label": "lr", "min": 0, "max": 1, "value": 0.2, "step": 0.1}],
+                "derived": [],
+                "threshold_formula": "",
+                "direction": [],
+                "constraints": [],
+                "scale": True,
+                "questions": [],
+                "explain": "Look at the step. arXiv 1412.6980.",
+            }
+            return {"error": "", "status": "completed", "json": body, "usage": usage}
+        if stage == "codegen":
+            body = {
+                "id": "adam-valley", "topic": "adam", "title": "Adam",
+                "explain": "rewritten",
+                "questions": [],
+                "controls": [{"id": "lr", "label": "lr", "min": 0, "max": 1, "value": 0.2, "step": 0.1}],
+                "draw": "function draw(ctx, state, t) { ctx.fillRect(0, 0, state.lr, 8); }",
+            }
+            return {"error": "", "status": "completed", "json": body, "usage": usage}
+        return {"error": "", "status": "completed", "json": {"accept": False, "reasons": [], "checks": {}}, "usage": usage}
+
+    monkeypatch.setattr(scripts_live, "_call", fake)
+    monkeypatch.setattr(scripts_live, "_grade", lambda *a, **k: {"verify": "pass", "sandbox": "skipped", "reasons": []})
+
+    class Args:
+        ids = ""
+        n = 0
+        raw = str(tmp_path / "raw")
+        sandbox = False
+        out = str(tmp_path / "out.json")
+        config = "spark"
+        max_usd = None
+        dry_run = False
+        cap = 10
+
+    claim = {"text": "Adam steps by the first moment.", "latex": "", "context": "", "arxiv": "1412.6980"}
+    assert scripts_live.run_live(Args(), [{"id": "adam-valley", "claim": claim}], Path("missing"), tmp_path) == 0
+    assert seen.count("spec") == 2
+    assert seen.count("codegen") == 1
+    saved = json.loads((tmp_path / "raw" / "adam-valley.json").read_text(encoding="utf-8"))
+    assert saved["widget"]["explain"].startswith("Look at the step.")
+    assert "rewritten" not in saved["widget"]["explain"]
+
+    seen.clear()
+
+    def always_cut(stage, system, user, schema, tokens, effort, model="muse-spark-1.3-contributor"):
+        seen.append(stage)
+        if stage == "selector":
+            return {"error": "", "status": "completed", "json": {"merit": "widget", "topic": "adam", "reason": "mechanism"}, "usage": usage}
+        return {"error": "", "status": "incomplete", "json": None, "usage": usage}
+
+    monkeypatch.setattr(scripts_live, "_call", always_cut)
+
+    class Again(Args):
+        raw = str(tmp_path / "raw2")
+        out = str(tmp_path / "out2.json")
+
+    assert scripts_live.run_live(Again(), [{"id": "adam-valley", "claim": claim}], Path("missing"), tmp_path) == 0
+    assert seen.count("spec") == 2
+    assert "codegen" not in seen
+    saved = json.loads((tmp_path / "raw2" / "adam-valley.json").read_text(encoding="utf-8"))
+    assert saved["row"]["reasons"] == ["spec_incomplete"]
 
 
 def test_probe_retries_once_on_504_or_timeout(monkeypatch):
