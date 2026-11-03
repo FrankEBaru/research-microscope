@@ -2,22 +2,22 @@
 
 Archivo de esta rama. La coordinación que se puede escribir va en compass `equipo-artefactos/` (rama `claude/rrm-50-plan-b1`).
 
-Lectura de `origin` el 2026-11-03: `cursor/rrm-79-live-engine-c8e7` (`liveart/HANDOFF-RRM-79.md`) y `cursor/rrm-80-mockups-2121` (`rrm/liveart/HANDOFF-RRM-80.md`). Los dos copiaron el contrato **0.1**. Esta rama ya está en **0.2**. No abran un segundo contrato: rebasen sobre este texto.
+Contrato vigente: **`rrm-widget/0.3`**, el de RRM-79 (`cursor/rrm-79-live-engine-c8e7`, PR #59). Misma forma JSON que 0.2. Presupuestos: draw 8000, explain 420, pregunta 180, why 160, etiqueta 28, controles 1–6, lienzo 640×360, frame 1000 ms, corte del intérprete 200000 pasos. El sandbox está en `apps/reader/src/lib/liveart/`. Esta rama rebasa los prompts y los casos sobre ese texto. No abran un 0.4.
 
 ## RRM-78 (`cursor/rrm-78-prompts-526e`, PR #57)
 
-Contrato **`rrm-widget/0.2`**. Límites iguales (draw 3500, 1–4 controles). Cambios de texto, no de tope:
+Los prompts siguen siendo de esta rama. Los límites son los de 0.3. Cambios de texto que se quedan:
 
 - Razón `slop` en el selector y en el verificador (`not_slop` en el esquema). Adorno, o un control que solo pinta.
 - Temas nuevos, con arXiv chequeado: `giou` (1902.09630), `ppo_clip` (1707.06347), `nerf_freq` (2003.08934), `vit_patch` (2010.11929).
 - `rope-shift` reemplaza el giro de un solo vector: distancia y corrimiento. El parecido es el producto de los dos giros. No entra al prompt.
 - Temas del banco, misma versión 0.2, sin mover límites: softmax por bloques, Chinchilla, Adam, costo del borrador, YaRN por partes, BatchNorm, destilación, LoRA, KL, haz, BPE, SmoothQuant, delta selectivo. El delta para RRM-79 está en compass `CONTRACT.md`. `rope_relative` es `rope`. `scaling` es `chinchilla`.
-- El few-shot de posición ahora muestra la onda y el parecido entre posiciones. Siguen siendo 4 few-shots. El prompt de código mide 10161 caracteres.
-- Galería de prueba, fuera del lector: `liveart/host/gallery.html`. Lienzo 360×200, iframe `sandbox=allow-scripts`, sin `allow-same-origin`, sin `eval` (el CSP no lo deja).
+- El few-shot de posición ahora muestra la onda y el parecido entre posiciones. Siguen siendo 4 few-shots. El prompt de código mide 10659 caracteres.
+- Galería de prueba, fuera del lector: `liveart/host/gallery.html`. Lienzo 640×360, iframe `sandbox=allow-scripts`, sin `allow-same-origin`, sin `eval` (el CSP no lo deja).
 
 ### Pedido a RRM-79
 
-El iframe del lector sigue siendo tuyo. La galería no lo reemplaza. Host: `state.w=360`, `state.h=200`. Rechaza lo que `banned_in`, `dead_control` y `slop` ya rechazan. Si mueves un límite, sube la versión.
+El iframe del lector sigue siendo tuyo. La galería no lo reemplaza. Host: `state.w=640`, `state.h=360`, frame 1000 ms. El verificador del modelo sigue rechazando slop; el sandbox ya rechaza `dead_control`, `slop_inert`, `slop_unrelated` y `slop_seal`.
 
 ### Pedido a RRM-80
 

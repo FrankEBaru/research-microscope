@@ -5,6 +5,7 @@ Estos pasan por el mismo verificador. RRM-80 puede reemplazar un draw; la forma 
 """
 
 from rrm.liveart.offline import _by_name
+from rrm.liveart.wave2 import SPECS
 
 
 def _claim(text, arxiv):
@@ -132,7 +133,7 @@ CATALOG = [
         "  ctx.arc(x, y, 4, 0, Math.PI * 2);\n"
         "  ctx.fill();\n"
         "  ctx.font = \"22px sans-serif\";\n"
-        "  ctx.fillText(dot.toFixed(2), w * 0.80, h * 0.46);\n"
+        "  ctx.fillText(\"\" + Math.round(dot * 100) / 100, w * 0.80, h * 0.46);\n"
         "  ctx.fillStyle = \"#5c564c\";\n"
         "  ctx.font = \"12px sans-serif\";\n"
         "  ctx.fillText(\"q·k\", w * 0.80, h * 0.26);\n",
@@ -192,7 +193,7 @@ CATALOG = [
         "  ctx.fillRect(w * 0.4, h - 16 - bh, 40, bh);\n",
     ),
     _row(
-        "noise-beta", "noise_schedule", "Beta abre la nube de ruido",
+        "noise-beta", "noise_schedule", "Beta abre la nube de noise",
         "The forward process follows a noise schedule and adds Gaussian noise with variance beta_t.",
         "2107.00630",
         [_knob("beta", "beta", 0.1, 3, 1, 0.1)],
@@ -208,7 +209,7 @@ CATALOG = [
         "  }\n",
     ),
     _row(
-        "guide-push", "guidance", "La escala empuja hacia el texto",
+        "guide-push", "guidance", "La guidance empuja hacia el texto",
         "Classifier-free guidance scales the conditional score minus the unconditional score.",
         "2205.01138",
         [_knob("scale", "guía", 0, 5, 1.5, 0.1)],
@@ -224,7 +225,7 @@ CATALOG = [
         "  ctx.fill();\n",
     ),
     _row(
-        "guide-width", "guidance", "Más guía, más peso del texto",
+        "guide-width", "guidance", "Más guidance, más peso del texto",
         "The guidance scale w pushes the sample away from the unconditional prediction.",
         "2205.01138",
         [_knob("scale", "guía", 0, 5, 1.5, 0.1)],
@@ -233,7 +234,7 @@ CATALOG = [
         "  ctx.fillRect(w * 0.5 - bw / 2, h * 0.3, bw, h * 0.35);\n",
     ),
     _row(
-        "detr-match", "detr_match", "El peso de la clase mueve el emparejamiento",
+        "detr-match", "detr_match", "El peso de la clase mueve el matching",
         "The Hungarian algorithm solves the bipartite matching between object queries and boxes.",
         "2005.12872",
         [_knob("class_w", "clase", 0, 1, 0.4, 0.05)],
@@ -246,7 +247,7 @@ CATALOG = [
         "  ctx.stroke();\n",
     ),
     _row(
-        "skip-mix", "residual", "El atajo mezcla entrada y salida",
+        "skip-mix", "residual", "El residual mezcla entrada y salida",
         "A residual connection adds the block input to its output, an identity mapping.",
         "1512.03385",
         [_knob("skip", "atajo", 0, 1, 0.7, 0.05)],
@@ -270,7 +271,7 @@ CATALOG = [
         "  }\n",
     ),
     _row(
-        "nucleus-line", "nucleus", "La raya corta la masa acumulada",
+        "nucleus-line", "nucleus", "Top-p corta la probability acumulada",
         "Top-p sampling truncates the tail once the cumulative probability passes p.",
         "1904.09751",
         [_knob("p", "p", 0.05, 1, 0.6, 0.05)],
@@ -343,7 +344,7 @@ CATALOG = [
         "  ctx.stroke();\n",
     ),
     _row(
-        "gqa-share", "gqa", "Menos grupos, más consultas por llave",
+        "gqa-share", "gqa", "Menos grupos, más query por llave",
         "Grouped-query attention shares one key head across several query heads (GQA).",
         "2307.09288",
         [_knob("kv", "grupos", 1, 8, 2, 1)],
@@ -402,7 +403,7 @@ CATALOG = [
         "  ctx.stroke();\n",
     ),
     _row(
-        "smooth-eps", "label_smoothing", "Epsilon aplana la etiqueta",
+        "smooth-eps", "label_smoothing", "Epsilon aplana la etiqueta smoothing",
         "Label smoothing spreads a probability eps off the true class.",
         "1512.00567",
         [_knob("eps", "epsilon", 0, 0.4, 0.1, 0.02)],
@@ -427,7 +428,7 @@ CATALOG = [
         "  }\n",
     ),
     _row(
-        "warm-steps", "warmup", "Alargar el calentamiento retrasa el paso",
+        "warm-steps", "warmup", "Alargar el warmup retrasa el paso",
         "The learning rate warmup raises the step size linearly for warmup steps, then holds.",
         "1706.03762",
         [_knob("steps", "pasos", 10, 250, 80, 5)],
@@ -484,17 +485,27 @@ CATALOG = [
         "  }\n",
     ),
     _row(
-        "pe-freqs", "positional_encoding", "La base cambia el ritmo por dimensión",
+        "pe-freqs", "positional_encoding", "La base frena las higher dimensions",
         "PE(pos, 2i) = sin(pos / 10000^{2i/d}) and a larger base slows the higher dimensions.",
         "1706.03762",
         [_knob("base", "base", 10, 100000, 10000, 10), _knob("dim", "par i", 0, 7, 4, 1)],
-        "  var i, freq, bw = (w - 16) / 8, bh;\n"
+        "  var i, freq, bw = (w - 16) / 8, bh, x, y, fdim;\n"
         "  for (i = 0; i < 8; i++) {\n"
         "    freq = 1 / Math.pow(state.base, (2 * i) / 64);\n"
         "    bh = freq * h * 0.55;\n"
         "    ctx.fillStyle = i === state.dim ? \"#c4512c\" : \"#1f4b99\";\n"
-        "    ctx.fillRect(8 + i * bw, h - 16 - bh, bw - 4, bh);\n"
-        "  }\n",
+        "    ctx.fillRect(8 + i * bw, h * 0.95 - bh, bw - 4, bh);\n"
+        "  }\n"
+        "  fdim = 1 / Math.pow(state.base, (2 * state.dim) / 64);\n"
+        "  ctx.strokeStyle = \"#c4512c\";\n"
+        "  ctx.lineWidth = 2;\n"
+        "  ctx.beginPath();\n"
+        "  for (i = 0; i <= 40; i++) {\n"
+        "    x = 8 + (i / 40) * (w - 16);\n"
+        "    y = h * 0.22 + Math.sin(i * fdim * 8) * (h * 0.12);\n"
+        "    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);\n"
+        "  }\n"
+        "  ctx.stroke();\n",
     ),
     _row(
         "temp-peak", "softmax_temperature", "Bajar la temperatura sube el pico",
@@ -768,9 +779,16 @@ CATALOG = [
         "  ctx.stroke();\n"
         "  ctx.fillStyle = \"#5c564c\";\n"
         "  ctx.font = \"13px sans-serif\";\n"
-        "  ctx.fillText(best.toFixed(2), 8, 16);\n",
+        "  ctx.fillText(\"\" + Math.round(best * 100) / 100, 8, 16);\n",
     ),
 ]
+
+
+def _spec_row(spec):
+    return _row(spec["id"], spec["name"], spec["title"], spec["claim"], spec["arxiv"], spec["controls"], spec["body"])
+
+
+CATALOG = CATALOG + [_spec_row(spec) for spec in SPECS]
 
 
 def __getattr__(name):

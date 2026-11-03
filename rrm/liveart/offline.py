@@ -9,6 +9,7 @@ import math
 import re
 
 from rrm.liveart.contract import LIMITS, RESERVED_IDS, banned_in, live_on, network_in
+from rrm.liveart.wave2 import extra_topics
 from rrm.liveart.fewshots import DRAWS
 from rrm.reader.promptguard import injection
 
@@ -313,8 +314,8 @@ def _ssm(blob):
     return _both(blob, re.compile(r"\bdelta\b", re.I), re.compile(r"hidden state|resets", re.I))
 
 
-# Orden = desempate. El más específico va primero.
-TOPICS = (
+# Orden = desempate. El más específico va primero. wave2 va delante: un nombre propio puntúa 3.
+TOPICS = extra_topics() + (
     {
         "name": "online_softmax",
         "score": _online_softmax,

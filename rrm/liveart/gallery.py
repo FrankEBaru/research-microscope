@@ -8,6 +8,9 @@ from rrm.liveart.offline import gold_widget
 
 FRONT = (
     "positional-encoding",
+    "ddim-eta",
+    "cutmix-area",
+    "double-descent",
     "rope-shift",
     "online-softmax",
     "chinchilla-valley",
@@ -28,7 +31,7 @@ _PAGE = """<!DOCTYPE html>
 <title>RRM widgets</title>
 <style>
   body { margin: 0; background: #ebe4d6; color: #1c1915; font: 17px/1.45 Palatino, Georgia, serif; }
-  header, main { max-width: 820px; margin: 0 auto; padding: 28px 24px; }
+  header, main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
   main { padding-top: 0; display: grid; gap: 16px; }
   h1 { font-weight: 500; font-size: 28px; margin: 0 0 8px; }
   header p { margin: 0; color: #5c564c; }
@@ -37,7 +40,7 @@ _PAGE = """<!DOCTYPE html>
   h2 { font-size: 22px; font-weight: 500; margin: 4px 0 8px; }
   .why { margin: 0 0 12px; color: #3d3832; }
   .row { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
-  iframe { width: 360px; height: 200px; border: 0; border-radius: 10px; background: #f6f3ec; }
+  iframe { width: 640px; height: 360px; border: 0; border-radius: 10px; background: #f6f3ec; }
   label { display: grid; gap: 4px; margin: 0 0 10px; font: 13px/1.3 ui-sans-serif, system-ui, sans-serif; color: #5c564c; }
   .err { min-height: 1.2em; color: #8c2f22; font: 13px/1.3 ui-sans-serif, system-ui, sans-serif; }
 </style>
@@ -52,13 +55,13 @@ _PAGE = """<!DOCTYPE html>
 <script>
 const widgets = JSON.parse(document.getElementById("data").textContent);
 function srcdoc(widget, t0) {
-  const state = {w: 360, h: 200};
+  const state = {w: 640, h: 360};
   for (const knob of widget.controls || []) state[knob.id] = knob.value;
   const safe = String(widget.draw).replace(/<\\/script/gi, "<" + "/script");
   return "<!DOCTYPE html><html><head><meta charset=\\"utf-8\\">" +
     "<meta http-equiv=\\"Content-Security-Policy\\" content=\\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'\\">" +
     "</head><body style=\\"margin:0;background:#f6f3ec;overflow:hidden\\">" +
-    "<canvas id=\\"c\\" width=\\"360\\" height=\\"200\\"></canvas><script>" +
+    "<canvas id=\\"c\\" width=\\"640\\" height=\\"360\\"></canvas><script>" +
     safe +
     "\\n;var ctx=document.getElementById('c').getContext('2d');" +
     "function paint(state,t){draw(ctx,state,t);}" +
@@ -92,14 +95,14 @@ function mount(widget) {
   let t = 1.2;
   let alive = false;
   function state() {
-    return Object.assign({w: 360, h: 200}, values);
+    return Object.assign({w: 640, h: 360}, values);
   }
   function push() {
     if (!frame.contentWindow) return;
     frame.contentWindow.postMessage({type: "rrm-params", state: state(), t: t}, "*");
   }
   frame.addEventListener("load", function () {
-    setTimeout(function () { if (!alive) err.textContent = "no arrancó"; }, 800);
+    setTimeout(function () { if (!alive) err.textContent = "no arrancó"; }, 1000);
   });
   window.addEventListener("message", function (ev) {
     if (ev.source !== frame.contentWindow) return;

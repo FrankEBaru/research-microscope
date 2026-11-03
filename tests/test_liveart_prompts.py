@@ -100,7 +100,8 @@ def test_contract_doc_matches_the_version():
 
     text = Path("rrm/liveart/CONTRACT.md").read_text(encoding="utf-8")
     assert VERSION in text
-    assert "3500" in text
+    assert "8000" in text
+    assert "640" in text
     assert "NEXT_PUBLIC_RRM_LIVE_ARTIFACTS" in text
 
 
@@ -119,7 +120,7 @@ def test_gold_draws_change_when_the_slider_or_time_changes():
 
     node = shutil.which("node")
     assert node, "node is required to execute the gold draws"
-    assert len(CATALOG) == 36
+    assert len(CATALOG) == 100
     payload = []
     for name, raw in DRAWS.items():
         left, right = _ends(raw["controls"])
