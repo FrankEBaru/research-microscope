@@ -27,6 +27,8 @@ import Popover, { PopState } from "./paper/Popover";
 import { Table } from "./paper/TableFig";
 import { CropStrip, FigImg, ZoneFig } from "./paper/Figures";
 import Margin, { MarginNote } from "./paper/Margin";
+import Rights from "./paper/Rights";
+import { arxivPdf, isGated } from "@/lib/rights.js";
 import { Boundary, Notice } from "./faults";
 import { Cap, Icon, Prov, Segmented } from "./ui";
 import type { AtlasCtx } from "./screens/types";
@@ -505,14 +507,19 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const abstractId = (paper.blocks || []).find((b) => b.kind === "p" && b.abs)?.id || "";
   const nameOf = (id: string, section?: string) => citeName((map?.papers || []).find((item) => paperKey(item) === String(id)), section);
   const focusId = paper.corpusid != null ? String(paper.corpusid) : "";
-  const undrawn = core && (remote?.status === "abstract_only" || remote?.status === "failed");
+  const rights = (paper as any).rights || null;
+  const gated = isGated(paper, remote);
+  const undrawn = core && (gated || remote?.status === "abstract_only" || remote?.status === "failed");
   const arxivId = paper.arxivId || remote?.arxiv || "";
   const oaPdf = remote?.oa_pdf || paper.oaPdf || "";
-  const pdfHref = remote?.pdf && paper.corpusid != null
-    ? sourcePdfUrl(paper.corpusid)
-    : arxivId
-      ? `https://arxiv.org/pdf/${arxivId}`
-      : (typeof oaPdf === "string" && oaPdf.startsWith("http") ? oaPdf : "");
+  const pdfHref = gated
+    ? arxivPdf(rights)
+    : remote?.pdf && paper.corpusid != null
+      ? sourcePdfUrl(paper.corpusid)
+      : arxivId
+        ? `https://arxiv.org/pdf/${arxivId}`
+        : (typeof oaPdf === "string" && oaPdf.startsWith("http") ? oaPdf : "");
+  const absHref = rights?.arxiv ? `https://arxiv.org/abs/${rights.arxiv}${rights.version || ""}` : (arxivId ? `https://arxiv.org/abs/${arxivId}` : "");
   const honest = arxivId
     ? `https://arxiv.org/abs/${arxivId}`
     : paper.corpusid != null
@@ -710,7 +717,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     <div className="folio" data-mode={reading ? "read" : "scan"}>
       {showNav && (
         <nav className="toc" aria-label="Contents">
-          {model.toc.length > 0 && (
+          {model.toc.length > 0 && !gated && (
             <>
               <Cap>Contents</Cap>
               <ol>
@@ -749,7 +756,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
                   {metaBits.map((bit) => <span key={bit.key} className={bit.tnum ? "tnum" : undefined}>{bit.text}</span>)}
                 </div>
               )}
-              {core && paper.full && (
+              {core && paper.full && !gated && (
                 <Segmented
                   label="Mode"
                   value={reading ? "read" : "scan"}
@@ -766,6 +773,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             </div>
             <h1>{polishText(paper.title)}</h1>
             {authors && <p className="ah-auth">{authors}</p>}
+            {rights ? <Rights rights={rights} /> : null}
             <p className="ah-links">
               {paper.arxivId && <a href={`https://arxiv.org/abs/${paper.arxivId}`} target="_blank" rel="noreferrer">arXiv</a>}
               {pdfHref && <a href={pdfHref} target="_blank" rel="noreferrer">PDF</a>}
@@ -793,16 +801,28 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             {showCrops && remote && paper.corpusid != null && /^\d+$/.test(String(paper.corpusid)) && <CropStrip id={String(paper.corpusid)} />}
           </header>
         </Boundary>
-        {undrawn && <Notice kind="absence">{`Missing: ${faltaText(remote?.reason)}`}</Notice>}
-        {undrawn && pdfHref && <iframe className="source-pdf" title="Paper PDF" src={pdfHref} />}
-        {undrawn && !pdfHref && honest && <p className="ah-links"><a href={honest} target="_blank" rel="noreferrer">No PDF in the reader, on arXiv, or as an open-access PDF. The record is here.</a></p>}
+        {undrawn && gated && (
+          <Notice kind="absence">
+            Full text on arXiv
+            {absHref ? <> · <a href={absHref} target="_blank" rel="noreferrer">{rights?.arxiv ? `arXiv:${rights.arxiv}${rights.version || ""}` : "arXiv"}</a></> : null}
+          </Notice>
+        )}
+        {undrawn && !gated && <Notice kind="absence">{`Missing: ${faltaText(remote?.reason)}`}</Notice>}
+        {undrawn && !gated && pdfHref && <iframe className="source-pdf" title="Paper PDF" src={pdfHref} />}
+        {undrawn && !gated && !pdfHref && honest && <p className="ah-links"><a href={honest} target="_blank" rel="noreferrer">No PDF in the reader, on arXiv, or as an open-access PDF. The record is here.</a></p>}
         {undrawn && core && askBox("slot", abstractId, "Abstract")}
         {!undrawn && pdfPagesOnly(paper.blocks) && <Notice kind="absence">This e-print has no text: the pages are inserted from a PDF.</Notice>}
         {!undrawn && !abstractId && core && !reading && askBox("slot", "", sectionLabel)}
         {!undrawn && rows}
-        <footer className="paper-foot">
-          <p>Text, equations, figures, and tables are the arXiv e-print{paper.arxivId ? ` ${paper.arxivId}` : ""}, converted from LaTeX without summarizing or paraphrasing. Anything that is not from the paper carries a provenance mark.</p>
-        </footer>
+        {!gated && (
+          <footer className="paper-foot">
+            {rights ? (
+              <p>Text, equations, figures, and tables are from arXiv:{rights.arxiv ? `${rights.arxiv}${rights.version || ""}` : (paper.arxivId || "the e-print")} by the authors, under {rights.label || "their license"}, converted from LaTeX. Marks show what is not from the paper.</p>
+            ) : (
+              <p>Text, equations, figures, and tables are the arXiv e-print{paper.arxivId ? ` ${paper.arxivId}` : ""}, converted from LaTeX without summarizing or paraphrasing. Anything that is not from the paper carries a provenance mark.</p>
+            )}
+          </footer>
+        )}
         {pop && <Boundary name="popover" resetKeys={[pop.key]}><Popover pop={pop} paper={paper} model={model} content={content} core={core} pack={pack} onOpen={onOpenPaper} /></Boundary>}
       </article>
       {wide && <Margin notes={side} layoutKey={layoutKey} />}

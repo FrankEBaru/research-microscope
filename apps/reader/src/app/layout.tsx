@@ -10,7 +10,12 @@ export const metadata = { title: "Reading Microscope", description: "A paper rea
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <footer className="site-foot">
+          Thank you to arXiv for use of its open access interoperability. This product was not reviewed or approved by, nor does it necessarily express or reflect the policies or opinions of, arXiv. · <a href="/licenses">Licenses & use</a>
+        </footer>
+      </body>
     </html>
   );
 }

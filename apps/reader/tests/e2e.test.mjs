@@ -211,13 +211,13 @@ test("Panorama: frases literales, convergencia contada, matriz y apertura del pa
   const p = await page("#/"); await p.waitForSelector(".view-toggle");
   await p.click('.view-toggle button:has-text("Panorama")'); await p.waitForSelector(".pano-claim");
   assert.equal(await p.$$eval(".pano-claim", (n) => n.length), 3, "3 enunciados en la pregunta de atención");
-  assert.match(await p.$eval(".pano-lead", (e) => e.textContent), /No es un veredicto/);
+  assert.match(await p.$eval(".pano-lead", (e) => e.textContent), /not a verdict/);
   const conv = await p.$$eval(".conv span", (n) => n.map((e) => e.textContent));
-  assert.ok(conv.some((t) => /3 de 6/.test(t)) && conv.some((t) => /4 de 6/.test(t)) && conv.some((t) => /2 de 6/.test(t)), "k de n contados: " + conv.join(" | "));
+  assert.ok(conv.some((t) => /3 of 6/.test(t)) && conv.some((t) => /4 of 6/.test(t)) && conv.some((t) => /2 of 6/.test(t)), "k of n counted: " + conv.join(" | "));
   assert.match(conv[0], /Wilson 95%/);
   assert.equal(await p.$$eval(".matrix tbody tr", (n) => n.length), 6); assert.equal(await p.$$eval(".matrix .dot.yes", (n) => n.length), 9, "9 frases en la matriz (3+2+4)");
-  assert.match(await p.$eval(".pano-claim .muted", (e) => e.textContent), /No es lo mismo que «no lo dice»/);
-  assert.match(await p.$eval(".pano > .small", (e) => e.textContent), /simulado|simula/);
+  assert.match(await p.$eval(".pano-claim .muted", (e) => e.textContent), /not the same as/);
+  assert.match(await p.$eval(".pano > .small", (e) => e.textContent), /simulated|simulates/);
   await p.click(".pano-claim .evi .link >> nth=0"); await p.waitForSelector(".paper"); assert.deepEqual(p.errs, []); await p.close();
 });
 
@@ -231,13 +231,13 @@ test("Panorama simulado: cualquier pregunta, llegada progresiva, predicción opc
   await p.waitForSelector(".predict", { timeout: 8000 });                                   // al terminar, pide predecir antes de ver
   assert.equal(await p.$$eval(".pano-claim .evi", (n) => n.length), 0, "con la predicción pendiente no se ve el resultado");
   assert.equal(await p.$eval(".sim-progress .coverage-bar div", (e) => e.style.width), "100%", "la barra termina llena");
-  assert.match(await p.$eval(".predict-banner", (e) => e.textContent), /Antes de ver, predice/);
+  assert.match(await p.$eval(".predict-banner", (e) => e.textContent), /Before you look, predict/);
   await p.click(".predict .pills button >> nth=2"); await p.waitForSelector(".pano-claim .conv");
-  assert.match(await p.$eval(".pano-claim .conv span", (e) => e.textContent), /tu predicción: 2/);
+  assert.match(await p.$eval(".pano-claim .conv span", (e) => e.textContent), /your prediction: 2/);
   await p.click(".predict-banner .link"); await p.waitForFunction(() => !document.querySelector(".predict"));   // «ver todo sin predecir»
   assert.ok((await p.$$eval(".pano-claim .evi li blockquote", (n) => n.length)) >= 2, "hay frases literales");
   const rej = Number(await p.$eval(".gate", (e) => e.dataset.rejected)); assert.equal(rej, 3, "las 3 fallas simuladas las rechaza la compuerta");
-  assert.match(await p.$eval(".gate", (e) => e.textContent), /Compuerta/);
+  assert.match(await p.$eval(".gate", (e) => e.textContent), /Gate/);
   assert.ok((await p.$$eval(".matrix .dot.yes", (n) => n.length)) >= 2);
   await p.click(".pano-claim .evi .link >> nth=0"); await p.waitForSelector(".paper"); assert.deepEqual(p.errs, []); await p.close();
 });
@@ -305,7 +305,7 @@ test("Panorama simulado: sin fallas simuladas la compuerta no rechaza nada; con 
   assert.equal(await p.$(".sim-progress"), null, "una pregunta vacía no arma nada");
   await p.fill('input[aria-label="Question for Panorama"]', "self-attention recurrence"); await p.uncheck('.sim-opts input >> nth=1');
   await p.click('button:has-text("Build Panorama")'); await p.waitForSelector(".gate", { timeout: 8000 });
-  assert.equal(await p.$eval(".gate", (e) => e.dataset.rejected), "0"); assert.match(await p.$eval(".gate", (e) => e.textContent), /todas las selecciones existen literalmente/);
+  assert.equal(await p.$eval(".gate", (e) => e.dataset.rejected), "0"); assert.match(await p.$eval(".gate", (e) => e.textContent), /every selection exists verbatim/);
   await p.check('.sim-opts input >> nth=1'); await p.click('button:has-text("Build again")'); await p.waitForFunction(() => document.querySelector(".gate")?.dataset.rejected === "3", null, { timeout: 8000 });
   await p.click(".gate summary"); assert.equal(await p.$$eval(".gate li", (n) => n.length), 3);
   assert.deepEqual(p.errs, []); await p.close();
@@ -315,7 +315,7 @@ test("Panorama simulado: «ver sin predecir» muestra el resultado sin marca de 
   const p = await simPage("#/");
   await p.fill('input[aria-label="Question for Panorama"]', "language models"); await p.click('button:has-text("Build Panorama")');
   await p.waitForSelector(".predict", { timeout: 8000 }); await p.click(".predict button.link >> nth=0"); await p.waitForSelector(".pano-claim .conv");
-  assert.doesNotMatch(await p.$eval(".pano-claim .conv span", (e) => e.textContent), /tu predicción/);
+  assert.doesNotMatch(await p.$eval(".pano-claim .conv span", (e) => e.textContent), /your prediction/);
   assert.equal(await p.$(".conv-track .guess"), null); await p.close();
 });
 

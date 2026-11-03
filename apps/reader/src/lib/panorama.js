@@ -25,7 +25,7 @@ export function buildPanorama(claims, docs, states) {
   const out = claims.map((c) => {
     const eligible = [], skipped = [];
     for (const s of c.selections || []) (readable(s.paper) ? eligible : skipped).push(s);
-    for (const s of skipped) rejected.push({ ...s, claim: c.id, reason: "paper no leído (fallido, pendiente o sin texto)" });
+    for (const s of skipped) rejected.push({ ...s, claim: c.id, reason: "paper not read (failed, pending, or no text)" });
     const v = validateSelections(docs, eligible);
     for (const r of v.rejected) rejected.push({ ...r, claim: c.id });
     return { id: c.id, statement: c.statement, evidence: v.ok.map((o) => ({ paper: o.paper, quote: o.quote, anchor: { blockId: o.blockId } })) };

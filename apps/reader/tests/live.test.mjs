@@ -49,8 +49,8 @@ async function live({ statuses, burstStatus = 200, ids = [1, 2, 3, 4], burstBody
 test("en vivo: mezcla de estados; fallido con ×, abstract rotulado, predicción y apertura del paper", async () => {
   const p = await live({ statuses: [[[1, "done"], [2, "done"], [3, "abstract_only"], [4, "failed", "sin pdf"]]] });
   await p.waitForSelector(".sim .predict", { timeout: 10000 });
-  assert.match(await p.$eval(".live-cov", (e) => e.textContent), /3 de 4 papers leídos/);
-  assert.match(await p.$eval(".sim-progress", (e) => e.textContent), /3 de 4 papers leídos · 1 sin leer/);
+  assert.match(await p.$eval(".live-cov", (e) => e.textContent), /3 of 4 papers read/);
+  assert.match(await p.$eval(".sim-progress", (e) => e.textContent), /3 of 4 papers read · 1 unread/);
   await p.click(".predict .pills button >> nth=1"); await p.waitForSelector(".pano-claim .conv");
   const rows = await p.$$eval(".matrix tbody tr", (n) => n.map((r) => r.innerText.replace(/\s+/g, " ")));
   assert.match(rows[2], /abstract/); assert.match(rows[3], /×/);
@@ -61,13 +61,13 @@ test("en vivo: llegada progresiva; el Panorama espera a que todos terminen y los
   const p = await live({ statuses: [[[1, "queued"], [2, "queued"], [3, "queued"], [4, "queued"]], [[1, "done"], [2, "queued"], [3, "queued"], [4, "queued"]], [[1, "done"], [2, "done"], [3, "done"], [4, "done"]]] });
   await p.waitForSelector(".live-cov"); assert.equal(await p.$(".sim"), null, "mientras haya papers en cola no se arma el Panorama");
   await p.waitForSelector(".sim", { timeout: 12000 }); await p.waitForSelector(".sim .predict", { timeout: 10000 });
-  assert.match(await p.$eval(".sim-progress", (e) => e.textContent), /4 de 4 papers leídos/); assert.deepEqual(p.errs, []); await p.close();
+  assert.match(await p.$eval(".sim-progress", (e) => e.textContent), /4 of 4 papers read/); assert.deepEqual(p.errs, []); await p.close();
 });
 
 test("en vivo: si ningún paper se pudo leer, lo dice y no inventa conteos", async () => {
   const p = await live({ statuses: [[[1, "failed", "x"], [2, "failed", "x"], [3, "failed", "x"], [4, "failed", "x"]]] });
   await p.waitForSelector(".sim [role=alert]", { timeout: 10000 });
-  assert.match(await p.$eval(".sim [role=alert]", (e) => e.textContent), /No se pudo leer ningún paper/);
+  assert.match(await p.$eval(".sim [role=alert]", (e) => e.textContent), /No paper in this burst could be read/);
   assert.equal(await p.$(".predict"), null, "no pide predecir sobre 0 papers"); assert.deepEqual(p.errs, []); await p.close();
 });
 

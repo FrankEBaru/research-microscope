@@ -24,6 +24,7 @@ export function yearOffset(id) {
 }
 
 export function fullText(paper, state) {
+  if (state?.gated) return false;
   if (paper?.full || state?.text) return true;
   if (state?.status === "done") return true;
   if (state?.source === "latex" || state?.source === "ocr") return true;

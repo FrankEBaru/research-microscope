@@ -105,9 +105,22 @@ function describe(dir) {
   const rows = Array.isArray(index) ? index : index?.rows || [];
   const ask = rows.find((r) => r.stage === "revisar") || rows[0] || null;
   const done = Object.keys(papers).filter((id) => papers[id] === "done");
-  const full = (ask && papers[String(ask.focus)] === "done" ? String(ask.focus) : done[0]) || "";
+  const licenses = readJson(path.join(dir, "licenses.json"));
+  const hasMap = licenses && typeof licenses === "object";
+  const openOf = (id) => {
+    if (!hasMap) return true;
+    const hit = Object.entries(licenses).find(([key, val]) => !key.startsWith("_") && val && String(val.corpusid) === String(id));
+    if (!hit) return false;
+    const raw = String(hit[1].license || "").toLowerCase();
+    if (!raw || raw.includes("nonexclusive-distrib") || raw.includes("by-nc") || raw.includes("by-nd")) return false;
+    return raw.includes("publicdomain/zero") || raw.includes("licenses/publicdomain/") || raw.includes("cc0")
+      || raw.includes("creativecommons.org/licenses/by-sa/") || raw.includes("creativecommons.org/licenses/by/");
+  };
+  const focus = ask && papers[String(ask.focus)] === "done" ? String(ask.focus) : "";
+  const full = (hasMap ? ((focus && openOf(focus) ? focus : done.find((id) => openOf(id))) || "") : (focus || done[0] || ""));
+  const gated = hasMap ? (done.find((id) => !openOf(id)) || "") : "";
   const abstract = Object.keys(papers).find((id) => papers[id] === "abstract_only") || "";
-  return { question: String(row.q || ""), full, abstract, askText: ask ? String(ask.text || "") : "" };
+  return { question: String(row.q || ""), full, abstract, gated, askText: ask ? String(ask.text || "") : "" };
 }
 
 const sel = (...list) => list.join(", ");
