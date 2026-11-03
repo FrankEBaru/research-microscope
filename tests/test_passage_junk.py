@@ -11,6 +11,8 @@ import pytest
 
 from rrm.reader.passage_junk import filter_passage_rows, is_junk_passage, junk_filter_enabled
 from rrm.reader.passage_db import search_embedding
+from rrm.reader.passage_lookup import query_vector_from
+from rrm.search.encode import QueryEncoder
 
 _DPO = (
     "Direct preference optimization trains a policy from pairwise preferences "
@@ -45,6 +47,11 @@ _KEEP = [
     ),
     r"The update is $W_0 + BA$, where the rank of the factors is much smaller than the width.",
     "Direct Preference Optimization: Your Language Model is Secretly a Reward Model",
+    # SimCLR, MAE, and a ReAct prompt: the body is prose, the wrapper is not the passage.
+    r"\footnotetext{SimCLR pulls two augmented views of the same image together and pushes views of different images apart.}",
+    r"\blfootnote{Masked autoencoders reconstruct pixels from a small visible subset of image patches. The encoder sees only those tokens.}",
+    r"\thanks{This footnote states the training setup and the data the model never sees during pretraining.}",
+    r"\newcommand{\react}{Claim: the agent interleaves reasoning and actions before it searches. Thought: look up the tool.}",
 ]
 
 _JUNK = [
@@ -63,6 +70,20 @@ _JUNK = [
     r"\title{Attention Is All You Need}",
     r"\author{Ashish Vaswani \and Noam Shazeer} \maketitle",
     r"\begin{keywords} direct preference optimization, language models \end{keywords}",
+    r"\onecolumn",
+    r"\twocolumn[\icmltitle{Direct Preference Optimization: Your Language Model is Secretly a Reward Model}]",
+    r"\vskip 0.3in ]",
+    r"\printAffiliationsAndNotice{}",
+    r"\icmlcorrespondingauthor{A}{a@meta.com}",
+    r"\titlerunning{Rotary Position Embedding for Transformers}",
+    r"\authorrunning{Su et al.}",
+    r"\affil{NAVER AI Lab}",
+    r"\begin{frontmatter}\title{Foo}\author{Bar}\end{frontmatter}",
+    r"\markboth{Left running head}{Right running head}",
+    r"\runtitle{Short title}",
+    r"\authornote{Equal contribution.}",
+    r"\institute{NAVER AI Lab}",
+    r"\footnotetext{Meta}",
 ]
 
 
@@ -90,6 +111,40 @@ def test_equations_and_definitions_stay():
     )
     assert is_junk_passage(r"\icmlkeywords{LoRA, adapters}", "", kind="def")
     assert not is_junk_passage(_DPO, "", kind="p")
+
+
+def test_lookup_uses_main_encode_when_proximity_is_missing():
+    class MainEncoder:
+        def encode(self, texts):
+            self.seen = list(texts)
+            return np.ones((len(texts), 3), dtype=np.float32)
+
+    encoder = MainEncoder()
+    vec = query_vector_from(encoder, "direct preference optimization")
+    assert encoder.seen == ["direct preference optimization\n"]
+    assert vec.shape == (3,)
+    assert not hasattr(encoder, "encode_proximity")
+
+
+def test_encode_proximity_uses_the_proximity_adapter():
+    class Stub(QueryEncoder):
+        def load(self):
+            self.loaded = True
+
+        def _forward(self, texts, adapter):
+            self.adapter = adapter
+            self.texts = list(texts)
+            return np.zeros((len(texts), 768), dtype=np.float32)
+
+    encoder = Stub()
+    out = encoder.encode_proximity(["direct preference optimization\n"])
+    assert encoder.loaded is True
+    assert encoder.adapter == "proximity"
+    assert encoder.texts == ["direct preference optimization\n"]
+    assert out.shape == (1, 768)
+    vec = query_vector_from(encoder, "direct preference optimization")
+    assert encoder.adapter == "proximity"
+    assert vec.shape == (768,)
 
 
 def test_flag_defaults_on_and_can_turn_off(monkeypatch):

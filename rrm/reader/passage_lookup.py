@@ -166,18 +166,40 @@ def _keep(item, row):
     return item
 
 
+def query_vector_from(encoder, text):
+    """Vector en el espacio del índice de pasajes, con el encoder de main.
+
+    El índice se embebió con el adaptador proximity. Si el encoder trae
+    `encode_proximity`, se usa. Si no (el `QueryEncoder` de main, antes de
+    este método), `encode` elige proximity cuando el texto tiene un salto
+    de línea. Nunca llama a un método que el objeto no tiene.
+    """
+    import numpy as np
+
+    raw = str(text or "").strip()
+    if not raw or encoder is None:
+        return None
+    sent = raw if "\n" in raw else raw + "\n"
+    if hasattr(encoder, "encode_proximity"):
+        vecs = encoder.encode_proximity([sent])
+    else:
+        vecs = encoder.encode([sent])
+    arr = np.asarray(vecs, dtype=np.float32)
+    if arr.ndim >= 2:
+        if arr.shape[0] == 0:
+            return None
+        return np.ascontiguousarray(arr[0])
+    if arr.size == 0:
+        return None
+    return np.ascontiguousarray(arr)
+
+
 def _query_vector(text):
     """Vector proximity del hueco. El newline usa el mismo adaptador que el índice e3."""
     try:
-        from rrm.reader.similar import specter_encode
+        from rrm.reader.similar import load_specter
 
-        raw = str(text or "").strip()
-        if not raw:
-            return None
-        if "\n" not in raw:
-            raw = raw + "\n"
-        vec = specter_encode([raw])
-        return vec[0]
+        return query_vector_from(load_specter(), text)
     except Exception:
         return None
 

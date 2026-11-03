@@ -49,15 +49,20 @@ def local_encode(texts):
 _encoder_lock = threading.Lock()
 
 
-def specter_encode(texts):
-    """Un solo hilo carga el modelo. Dos imports a la vez rompen el primero."""
+def load_specter():
+    """El QueryEncoder de main. Lo comparten las frases y los pasajes."""
     global _encoder
     with _encoder_lock:
         if _encoder is None:
             from rrm.search.encode import QueryEncoder
 
             _encoder = QueryEncoder()
-        return np.asarray(_encoder.encode(list(texts)), dtype=np.float32)
+        return _encoder
+
+
+def specter_encode(texts):
+    """Un solo hilo carga el modelo. Dos imports a la vez rompen el primero."""
+    return np.asarray(load_specter().encode(list(texts)), dtype=np.float32)
 
 
 def encode_texts(texts):
