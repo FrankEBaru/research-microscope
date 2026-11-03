@@ -262,19 +262,29 @@ EXTRA = [
         "batch_scale", "batch-lr", "El paso crece con el batch",
         "The linear scaling rule multiplies the learning rate by the batch size over a reference batch.",
         "1706.02677", r"linear scaling rule", "batch",
-        "La linear scaling rule multiplica el paso por el batch relativo. Batch más grande, paso más largo.",
+        "La linear scaling rule alarga el paso igual que crece el batch contra el de referencia. Más cuadros, barra azul más larga. La marca fija es ese batch de referencia.",
         (
-            ("¿Un batch más grande usa el mismo paso?", "el paso crece en proporción"),
+            ("¿Un batch más grande usa el mismo paso?", "el paso crece en la misma proporción"),
             ("¿Qué barra sigue al batch?", "el learning rate"),
-            ("¿Se está escalando el modelo o el paso?", "el paso"),
+            ("¿La marca negra se mueve con el batch?", "no, es el batch de referencia"),
         ),
         (("batch", "batch", 32, 1024, 256, 32),),
         """  var batch = state.batch;
-  var lr = batch / 1024;
-  ctx.fillStyle = "#1f4b99";
-  ctx.fillRect(40, h * 0.8 - lr * h * 0.6, 80, lr * h * 0.6);
+  var n = Math.round(batch / 64);
+  var i, col, row, stepLen;
+  if (n < 1) n = 1;
+  if (n > 16) n = 16;
   ctx.fillStyle = "#c4512c";
-  ctx.fillRect(160, h * 0.8 - (batch / 1024) * h * 0.5, 80, (batch / 1024) * h * 0.5);
+  for (i = 0; i < n; i++) {
+    col = i % 8;
+    row = Math.floor(i / 8);
+    ctx.fillRect(28 + col * 22, h * 0.22 + row * 22, 16, 16);
+  }
+  stepLen = (batch / 256) * 120;
+  ctx.fillStyle = "#1f4b99";
+  ctx.fillRect(28, h * 0.78, stepLen, 18);
+  ctx.fillStyle = "#1c1915";
+  ctx.fillRect(28 + 120 - 2, h * 0.74, 3, 28);
 """,
     ),
     _spec(
