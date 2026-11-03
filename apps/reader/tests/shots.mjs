@@ -424,6 +424,8 @@ async function main() {
   console.log(`ruta: ${OUT}`);
   if (report.pageerrors.length) { console.error("pageerror:", report.pageerrors.map((e) => e.message).join(" | ")); return 1; }
   if (missing.length) { console.error(`faltan capturas obligatorias: ${missing.join(", ")}`); return 1; }
+  const a11y = report.omitidos.filter((name) => name.includes("71-a11y"));
+  if (a11y.length) { console.error(`71-a11y falló: ${a11y.join(", ")}`); return 1; }
   return 0;
 }
 

@@ -572,8 +572,8 @@ export default function Engine() {
   };
   const onLayout = (next: any) => { setLiveResult((prev) => (prev ? { ...prev, layout: next } : prev)); if (!next?.pending_vectors?.length) setPhase((cur) => (cur === "layout" ? "" : cur)); };
   const back = !core ? <button type="button" className="link" onClick={backToCurated}>Back to the curated burst</button> : null;
-  const backBtn = core && liveId && camino.length > 1
-    ? <button type="button" className="top-back press" aria-label="Back" onClick={volver}>←</button>
+  const backBtn = core && liveId
+    ? <button type="button" className="top-back press" aria-label="Back" onClick={() => (camino.length > 1 ? volver() : go({}))}>←</button>
     : null;
   const jump = (() => {
     const top = camino[camino.length - 1];

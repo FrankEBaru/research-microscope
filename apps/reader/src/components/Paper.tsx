@@ -253,11 +253,15 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   }, [paperId, core]);
 
   useLayoutEffect(() => {
-    const mq = window.matchMedia("(min-width: 1200px)");
+    const mq = window.matchMedia("(min-width: 1280px)");
     const apply = () => setWide(mq.matches);
     apply();
     mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
+    window.addEventListener("resize", apply);
+    return () => {
+      mq.removeEventListener("change", apply);
+      window.removeEventListener("resize", apply);
+    };
   }, []);
 
   const local = useMemo(() => collectV2(paper.blocks || []), [paper]);

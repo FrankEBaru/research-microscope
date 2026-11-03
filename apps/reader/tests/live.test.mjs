@@ -74,7 +74,7 @@ test("en vivo: si ningún paper se pudo leer, lo dice y no inventa conteos", asy
 test("en vivo: si la ráfaga falla muestra el error y se puede volver", async () => {
   const p = await live({ statuses: [[]], burstStatus: 500 });
   await p.waitForSelector(".fail-reason", { timeout: 8000 }); assert.equal(await p.$(".sim"), null);
-  await p.click("text=volver a la ráfaga curada"); await p.waitForSelector(".platina"); await p.close();
+  await p.click("text=Back to the curated burst"); await p.waitForSelector(".platina"); await p.close();
 });
 
 const DONE4 = [[1, "done"], [2, "done"], [3, "abstract_only"], [4, "failed", "sin pdf ni e-print"]];

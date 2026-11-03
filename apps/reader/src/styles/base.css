@@ -5,7 +5,7 @@ body { background: var(--page); color: var(--ink); font: 400 15px/1.5 var(--font
 button, input, textarea, select { font: inherit; color: inherit; }
 .num, .tnum { font-variant-numeric: tabular-nums lining-nums; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
   outline: none; box-shadow: 0 0 0 2px var(--focus-gap), 0 0 0 4px var(--focus) !important;
 }
 

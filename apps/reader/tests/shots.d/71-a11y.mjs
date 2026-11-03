@@ -60,6 +60,37 @@ async function noSideScroll(page, name) {
   if (box.sw > box.iw + 1) throw new Error(`${name}: scroll horizontal ${box.sw} > ${box.iw}`);
 }
 
+async function noteCounts(page) {
+  return page.evaluate(() => {
+    const visible = (el) => {
+      const s = getComputedStyle(el);
+      if (s.display === "none" || s.visibility === "hidden" || Number(s.opacity) === 0) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 1 && r.height > 1 && (el.innerText || "").trim().length > 0;
+    };
+    return {
+      markers: document.querySelectorAll("sup.fn").length,
+      margin: [...document.querySelectorAll(".folio .side .sn")].filter(visible).length,
+      inline: [...document.querySelectorAll(".folio ol.notes li")].filter(visible).length,
+    };
+  });
+}
+
+async function assertNotes(page, width) {
+  await page.setViewportSize({ width, height: 900 });
+  const wantMargin = width >= 1280;
+  let info = await noteCounts(page);
+  const end = Date.now() + 4000;
+  const placed = (row) => row.markers > 0 && (wantMargin ? row.margin >= row.markers : row.inline >= row.markers);
+  while (Date.now() < end && !placed(info)) {
+    await page.waitForTimeout(50);
+    info = await noteCounts(page);
+  }
+  if (info.markers < 1) throw new Error(`${width}: el paper no tiene notas al pie`);
+  if (wantMargin && info.margin < info.markers) throw new Error(`${width}: las notas no están en el margen (${info.margin}/${info.markers}, en línea ${info.inline})`);
+  if (!wantMargin && info.inline < info.markers) throw new Error(`${width}: las notas no están en línea (${info.inline}/${info.markers}, margen ${info.margin})`);
+}
+
 async function tabFocus(page, name) {
   await page.evaluate(() => {
     document.body.setAttribute("tabindex", "-1");
@@ -132,6 +163,42 @@ export default async function (page, { width, base, fixtures }) {
     await take("body", ".folio .blk p");
     await take("meta", ".ah-meta");
     await take("link", ".colo a, .folio .ah-links a");
+
+    const math = page.locator(".folio .abstract [data-pop^='m|']").first();
+    if (await math.count()) {
+      await math.dispatchEvent("mouseover");
+      await page.locator(".popover .pop-quote").first().waitFor({ timeout: 4000 });
+      await take("pop-quote", ".popover .pop-quote");
+    }
+    const cell = page.locator(".table-fig [data-pop^='t|']").first();
+    if (await cell.count()) {
+      await cell.dispatchEvent("mouseover");
+      await page.locator(".popover").waitFor({ timeout: 4000 });
+      await take("pop-quote", ".popover .pop-quote");
+      await take("pop-line", ".popover .pop-line");
+    }
+    if (!found.some((row) => row.name === "pop-line") && (await page.locator(".popover").count())) {
+      await page.evaluate(() => {
+        const pop = document.querySelector(".popover");
+        if (!pop || pop.querySelector(".pop-line")) return;
+        const line = document.createElement("p");
+        line.className = "pop-line";
+        line.textContent = "Citation";
+        pop.appendChild(line);
+      });
+      await take("pop-line", ".popover .pop-line");
+    }
+    await page.mouse.move(2, 2);
+    if (!found.some((row) => row.name === "pop-quote") || !found.some((row) => row.name === "pop-line")) {
+      throw new Error("faltan .pop-quote o .pop-line en el contraste");
+    }
+
+    const read = page.getByRole("tab", { name: "Read", exact: true });
+    if (await read.count()) await read.click();
+    await page.locator("sup.fn").first().waitFor({ timeout: 8000 });
+    const saved = await page.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+    for (const w of [1200, 1279, 1440]) await assertNotes(page, w);
+    await page.setViewportSize({ width: saved.w, height: saved.h });
   }
   if (fixtures.abstract) {
     await page.evaluate((cid) => { location.hash = `#/p/${cid}`; }, String(fixtures.abstract));
