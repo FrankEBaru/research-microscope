@@ -42,7 +42,7 @@ async function live({ statuses, burstStatus = 200, ids = [1, 2, 3, 4], burstBody
     r.fulfill({ status: 404, headers: H });
   });
   await p.goto(base + "?debug=1" + hash); if (!search) return p;
-  await p.fill('input[aria-label="Pregunta"]', "attention scaling laws"); await p.click('button:has-text("Buscar")');
+  await p.fill('input[aria-label="Question"]', "attention scaling laws"); await p.click('button:has-text("Search")');
   return p;
 }
 
@@ -74,7 +74,7 @@ test("en vivo: si ningún paper se pudo leer, lo dice y no inventa conteos", asy
 test("en vivo: si la ráfaga falla muestra el error y se puede volver", async () => {
   const p = await live({ statuses: [[]], burstStatus: 500 });
   await p.waitForSelector(".fail-reason", { timeout: 8000 }); assert.equal(await p.$(".sim"), null);
-  await p.click("text=volver a la ráfaga curada"); await p.waitForSelector(".platina"); await p.close();
+  await p.click("text=Back to the curated burst"); await p.waitForSelector(".platina"); await p.close();
 });
 
 const DONE4 = [[1, "done"], [2, "done"], [3, "abstract_only"], [4, "failed", "sin pdf ni e-print"]];
@@ -94,7 +94,7 @@ test("en vivo: el Panorama usa POST /panorama del servidor (simulado) y la compu
   const p = await live({ statuses: [DONE4], panorama: (r) => r.fulfill({ json: claims, headers: H }) });
   await p.waitForSelector(".sim .predict-banner", { timeout: 10000 });
   await p.click(".predict-banner .link");
-  assert.match(await p.$eval(".sim .chips", (e) => e.textContent), /Selección simulada en el servidor/);
+  assert.match(await p.$eval(".sim .chips", (e) => e.textContent), /Simulated selection on the server/);
   assert.equal(await p.$("[data-srv-fallback]"), null);
   assert.equal(await p.$eval(".gate", (e) => e.dataset.rejected), "1");
   assert.equal((await p.$$(".matrix .dot.yes")).length, 1);
@@ -106,36 +106,36 @@ test("en vivo: el Panorama usa POST /panorama del servidor (simulado) y la compu
 test("en vivo: si /panorama no está disponible cae al simulador del navegador y lo dice", async () => {
   const p = await live({ statuses: [DONE4], panorama: (r) => r.fulfill({ status: 501, json: { error: "meta" }, headers: H }) });
   await p.waitForSelector(".sim .predict", { timeout: 10000 });
-  assert.match(await p.$eval("[data-srv-fallback]", (e) => e.textContent), /El servidor falló \(501\).*simulador del navegador; ambos son simulados/);
-  assert.match(await p.$eval(".sim .chips", (e) => e.textContent), /Muse Spark simulado/); assert.deepEqual(p.errs, []); await p.close();
+  assert.match(await p.$eval("[data-srv-fallback]", (e) => e.textContent), /The server failed \(501\).*in-browser simulator/);
+  assert.match(await p.$eval(".sim .chips", (e) => e.textContent), /Muse Spark simulated/); assert.deepEqual(p.errs, []); await p.close();
 });
 
 test("en vivo: errores de la ráfaga con mensaje claro (401 token, 429, ráfaga vacía)", async () => {
-  for (const [burstStatus, re] of [[401, /rechazó el token de la demo/], [429, /demasiadas peticiones/], [503, /falló \(503\)/]]) {
+  for (const [burstStatus, re] of [[401, /demo token/], [429, /too many requests/], [503, /failed \(503\)/]]) {
     const p = await live({ statuses: [[]], burstStatus }); await p.waitForSelector(".fail-reason", { timeout: 8000 });
     assert.match(await p.$eval(".fail-reason", (e) => e.textContent), re); assert.ok(!(await p.content()).includes("b.test")); await p.close();
   }
   const p = await live({ statuses: [[]], burstBody: { papers: [], edges: [] } });
-  await p.waitForSelector("text=no encontró papers", { timeout: 8000 }); assert.equal(await p.$(".sim"), null); await p.close();
+  await p.waitForSelector("text=found no papers", { timeout: 8000 }); assert.equal(await p.$(".sim"), null); await p.close();
 });
 
 test("en vivo: un paper lento no cuelga el Panorama; cuenta como no leído", async () => {
   const p = await live({ statuses: [[[1, "done"], [2, "done"], [3, "done"], [4, "done"]]], init: { __RRM_TIMEOUT_MS: 300 },
     paper: (r, u) => (u.searchParams.get("id") === "1" ? undefined : r.fulfill({ json: { status: "done", paper: JSON.parse(readFileSync(join(PUB, `${ARX[u.searchParams.get("id")]}.json`))), meta: {} }, headers: H })) });
   await p.waitForSelector(".sim .predict", { timeout: 15000 });
-  assert.match(await p.$eval(".sim-progress", (e) => e.textContent), /3 de 4 papers leídos/); assert.equal(await p.$(".sim [role=alert]"), null);
+  assert.match(await p.$eval(".sim-progress", (e) => e.textContent), /3 of 4 papers read/); assert.equal(await p.$(".sim [role=alert]"), null);
   assert.deepEqual(p.errs, []); await p.close();
 });
 
 test("en vivo: abrir un paper que falla muestra el motivo y no se queda en «Cargando…» sin decir nada", async () => {
   const p = await live({ statuses: [[]], search: false, hash: "#/p/1", paper: (r) => r.fulfill({ status: 500, body: "x", headers: H }) });
   await p.waitForSelector(".fail-reason", { timeout: 10000 });
-  assert.match(await p.$eval(".fail-reason", (e) => e.textContent), /falló \(500\)/); assert.deepEqual(p.errs, []); await p.close();
+  assert.match(await p.$eval(".fail-reason", (e) => e.textContent), /failed \(500\)/); assert.deepEqual(p.errs, []); await p.close();
 });
 
 test("en vivo: papers que no terminan no bloquean para siempre; se puede armar con los ya leídos", async () => {
   const p = await live({ statuses: [[[1, "done"], [2, "done"], [3, "queued"], [4, "queued"]]], init: { __RRM_PATIENCE_MS: 300 } });
-  await p.waitForSelector("text=Armar el Panorama con los ya leídos", { timeout: 8000 }); assert.equal(await p.$(".sim"), null);
-  await p.click("text=Armar el Panorama con los ya leídos"); await p.waitForSelector(".sim .predict", { timeout: 10000 });
-  assert.match(await p.$eval(".sim-progress", (e) => e.textContent), /2 de 4 papers leídos · 2 sin leer/); assert.deepEqual(p.errs, []); await p.close();
+  await p.waitForSelector("text=Build the Panorama with the papers already read", { timeout: 8000 }); assert.equal(await p.$(".sim"), null);
+  await p.click("text=Build the Panorama with the papers already read"); await p.waitForSelector(".sim .predict", { timeout: 10000 });
+  assert.match(await p.$eval(".sim-progress", (e) => e.textContent), /2 of 4 papers read · 2 unread/); assert.deepEqual(p.errs, []); await p.close();
 });

@@ -37,7 +37,20 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
   const [from, setFrom] = useState<HTMLElement | null>(null);
   const n = model.visited?.length || 0;
   const [host, setHost] = useState<HTMLElement | null>(null);
+  const [narrow, setNarrow] = useState(false);
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   useEffect(() => { setHost(document.body); }, []);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 760px)");
+    const apply = () => {
+      const small = mq.matches;
+      setNarrow(small);
+      setSlot(small ? document.querySelector<HTMLElement>(".folio .atlas-slot") : null);
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
   const close = () => {
     setOpen(false);
     btn.current?.focus();
@@ -49,10 +62,23 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
     onOpen(id);
     setOpen(false);
   };
-  if (!host) return null;
+  const target = narrow ? slot : host;
+  if (!target) return null;
   // Portal: main.zoom-in uses transform, which would trap position:fixed for 420ms.
+  // On a narrow screen the button sits in the paper header so it does not cover the page.
   return createPortal(
     <>
+      {narrow ? (
+        <button
+          ref={btn}
+          type="button"
+          className="atlas-head press"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label="Open the atlas"
+          onClick={() => { setFrom(btn.current); setOpen(true); }}
+        >Atlas</button>
+      ) : (
       <button
         ref={btn}
         type="button"
@@ -66,6 +92,7 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
         <span className="mini-foot">Atlas · {n} explored</span>
         <span className="mini-x" aria-hidden="true"><Icon name="expand" size={13} /></span>
       </button>
+      )}
       <Overlay
         open={open}
         onClose={close}

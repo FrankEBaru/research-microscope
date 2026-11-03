@@ -26,10 +26,10 @@ EQ_TEX = "\\mathrm{Attention}(Q,K,V)=\\mathrm{softmax}\\left(\\frac{QK^T}{\\sqrt
 
 VENUES = ["Revista de Prueba", "Congreso de Prueba", "Taller de Prueba", "Archivo de Prueba"]
 GROUPS = [
-    ("grupo de prueba A", 380, 300, False),
-    ("grupo de prueba B", 1040, 280, False),
-    ("grupo de prueba C", 420, 740, False),
-    ("grupo de prueba D", 1250, 780, True),
+    ("test group A", 380, 300, False),
+    ("test group B", 1040, 280, False),
+    ("test group C", 420, 740, False),
+    ("test group D", 1250, 780, True),
 ]
 
 

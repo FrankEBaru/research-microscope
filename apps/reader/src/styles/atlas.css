@@ -107,6 +107,13 @@
   .mini:hover .mini-x { opacity: 1; }
 }
 .mini:focus-visible .mini-x { opacity: 1; }
+.atlas-slot { display: contents; }
+.atlas-head {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 40px; min-width: 40px;
+  padding: 0 14px; border-radius: 8px; border: 1px solid var(--rule-2); background: var(--sheet);
+  font: 600 14px/1 var(--font-ui); color: var(--ink); cursor: pointer;
+}
+@media (min-width: 761px) { .atlas-slot { display: none; } }
 
 html.ovl-open body { overflow: hidden; }
 .ovl { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 32px; background: var(--scrim); animation: ovl-in 200ms var(--ease-out) both; }

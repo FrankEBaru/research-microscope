@@ -1,6 +1,6 @@
 /* Lectura B.1 · Folio. Solo tokens. */
 
-/* .lvl in legacy.css caps the paper at 1060px. This file cannot edit that sheet. */
+/* The paper column is 39rem (~624px). .lvl no longer caps this screen. */
 [data-screen="paper"].lvl:has(> .folio) {
   max-width: none;
   width: 100%;
@@ -10,7 +10,7 @@
 }
 .folio {
   display: grid;
-  grid-template-columns: 200px minmax(0, 42rem) 240px;
+  grid-template-columns: 200px minmax(0, 39rem) 240px;
   justify-content: center;
   gap: 36px;
   width: 100%;
@@ -219,6 +219,7 @@
 
 .folio .side { position: relative; align-self: stretch; min-width: 0; }
 .folio .margin-inline { position: static; margin: 8px 0 16px; }
+.folio .sn, .folio .sn a { overflow-wrap: anywhere; }
 .folio .sn {
   position: absolute;
   top: var(--top);
@@ -284,16 +285,16 @@
 }
 
 @media (min-width: 1400px) {
-  .folio { grid-template-columns: 240px minmax(0, 42rem) 240px; }
+  .folio { grid-template-columns: 240px minmax(0, 39rem) 240px; }
 }
-@media (min-width: 1200px) {
+@media (min-width: 1280px) {
   .folio .fig.blk,
   .folio .table-fig,
   .folio .instrument { margin-right: calc(-1 * (240px + 36px)); }
   .folio .margin-inline { display: none; }
 }
-@media (max-width: 1199px) {
-  .folio { grid-template-columns: 180px minmax(0, 42rem); gap: 28px; }
+@media (max-width: 1279px) {
+  .folio { grid-template-columns: 180px minmax(0, 39rem); gap: 28px; }
   .folio .side { display: none; }
   .folio .fig.blk,
   .folio .table-fig,
@@ -301,14 +302,22 @@
 }
 @media (max-width: 760px) {
   [data-screen="paper"].lvl:has(> .folio) { padding-left: 20px; padding-right: 20px; }
-  .folio { display: block; padding: 12px 0 100px; }
-  .folio .toc { display: none; }
+  .folio { display: block; padding: 12px 0 48px; }
+  .folio .toc, .folio .side { display: none; }
   .folio .sec p { text-align: left; -webkit-hyphens: manual; hyphens: manual; }
   .folio .ah h1 { font-size: 34px; }
-  .folio .ah-bar .seg { align-self: flex-start; }
+  .folio .ah-bar { flex-direction: row; flex-wrap: wrap; align-items: center; width: 100%; }
+  .folio .ah-bar .seg { align-self: center; margin-left: auto; }
+  .folio .eq { max-width: 100%; }
   .folio .eq .copy { display: none; }
+  .folio .eq .katex-display { max-width: 100%; }
   .folio .eq .katex-display > .katex { font-size: .8em; }
-  .folio .popover { width: auto; }
+  .folio .fig, .folio .fig img, .folio .table-fig, .folio .ins, .folio img { max-width: 100%; }
+  .folio .table-wrap { overflow-x: auto; max-width: 100%; }
+  .folio .popover {
+    position: fixed; left: 12px; right: 12px; bottom: 12px; top: auto; width: auto;
+    max-height: 46vh; overflow: auto;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

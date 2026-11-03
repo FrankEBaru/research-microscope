@@ -67,7 +67,7 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
   if (!core) {
     return (
       <header className="topbar">
-        <a className="brand" href="#/" onClick={() => window.scrollTo({ top: 0 })}><span className="lens" aria-hidden="true" />Microscopio de lectura</a>
+        <a className="brand" href="#/" onClick={() => window.scrollTo({ top: 0 })}><span className="lens" aria-hidden="true" />Reading Microscope</a>
         {!(core && (liveOn || liveId)) && (
           <nav className="scope" aria-label="Nivel de zoom">
             {steps.map((s) => (
@@ -79,12 +79,12 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
         )}
         {live && !(core && !liveOn && !liveId) && (
           <form className="live-search" onSubmit={onSearch}>
-            <input aria-label="Pregunta" title={draft || undefined} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Pregunta" />
-            <button type="submit">Buscar</button>
+            <input aria-label="Question" title={draft || undefined} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Question" />
+            <button type="submit">Search</button>
           </form>
         )}
-        {!core && <button className="companion-toggle" aria-pressed={companion} onClick={() => setCompanion((v) => !v)} title="Compañero de lectura opcional: ofrece ayuda, nunca interrumpe, no guarda nada (tecla C)">Compañero {companion ? "activado" : "apagado"}</button>}
-        {!(live && process.env.NEXT_PUBLIC_RRM_OFFLINE !== "1") && <span className="proto">prototipo · datos locales</span>}
+        {!core && <button className="companion-toggle" aria-pressed={companion} onClick={() => setCompanion((v) => !v)} title="Optional reading companion: offers help, never interrupts, stores nothing (C key)">Companion {companion ? "on" : "off"}</button>}
+        {!(live && process.env.NEXT_PUBLIC_RRM_OFFLINE !== "1") && <span className="proto">prototype · local data</span>}
       </header>
     );
   }
@@ -140,7 +140,7 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
             {open && (
               <input
                 id="rrm-bar-q"
-                aria-label="Pregunta"
+                aria-label="Question"
                 title={draft || undefined}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}

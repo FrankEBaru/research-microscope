@@ -22,7 +22,7 @@ test("401 no se reintenta y el mensaje no trae token ni URL", async () => {
   script(reply(401));
   const err = await m.status([1]).catch((e) => e);
   assert.equal(err.kind, "auth"); assert.equal(calls.length, 1);
-  const msg = m.explain(err); assert.match(msg, /token de la demo/); assert.ok(!msg.includes("tok-secreto") && !msg.includes("reader.example"));
+  const msg = m.explain(err); assert.match(msg, /demo token/); assert.ok(!msg.includes("tok-secreto") && !msg.includes("reader.example"));
 });
 
 test("503 en /status se reintenta y luego responde", async () => {
@@ -33,13 +33,13 @@ test("503 en /status se reintenta y luego responde", async () => {
 test("429 persistente: tres intentos y mensaje de espera", async () => {
   script(reply(429));
   const err = await m.status([1]).catch((e) => e);
-  assert.equal(calls.length, 3); assert.equal(err.kind, "rate"); assert.match(m.explain(err), /demasiadas peticiones/);
+  assert.equal(calls.length, 3); assert.equal(err.kind, "rate"); assert.match(m.explain(err), /too many requests/);
 });
 
 test("un paper que no responde corta por tiempo y no cuelga", async () => {
   globalThis.__RRM_TIMEOUT_MS = 30; script(hang);
   const t0 = Date.now(); const err = await m.paper("9").catch((e) => e);
-  assert.equal(err.kind, "timeout"); assert.equal(calls.length, 2); assert.ok(Date.now() - t0 < 2000); assert.match(m.explain(err), /no respondió a tiempo/);
+  assert.equal(err.kind, "timeout"); assert.equal(calls.length, 2); assert.ok(Date.now() - t0 < 2000); assert.match(m.explain(err), /did not answer in time/);
 });
 
 test("GET lleva el token en la query y no en un header, así no hay preflight", async () => {
@@ -60,7 +60,7 @@ test("GET lleva el token en la query y no en un header, así no hay preflight", 
 
 test("burst no se reintenta (arranque en frío) y 5xx se explica", async () => {
   script(reply(500)); const err = await m.burst("q").catch((e) => e);
-  assert.equal(calls.length, 1); assert.equal(err.kind, "server"); assert.match(m.explain(err), /falló \(500\)/);
+  assert.equal(calls.length, 1); assert.equal(err.kind, "server"); assert.match(m.explain(err), /failed \(500\)/);
   globalThis.__RRM_TIMEOUT_MS = 30; script(hang); const slow = await m.burst("q").catch((e) => e);
   assert.equal(slow.kind, "timeout"); assert.equal(calls.length, 1);
 });
@@ -79,7 +79,7 @@ test("un 500 con mensaje se ve, y un stub no pisa el paper leído", async () => 
 
 test("sin conexión: kind network", async () => {
   script(() => { throw new TypeError("fetch failed"); });
-  const err = await m.paper("1").catch((e) => e); assert.equal(err.kind, "network"); assert.match(m.explain(err), /No se pudo conectar/);
+  const err = await m.paper("1").catch((e) => e); assert.equal(err.kind, "network"); assert.match(m.explain(err), /Could not connect/);
 });
 
 test("panorama: POST con JSON y token, sin reintento", async () => {

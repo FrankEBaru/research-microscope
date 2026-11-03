@@ -97,7 +97,7 @@ async function openMap(width, height) {
   page.errs = [];
   page.on("pageerror", (err) => page.errs.push(err.message));
   await page.goto(base);
-  await page.fill('input[aria-label="Pregunta"]', "attention");
+  await page.fill('input[aria-label="Question"]', "attention");
   await page.click('button:has-text("Ver el mapa")');
   await page.waitForSelector(".node-dot circle", { timeout: 15000 });
   return page;

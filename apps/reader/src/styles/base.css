@@ -5,8 +5,8 @@ body { background: var(--page); color: var(--ink); font: 400 15px/1.5 var(--font
 button, input, textarea, select { font: inherit; color: inherit; }
 .num, .tnum { font-variant-numeric: tabular-nums lining-nums; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-:where(a, button, input, textarea, select, [tabindex]):focus-visible {
-  outline: none; box-shadow: 0 0 0 2px var(--focus-gap), 0 0 0 4px var(--focus);
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: none; box-shadow: 0 0 0 2px var(--focus-gap), 0 0 0 4px var(--focus) !important;
 }
 
 .press { transition: transform var(--dur-1) var(--ease-out); }
@@ -14,6 +14,12 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .katex { font-size: var(--katex-size); }
 .katex-display { margin: 0; overflow-x: auto; overflow-y: hidden; padding: .25em 0; }
 
+@media (max-width: 760px) {
+  .btn, .seg button, .tabs button, .b1-search, .top-back, .ovl-x, .notice-retry, .b1-try button, .atlas-head {
+    min-height: 40px; min-width: 40px;
+  }
+  .seg button { height: 40px; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important;
     transition-duration: .001ms !important; scroll-behavior: auto !important; }

@@ -58,7 +58,16 @@ export function readExploreFor(storage, question, paperId) {
   return pickExplore(readAll(storage), question, paperId);
 }
 
-const WHY = { "nodo del mapa": "desde el mapa", "nodo del minimapa": "salto desde el minimapa" };
+const WHY = {
+  "nodo del mapa": "from the map",
+  "desde el mapa": "from the map",
+  "from the map": "from the map",
+  "nodo del minimapa": "jump from the minimap",
+  "salto desde el minimapa": "jump from the minimap",
+  "jump from the minimap": "jump from the minimap",
+  "link directo": "direct link",
+  "direct link": "direct link",
+};
 
 export function whyLabel(raw) {
   const text = String(raw || "").replace(/\s+/g, " ").trim();
@@ -68,7 +77,7 @@ export function visitWhy(node, edges, q) {
   const id = String((node && node.id) || "");
   const best = (edges || []).filter((edge) => String(edge.to) === id).sort((a, b) => (a.at || 0) - (b.at || 0)).pop();
   if (best) return whyLabel(best.porQue);
-  return whyLabel(node && node.llegada) || (q && q !== "_solo" ? "desde el mapa" : "link directo");
+  return whyLabel(node && node.llegada) || (q && q !== "_solo" ? "from the map" : "direct link");
 }
 
 function trim(entry, current) {

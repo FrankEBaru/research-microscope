@@ -158,8 +158,8 @@ export default function Atlas({
           }
         }
       }
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === "ArrowDown" || e.key === "ArrowUp") e.preventDefault();
       if (next) {
-        e.preventDefault();
         onSelectRef.current?.(next);
         placeTip(next);
       }

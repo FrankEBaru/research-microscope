@@ -75,9 +75,9 @@ test("reportFault: ring buffer de 100, saneado y suscripción", () => {
 });
 
 test("friendly: texto demo por código o por error", () => {
-  assert.equal(F.friendly("F-SERVER"), "El servidor falló. Vuelve a intentar.");
-  assert.equal(F.friendly(new BackendError("rate", 429), "/burst"), "Hay mucha carga. Vuelve a intentar en unos segundos.");
-  assert.equal(F.friendly(new BackendError("http", 404, "consulta no grabada")), "Esta pregunta no está en los datos locales.");
+  assert.equal(F.friendly("F-SERVER"), "The server failed. Try again.");
+  assert.equal(F.friendly(new BackendError("rate", 429), "/burst"), "The engine is busy. Try again in a few seconds.");
+  assert.equal(F.friendly(new BackendError("http", 404, "consulta no grabada")), "This question is not in the local data.");
   assert.equal(F.friendly("F-NOTES"), "");
 });
 

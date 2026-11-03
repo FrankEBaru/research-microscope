@@ -33,9 +33,9 @@ const fmt = (r: Route) => "#/" + (["q", "c", "p", "b"] as const).filter((k) => r
 
 function beat(phase: string, since: number) {
   const tail = ` ${Math.max(0, since)} s`;
-  if (phase === "wake") return `despertando el motor de búsqueda: sube el índice de papers a memoria (la primera vez tarda ~1–2 min)…${tail}`;
-  if (phase === "layout") return `acomodando el mapa…${tail}`;
-  return `buscando papers…${tail}`;
+  if (phase === "wake") return `waking the search engine: loading the paper index into memory (the first time takes about 1–2 min)…${tail}`;
+  if (phase === "layout") return `arranging the map…${tail}`;
+  return `finding papers…${tail}`;
 }
 
 function openGroup(result: any, id: string) {
@@ -413,7 +413,7 @@ export default function Engine() {
             timer = window.setTimeout(() => run(attempt + 1), 400 * 2 ** attempt);
             return;
           }
-          setLabelNote(body?.reason === "network" ? (body.note || "Sin red: solo el título, sin survey.") : "");
+          setLabelNote(body?.reason === "network" ? (body.note || "Offline: title only, no survey.") : "");
           setLiveResult((prev) => {
             if (!prev) return prev;
             const papers = mergeLabels(prev.papers || [], body);
@@ -441,7 +441,7 @@ export default function Engine() {
             timer = window.setTimeout(() => run(attempt + 1), 400 * 2 ** attempt);
             return;
           }
-          setLabelNote(err?.kind === "network" ? "Sin red: solo el título, sin survey." : "");
+          setLabelNote(err?.kind === "network" ? "Offline: title only, no survey." : "");
         },
       );
     };
@@ -571,14 +571,14 @@ export default function Engine() {
     onWant: wantThis,
   };
   const onLayout = (next: any) => { setLiveResult((prev) => (prev ? { ...prev, layout: next } : prev)); if (!next?.pending_vectors?.length) setPhase((cur) => (cur === "layout" ? "" : cur)); };
-  const back = !core ? <button type="button" className="link" onClick={backToCurated}>volver a la ráfaga curada</button> : null;
-  const backBtn = core && liveId && camino.length > 1
-    ? <button type="button" className="top-back press" aria-label="Back" onClick={volver}>←</button>
+  const back = !core ? <button type="button" className="link" onClick={backToCurated}>Back to the curated burst</button> : null;
+  const backBtn = core && liveId
+    ? <button type="button" className="top-back press" aria-label="Back" onClick={() => (camino.length > 1 ? volver() : go({}))}>←</button>
     : null;
   const jump = (() => {
     const top = camino[camino.length - 1];
     const why = top?.padre ? whyLabel(top.porQue) : "";
-    return why ? <p className="jump-why">Salto: {why}</p> : null;
+    return why ? <p className="jump-why">Jump: {why}</p> : null;
   })();
   const crumb = core && (liveOn || liveId) ? {
     question: shownQ,
@@ -635,7 +635,7 @@ function Area({ q, questions, papers, go, content, core }: any) {
       <div className="qtabs">{questions.map((x: any) => <button key={x.id} className={x.id === q.id ? "on" : ""} onClick={() => go({ q: x.id })}>{x.text}</button>)}</div>
       <h1 className="question">{q.text}</h1>
       <p className="sub"><ProvChip kind="curado" text="ráfaga de ejemplo curada a mano" /> No es la salida del motor de ráfaga: es el formato que ese motor llenará.</p>
-      <div className="view-toggle" role="tablist" aria-label="Vista"><button className={view === "mapa" ? "on" : ""} onClick={() => setView("mapa")}>Mapa</button><button className={view === "tarjetas" ? "on" : ""} onClick={() => setView("tarjetas")}>Tarjetas</button>{!core && <button className={view === "panorama" ? "on" : ""} onClick={() => setView("panorama")}>Panorama</button>}</div>
+      <div className="view-toggle" role="tablist" aria-label="View"><button className={view === "mapa" ? "on" : ""} onClick={() => setView("mapa")}>Map</button><button className={view === "tarjetas" ? "on" : ""} onClick={() => setView("tarjetas")}>Cards</button>{!core && <button className={view === "panorama" ? "on" : ""} onClick={() => setView("panorama")}>Panorama</button>}</div>
       {view === "mapa" && <MapView q={q} papers={papers} go={go} />}
       {!core && view === "panorama" && <Panorama q={q} papers={papers} content={content} go={go} />}
       {view === "tarjetas" && <div className="clusters">

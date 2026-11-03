@@ -92,9 +92,10 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
     const t = model.byId[r[0]]; const an = t.an; const ri = +r[1], col = +r[2];
     const row = an.bodyRows[ri]; const cell = row.find((c: any) => c.col === col) || row[0];
     const told = core ? tableHover(paper.blocks, r[0]) : null;
+    const tableNo = model.tabN?.[r[0]];
     body = core ? (
       <>
-        <p className="pop-title">Table</p>
+        <p className="pop-title">{tableNo ? `Table ${tableNo}` : "Table"}</p>
         {told.caption && <p className="pop-quote">{told.caption}</p>}
         {told.sentence ? <p className="pop-quote">{told.sentence}</p> : <p className="pop-line">The paper does not discuss it in a sentence.</p>}
         <div className="pop-meta"><Prov kind="paper" text="caption and author’s sentence" /></div>
@@ -108,10 +109,27 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
     );
   }
   const narrow = typeof window !== "undefined" && window.innerWidth <= 760;
-  const above = pop.rect.bottom > window.innerHeight * 0.6;
-  const left = Math.min(Math.max(12, pop.rect.left), window.innerWidth - 372);
-  const style: any = narrow
-    ? { left: 12, right: 12, bottom: 12, top: "auto", width: "auto", transform: "none" }
-    : { left, width: 360, ...(above ? { top: pop.rect.top - 8, transform: "translateY(-100%)" } : { top: pop.rect.bottom + 8 }) };
+  let style: any;
+  if (narrow) {
+    style = { left: 12, right: 12, bottom: 12, top: "auto", width: "auto", transform: "none", maxHeight: "46vh", overflow: "auto" };
+  } else if (kind === "t") {
+    const host = typeof document !== "undefined" ? document.querySelector(`[data-tab="${r[0]}"]`) : null;
+    const box = host?.getBoundingClientRect();
+    const width = 320;
+    if (box) {
+      const left = Math.max(12, Math.min(box.left, window.innerWidth - width - 12));
+      const below = box.bottom + 8;
+      const placeAbove = below + 150 > window.innerHeight && box.top > 180;
+      style = placeAbove
+        ? { left, top: Math.max(12, box.top - 8), transform: "translateY(-100%)", width, maxHeight: "40vh", overflow: "auto" }
+        : { left, top: Math.max(12, below), width, maxHeight: "40vh", overflow: "auto" };
+    } else {
+      style = { left: 12, top: 12, width };
+    }
+  } else {
+    const above = pop.rect.bottom > window.innerHeight * 0.6;
+    const left = Math.min(Math.max(12, pop.rect.left), window.innerWidth - 372);
+    style = { left, width: 360, ...(above ? { top: pop.rect.top - 8, transform: "translateY(-100%)" } : { top: pop.rect.bottom + 8 }) };
+  }
   return <div className="popover pop" style={style} role="tooltip">{body}</div>;
 }

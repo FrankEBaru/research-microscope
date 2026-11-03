@@ -153,6 +153,19 @@ function peekReadFlag(core: boolean, id: unknown) {
   catch { return false; }
 }
 
+function peekSession(key: string) {
+  if (typeof sessionStorage === "undefined") return "";
+  try { return sessionStorage.getItem(key) || ""; }
+  catch { return ""; }
+}
+
+function rememberSession(key: string, value: string | null) {
+  try {
+    if (value == null) sessionStorage.removeItem(key);
+    else sessionStorage.setItem(key, value);
+  } catch { /* storage blocked */ }
+}
+
 function pinOf(key: string) {
   const cut = key.indexOf(":");
   if (cut < 0) return null;
@@ -219,14 +232,19 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
 
   const paperId = paper.corpusid != null ? String(paper.corpusid) : (paper.arxivId || "");
   useEffect(() => {
-    const on = peekReadFlag(core, paper.corpusid);
+    const askKey = paper.corpusid != null ? `rrm.ask.${paper.corpusid}` : "";
+    const ask = askKey ? peekSession(askKey) : "";
+    const on = peekReadFlag(core, paper.corpusid) || Boolean(ask);
     setReading(on);
+    setOpenAsk(ask);
     let timer = 0;
-    if (on && paper.corpusid != null) {
-      const key = `rrm.read.${paper.corpusid}`;
-      timer = window.setTimeout(() => { try { sessionStorage.removeItem(key); } catch { /* storage blocked */ } }, 0);
+    if (paper.corpusid != null && (on || ask)) {
+      const readKey = `rrm.read.${paper.corpusid}`;
+      timer = window.setTimeout(() => {
+        try { sessionStorage.removeItem(readKey); if (askKey) sessionStorage.removeItem(askKey); }
+        catch { /* storage blocked */ }
+      }, 0);
     }
-    setOpenAsk("");
     setSymPin("");
     setPinAt(null);
     setPop(null);
@@ -235,11 +253,15 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   }, [paperId, core]);
 
   useLayoutEffect(() => {
-    const mq = window.matchMedia("(min-width: 1200px)");
+    const mq = window.matchMedia("(min-width: 1280px)");
     const apply = () => setWide(mq.matches);
     apply();
     mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
+    window.addEventListener("resize", apply);
+    return () => {
+      mq.removeEventListener("change", apply);
+      window.removeEventListener("resize", apply);
+    };
   }, []);
 
   const local = useMemo(() => collectV2(paper.blocks || []), [paper]);
@@ -534,7 +556,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           <div key={`end-${sec.id}`} className="sec-end">
             {openAsk === sec.id
               ? askBox("section", sec.id, sec.title)
-              : <button type="button" className="yw press" onClick={() => setOpenAsk(sec.id)}><Icon name="pen" /><span>Explain “{sec.title}” in your words</span></button>}
+              : <button type="button" className="yw press" onClick={() => { setOpenAsk(sec.id); if (paper.corpusid != null) rememberSession(`rrm.ask.${paper.corpusid}`, sec.id); }}><Icon name="pen" /><span>Explain “{sec.title}” in your words</span></button>}
           </div>,
         );
       }
@@ -711,7 +733,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           )}
           {showMini && (
             <Boundary name="minimap">
-              <ReadMinimap papers={map?.papers || []} edges={map?.edges || []} layout={map?.layout || null} explore={explore} openId={openId} onOpen={(id) => onOpenPaper?.(id, "salto desde el minimapa")} atlasCtx={atlasCtx} />
+              <ReadMinimap papers={map?.papers || []} edges={map?.edges || []} layout={map?.layout || null} explore={explore} openId={openId} onOpen={(id) => onOpenPaper?.(id, "jump from the minimap")} atlasCtx={atlasCtx} />
             </Boundary>
           )}
           <p className="colo">Paper data: <a href="https://www.semanticscholar.org/" target="_blank" rel="noreferrer">Semantic Scholar</a></p>
@@ -721,6 +743,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         <Boundary name="header">
           <header className="ah paper-head">
             <div className="ah-bar">
+              <div className="atlas-slot" />
               {metaBits.length > 0 && (
                 <div className="ah-meta">
                   {metaBits.map((bit) => <span key={bit.key} className={bit.tnum ? "tnum" : undefined}>{bit.text}</span>)}
@@ -730,7 +753,13 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
                 <Segmented
                   label="Mode"
                   value={reading ? "read" : "scan"}
-                  onChange={(v) => setReading(v === "read")}
+                  onChange={(v) => {
+                    const on = v === "read";
+                    setReading(on);
+                    if (paper.corpusid == null) return;
+                    rememberSession(`rrm.read.${paper.corpusid}`, on ? "1" : null);
+                    if (!on) rememberSession(`rrm.ask.${paper.corpusid}`, null);
+                  }}
                   options={[{ value: "scan", label: "Scan" }, { value: "read", label: "Read" }]}
                 />
               )}

@@ -88,7 +88,7 @@ export default function Instrument({ content, goTo }: { content: any; goTo: (blo
           <p><strong>Antes de verlo (opcional):</strong> si subes <Tex tex="d_k" /> de 64 a 256, ¿qué le pasa a la <em>desviación estándar</em> de q·k?</p>
           <div className="bet-buttons">
             <button onClick={() => setBet("same")}>Se queda igual</button>
-            <button onClick={() => setBet("x2")}>Se duplica (×2)</button>
+            <button onClick={() => setBet("x2")}>It doubles (×2)</button>
             <button onClick={() => setBet("x4")}>Se cuadruplica (×4)</button>
             <button className="ghost" onClick={() => setBet("skip")}>Saltar</button>
           </div>
@@ -108,7 +108,7 @@ export default function Instrument({ content, goTo }: { content: any; goTo: (blo
         </label>
         <label>
           <span>varianza de cada componente <Tex tex="\sigma^2" /> = <strong>{sigma2}</strong>{sigma2 === 1 && <em className="hint"> supuesto del paper</em>}</span>
-          <input type="range" min={0} max={SIGMAS.length - 1} step={1} value={si} onChange={(e) => setSi(+e.target.value)} aria-label="sigma cuadrado" />
+          <input type="range" min={0} max={SIGMAS.length - 1} step={1} value={si} onChange={(e) => setSi(+e.target.value)} aria-label="sigma squared" />
         </label>
       </div>
 

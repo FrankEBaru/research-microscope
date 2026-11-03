@@ -27,11 +27,11 @@ export default function MapBody({ atlasCtx, onLayout }: { atlasCtx: AtlasCtx; on
   const [selected, setSelected] = useState("");
   const [linked, setLinked] = useState(false);
   const pick = (id: string) => { setSelected(id); setLinked(true); };
-  const scan = (id: string) => atlasCtx.onOpen(id, "desde el mapa");
+  const scan = (id: string) => atlasCtx.onOpen(id, "from the map");
   const read = (id: string) => {
     atlasCtx.onWant(id);
     markRead(id);
-    atlasCtx.onOpen(id, "desde el mapa");
+    atlasCtx.onOpen(id, "from the map");
   };
   const pendingKey = (atlasCtx.layout?.pending_vectors || []).join(",");
   const onLayoutRef = useRef(onLayout);

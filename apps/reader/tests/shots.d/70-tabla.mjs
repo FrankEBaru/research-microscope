@@ -7,12 +7,12 @@ async function fits(page) {
 }
 
 async function ask(page, question) {
-  const input = page.locator('input[aria-label="Pregunta"]').first();
+  const input = page.locator('input[aria-label="Question"]').first();
   await input.waitFor({ timeout: 20000 });
   await page.waitForFunction((selector) => {
     const el = document.querySelector(selector);
     return Boolean(el) && Object.keys(el).some((k) => k.startsWith("__reactProps$"));
-  }, 'input[aria-label="Pregunta"]', { timeout: 20000 });
+  }, 'input[aria-label="Question"]', { timeout: 20000 });
   await input.fill(question);
   await input.press("Enter");
 }
