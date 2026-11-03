@@ -17,6 +17,11 @@ test("fig:block no empareja fig:block_deeper", () => {
   assert.deepEqual(hit.top.map((r) => r.block), ["p-hit"]);
   assert.equal(hit.rest.length, 0);
   assert.equal(hit.top[0].text, "Shallow Figure 1");
+  const named = citingPassages([
+    { id: "f1", kind: "fig", label: "fig:block" },
+    { id: "p-named", kind: "p", inlines: [{ t: "text", v: "shown in Figure~" }, { t: "ref", label: "fig:block", target: "f1" }] },
+  ], "f1", "fig:block", 2, xref);
+  assert.equal(named.top[0].text, "shown in Figure 1");
   const deep = citingPassages(blocks, "f2", "fig:block_deeper", 2, xref);
   assert.deepEqual(deep.top.map((r) => r.block).sort(), ["p-deep", "p-mislabeled"]);
 });

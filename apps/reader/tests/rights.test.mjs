@@ -26,6 +26,11 @@ test("rightsLine names the license, the version, and the annotation", () => {
     "Abstract and our explanations only",
   ]);
   assert.deepEqual(rightsLine(null), []);
+  assert.deepEqual(rightsLine({ ...closed, gated: false, fixture: true }), [
+    "arXiv license",
+    "arXiv:1706.03762v7",
+    "Local fixture: full text for offline testing. Live still treats this license as closed.",
+  ]);
 });
 
 test("isGated follows the backend flag", () => {

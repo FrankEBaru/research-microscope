@@ -70,4 +70,5 @@ offline-fixtures.tmp.*/
 offline-fixtures.cache/
 offline-fixtures-synth/
 offline-fixtures-v*.tar.gz
+offline-fixtures-attention/
 apps/reader/shots/

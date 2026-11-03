@@ -651,9 +651,13 @@ def parse_body(body: str, macros: dict, prose: set | None = None, appendix: bool
                         counters[level - 1] += 1
                         for k in range(level, 4):
                             counters[k] = 0
-                        number = ".".join(str(c) for c in counters[:level] if not (appendix and False))
-                        if appendix and level > 1 and counters[0]:
+                        # article secnumdepth is 3: \paragraph is a heading, not "3.1.0.1".
+                        if level >= 4:
+                            number = None
+                        elif appendix and counters[0]:
                             number = chr(ord("A") + counters[0] - 1) + "." + ".".join(str(c) for c in counters[1:level])
+                        else:
+                            number = ".".join(str(c) for c in counters[:level])
                 lab, i = _read_following_label(body, i)
                 block = {
                     "kind": "h",
