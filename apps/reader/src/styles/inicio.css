@@ -81,10 +81,13 @@
 .b1-go .ic { width: 22px; height: 22px; stroke-width: 2.2; }
 .b1-go[disabled] { opacity: .55; cursor: progress; }
 @media (hover: hover) { .b1-go:hover:not([disabled]) { background: var(--accent-h); } }
-.b1-try { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; padding: 0; }
+.b1-recorded { margin-top: 16px; }
+.b1-recorded-k { margin: 0 0 8px; font: 600 12px/1 var(--font-ui); letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+.b1-recorded .b1-try { margin-top: 0; }
+.b1-try { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 16px 0 0; padding: 0; }
 .b1-try button {
-  height: 32px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--rule-2);
-  background: var(--page); font-size: 13.5px; color: var(--ink-2); cursor: pointer;
+  height: auto; min-height: 32px; max-width: 100%; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--rule-2);
+  background: var(--page); font-size: 13.5px; line-height: 1.35; color: var(--ink-2); cursor: pointer; text-align: left;
   transition: border-color var(--dur-1), color var(--dur-1);
 }
 @media (hover: hover) { .b1-try button:hover { border-color: var(--accent); color: var(--accent-h); } }

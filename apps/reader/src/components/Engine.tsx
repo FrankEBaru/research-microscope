@@ -7,7 +7,7 @@ import PaperView, { plainOf } from "./Paper";
 import MapView from "./MapView";
 import Panorama from "./Panorama";
 import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
-import { burst, curatedContent, curatedPaper, explain, groupNames, keepOpened, labels as fetchLabels, liveEnabled, paperKey, paper as fetchPaper, prepare, settled, status as fetchStatus, subtopics as fetchSubtopics, warm } from "@/lib/backend.js";
+import { burst, curatedContent, curatedPaper, explain, groupNames, keepOpened, labels as fetchLabels, liveEnabled, paperKey, paper as fetchPaper, prepare, recordedQueries, settled, status as fetchStatus, subtopics as fetchSubtopics, warm } from "@/lib/backend.js";
 import { classify, storageFault } from "@/lib/faults.js";
 import { coreMode } from "@/lib/features.js";
 import { applyGroupNames, groupPacks, mapPapers, pinPoint } from "@/lib/layout.js";
@@ -57,6 +57,7 @@ export default function Engine() {
   const live = liveEnabled();
   const core = coreMode();
   const [draft, setDraft] = useState("");
+  const [recorded, setRecorded] = useState<string[]>([]);
   const [liveQ, setLiveQ] = useState("");
   const [topics, setTopics] = useState<string[] | null>(null);
   const [liveOn, setLiveOn] = useState(false);
@@ -107,6 +108,13 @@ export default function Engine() {
       finish: (id: number, state: string, detail?: string) => { dev.finish(id, state, detail); setDevTick((n) => n + 1); },
     });
   }, [dev]);
+
+  useEffect(() => {
+    if (!live || process.env.NEXT_PUBLIC_RRM_OFFLINE !== "1") return;
+    let stop = false;
+    recordedQueries().then((rows: string[]) => { if (!stop) setRecorded(rows); });
+    return () => { stop = true; };
+  }, [live]);
 
   useEffect(() => {
     const db = typeof indexedDB === "undefined" ? null : indexedDB;
@@ -596,13 +604,13 @@ export default function Engine() {
 
   return (
     <>
-      <TopBar core={core} live={live} liveOn={liveOn} liveId={liveId} steps={steps} level={level} draft={draft} setDraft={setDraft} onSearch={onSearch} companion={companion} setCompanion={setCompanion} onHome={home} crumb={crumb} back={backBtn} />
+      <TopBar core={core} live={live} liveOn={liveOn} liveId={liveId} steps={steps} level={level} draft={draft} setDraft={setDraft} onSearch={onSearch} companion={companion} setCompanion={setCompanion} onHome={home} crumb={crumb} back={backBtn} recorded={recorded} />
 
       <main key={`${level}-${route.c}-${route.p}`} className="zoom-in">
         {live && (liveOn || liveId) && liveId && opened && <Boundary name="reader"><ReaderFrame {...frame} opened={opened} /></Boundary>}
         {live && (liveOn || liveId) && liveId && !opened && <Boundary name="reader"><ReaderFrame {...frame} opened={null} /></Boundary>}
         {live && core && !liveOn && !liveId && (
-          <Boundary name="start"><StartScreen draft={draft} setDraft={setDraft} onSearch={onSearch} pending={pending} engine={engine} phase={phase} /></Boundary>
+          <Boundary name="start"><StartScreen draft={draft} setDraft={setDraft} onSearch={onSearch} pending={pending} engine={engine} phase={phase} recorded={recorded} /></Boundary>
         )}
         {live && liveOn && !liveId && (
           <Boundary name="map"><MapScreen core={core} shownQ={shownQ} topics={topics} liveResult={liveResult} phase={phase} engine={engine} say={say} liveErr={liveErr} liveCode={liveCode} debug={debug} pending={pending} asList={asList} setAsList={setAsList} labelNote={labelNote} liveIds={liveIds} impatient={impatient} forced={forced} setForced={setForced} liveQ={liveQ} liveName={liveName} go={go} backToCurated={backToCurated} atlasCtx={atlasCtx} onLayout={onLayout} jump={jump} /></Boundary>

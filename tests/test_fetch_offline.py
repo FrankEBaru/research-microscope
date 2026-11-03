@@ -149,6 +149,8 @@ def _env(tmp_path: Path, compass: Path, **extra):
     env["RRM_FAKE_LOG"] = str(log)
     env["RRM_FAKE_GH_AUTH"] = "1"
     env["RRM_FAKE_COMPASS"] = str(compass)
+    # El checkout real al lado del repo no debe ganar a este gh falso.
+    env["RRM_OFFLINE_NO_LOCAL"] = "1"
     env.update(extra)
     return env, log
 
@@ -336,6 +338,58 @@ def test_offline_sh_v2_y_v3_de_punta_a_punta(tmp_path):
     finally:
         if proc is not None:
             _stop(proc)
+        _clean()
+
+
+def _git(compass: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(compass), *args], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def test_checkout_local_sin_gh(tmp_path):
+    _clean()
+    compass = tmp_path / "compass"
+    write_compass(compass)
+    env, log = _env(
+        tmp_path, compass,
+        RRM_OFFLINE_VERSION="v2",
+        RRM_OFFLINE_NO_LOCAL="",
+        RRM_FAKE_GH_AUTH="0",
+        RRM_OFFLINE_COMPASS=str(compass),
+    )
+    try:
+        proc = _resolve(env)
+        assert proc.returncode == 0, proc.stdout
+        assert "pregunta v2 grabada" in proc.stdout
+        assert "checkout local" in proc.stdout
+        assert not log.exists() or "gh api" not in log.read_text(encoding="utf-8")
+    finally:
+        _clean()
+
+
+def test_rama_local_aunque_el_arbol_este_vacio(tmp_path):
+    _clean()
+    compass = tmp_path / "repo"
+    write_compass(compass)
+    _git(compass, "init")
+    _git(compass, "add", "-A")
+    _git(compass, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "fixtures")
+    _git(compass, "branch", "-M", "claude/rrm-50-plan-b1")
+    _git(compass, "checkout", "--orphan", "empty")
+    _git(compass, "rm", "-rf", ".")
+    assert not (compass / "datos" / "offline").exists()
+    env, log = _env(
+        tmp_path, compass,
+        RRM_OFFLINE_VERSION="v2",
+        RRM_OFFLINE_NO_LOCAL="",
+        RRM_FAKE_GH_AUTH="0",
+        RRM_OFFLINE_COMPASS=str(compass),
+    )
+    try:
+        proc = _resolve(env)
+        assert proc.returncode == 0, proc.stdout
+        assert "pregunta v2 grabada" in proc.stdout
+        assert not log.exists() or "gh api" not in log.read_text(encoding="utf-8")
+    finally:
         _clean()
 
 
