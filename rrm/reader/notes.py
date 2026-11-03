@@ -127,21 +127,10 @@ def _symbol_ok(row, eq, note):
 
 
 def license_open(text):
-    """CC BY, CC BY-SA o CC0. La default de arXiv y la vacía no."""
-    raw = (text or "").strip().lower()
-    if not raw:
-        return False
-    if "nonexclusive-distrib" in raw:
-        return False
-    if "cc0" in raw or "publicdomain/zero" in raw:
-        return True
-    if "by-nc" in raw or "by-nd" in raw:
-        return False
-    if "creativecommons.org/licenses/by-sa/" in raw or re.search(r"\bcc[-\s]?by-sa\b", raw):
-        return True
-    if "creativecommons.org/licenses/by/" in raw or re.search(r"\bcc[-\s]?by\b", raw):
-        return True
-    return False
+    """CC BY, CC BY-SA, CC0 o dominio público. La default de arXiv y la vacía no."""
+    from rrm.reader.rights import license_class
+
+    return license_class(text) == "open"
 
 
 def choose_model(license_text, metadata_only=False):

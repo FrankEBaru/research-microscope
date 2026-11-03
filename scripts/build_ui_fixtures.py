@@ -19,6 +19,7 @@ QUESTION = "prueba de interfaz"
 ASK_TEXT = "Frase de prueba: la atención reemplaza la recurrencia."
 BASE = 9100000
 FULL = BASE + 1
+CLOSED = BASE + 2
 ABSTRACT_ONLY = BASE + 8
 FAILED = BASE + 10
 FAIL_REASON = "no arXiv e-print and no open-access PDF"
@@ -211,6 +212,57 @@ def _paper_full():
     return {"status": "done", "meta": {"corpusid": FULL, "status": "done", "stage": "full", "source": "latex", "reason": None}, "paper": doc}
 
 
+def _paper_closed():
+    abstract = "Resumen de prueba del paper cerrado: solo esto puede verse."
+    body = "Cuerpo cerrado de prueba que no debe salir en la respuesta."
+    doc = {
+        "corpusid": CLOSED,
+        "title": "Paper de prueba 2",
+        "authors": ["Autora Prueba 2", "Autor Muestra 2"],
+        "date": "2018-01-01",
+        "abstract": abstract,
+        "arxivId": "",
+        "full": True,
+        "stage": "full",
+        "source": "latex",
+        "license": None,
+        "figures": ["fig-cerrada.png"],
+        "tables": [{"id": "t-cerrada"}],
+        "oaPdf": "https://example.test/cerrado.pdf",
+        "pdf": "source.pdf",
+        "crops": [{"page": 0}],
+        "refs": {"r1": body},
+        "blocks": [
+            _p("b0", [[_t(abstract)]], abs=True),
+            _h("b1", 1, "Cuerpo de prueba"),
+            _p("b2", [[_t(body)]]),
+            {"id": "b3", "kind": "fig", "images": ["fig-cerrada.png"], "caption": [_t("Figura cerrada de prueba.")]},
+            {"id": "b4", "kind": "table", "caption": [_t("Tabla cerrada.")], "head": [], "body": [[[_t(body)]]]},
+        ],
+    }
+    return {
+        "status": "done",
+        "meta": {
+            "corpusid": CLOSED, "status": "done", "stage": "full", "source": "latex",
+            "pdf": True, "oa_pdf": "https://example.test/cerrado.pdf", "pdf_path": "/tmp/cerrado.pdf",
+        },
+        "paper": doc,
+    }
+
+
+def _licenses(ids):
+    """Ids inventados. El paper principal es CC BY; el segundo, licencia de arXiv."""
+    out = {"_source": "synthetic test fixture; invented ids, not real papers"}
+    for i, cid in enumerate(ids[:7], 1):
+        closed = cid == CLOSED
+        out[f"9999.{i:05d}"] = {
+            "license": "http://arxiv.org/licenses/nonexclusive-distrib/1.0/" if closed else "http://creativecommons.org/licenses/by/4.0/",
+            "version": "v1",
+            "corpusid": cid,
+        }
+    return out
+
+
 def _paper_abstract():
     row = _paper_row(8, ABSTRACT_ONLY)
     abstract = "Resumen de prueba: solo hay abstract para este paper inventado."
@@ -291,7 +343,7 @@ def build(out) -> Path:
         "version": 2,
         "synthetic": True,
         "queries": [{
-            "slug": SLUG, "q": QUESTION, "paper_ids": ids[:10], "saved_papers": [FULL, ABSTRACT_ONLY],
+            "slug": SLUG, "q": QUESTION, "paper_ids": ids[:10], "saved_papers": [FULL, CLOSED, ABSTRACT_ONLY],
             "panorama_mode": "sim", "panorama_fallback": True,
         }],
     })
@@ -302,7 +354,9 @@ def build(out) -> Path:
     _write(root / "labels" / f"{SLUG}.json", _labels(ids))
     _write(root / "status" / f"{SLUG}.json", _status(ids))
     _write(root / "papers" / f"{FULL}.json", _paper_full())
+    _write(root / "papers" / f"{CLOSED}.json", _paper_closed())
     _write(root / "papers" / f"{ABSTRACT_ONLY}.json", _paper_abstract())
+    _write(root / "licenses.json", _licenses(ids))
     _write(root / "notes" / f"{FULL}.json", _notes())
     _write(root / "ask" / "index.json", [
         {"focus": str(FULL), "text": ASK_TEXT, "stage": "frases", "file": "frases.json"},

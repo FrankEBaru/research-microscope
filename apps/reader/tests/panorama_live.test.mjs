@@ -22,7 +22,7 @@ test("buildPanorama: valida contra el paper y descarta papers no leídos", () =>
   assert.deepEqual(r.claims[0].evidence, [{ paper: "1", quote: "Scaling helps a lot.", anchor: { blockId: "b0" } }]);
   assert.equal(r.rejected.length, 3);
   assert.equal(r.rejected.filter((x) => x.paper === "2")[0].reason, "la frase no existe en el paper");
-  assert.ok(r.rejected.filter((x) => x.paper === "3" || x.paper === "4").every((x) => x.reason.startsWith("paper no leído")));
+  assert.ok(r.rejected.filter((x) => x.paper === "3" || x.paper === "4").every((x) => x.reason.startsWith("paper not read")));
 });
 test("sin llamadas de red", () => {
   assert.doesNotMatch(buildPanorama.toString() + coverage.toString(), /fetch\(|XMLHttpRequest/);

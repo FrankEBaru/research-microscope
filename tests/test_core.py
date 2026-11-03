@@ -69,6 +69,9 @@ def test_offline_warm_file_cache_and_core_skips_muse(tmp_path, monkeypatch):
     (root / "subtopics" / "hello.json").write_text("{}", encoding="utf-8")
     (root / "panorama" / "hello.json").write_text(json.dumps([{"id": "t0", "mode": "sim"}]), encoding="utf-8")
     (root / "files" / "7" / "p0.png").write_bytes(b"png")
+    (root / "licenses.json").write_text(json.dumps({
+        "0000.00007": {"license": "http://creativecommons.org/licenses/by/4.0/", "version": "v1", "corpusid": 7},
+    }), encoding="utf-8")
     monkeypatch.setenv("RRM_FEATURES", "core")
     monkeypatch.setenv("RRM_OFFLINE_PANORAMA", "meta")
     calls = []
@@ -82,7 +85,7 @@ def test_offline_warm_file_cache_and_core_skips_muse(tmp_path, monkeypatch):
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/warm", timeout=5) as res:
             body = json.loads(res.read().decode())
-            assert res.status == 200 and body["ready"] is True and body["features"] == "core"
+            assert res.status == 200 and body["ready"] is True and body["features"] == "core" and body["licenses"] == 1
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/file?id=7&name=p0.png", timeout=5) as res:
             assert res.headers.get("Cache-Control") == "public, max-age=86400"
             assert res.read() == b"png"

@@ -25,6 +25,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from rrm.features import core_mode, features_mode
+from rrm.reader.rights import gate_ask, gate_file, gate_paper_response, gate_status_row, load_map, map_path, map_size, warn_map
 from rrm.search.layout import map_rows, place_papers
 
 MISS = "consulta no grabada"
@@ -125,6 +126,7 @@ class Store:
                 cid, name = rel.parts
                 if cid.isdigit() and (safe_name(name) or name == "source.pdf"):
                     self.files[(str(int(cid)), name)] = path.resolve()
+        self.licenses = load_map(map_path(self.root))
 
     def question(self, raw: str):
         return self.queries.get((raw or "").strip())
@@ -288,7 +290,7 @@ def build_handler(store: Store):
                 self._json(200, {"ok": True, "queries": sorted(store.queries)})
                 return
             if path == "/warm":
-                self._json(200, {"ready": True, "features": features_mode(), "loaded": ["fixtures"]})
+                self._json(200, {"ready": True, "features": features_mode(), "loaded": ["fixtures"], "licenses": map_size(store.licenses)})
                 return
             if path == "/burst":
                 hit = store.question(one("q"))
@@ -339,9 +341,9 @@ def build_handler(store: Store):
                 rows = []
                 for part in ids:
                     if part in store.status:
-                        rows.append(store.status[part])
+                        rows.append(gate_status_row(store.status[part], store.licenses))
                     else:
-                        rows.append({"id": int(part), "status": "missing", "reason": MISS})
+                        rows.append(gate_status_row({"id": int(part), "status": "missing", "reason": MISS}, store.licenses))
                 self._json(200, {"papers": rows})
                 return
             if path == "/paper":
@@ -349,12 +351,15 @@ def build_handler(store: Store):
                 if not cid or cid not in store.papers:
                     self._json(*_miss())
                     return
-                self._json(200, store.papers[cid])
+                self._json(200, gate_paper_response(store.papers[cid], store.licenses))
                 return
             if path == "/crops":
                 cid = cid_of()
                 if not cid or cid not in store.crops:
                     self._json(*_miss())
+                    return
+                if gate_file(cid, store.licenses):
+                    self._json(200, {"crops": []})
                     return
                 body = dict(store.crops[cid])
                 raw_pages = one("pages")
@@ -387,6 +392,9 @@ def build_handler(store: Store):
                 cid = cid_of()
                 name = one("name")
                 allowed = bool(cid) and (safe_name(name) or name == "source.pdf")
+                if allowed and gate_file(cid, store.licenses):
+                    self._json(*_miss())
+                    return
                 path_file = store.files.get((cid, name)) if allowed else None
                 if path_file is None or not path_file.is_file():
                     self._json(*_miss())
@@ -408,9 +416,9 @@ def build_handler(store: Store):
                 if isinstance(item, dict):
                     recorded = store.asks.get(_ask_key(item.get("focus"), item.get("text"), item.get("stage")))
                     if recorded is not None:
-                        self._json(200, recorded)
+                        self._json(200, gate_ask(recorded, store.licenses))
                         return
-                self._json(200, _ask(store, item))
+                self._json(200, gate_ask(_ask(store, item), store.licenses))
                 return
             if path == "/notes":
                 item, err = _json_body(self)
@@ -498,6 +506,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     httpd = make_server(args.root, args.host, args.port)
     bound = httpd.server_address
+    warn_map(map_path(args.root), load_map(map_path(args.root)))
     print(f"offline en http://{bound[0]}:{bound[1]}", flush=True)
     try:
         httpd.serve_forever()

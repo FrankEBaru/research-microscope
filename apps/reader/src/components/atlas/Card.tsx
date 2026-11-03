@@ -35,13 +35,15 @@ export function phaseLabel(status: string | undefined) {
 }
 
 export default function Card({
-  point, status, phase, linked, path, onScan, onRead, onPick,
+  point, status, phase, linked, path, license, gated, onScan, onRead, onPick,
 }: {
   point: any;
   status?: string;
   phase?: string;
   linked?: any[];
   path?: { id: string; title: string; why: string }[];
+  license?: string;
+  gated?: boolean;
   onScan?: (id: string) => void;
   onRead?: (id: string) => void;
   onPick?: (id: string) => void;
@@ -86,11 +88,12 @@ export default function Card({
           <footer><Prov kind="paper" text="Abstract" /></footer>
         </blockquote>
       ) : null}
+      {license ? <p className="card-flag">{gated ? `${license} — abstract + link` : license}</p> : null}
       {point.survey ? <p className="card-flag">Survey</p> : null}
       {point.retracted ? <p className="card-flag">Retracted</p> : null}
       <div className="card-act">
         <Button variant="line" onClick={() => onScan?.(point.id)}>Scan</Button>
-        <Button variant="primary" onClick={() => onRead?.(point.id)}>Read in full</Button>
+        <Button variant="primary" onClick={() => onRead?.(point.id)}>{gated ? "Open" : "Read in full"}</Button>
       </div>
       {rows.length ? (
         <>
@@ -174,6 +177,8 @@ export function AtlasCard({
       point={point}
       status={statusOf(point.id, here, suggest, visited)}
       phase={phaseLabel(state?.status)}
+      license={state?.license || ""}
+      gated={Boolean(state?.gated)}
       linked={linkedOf(point, by)}
       onScan={onScan}
       onRead={onRead}

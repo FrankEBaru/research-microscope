@@ -54,10 +54,13 @@ def test_store_carga_el_set_sintetico(tmp_path, monkeypatch):
     assert sum(1 for f in flags if f["survey"]) == 1 and sum(1 for f in flags if f["retracted"]) == 1
     states = [row["status"] for row in store.status.values()]
     assert states.count("done") == 7 and states.count("abstract_only") == 2 and states.count("failed") == 1
-    assert len(store.papers) == 2 and len(store.notes) == 1 and len(store.asks) == 2
+    assert len(store.papers) == 3 and len(store.notes) == 1 and len(store.asks) == 2
+    assert store.licenses["by_corpus"][str(mod.FULL)]["license"].endswith("/by/4.0/")
+    assert "nonexclusive-distrib" in store.licenses["by_corpus"][str(mod.CLOSED)]["license"]
 
 
 def test_el_servidor_responde_con_los_sinteticos(tmp_path, monkeypatch):
+    monkeypatch.delenv("RRM_LICENSE_GATE", raising=False)
     monkeypatch.setenv("RRM_FEATURES", "core")
     monkeypatch.delenv("MODEL_API_KEY", raising=False)
     mod = _builder()
@@ -70,12 +73,18 @@ def test_el_servidor_responde_con_los_sinteticos(tmp_path, monkeypatch):
         assert burst["layout"]["method"] == "specter2-knn" and len(burst["papers"]) == 10
         assert _get(port, "/labels?q=prueba%20de%20interfaz")["ok"] is True
         full = _get(port, f"/paper?id={mod.FULL}")
+        assert full["paper"]["rights"]["cls"] == "open" and full["paper"]["full"] is True
         kinds = {b["kind"] for b in full["paper"]["blocks"]}
         assert {"h", "p", "eq", "table", "fig"} <= kinds
         eq = next(b for b in full["paper"]["blocks"] if b["kind"] == "eq")
         assert eq["number"] == 1 and "\\sqrt{d_k}" in eq["tex"]
         table = next(b for b in full["paper"]["blocks"] if b["kind"] == "table")
         assert len(table["body"]) == 6
+        closed = _get(port, f"/paper?id={mod.CLOSED}")
+        blob = json.dumps(closed)
+        assert closed["paper"]["rights"]["gated"] is True and closed["paper"]["full"] is False
+        assert closed["paper"]["blocks"] and all(b.get("abs") for b in closed["paper"]["blocks"])
+        assert "Cuerpo cerrado de prueba" not in blob
         notes = _post(port, "/notes", {"id": mod.FULL})
         assert sum(1 for n in notes["notes"] if n["generated"]) == 3
         assert any(n.get("kind") == "supuesto" and n["generated"] is False for n in notes["notes"])
