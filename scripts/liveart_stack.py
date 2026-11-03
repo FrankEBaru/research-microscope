@@ -101,6 +101,8 @@ def main():
     parser.add_argument("--raw", default="", help="dir for key-free raw outputs (--live)")
     parser.add_argument("--cap", type=float, default=None, help="stop after a call once total >= cap (default 1, or --max-usd)")
     parser.add_argument("--ids", default="", help="comma ids (--live), overrides --n order")
+    parser.add_argument("--no-early-stop", action="store_true", dest="no_early_stop",
+                        help="keep going after 5 code fails in the first 8")
     args = parser.parse_args()
     if args.cap is None:
         args.cap = args.max_usd if args.max_usd is not None else 1.0

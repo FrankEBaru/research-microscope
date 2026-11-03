@@ -11,9 +11,12 @@ import re
 import subprocess
 from pathlib import Path
 
+from rrm.liveart.contract import CANVAS_METHODS, CANVAS_PROPS
+
 _PREDICT = re.compile(r"^\s*(predice|predict)\b", re.I)
 _SET = re.compile(r"\b(?:set|pon|mueve)\b", re.I)
-_WATCH = re.compile(r"\b(?:watch|mira|look)\b", re.I)
+_HAPPENS = re.compile(r"what happens|qu[eé] pasa", re.I)
+_WATCH_PHRASE = re.compile(r"\s+(?:and|y)\s+(?:watch|mira|look)\s+", re.I)
 _MISREAD = re.compile(r"\b(?:expect|predice|predict|think|cree|suppose|malentend|wrong)\b", re.I)
 _ES = re.compile(
     r"[áéíóúñ¿¡]|\b(?:el|la|los|las|que|para|por|una|del|este|esta|comparten|comparte|bloques|bloque)\b",
@@ -58,6 +61,9 @@ _LEAKS = (
 )
 
 _RENDER = Path(__file__).resolve().parents[2] / "apps" / "reader" / "scripts" / "liveart_render.mjs"
+_VERIFY = Path(__file__).resolve().parents[2] / "apps" / "reader" / "scripts" / "liveart_verify.mjs"
+_ALLOWED_CTX = set(CANVAS_METHODS)
+_ALLOWED_PROP = set(CANVAS_PROPS)
 _CAP = 200000
 
 
@@ -85,8 +91,131 @@ def seal_widget(widget, explain, questions=None):
     return out
 
 
+def _fix_question(text):
+    """End on '?', and use 'Set X to v: what happens to Y?'."""
+    raw = str(text or "").strip()
+    spanish = bool(re.search(r"[áéíóúñ¿¡]|\bpon\b", raw, re.I)) and not re.search(r"\bset\b", raw, re.I)
+    repl = ": qué pasa con " if spanish else ": what happens to "
+    raw = _WATCH_PHRASE.sub(repl, raw, count=1)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    raw = re.sub(r"[.\s]+$", "", raw)
+    if raw and not raw.endswith("?"):
+        raw += "?"
+    return raw
+
+
+def _skip_string(src, i):
+    quote = src[i]
+    i += 1
+    n = len(src)
+    while i < n:
+        if src[i] == "\\":
+            i += 2
+            continue
+        if src[i] == quote:
+            return i + 1
+        i += 1
+    return n
+
+
+def _hoist_functions(draw):
+    """The engine does not hoist. A function used above its declaration is undeclared."""
+    spans = []
+    n = len(draw)
+    i = 0
+    depth = 0
+    while i < n:
+        c = draw[i]
+        if c in "\"'":
+            i = _skip_string(draw, i)
+            continue
+        if c == "{":
+            depth += 1
+            i += 1
+            continue
+        if c == "}":
+            depth -= 1
+            i += 1
+            continue
+        if depth == 1 and draw.startswith("function ", i):
+            start = i
+            j = draw.find("{", i)
+            if j < 0:
+                break
+            d = 0
+            k = j
+            end = None
+            while k < n:
+                if draw[k] in "\"'":
+                    k = _skip_string(draw, k)
+                    continue
+                if draw[k] == "{":
+                    d += 1
+                elif draw[k] == "}":
+                    d -= 1
+                    if d == 0:
+                        end = k + 1
+                        break
+                k += 1
+            if end is None:
+                break
+            spans.append((start, end))
+            i = end
+            depth = 1
+            continue
+        i += 1
+    if not spans:
+        return draw
+    chunks = [draw[a:b].strip() for a, b in spans]
+    out = draw
+    for a, b in reversed(spans):
+        out = out[:a] + out[b:]
+    first = out.find("{")
+    if first < 0:
+        return draw
+    return out[: first + 1] + "\n" + "\n".join(chunks) + "\n" + out[first + 1 :]
+
+
+def _strip_calls(draw):
+    """Drop ctx calls the engine rejects. setLineDash is the one Spark keeps writing."""
+
+    def repl(match):
+        if match.group(1) in _ALLOWED_CTX:
+            return match.group(0)
+        return ""
+
+    draw = re.sub(r"ctx\.([A-Za-z]+)\s*\([^;]*\)\s*;?", repl, draw)
+
+    def bare(match):
+        name = match.group(1)
+        if name in _ALLOWED_CTX or name in _ALLOWED_PROP:
+            return match.group(0)
+        return ""
+
+    return re.sub(r"ctx\.([A-Za-z]+)\s*;", bare, draw)
+
+
+def sanitize_widget(widget):
+    """Deterministic pass before verifyWidget. No model call."""
+    out = dict(widget or {})
+    questions = []
+    for item in out.get("questions") or []:
+        if not isinstance(item, dict):
+            questions.append(item)
+            continue
+        fixed = dict(item)
+        fixed["q"] = _fix_question(item.get("q") or "")
+        questions.append(fixed)
+    if questions:
+        out["questions"] = questions
+    draw = out.get("draw") or ""
+    if draw:
+        out["draw"] = _strip_calls(_hoist_functions(draw))
+    return out
+
+
 def question_problems(questions, controls, regime=None):
-    """Four questions, each 'Set X to v and watch Y'.
+    """Four questions, each 'Set X to v: what happens to Y?'.
 
     One states the misconception, one sits on a regime value, two read a number.
     """
@@ -95,7 +224,7 @@ def question_problems(questions, controls, regime=None):
     texts = []
     for item in questions:
         texts.append((item or {}).get("q") or "" if isinstance(item, dict) else "")
-    if not all(_SET.search(q) and _WATCH.search(q) for q in texts):
+    if not all(_SET.search(q) and _HAPPENS.search(q) for q in texts):
         return ["generic_questions"]
     if sum(1 for q in texts if _MISREAD.search(q)) != 1:
         return ["generic_questions"]
@@ -161,7 +290,7 @@ def quality_gate(widget, claim, spec=None):
         reasons.append("language")
     if spec is not None and _scale_problem(spec, texts):
         reasons.append("scale")
-    if spec is not None and _regime_problem(controls, spec.get("regime"), base):
+    if spec is not None and _regime_problem(draw, controls, spec.get("regime"), base, spec):
         reasons.append("regime")
     if _unexplained_shapes(base):
         reasons.append("shapes")
@@ -169,6 +298,9 @@ def quality_gate(widget, claim, spec=None):
         reasons.append("dead_label")
     if _contradicts(explain, draw):
         reasons.append("contradicts")
+    for reason in _engine_reasons(widget, claim):
+        if reason not in reasons:
+            reasons.append(reason)
     return reasons
 
 
@@ -277,8 +409,38 @@ def _scale_problem(spec, texts):
     return False
 
 
-def _regime_problem(controls, regime, rendered):
-    """The mark's label shows the formula, and it sits on the stroke."""
+def regime_out_of_range(spec):
+    """True when a regime formula falls outside its control. Missing regime is not this."""
+    if not isinstance(spec, dict):
+        return False
+    regime = spec.get("regime")
+    if not isinstance(regime, list) or not regime:
+        return False
+    controls = spec.get("controls") or []
+    try:
+        state = _state(controls)
+    except (KeyError, TypeError, ValueError):
+        return False
+    by_id = {c.get("id"): c for c in controls if isinstance(c, dict)}
+    for item in regime:
+        if not isinstance(item, dict):
+            return False
+        control = by_id.get(item.get("control"))
+        if control is None:
+            return False
+        try:
+            value = float(_expr_value(str(item.get("formula") or ""), state))
+            lo = float(control["min"])
+            hi = float(control["max"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        if value < lo - 1e-6 or value > hi + 1e-6:
+            return True
+    return False
+
+
+def _regime_problem(draw, controls, regime, rendered, spec):
+    """The mark's label shows the formula, and the readout crosses there."""
     if not isinstance(regime, list) or not regime:
         return True
     state = _state(controls)
@@ -306,7 +468,93 @@ def _regime_problem(controls, regime, rendered):
             return True
         if not _label_on_mark(glyphs, rendered, label, value):
             return True
+        if not _regime_crosses(draw, controls, spec, item, value, lo, hi, step):
+            return True
     return False
+
+
+def _readout_name(spec, cid):
+    spec = spec or {}
+    for item in spec.get("direction") or []:
+        if isinstance(item, dict) and item.get("control") == cid and item.get("readout"):
+            return str(item["readout"])
+    for item in spec.get("direction") or []:
+        if isinstance(item, dict) and item.get("readout"):
+            return str(item["readout"])
+    for item in spec.get("derived") or []:
+        if isinstance(item, dict) and item.get("name"):
+            return str(item["name"])
+    return ""
+
+
+def _regime_crosses(draw, controls, spec, item, value, lo, hi, step):
+    """Render one step either side. The readout must change sign, cross a label number, or turn."""
+    cid = str(item.get("control") or "")
+    name = _readout_name(spec, cid)
+    if not name:
+        return False
+    left = max(lo, value - step)
+    right = min(hi, value + step)
+    if right - left < step * 0.5:
+        return False
+    states = []
+    for point in (left, right, value):
+        state = _state(controls)
+        state[cid] = point
+        states.append(state)
+    rendered = _render(draw, states)
+    if len(rendered) != 3 or any(row.get("error") for row in rendered):
+        return False
+    a = _readout(rendered[0].get("texts"), name)
+    b = _readout(rendered[1].get("texts"), name)
+    mid = _readout(rendered[2].get("texts"), name)
+    if a is None or b is None or abs(a - b) <= 1e-9:
+        return False
+    if a * b < 0 or a == 0 or b == 0:
+        return True
+    for num in (float(n) for n in _SIGNED.findall(str(item.get("label") or ""))):
+        if abs(num - value) <= 0.05:
+            continue
+        if (a - num) * (b - num) < 0:
+            return True
+    if mid is not None and (mid - a) * (mid - b) > 0:
+        return True
+    return False
+
+
+def _engine_reasons(widget, claim):
+    """#59 verifyWidget. reasons plus detail (ctx:setLineDash, undeclared:fmt) go to repair."""
+    if not widget or not widget.get("draw"):
+        return []
+    claim_text = ""
+    if isinstance(claim, dict):
+        claim_text = claim.get("text") or ""
+    elif claim:
+        claim_text = str(claim)
+    try:
+        proc = subprocess.run(
+            ["node", str(_VERIFY)],
+            input=json.dumps({"widget": widget, "claim": claim_text}),
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ["engine"]
+    if proc.returncode != 0:
+        return ["engine"]
+    try:
+        got = json.loads(proc.stdout or "{}")
+    except json.JSONDecodeError:
+        return ["engine"]
+    if got.get("accept"):
+        return []
+    out = []
+    for item in (got.get("reasons") or []) + (got.get("detail") or []):
+        if item and item not in out:
+            out.append(item)
+    return out
 
 
 def _label_on_mark(glyphs, rendered, label, value):

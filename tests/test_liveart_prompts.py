@@ -218,15 +218,15 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
     claim = {"text": "Adam steps by the first moment.", "latex": "", "context": "", "arxiv": "1412.6980"}
     stage = "Adam keeps the step bounded by the second moment. arXiv 1412.6980. The curve is a toy of that step."
     questions = [
-        {"q": "Set lr to 0.8 and watch the step. Do you expect it to leave the valley?", "why": "the narrow valley is the misconception"},
-        {"q": "Set lr to 0.5 and watch the break?", "why": "the regime point"},
-        {"q": "Set lr to 0.1 and watch the step?", "why": "a reading"},
-        {"q": "Set lr to 0.4 and watch the step?", "why": "another reading"},
+        {"q": "Set lr to 0.8: what happens to the step? Do you expect it to leave the valley?", "why": "the narrow valley is the misconception"},
+        {"q": "Set lr to 0.5: what happens to the break?", "why": "the regime point"},
+        {"q": "Set lr to 0.1: what happens to the step?", "why": "a reading"},
+        {"q": "Set lr to 0.4: what happens to the step?", "why": "another reading"},
     ]
     controls = [{"id": "lr", "label": "lr", "min": 0, "max": 1, "value": 0.2, "step": 0.1}]
     draw = (
         "function draw(ctx, state, t) {\n"
-        "  var y = state.lr * 80;\n"
+        "  var y = (state.lr - 0.5) * 80;\n"
         "  function fmt(v) { return Math.round(v * 100) / 100; }\n"
         "  ctx.beginPath();\n"
         "  ctx.moveTo(48, 286);\n"
@@ -298,10 +298,10 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
     ]
     assert question_problems(predict, controls) == ["generic_questions"]
     lora_q = [
-        {"q": "Set r to 4 and watch the factors. What is wrong with the same count?", "why": "misconception"},
-        {"q": "Set d to 256 and watch the bar?", "why": "reading"},
-        {"q": "Set r to 2 and watch the savings?", "why": "reading"},
-        {"q": "Set d to 128 and watch the width?", "why": "width"},
+        {"q": "Set r to 4: what happens to the factors? What is wrong with the same count?", "why": "misconception"},
+        {"q": "Set d to 256: what happens to the bar?", "why": "reading"},
+        {"q": "Set r to 2: what happens to the savings?", "why": "reading"},
+        {"q": "Set d to 128: what happens to the width?", "why": "width"},
     ]
     lora_controls = [
         {"id": "r", "label": "rank", "min": 1, "max": 8, "value": 4, "step": 1},
@@ -450,13 +450,88 @@ def test_round4_replay_requires_regime_and_set_watch():
         "gqa-share": ["generic_questions", "divides", "regime"],
         "kl-policy": ["generic_questions", "regime"],
         "lora-rank": ["generic_questions", "regime"],
-        "pe-sincos": ["generic_questions", "regime"],
-        "rmsnorm-eps": ["generic_questions", "regime"],
+        "pe-sincos": ["generic_questions", "regime", "slop_inert:d"],
+        "rmsnorm-eps": ["generic_questions", "regime", "questions"],
         "rope-shift": ["filler", "generic_questions", "regime", "dead_label"],
     }
     for name in ("kl-policy", "gelu-tail"):
         assert "generic_questions" in got[name]
         assert "regime" in got[name]
+
+
+def test_sanitize_mounts_and_regime_range_stops_codegen():
+    import sys
+    from pathlib import Path
+
+    from rrm.liveart.gate import regime_out_of_range, sanitize_widget
+
+    widget = {
+        "id": "adam-valley",
+        "topic": "adam",
+        "title": "Adam step",
+        "explain": "Look at the step. arXiv 1412.6980.",
+        "questions": [{"q": "Set lr to 0.5 and watch the step", "why": "a reading"}],
+        "controls": [{"id": "lr", "label": "lr", "min": 0, "max": 1, "value": 0.2, "step": 0.1}],
+        "draw": (
+            "function draw(ctx, state, t) { ctx.fillText(fmt(state.lr), 20, 20); "
+            "ctx.setLineDash; function fmt(v) { return Math.round(v * 100) / 100; } }"
+        ),
+    }
+    clean = sanitize_widget(widget)
+    assert clean["questions"][0]["q"] == "Set lr to 0.5: what happens to the step?"
+    assert clean["draw"].index("function fmt") < clean["draw"].index("fmt(")
+    assert "setLineDash" not in clean["draw"]
+    assert regime_out_of_range({
+        "controls": [{"id": "m", "min": -0.5, "max": 0.5, "value": 0, "step": 0.1}],
+        "regime": [{"label": "adam", "control": "m", "formula": "1"}],
+    })
+    assert not regime_out_of_range({"controls": [], "regime": []})
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import scripts_live
+
+    class Off:
+        no_early_stop = True
+
+    class On:
+        no_early_stop = False
+
+    assert scripts_live.stop_early(Off(), 6, 5) is False
+    assert scripts_live.stop_early(On(), 6, 5) is True
+    assert "--no-early-stop" in Path("scripts/liveart_stack.py").read_text(encoding="utf-8")
+
+
+def test_round6_replay_mounts_after_sanitize():
+    from pathlib import Path
+
+    from evals.liveart.probe_claims import rrm85
+    from rrm.liveart.gate import _engine_reasons, quality_gate, regime_out_of_range, sanitize_widget
+
+    claims = {row["id"]: row["claim"] for row in rrm85()}
+    root = Path(__file__).resolve().parents[1] / "evals" / "liveart" / "spark6"
+    raw, after, gates, outside = {}, {}, {}, []
+    for path in sorted(root.glob("*.json")):
+        row = json.loads(path.read_text(encoding="utf-8"))
+        claim = claims[path.stem]
+        raw[path.stem] = _engine_reasons(row["widget"], claim)
+        clean = sanitize_widget(row["widget"])
+        after[path.stem] = _engine_reasons(clean, claim)
+        gates[path.stem] = quality_gate(clean, claim, row.get("spec") or {})
+        if regime_out_of_range(row.get("spec") or {}):
+            outside.append(path.stem)
+    assert raw == {
+        "adam-valley": ["banned", "ctx:setLineDash"],
+        "gqa-share": ["banned", "undeclared:fmt"],
+        "kl-policy": [],
+        "lora-rank": ["banned", "undeclared:fmt"],
+        "pe-sincos": ["question"],
+        "rope-shift": ["question"],
+    }
+    assert after == {name: [] for name in raw}
+    assert gates["kl-policy"] == []
+    assert gates["adam-valley"] == ["regime"]
+    assert outside == ["adam-valley"]
+    assert "generic_questions" in gates["gqa-share"] and "generic_questions" in gates["lora-rank"]
+    assert "regime" in gates["pe-sincos"] and "shapes" in gates["pe-sincos"]
 
 
 def test_round5_replay_stalls_without_a_marked_regime():

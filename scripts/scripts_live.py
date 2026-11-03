@@ -78,6 +78,13 @@ def _ceiling(model, chars, max_out):
     return inn * pin + int(max_out) * pout
 
 
+def stop_early(args, code_seen, code_fails):
+    """Five mount failures in the first eight. --no-early-stop keeps the probe going."""
+    if getattr(args, "no_early_stop", False):
+        return False
+    return code_seen <= 8 and code_fails >= 5
+
+
 def _spec_cut(call):
     """The spec stopped mid-JSON. An HTTP error is not a cut, so it is not retried."""
     if not call or call.get("error"):
@@ -432,11 +439,18 @@ def run_live(args, cases, node, root):
             row.update(verify="skipped", sandbox="skipped", model_verifier="", reasons=[])
             if row["select"] == "widget":
                 from rrm.liveart.archetypes import archetype_for, shots_for
-                from rrm.liveart.gate import finish_explain, quality_gate, seal_widget
+                from rrm.liveart.gate import (
+                    finish_explain,
+                    quality_gate,
+                    regime_out_of_range,
+                    sanitize_widget,
+                    seal_widget,
+                )
 
                 spec_msgs = P.spec_messages(claim, row["topic"])
                 spec_call = go("spec", spec_msgs)
-                if spec_call is not None and _spec_cut(spec_call):
+                spec_body = spec_call.get("json") if spec_call and isinstance(spec_call.get("json"), dict) else {}
+                if spec_call is not None and (_spec_cut(spec_call) or regime_out_of_range(spec_body)):
                     retried = go("spec", spec_msgs)
                     spec_call = retried if retried is not None else None
                 if spec_call is None:
@@ -445,6 +459,11 @@ def run_live(args, cases, node, root):
                 elif _spec_cut(spec_call):
                     row["outcome"] = "fallback"
                     row["reasons"] = ["spec_incomplete"]
+                    row["verify"] = "skipped"
+                    row["sandbox"] = "skipped"
+                elif regime_out_of_range(spec_call.get("json") if isinstance(spec_call.get("json"), dict) else {}):
+                    row["outcome"] = "fallback"
+                    row["reasons"] = ["regime_range"]
                     row["verify"] = "skipped"
                     row["sandbox"] = "skipped"
                 else:
@@ -463,13 +482,13 @@ def run_live(args, cases, node, root):
                         if not w.get("draw"):
                             row.update(verify="no_output", reasons=[w_call["error"] or f"empty/parse ({w_call['status']})"])
                         else:
-                            w = seal_widget(w, explain, questions)
+                            w = sanitize_widget(seal_widget(w, explain, questions))
                             gate = quality_gate(w, claim, spec)
                             if gate:
                                 fix = go("repair", P.repair_messages(claim, explain, questions, w, gate, shots=shots, spec=spec))
                                 fixed = (fix or {}).get("json") or {}
                                 if fixed.get("draw"):
-                                    fixed = seal_widget(fixed, explain, questions)
+                                    fixed = sanitize_widget(seal_widget(fixed, explain, questions))
                                     gate2 = quality_gate(fixed, claim, spec)
                                     if len(gate2) < len(gate):
                                         w, gate = fixed, gate2
@@ -510,7 +529,7 @@ def run_live(args, cases, node, root):
         if not stopped and total >= cap:
             stopped = "cap"
             print("CAP HIT, stopping", flush=True)
-        if not stopped and code_seen <= 8 and code_fails >= 5:
+        if not stopped and stop_early(args, code_seen, code_fails):
             stopped = "early"
             print("EARLY STOP: 5 code fails in first 8", flush=True)
     shown = sum(r.get("outcome") == "show" for r in rows)
