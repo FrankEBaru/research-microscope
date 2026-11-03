@@ -207,6 +207,57 @@ def test_rrm85_prompt_prices_and_budget(monkeypatch, capsys, tmp_path):
     assert graded["verify"] == "pass", graded
 
 
+def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
+    from rrm.liveart.gate import PATTERN_DRAW, finish_explain, quality_gate, seal_widget
+
+    claim = {"text": "Adam steps by the first moment.", "latex": "", "context": "", "arxiv": "1412.6980"}
+    stage = "Adam keeps the step bounded. arXiv 1412.6980. The curve is a toy. It only holds if the valley is narrow."
+    questions = [
+        {"q": "Predict the step at lr 0.2?", "why": "that is the default"},
+        {"q": "At lr 0.8, does the line clip?", "why": "the top of the range leaves the frame"},
+        {"q": "At lr 0.1, which side of the threshold is the step?", "why": "the line splits the regimes"},
+        {"q": "At lr 0.4, what does the readout say?", "why": "the number is the step"},
+    ]
+    controls = [{"id": "lr", "label": "lr", "min": 0, "max": 1, "value": 0.2, "step": 0.1}]
+    rewritten = {"explain": "Adam steps by m-hat. Early on bias correction restores the ratio.", "questions": questions[:3], "draw": "function draw(ctx, state, t) { ctx.fillText(state.lr, 10, 10); }"}
+    sealed = seal_widget(rewritten, stage, questions)
+    assert sealed["explain"] == stage
+    assert "1412.6980" in sealed["explain"]
+    assert "m-hat" not in sealed["explain"]
+    assert len(sealed["questions"]) == 4
+    bare = finish_explain("Adam keeps the step bounded.", claim)
+    assert bare.startswith("Adam keeps the step bounded.")
+    assert "1412.6980" in bare and "toy" in bare and "only holds if" in bare
+
+    widget = {"id": "adam-valley", "topic": "adam", "title": "Adam step", "explain": stage, "questions": questions, "controls": controls, "draw": PATTERN_DRAW}
+    assert quality_gate(widget, claim) == []
+    bad = dict(widget, explain="Adam steps.", questions=[{"q": "If you move it, what happens to the step?", "why": "generic"}], draw="function draw(ctx, state, t) { ctx.fillText(1.5819292019556375, 10, 10); }")
+    reasons = quality_gate(bad, claim)
+    for code in ("no_threshold", "no_fmt", "raw_decimal", "no_citation", "no_toy", "no_limit", "generic_questions"):
+        assert code in reasons, code
+    plateau = dict(widget, explain=stage + " The curve becomes a plateau.")
+    assert "contradicts" in quality_gate(plateau, claim)
+    from rrm.liveart.prompts import schemas
+    assert schemas()["codegen"]["properties"]["controls"]["items"]["properties"]["label"]["description"] == "at most 28 characters"
+    assert "Predice" in question_system() and "what happens" in question_system()
+    assert "function fmt" in codegen_system() and "clipped" in codegen_system()
+    assert "accept es false" in verifier_system()
+
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import scripts_live
+    graded = scripts_live._grade(
+        Path(__file__).resolve().parents[1] / "apps/reader/scripts/liveart_audit.mjs",
+        tmp_path,
+        "adam-pattern",
+        claim["text"],
+        widget,
+        False,
+    )
+    assert graded["verify"] == "pass", graded
+
+
 def test_probe_retries_once_on_504_or_timeout(monkeypatch):
     import sys
     from pathlib import Path

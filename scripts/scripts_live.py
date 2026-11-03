@@ -95,7 +95,7 @@ def _call(stage, system, user, schema, tokens, effort, model=SPARK):
     payload, err = {}, ""
     for attempt in (0, 1):
         try:
-            payload = post_responses(body, timeout=180 if stage == "codegen" else 120)
+            payload = post_responses(body, timeout=180 if stage in ("codegen", "repair") else 120)
             err = ""
             break
         except Exception as exc:
@@ -132,8 +132,11 @@ def _grade(node, root, rid, claim, widget, sandbox):
 
 
 # Live max_output_tokens. The dry run prices _EXPECT_OUT, which is shorter.
-_MAX_OUT = {"selector": 600, "questions": 900, "explain": 900, "codegen": 6000, "verifier": 900}
-_EFFORT = {"selector": "minimal", "questions": "minimal", "explain": "minimal", "codegen": "low", "verifier": "minimal"}
+_MAX_OUT = {"selector": 600, "questions": 900, "explain": 900, "codegen": 6000, "repair": 6000, "verifier": 900}
+_EFFORT = {
+    "selector": "minimal", "questions": "minimal", "explain": "minimal",
+    "codegen": "low", "repair": "low", "verifier": "minimal",
+}
 
 
 def _pick(args, cases):
@@ -339,12 +342,13 @@ def run_live(args, cases, node, root):
         if stopped:
             break
         claim = case["claim"]
-        calls, row = [], {"id": case["id"], "claim": claim.get("text", "")[:120], "cost": 0.0}
+        calls, row, final = [], {"id": case["id"], "claim": claim.get("text", "")[:120], "cost": 0.0}, None
 
         def go(stage, msgs):
             nonlocal total, stopped
-            model = models[stage]
+            model = models[stage] if stage in models else models["codegen"]
             tokens = _MAX_OUT[stage]
+            schema = sch["codegen"] if stage == "repair" else sch[stage]
             ceiling = _ceiling(model, _chars(msgs), tokens)
             if max_usd is not None and total + ceiling > max_usd:
                 stopped = "budget"
@@ -358,7 +362,7 @@ def run_live(args, cases, node, root):
                 stopped = "cap"
                 print("CAP HIT, stopping", flush=True)
                 return None
-            got = _call(stage, msgs[0], msgs[1], sch[stage], tokens, _EFFORT[stage], model)
+            got = _call(stage, msgs[0], msgs[1], schema, tokens, _EFFORT[stage], model)
             calls.append(got)
             _add(bucket, model, got["usage"])
             total += got["usage"]["cost_usd"]
@@ -388,31 +392,49 @@ def run_live(args, cases, node, root):
                     row["outcome"] = "stopped"
                     row["reasons"] = [stopped]
                 else:
+                    from rrm.liveart.gate import finish_explain, quality_gate, seal_widget
+
                     w = w_call["json"] or {}
                     code_seen += 1
                     if not w.get("draw"):
                         row.update(verify="no_output", reasons=[w_call["error"] or f"empty/parse ({w_call['status']})"])
                     else:
+                        explain = finish_explain(explain, claim)
+                        w = seal_widget(w, explain, questions)
+                        gate = quality_gate(w, claim)
+                        mv_reasons = list(gate)
+                        if gate:
+                            fix = go("repair", P.repair_messages(claim, explain, questions, w, gate))
+                            fixed = (fix or {}).get("json") or {}
+                            if fixed.get("draw"):
+                                w = seal_widget(fixed, explain, questions)
+                                gate = quality_gate(w, claim)
+                                mv_reasons = list(gate)
+                        w_call["json"] = w
+                        final = w
                         g = _grade(node, root, case["id"], claim.get("text", ""), w, args.sandbox)
                         row.update(verify=g.get("verify"), sandbox=g.get("sandbox"), reasons=g.get("reasons") or [])
-                        mv_call = go("verifier", P.verifier_messages(claim, w, g.get("reasons") or []))
+                        row["gate"] = gate
+                        mv_call = go("verifier", P.verifier_messages(claim, w, (g.get("reasons") or []) + mv_reasons))
                         if mv_call is None:
                             row["model_verifier"] = "stopped"
                         else:
                             mv = mv_call["json"] or {}
-                            row["model_verifier"] = "accept" if mv.get("accept") else ("reject:" + ";".join(mv.get("reasons") or [])[:80])
-                    ok = row["verify"] == "pass" and (not args.sandbox or row["sandbox"] == "pass")
-                    row["outcome"] = "show" if ok else "fallback"
-                    code_fails += 0 if ok else 1
+                            passed = bool(mv.get("accept")) and not gate
+                            why = gate or (mv.get("reasons") or [])
+                            row["model_verifier"] = "accept" if passed else ("reject:" + ";".join(why)[:80])
+                    engine_ok = row["verify"] == "pass" and (not args.sandbox or row["sandbox"] == "pass")
+                    row["outcome"] = "show" if engine_ok and not row.get("gate") else "fallback"
+                    code_fails += 0 if engine_ok else 1
             else:
                 row["outcome"] = "no_widget"
         row["cost"] = round(row["cost"], 6)
         rows.append(row)
         if raw:
-            (raw / f"{case['id']}.json").write_text(
-                json.dumps({"row": row, "calls": calls}, ensure_ascii=False, indent=1),
-                encoding="utf-8",
-            )
+            blob = {"row": row, "calls": calls}
+            if final:
+                blob["widget"] = final
+            (raw / f"{case['id']}.json").write_text(json.dumps(blob, ensure_ascii=False, indent=1), encoding="utf-8")
         print(
             f"{row['id']:<20} {row.get('select',''):<9} {row.get('verify',''):<10} "
             f"{row.get('sandbox',''):<8} ${row['cost']:.5f} tot ${total:.4f} "
@@ -430,6 +452,7 @@ def run_live(args, cases, node, root):
             print("EARLY STOP: 5 code fails in first 8", flush=True)
     shown = sum(r.get("outcome") == "show" for r in rows)
     summary = _summary(config, False, max_usd, cap, total, rows, bucket, stopped, code_seen, shown)
+    summary["gate_pass"] = sum(r.get("gate") == [] for r in rows)
     _write_summary(args, summary)
     print(f"show {shown}/{code_seen} code outputs, {len(rows)} claims, total ${total:.5f}")
     return 0
