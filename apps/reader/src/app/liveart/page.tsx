@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { STAYS_DOWN, fallbackText } from "@/lib/liveart/fallback.js";
 import { GOLD } from "@/lib/liveart/gold.js";
 import { mountSandbox } from "@/lib/liveart/mount.js";
 import { SHOWCASE } from "@/lib/liveart/showcase.js";
@@ -10,7 +11,14 @@ import "@/styles/liveart.css";
 const CATALOG = [
   ...SHOWCASE.map((item) => ({ ...item, kind: "figure" })),
   ...GOLD.map((widget) => ({ widget, claim: "", kind: "contract" })),
+  STAYS_DOWN,
 ];
+
+function kicker(kind: string) {
+  if (kind === "down") return "Stays written";
+  if (kind === "figure") return "Figure";
+  return "Contract example";
+}
 
 function decimals(step: number) {
   const text = String(step);
@@ -23,44 +31,73 @@ function Stage({ entry }: { entry: (typeof CATALOG)[number] }) {
   const api = useRef<ReturnType<typeof mountSandbox> | null>(null);
   const { widget } = entry;
   const [vals, setVals] = useState<Record<string, number>>(() => Object.fromEntries(widget.controls.map((control) => [control.id, control.value])));
+  const [down, setDown] = useState<string[] | null>(null);
 
   useEffect(() => {
-    if (!box.current) return;
-    const handle = mountSandbox(box.current, widget, { claim: entry.claim });
+    if (down) return;
+    const host = box.current;
+    if (!host) return;
+    let live = true;
+    const handle = mountSandbox(host, widget, {
+      claim: entry.claim,
+      onStatus(next) {
+        if (live && !next.ok) setDown(next.reasons);
+      },
+    });
     api.current = handle;
-    return () => handle.destroy();
-  }, [widget, entry.claim]);
+    return () => {
+      live = false;
+      handle.destroy();
+    };
+  }, [widget, entry.claim, down]);
 
   return (
-    <article className="liveart-card" data-widget={widget.id}>
-      <p className="liveart-kicker">{entry.kind === "figure" ? "Figure" : "Contract example"} · illustrative</p>
+    <article className="liveart-card" data-widget={widget.id} data-down={down ? "1" : "0"}>
+      <p className="liveart-kicker">{kicker(entry.kind)} · illustrative</p>
       <h2>{widget.title}</h2>
-      <div className="liveart-stage" ref={box} />
-      <div className="liveart-controls">
-        {widget.controls.map((control) => (
-          <label key={control.id}>
-            <span>{control.label}</span>
-            <strong>{vals[control.id].toFixed(decimals(control.step))}</strong>
-            <input
-              type="range"
-              min={control.min}
-              max={control.max}
-              step={control.step}
-              value={vals[control.id]}
-              aria-label={control.label}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                setVals((prev) => ({ ...prev, [control.id]: value }));
-                api.current?.set(control.id, value);
-              }}
-            />
-          </label>
-        ))}
+      <div className={down ? "liveart-stage is-static" : "liveart-stage"}>
+        {down ? (
+          <div key="static" className="liveart-static" data-reasons={down.join(" ")} role="note">
+            <p className="liveart-kicker">Static explanation</p>
+            <p className="liveart-explain">{widget.explain}</p>
+            <ul>
+              {widget.questions.map((item) => <li key={item.q}>{item.q}</li>)}
+            </ul>
+            <p className="liveart-reason">{fallbackText(down)}</p>
+          </div>
+        ) : (
+          <div key="host" className="liveart-host" ref={box} />
+        )}
       </div>
-      <p className="liveart-explain">{widget.explain}</p>
-      <ul>
-        {widget.questions.map((item) => <li key={item.q}>{item.q}</li>)}
-      </ul>
+      {down ? null : (
+        <div className="liveart-controls">
+          {widget.controls.map((control) => (
+            <label key={control.id}>
+              <span>{control.label}</span>
+              <strong>{vals[control.id].toFixed(decimals(control.step))}</strong>
+              <input
+                type="range"
+                min={control.min}
+                max={control.max}
+                step={control.step}
+                value={vals[control.id]}
+                aria-label={control.label}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  setVals((prev) => ({ ...prev, [control.id]: value }));
+                  api.current?.set(control.id, value);
+                }}
+              />
+            </label>
+          ))}
+        </div>
+      )}
+      {down ? null : <p className="liveart-explain">{widget.explain}</p>}
+      {down ? null : (
+        <ul>
+          {widget.questions.map((item) => <li key={item.q}>{item.q}</li>)}
+        </ul>
+      )}
     </article>
   );
 }

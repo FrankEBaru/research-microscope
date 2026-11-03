@@ -307,6 +307,23 @@ def _smoothquant(blob):
     return _both(blob, re.compile(r"outlier", re.I), re.compile(r"activation", re.I))
 
 
+def _quant(blob):
+    """LLM.int8 absmax. SmoothQuant keeps its own row, including a claim that names both."""
+    if re.search(r"smoothquant", blob, re.I):
+        return 0
+    if re.search(r"\balpha\b", blob, re.I) and re.search(r"activation", blob, re.I):
+        return 0
+    if re.search(r"llm\.?int8|\babsmax\b|vector-wise quant", blob, re.I):
+        return 3
+    if (
+        re.search(r"outlier", blob, re.I)
+        and re.search(r"int8|8-bit|8 bit|quantiz", blob, re.I)
+        and re.search(r"magnitude|threshold|\bmag\b", blob, re.I)
+    ):
+        return 2
+    return 0
+
+
 def _ssm(blob):
     if re.search(r"\bmamba\b|selective state space", blob, re.I):
         return 2
@@ -494,6 +511,22 @@ TOPICS = (
             ("¿Por qué no cuantizar la activación tal cual?", "un outlier se come el rango y el resto se aplasta"),
             ("¿Qué pasa si alpha se va a un extremo?", "el error sube; el fondo está entre los dos"),
             ("¿Quién se queda con el outlier?", "alpha lo reparte entre la activación y el peso"),
+        ),
+    },
+    {
+        "name": "quant",
+        "score": _quant,
+        "controls": ("mag",),
+        "mark": "error",
+        "explain": (
+            "El paso de int8 sale del máximo: se divide entre 127. "
+            "Una magnitud grande se come el error de los valores chicos. "
+            "Si ese outlier queda fuera, el máximo vuelve a ser de los chicos."
+        ),
+        "questions": (
+            ("¿Por qué un valor grande aplasta a los chicos?", "el paso sale de ese máximo y el redondeo se los come"),
+            ("¿Qué pasa si el outlier no entra al máximo?", "el paso vuelve a caber en los valores chicos"),
+            ("¿De dónde sale el paso, del promedio o del máximo?", "del máximo dividido entre 127"),
         ),
     },
     {

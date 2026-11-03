@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { STAYS_DOWN, fallbackText } from "../src/lib/liveart/fallback.js";
 import { GOLD } from "../src/lib/liveart/gold.js";
 import { SHOWCASE } from "../src/lib/liveart/showcase.js";
 import { CANVAS_METHODS, CANVAS_PROPS, CSP, HOST, LIMITS, MATH_NAMES, SANDBOX, VERSION, liveOn } from "../src/lib/liveart/spec.js";
@@ -153,6 +154,7 @@ test("continue skips a bar and undefined fills a missing max", () => {
 test("setLineDash stays off the canvas list", () => {
   const called = verifyWidget(widget(`function draw(ctx, state, t) { ctx.setLineDash([4, 2]); ctx.fillRect(0, 0, state.a, 20); }`));
   assert.ok(called.reasons.includes("banned"), called.reasons.join(","));
+  assert.ok(called.detail.includes("ctx:setLineDash"), called.detail.join(","));
   const assigned = verifyWidget(widget(`function draw(ctx, state, t) { ctx.setLineDash = undefined; ctx.fillRect(0, 0, state.a, 20); }`));
   assert.ok(assigned.reasons.includes("banned"), assigned.reasons.join(","));
 });
@@ -242,6 +244,26 @@ test("a verified seal painted on the canvas is slop", () => {
   }`;
   const report = verifyWidget(widget(draw));
   assert.ok(report.reasons.includes("slop_seal"), report.reasons.join(","));
+});
+
+test("a failed figure keeps a written explanation", () => {
+  const report = verifyWidget(STAYS_DOWN.widget, { claim: STAYS_DOWN.claim });
+  assert.equal(report.accept, false);
+  assert.ok(report.reasons.some((reason) => reason.startsWith("slop_inert")), report.reasons.join(","));
+  assert.match(fallbackText(report.reasons), /written explanation/);
+});
+
+test("an absmax claim links to the Spanish step", () => {
+  const row = widget(`function draw(ctx, state, t) { ctx.fillRect(10, 10, 40 + state.mag, 30); }`, [
+    { id: "mag", label: "magnitud", min: 1, max: 90, value: 20, step: 1 },
+  ]);
+  row.topic = "quant";
+  row.title = "Un valor se come el paso";
+  row.explain = "El paso sale del máximo y ese máximo se come el error de los chicos.";
+  const linked = verifyWidget(row, {
+    claim: "LLM.int8 quantizes with absmax, so one outlier magnitude eats the rounding of the small values.",
+  });
+  assert.equal(linked.accept, true, linked.reasons.join(","));
 });
 
 test("oversized draw is rejected", () => {

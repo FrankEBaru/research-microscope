@@ -88,13 +88,15 @@ const BANNED = [
 
 const NETWORK = /https?:\/\/|\bwss?:\/\/|\bfetch\s*\(|\beval\s*\(/i;
 
+function flagOn(raw) {
+  const text = String(raw || "").trim().toLowerCase();
+  return text === "1" || text === "true" || text === "yes" || text === "on";
+}
+
 export function liveOn(env) {
-  const bag = env || (typeof process !== "undefined" ? process.env : {});
-  for (const key of ["RRM_LIVE_ARTIFACTS", "NEXT_PUBLIC_RRM_LIVE_ARTIFACTS"]) {
-    const raw = String(bag[key] || "").trim().toLowerCase();
-    if (raw === "1" || raw === "true" || raw === "yes" || raw === "on") return true;
-  }
-  return false;
+  // Static names so the client bundle inlines NEXT_PUBLIC_*. A dynamic key stays empty in the browser.
+  if (env) return flagOn(env.RRM_LIVE_ARTIFACTS) || flagOn(env.NEXT_PUBLIC_RRM_LIVE_ARTIFACTS);
+  return flagOn(process.env.RRM_LIVE_ARTIFACTS) || flagOn(process.env.NEXT_PUBLIC_RRM_LIVE_ARTIFACTS);
 }
 
 export function bannedIn(draw) {

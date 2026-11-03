@@ -32,6 +32,7 @@ function verifyRow(row) {
     topic: row.widget && row.widget.topic,
     verify: report.accept ? "pass" : "fail",
     reasons: report.reasons,
+    detail: report.detail || [],
     usesT: report.usesT,
     sandbox: report.accept ? "pending" : "not_mounted",
     pixels: 0,

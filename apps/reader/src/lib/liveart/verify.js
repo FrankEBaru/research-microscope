@@ -77,6 +77,7 @@ const LINKS = {
   adam: [["adam", "moment", "valley"], ["momento", "valle"]],
   batchnorm: [["batch", "normalization"], ["lote"]],
   distill_temp: [["distillation", "teacher", "temperature"], ["maestro", "temperatura"]],
+  quant: [["absmax", "int8", "magnitude"], ["error", "paso"]],
 };
 
 function linkedPair(topic, claimFold, copy) {
@@ -166,26 +167,35 @@ function reasonOf(err) {
   return "throw";
 }
 
+function noted(err) {
+  return String(err && err.message || "throw");
+}
+
 export function verifyWidget(widget, opts = {}) {
   const reasons = [];
+  const detail = [];
   const shape = shapeErrors(widget);
   reasons.push(...shape);
   let encoded = "";
   try { encoded = JSON.stringify(widget); } catch { reasons.push("size"); }
   if (encoded.length > HOST.json_chars) reasons.push("size");
   const draw = widget && typeof widget.draw === "string" ? widget.draw : "";
-  if (bannedIn(draw).length || networkIn(widget)) reasons.push("banned");
+  if (bannedIn(draw).length || networkIn(widget)) {
+    reasons.push("banned");
+    for (const name of bannedIn(draw)) detail.push("banned:" + name);
+    if (networkIn(widget)) detail.push("network");
+  }
   if (sealIn(draw)) reasons.push("slop_seal");
   if (injectionIn(opts.claim) || injectionIn(copyText(widget))) reasons.push("injection");
-  if (reasons.length) return finish(reasons, false);
+  if (reasons.length) return finish(reasons, false, detail);
 
   let ast;
   try { ast = parseDraw(draw); }
-  catch (err) { return finish([reasonOf(err)], false); }
+  catch (err) { return finish([reasonOf(err)], false, [noted(err)]); }
 
   let base;
   try { base = execute(ast, baseState(widget), 0, HOST.step_cap); }
-  catch (err) { return finish([reasonOf(err)], false); }
+  catch (err) { return finish([reasonOf(err)], false, [noted(err)]); }
   if (!painted(base.calls)) reasons.push("blank");
 
   const controls = widget.controls || [];
@@ -200,15 +210,18 @@ export function verifyWidget(widget, opts = {}) {
         if (!geometryChanged(lo.calls, hi.calls, HOST.pixel_floor)) reasons.push("slop_inert:" + control.id);
       } catch (err) {
         reasons.push(reasonOf(err));
+        detail.push(noted(err));
       }
     }
   }
   if (!claimLinked(widget, opts.claim || "")) reasons.push("slop_unrelated");
-  return finish(reasons, base.usesT);
+  return finish(reasons, base.usesT, detail);
 }
 
-function finish(reasons, usesT) {
+function finish(reasons, usesT, detail) {
   const unique = [];
   for (const reason of reasons) if (!unique.includes(reason)) unique.push(reason);
-  return { accept: unique.length === 0, reasons: unique, usesT: Boolean(usesT) };
+  const notes = [];
+  for (const item of detail || []) if (item && !notes.includes(item)) notes.push(item);
+  return { accept: unique.length === 0, reasons: unique, usesT: Boolean(usesT), detail: notes };
 }

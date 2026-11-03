@@ -55,6 +55,8 @@ def selector_cases():
         ("beam", claim("Beam search with width 1 returns the greedy continuation, which can lose to a path whose first token looked worse.", arxiv="1609.08144"), "widget", "beam", "mechanism"),
         ("bpe", claim("Byte-pair encoding repeatedly merges the most frequent adjacent pair. Unseen words split into the merges already learned.", arxiv="1508.07909"), "widget", "bpe_merge", "mechanism"),
         ("smoothquant", claim("SmoothQuant migrates activation outliers into the weights with a scale alpha, and the quantization error is a valley in alpha.", arxiv="2211.10438"), "widget", "smoothquant", "mechanism"),
+        ("int8-outlier", claim("LLM.int8 quantizes a vector with absmax: the step is the maximum magnitude divided by 127, so one outlier eats the rounding error of the small values.", arxiv="2208.07339"), "widget", "quant", "mechanism"),
+        ("quant-bare", claim("We quantize the model weights to 8 bits."), "skip", "", "no_parameter"),
         ("mamba", claim("In a selective state space model, a large delta resets the hidden state to the current input, while a small delta keeps the old state.", arxiv="2312.00752"), "widget", "ssm_delta", "mechanism"),
         ("dpo", claim("Direct Preference Optimization weighs the KL penalty by beta.", arxiv="2305.18290"), "widget", "dpo_beta", "mechanism"),
         ("yarn", claim("YaRN scales the RoPE frequencies by a factor s so a longer context still fits.", arxiv="2309.00071"), "widget", "yarn_scale", "mechanism"),
@@ -251,5 +253,24 @@ def emulated_cases():
     ]
 
 
+def repair_cases():
+    return [
+        {"id": "repair-off", "suite": "repair", "reasons": ["throw"], "enabled": False, "retry": False},
+        {"id": "repair-throw", "suite": "repair", "reasons": ["throw"], "detail": ["call"], "enabled": True, "retry": True, "needle": "charAt"},
+        {"id": "repair-inert", "suite": "repair", "reasons": ["slop_inert:scale"], "enabled": True, "retry": True, "needle": "scale"},
+        {"id": "repair-inject", "suite": "repair", "reasons": ["injection", "throw"], "enabled": True, "retry": False},
+        {"id": "repair-seal", "suite": "repair", "reasons": ["slop_seal"], "enabled": True, "retry": False},
+        {"id": "repair-ctx", "suite": "repair", "reasons": ["banned"], "detail": ["ctx:setLineDash"], "enabled": True, "retry": True, "needle": "setLineDash"},
+    ]
+
+
 def cases():
-    return [{"id": "bank-bounds", "suite": "bank"}] + selector_cases() + question_cases() + explain_cases() + verify_cases() + emulated_cases()
+    return (
+        [{"id": "bank-bounds", "suite": "bank"}]
+        + selector_cases()
+        + question_cases()
+        + explain_cases()
+        + verify_cases()
+        + emulated_cases()
+        + repair_cases()
+    )

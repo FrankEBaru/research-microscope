@@ -1,30 +1,26 @@
+import { fallbackText } from "./fallback.js";
 import { HOST, SANDBOX } from "./spec.js";
 import { srcdoc } from "./sandbox.js";
 import { verifyWidget } from "./verify.js";
-
-function fallbackCopy(reasons) {
-  if (reasons.some((reason) => reason === "dead_control" || reason.startsWith("slop_inert"))) {
-    return "A control does not move the picture, so this widget stays down.";
-  }
-  if (reasons.includes("slop_unrelated")) return "The picture does not match the claim, so this widget stays down.";
-  if (reasons.includes("step_cap") || reasons.includes("timeout")) return "This widget took too long, so the sandbox stopped it.";
-  if (reasons.includes("banned")) return "This widget asked for something the sandbox does not allow.";
-  return "The sandbox stopped this widget.";
-}
 
 function showFallback(el, reasons) {
   const note = document.createElement("p");
   note.className = "liveart-fallback";
   note.dataset.reasons = reasons.join(" ");
-  note.textContent = fallbackCopy(reasons);
+  note.textContent = fallbackText(reasons);
   el.replaceChildren(note);
+}
+
+function reportStatus(opts, ok, reasons) {
+  if (opts.onStatus) opts.onStatus({ ok, reasons });
 }
 
 export function mountSandbox(el, widget, opts = {}) {
   const report = verifyWidget(widget, { claim: opts.claim || "" });
   if (!report.accept) {
-    showFallback(el, report.reasons);
-    return { ok: false, report, set() {}, destroy() { el.replaceChildren(); } };
+    if (!opts.onStatus) showFallback(el, report.reasons);
+    reportStatus(opts, false, report.reasons);
+    return { ok: false, report, set() {}, destroy() {} };
   }
 
   const iframe = document.createElement("iframe");
@@ -52,7 +48,8 @@ export function mountSandbox(el, widget, opts = {}) {
     window.clearTimeout(timer);
     window.cancelAnimationFrame(raf);
     window.removeEventListener("message", onMsg);
-    showFallback(el, [reason]);
+    if (!opts.onStatus) showFallback(el, [reason]);
+    reportStatus(opts, false, [reason]);
   }
 
   function send() {

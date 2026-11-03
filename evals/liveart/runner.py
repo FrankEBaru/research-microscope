@@ -3,6 +3,8 @@
 from rrm.liveart.contract import LIMITS
 from rrm.liveart.fewshots import DRAWS
 from rrm.liveart.offline import TOPICS, explain_for, gold_widget, questions_for, select_claim, verify_widget
+from rrm.liveart.prompts import repair_messages
+from rrm.liveart.repair import should_repair
 
 from evals.liveart.cases import cases
 
@@ -57,6 +59,16 @@ def _grade(case):
             if got["accept"] is not True:
                 return False, name + ":" + ",".join(got["reasons"])
         return True, "bounds"
+    if suite == "repair":
+        reasons = case["reasons"]
+        detail = case.get("detail") or []
+        retry = should_repair(reasons, enabled=case["enabled"])
+        ok = retry is case["retry"]
+        if case.get("needle"):
+            system, user = repair_messages({"text": "probe"}, [], "", gold_widget("stddev"), reasons, detail)
+            ok = ok and case["needle"] in system and "Ejemplos:" not in system and len(system) < 3500
+            ok = ok and "stddev" in user
+        return ok, "retry" if retry else "off"
     raise KeyError(suite)
 
 
