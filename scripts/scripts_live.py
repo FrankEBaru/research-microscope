@@ -4,7 +4,7 @@ One pass. A 504 or a read timeout is retried once; that retry is not a model ret
 Any other error is not retried. Local 0.3 verifier + sandbox grade the code.
 
 Configs: spark (contributor for every stage), wonder (muse-wonder-1.0 for every
-stage), hybrid (Wonder writes the questions and the design, Spark writes the code).
+stage), hybrid (Wonder writes the spec, Spark writes the code).
 Prices are the per-1M rates in MODELOS-META. --max-usd refuses a call whose
 worst-case cost would pass the cap. The key is only read by metacall.post_responses.
 """
@@ -25,20 +25,18 @@ _PER_M = {
     SPARK: (0.10, 0.002, 0.20),
     WONDER: (4.00, 0.20, 20.00),
 }
+_STAGES = ("selector", "spec", "codegen", "verifier")
 CONFIGS = {
-    "spark": {stage: SPARK for stage in ("selector", "questions", "explain", "codegen", "verifier")},
-    "wonder": {stage: WONDER for stage in ("selector", "questions", "explain", "codegen", "verifier")},
-    "hybrid": {
-        "selector": SPARK,
-        "questions": WONDER,
-        "explain": WONDER,
-        "codegen": SPARK,
-        "verifier": SPARK,
-    },
+    "spark": {stage: SPARK for stage in _STAGES},
+    "wonder": {stage: WONDER for stage in _STAGES},
+    "hybrid": {"selector": SPARK, "spec": WONDER, "codegen": SPARK, "verifier": SPARK},
 }
 # Expected output tokens for a dry run. The live call may be shorter; the
 # budget check uses max_output_tokens instead, so it stops early rather than late.
-_EXPECT_OUT = {"selector": 200, "questions": 600, "explain": 250, "codegen": 2500, "verifier": 250}
+_EXPECT_OUT = {
+    "selector": 200, "spec": 700, "questions": 600, "explain": 250,
+    "codegen": 2500, "repair": 2500, "verifier": 250,
+}
 
 
 def _infra(err):
@@ -132,9 +130,12 @@ def _grade(node, root, rid, claim, widget, sandbox):
 
 
 # Live max_output_tokens. The dry run prices _EXPECT_OUT, which is shorter.
-_MAX_OUT = {"selector": 600, "questions": 900, "explain": 900, "codegen": 6000, "repair": 6000, "verifier": 900}
+_MAX_OUT = {
+    "selector": 600, "spec": 1600, "questions": 900, "explain": 900,
+    "codegen": 6000, "repair": 6000, "verifier": 900,
+}
 _EFFORT = {
-    "selector": "minimal", "questions": "minimal", "explain": "minimal",
+    "selector": "minimal", "spec": "minimal", "questions": "minimal", "explain": "minimal",
     "codegen": "low", "repair": "low", "verifier": "minimal",
 }
 
@@ -240,13 +241,16 @@ def _estimate(model, msgs, stage):
 
 
 def _dry_run(args, cases, models, config, cap, max_usd):
-    """Price the real prompts. Questions and explain are not known yet, so the
-    later stages are padded by the expected size of those replies. No HTTP."""
+    """Price the real prompts. The spec reply is not known yet, so codegen is
+    padded by that expected size. Repair is priced apart and not spent unless
+    the gate rejects. No HTTP."""
     from rrm.liveart import prompts as P
+    from rrm.liveart.archetypes import archetype_for, shots_for
     from rrm.liveart.offline import select_claim
 
     bucket, rows = {}, []
     total = total_x2 = ceiling_sum = 0.0
+    repair_total = repair_ceiling_sum = 0.0
     spent_expect = allow = 0.0
     code_seen = 0
     for case in cases:
@@ -254,20 +258,31 @@ def _dry_run(args, cases, models, config, cap, max_usd):
         decision = select_claim(claim)
         topic = decision["topic"]
         stages = [("selector", P.selector_messages(claim))]
+        repair_msgs = None
         if decision["merit"] == "widget":
-            questions = P.question_messages(claim, topic)
-            explain = P.explain_messages(claim, topic)
-            # Pad with the replies those two stages are expected to return.
-            pad = "x" * ((_EXPECT_OUT["questions"] + _EXPECT_OUT["explain"]) * 4)
-            code = P.codegen_messages(claim, [{"q": "?", "why": "?"}], pad)
+            spec_msgs = P.spec_messages(claim, topic)
+            pad = "x" * (_EXPECT_OUT["spec"] * 4)
+            arch = archetype_for(topic)
+            shots = shots_for(arch, topic, case["id"])
+            spec = {
+                "archetype": arch,
+                "controls": [],
+                "derived": [],
+                "threshold_formula": "",
+                "direction": [],
+                "questions": [],
+                "explain": pad,
+            }
+            code = P.codegen_messages(claim, [{"q": "?", "why": "?"}], pad, shots=shots, spec=spec)
             widget = {
                 "id": "x", "topic": topic or "x", "title": "x",
-                "explain": "x" * (_EXPECT_OUT["explain"] * 4),
+                "explain": pad,
                 "questions": [], "controls": [],
                 "draw": "x" * (_EXPECT_OUT["codegen"] * 4),
             }
             check = P.verifier_messages(claim, widget, ["slop_inert:x"])
-            stages.extend([("questions", questions), ("explain", explain), ("codegen", code), ("verifier", check)])
+            stages.extend([("spec", spec_msgs), ("codegen", code), ("verifier", check)])
+            repair_msgs = P.repair_messages(claim, pad, [], widget, ["direction"], shots=shots, spec=spec)
             code_seen += 1
         calls = []
         cost = cost_x2 = 0.0
@@ -288,6 +303,18 @@ def _dry_run(args, cases, models, config, cap, max_usd):
             print(
                 f"  {stage:<10} {model} in {usage['input_tokens']} out {usage['output_tokens']} "
                 f"${usage['cost_usd']:.5f} (outx2 ${doubled:.5f})",
+                flush=True,
+            )
+        if repair_msgs is not None:
+            model = models["codegen"]
+            usage, _doubled = _estimate(model, repair_msgs, "repair")
+            ceiling = round(_ceiling(model, _chars(repair_msgs), _MAX_OUT["repair"]), 8)
+            repair_total += usage["cost_usd"]
+            repair_ceiling_sum += ceiling
+            allow = max(allow, spent_expect + ceiling)
+            print(
+                f"  {'repair':<10} {model} in {usage['input_tokens']} out {usage['output_tokens']} "
+                f"${usage['cost_usd']:.5f} (only if the gate rejects)",
                 flush=True,
             )
         total += cost
@@ -313,12 +340,16 @@ def _dry_run(args, cases, models, config, cap, max_usd):
             "output_x2_usd": round(total_x2, 6),
             "ceiling_usd": round(ceiling_sum, 6),
             "allow_usd": round(allow, 6),
+            "repair_usd": round(repair_total, 6),
+            "with_repair_usd": round(total + repair_total, 6),
+            "with_repair_ceiling_usd": round(ceiling_sum + repair_ceiling_sum, 6),
         },
     )
     _write_summary(args, summary)
     print(
         f"dry-run {config}: {len(rows)} claims, {code_seen} widgets, "
-        f"${total:.5f}, output x2 ${total_x2:.5f}, ceiling ${ceiling_sum:.5f}"
+        f"${total:.5f}, with repair ${total + repair_total:.5f}, "
+        f"ceiling ${ceiling_sum:.5f}, with repair ceiling ${ceiling_sum + repair_ceiling_sum:.5f}"
     )
     return 0
 
@@ -383,49 +414,55 @@ def run_live(args, cases, node, root):
             row.update(select=parsed.get("merit", "parse_fail"), topic=parsed.get("topic", ""), reason=parsed.get("reason", ""))
             row.update(verify="skipped", sandbox="skipped", model_verifier="", reasons=[])
             if row["select"] == "widget":
-                q_call = go("questions", P.question_messages(claim, row["topic"]))
-                ex_call = go("explain", P.explain_messages(claim, row["topic"])) if q_call else None
-                questions = (q_call["json"] or {}).get("questions") or [] if q_call else []
-                explain = (ex_call["json"] or {}).get("explain") or "" if ex_call else ""
-                w_call = go("codegen", P.codegen_messages(claim, questions, explain)) if ex_call else None
-                if w_call is None:
+                from rrm.liveart.archetypes import archetype_for, shots_for
+                from rrm.liveart.gate import finish_explain, quality_gate, seal_widget
+
+                spec_call = go("spec", P.spec_messages(claim, row["topic"]))
+                if spec_call is None:
                     row["outcome"] = "stopped"
                     row["reasons"] = [stopped]
                 else:
-                    from rrm.liveart.gate import finish_explain, quality_gate, seal_widget
-
-                    w = w_call["json"] or {}
-                    code_seen += 1
-                    if not w.get("draw"):
-                        row.update(verify="no_output", reasons=[w_call["error"] or f"empty/parse ({w_call['status']})"])
+                    spec = spec_call["json"] if isinstance(spec_call.get("json"), dict) else {}
+                    explain = finish_explain(spec.get("explain") or "", claim)
+                    questions = spec.get("questions") or []
+                    arch = spec.get("archetype") or archetype_for(row["topic"])
+                    shots = shots_for(arch, row["topic"], case["id"])
+                    w_call = go("codegen", P.codegen_messages(claim, questions, explain, shots=shots, spec=spec))
+                    if w_call is None:
+                        row["outcome"] = "stopped"
+                        row["reasons"] = [stopped]
                     else:
-                        explain = finish_explain(explain, claim)
-                        w = seal_widget(w, explain, questions)
-                        gate = quality_gate(w, claim)
-                        mv_reasons = list(gate)
-                        if gate:
-                            fix = go("repair", P.repair_messages(claim, explain, questions, w, gate))
-                            fixed = (fix or {}).get("json") or {}
-                            if fixed.get("draw"):
-                                w = seal_widget(fixed, explain, questions)
-                                gate = quality_gate(w, claim)
-                                mv_reasons = list(gate)
-                        w_call["json"] = w
-                        final = w
-                        g = _grade(node, root, case["id"], claim.get("text", ""), w, args.sandbox)
-                        row.update(verify=g.get("verify"), sandbox=g.get("sandbox"), reasons=g.get("reasons") or [])
-                        row["gate"] = gate
-                        mv_call = go("verifier", P.verifier_messages(claim, w, (g.get("reasons") or []) + mv_reasons))
-                        if mv_call is None:
-                            row["model_verifier"] = "stopped"
+                        w = w_call["json"] or {}
+                        code_seen += 1
+                        if not w.get("draw"):
+                            row.update(verify="no_output", reasons=[w_call["error"] or f"empty/parse ({w_call['status']})"])
                         else:
-                            mv = mv_call["json"] or {}
-                            passed = bool(mv.get("accept")) and not gate
-                            why = gate or (mv.get("reasons") or [])
-                            row["model_verifier"] = "accept" if passed else ("reject:" + ";".join(why)[:80])
-                    engine_ok = row["verify"] == "pass" and (not args.sandbox or row["sandbox"] == "pass")
-                    row["outcome"] = "show" if engine_ok and not row.get("gate") else "fallback"
-                    code_fails += 0 if engine_ok else 1
+                            w = seal_widget(w, explain, questions)
+                            gate = quality_gate(w, claim, spec)
+                            if gate:
+                                fix = go("repair", P.repair_messages(claim, explain, questions, w, gate, shots=shots, spec=spec))
+                                fixed = (fix or {}).get("json") or {}
+                                if fixed.get("draw"):
+                                    fixed = seal_widget(fixed, explain, questions)
+                                    gate2 = quality_gate(fixed, claim, spec)
+                                    if len(gate2) < len(gate):
+                                        w, gate = fixed, gate2
+                            w_call["json"] = w
+                            final = w
+                            g = _grade(node, root, case["id"], claim.get("text", ""), w, args.sandbox)
+                            row.update(verify=g.get("verify"), sandbox=g.get("sandbox"), reasons=g.get("reasons") or [])
+                            row["gate"] = gate
+                            mv_call = go("verifier", P.verifier_messages(claim, w, (g.get("reasons") or []) + list(gate)))
+                            if mv_call is None:
+                                row["model_verifier"] = "stopped"
+                            else:
+                                mv = mv_call["json"] or {}
+                                passed = bool(mv.get("accept")) and not gate
+                                why = gate or (mv.get("reasons") or [])
+                                row["model_verifier"] = "accept" if passed else ("reject:" + ";".join(why)[:80])
+                        engine_ok = row["verify"] == "pass" and (not args.sandbox or row["sandbox"] == "pass")
+                        row["outcome"] = "show" if engine_ok and not row.get("gate") else "fallback"
+                        code_fails += 0 if engine_ok else 1
             else:
                 row["outcome"] = "no_widget"
         row["cost"] = round(row["cost"], 6)

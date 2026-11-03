@@ -1,0 +1,59 @@
+{
+ "controls": [
+  {
+   "id": "step",
+   "label": "step",
+   "max": 0.1,
+   "min": 0.01,
+   "step": 0.005,
+   "value": 0.05
+  },
+  {
+   "id": "vhat",
+   "label": "second moment",
+   "max": 4,
+   "min": 0.5,
+   "step": 0.1,
+   "value": 1
+  },
+  {
+   "id": "beta2",
+   "label": "beta2",
+   "max": 0.999,
+   "min": 0.9,
+   "step": 0.001,
+   "value": 0.99
+  },
+  {
+   "id": "eps",
+   "label": "epsilon",
+   "max": 0.001,
+   "min": 1e-08,
+   "step": 1e-08,
+   "value": 0.0001
+  }
+ ],
+ "draw": "function draw(ctx, state, t) {\n  var top = 36;\n  var bot = 286;\n  var S = 1200;\n  var step = state.step;\n  var vhat = state.vhat;\n  var beta2 = state.beta2;\n  var eps = state.eps;\n  function fmt(v) { return Math.round(v * 100) / 100; }\n  var denom = Math.sqrt(vhat) + eps * 5000;\n  var eff = step * (0.5 + (beta2 - 0.9) * 5);\n  var y = eff / denom * S;\n  var ythr = bot - 0.1 * S;\n  var x = 48;\n  var yv = 0;\n  var dx = 0;\n  var clipped = false;\n  var mid = 304;\n  var xb = 0;\n  var yb = 0;\n  var r = 0;\n  ctx.clearRect(0, 0, state.w, state.h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, state.w, state.h);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  for (x = 48; x <= 560; x = x + 8) {\n    dx = (x - mid) / 100;\n    yv = 140 + dx * dx * vhat * 10;\n    if (yv > bot) { yv = bot; clipped = true; }\n    if (yv < top) { yv = top; clipped = true; }\n    if (x === 48) { ctx.moveTo(x, yv); } else { ctx.lineTo(x, yv); }\n  }\n  ctx.stroke();\n  if (clipped === true) { ctx.fillStyle = \"#1f4b99\"; ctx.fillText(\"clipped\", 500, top + 16); }\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  ctx.moveTo(48, ythr);\n  ctx.lineTo(560, ythr);\n  ctx.stroke();\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 3;\n  ctx.beginPath();\n  if (y > bot - top) {\n    ctx.moveTo(48, bot);\n    ctx.lineTo(560, top);\n    ctx.stroke();\n    ctx.fillStyle = \"#1f4b99\";\n    ctx.fillText(\"clipped\", 500, top + 32);\n  } else {\n    ctx.moveTo(48, bot - y);\n    ctx.lineTo(560, bot - y);\n    ctx.stroke();\n  }\n  xb = mid + (0.999 - beta2) * 2000;\n  if (xb > 560) { xb = 560; }\n  if (xb < 48) { xb = 48; }\n  dx = (xb - mid) / 100;\n  yb = 140 + dx * dx * vhat * 10;\n  if (yb > bot) { yb = bot; }\n  r = 6 + eps * 2000;\n  ctx.fillStyle = \"#c4512c\";\n  ctx.beginPath();\n  ctx.arc(xb, yb, r, 0, Math.PI * 2);\n  ctx.fill();\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"threshold \" + fmt(0.1), 48, ythr - 8);\n  ctx.fillText(\"step = \" + fmt(y / S), 48, 318);\n  ctx.fillText(\"toy 1412.6980 bias on\", 48, 344);\n}",
+ "explain": "Dragging the valley width reshapes the loss curve while the step m_hat/sqrt(v_hat) stays flat below the threshold line with reading step = value. This toy balance only holds if 1412.6980 bias correction is on, otherwise the narrow valley makes it explode.",
+ "id": "adam-valley-step",
+ "questions": [
+  {
+   "q": "Predict which side escapes the narrow valley if you raise the step to 0.08?",
+   "why": "doubt about step size versus valley stability"
+  },
+  {
+   "q": "Why does the step stay bounded when the second moment grows to 4.0?",
+   "why": "doubt about normalization by sqrt second moment"
+  },
+  {
+   "q": "Where is the best point when you set beta2 to 0.999 with noisy gradients?",
+   "why": "doubt about memory length and final choice"
+  },
+  {
+   "q": "What stays equal at the end if you drop epsilon to 1e-08?",
+   "why": "doubt about epsilon leaving direction unchanged"
+  }
+ ],
+ "title": "Adam step stays flat in a narrow valley",
+ "topic": "adam"
+}

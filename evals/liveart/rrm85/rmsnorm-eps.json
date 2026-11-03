@@ -1,0 +1,43 @@
+{
+ "controls": [
+  {
+   "id": "eps",
+   "label": "epsilon",
+   "max": 2,
+   "min": 0,
+   "step": 0.05,
+   "value": 0.2
+  },
+  {
+   "id": "xval",
+   "label": "x value",
+   "max": 4,
+   "min": 0,
+   "step": 0.1,
+   "value": 2
+  }
+ ],
+ "draw": "function draw(ctx, state, t) {\n  var top = 36;\n  var bot = 286;\n  var left = 48;\n  var right = 560;\n  var eps = state.eps;\n  var xv = state.xval;\n  function fmt(v) { return Math.round(v * 100) / 100; }\n  var scaleY = (bot - top) / 1.5;\n  var thr = 1;\n  var ythr = bot - thr * scaleY;\n  var i = 0;\n  var n = 60;\n  var x = 0;\n  var y = 0;\n  var px = 0;\n  var py = 0;\n  var clipped = false;\n  ctx.clearRect(0, 0, state.w, state.h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, state.w, state.h);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  for (i = 0; i <= n; i++) {\n    x = (i / n) * 4;\n    if (x === 0) { y = 0; } else { y = x / Math.sqrt(x * x + eps); }\n    px = left + (x / 4) * (right - left);\n    py = bot - y * scaleY;\n    if (py < top) { py = top; clipped = true; }\n    if (i === 0) { ctx.moveTo(px, py); } else { ctx.lineTo(px, py); }\n  }\n  ctx.stroke();\n  if (clipped) { ctx.fillStyle = \"#1f4b99\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"clipped\", 500, top + 16); }\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(left, ythr);\n  ctx.lineTo(right, ythr);\n  ctx.stroke();\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"threshold \" + fmt(thr), left, ythr - 8);\n  var ym = 0;\n  if (xv === 0) { ym = 0; } else { ym = xv / Math.sqrt(xv * xv + eps); }\n  var mx = left + (xv / 4) * (right - left);\n  var my = bot - ym * scaleY;\n  if (my < top) { my = top; }\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.beginPath();\n  ctx.moveTo(mx, bot);\n  ctx.lineTo(mx, my);\n  ctx.stroke();\n  ctx.fillStyle = \"#c4512c\";\n  ctx.beginPath();\n  ctx.arc(mx, my, 6, 0, Math.PI * 2);\n  ctx.fill();\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillText(\"y = \" + fmt(ym), left, 318);\n  ctx.fillText(\"eps = \" + fmt(eps), 300, 318);\n  ctx.fillText(\"toy rms\", left, 344);\n}",
+ "explain": "Moving epsilon up lifts the toy RMSNorm curve toward the threshold line and the name = value reading rises with it, while zero stays still. With y = x / sqrt(mean(x^2)+eps) from 1910.07467 this only holds if eps stays small.",
+ "id": "rmsnorm-eps",
+ "questions": [
+  {
+   "q": "Predict y for x=2 with eps=0.2 versus eps=1?",
+   "why": "Reader compares lift toward threshold."
+  },
+  {
+   "q": "Why does x=0 keep y=0 when eps=0.5?",
+   "why": "Reader checks fixed zero point."
+  },
+  {
+   "q": "Why does x=4 stay near 1 when eps=0.1?",
+   "why": "Reader tests large-value stability."
+  },
+  {
+   "q": "Which reading at x=1 changes most by eps=2?",
+   "why": "Reader probes small-range sensitivity."
+  }
+ ],
+ "title": "Epsilon lifts RMSNorm toward one",
+ "topic": "rmsnorm"
+}

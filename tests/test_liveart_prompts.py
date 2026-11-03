@@ -62,7 +62,8 @@ def test_flag_defaults_off_and_injection_stays_inside_the_fence(monkeypatch):
     code = codegen_system()
     assert VERSION in code
     assert "fetch" in code and "Math.random" in code
-    assert "La base cambia el ritmo de la onda" in code
+    assert "La base cambia el ritmo de la onda" not in code
+    assert "only holds if" not in code and "name = value" not in code
     assert "tercera fórmula" in explain_system()
     assert "¿Por qué una base más grande" in question_system()
     assert "tiene que leer el control" in codegen_system()
@@ -176,7 +177,9 @@ def test_rrm85_prompt_prices_and_budget(monkeypatch, capsys, tmp_path):
     dry = json.loads((tmp_path / "dry.json").read_text(encoding="utf-8"))
     assert dry["dry_run"] is True and dry["n"] == 8 and dry["code"] == 8
     assert dry["by_model"][scripts_live.SPARK]["calls"] == 24
-    assert dry["by_model"][scripts_live.WONDER]["calls"] == 16
+    assert dry["by_model"][scripts_live.WONDER]["calls"] == 8
+    assert dry["with_repair_usd"] > dry["total_usd"]
+    assert dry["with_repair_ceiling_usd"] > dry["ceiling_usd"]
     assert dry["output_x2_usd"] > dry["total_usd"] > 0
 
     class Tight(Args):
@@ -208,18 +211,46 @@ def test_rrm85_prompt_prices_and_budget(monkeypatch, capsys, tmp_path):
 
 
 def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
-    from rrm.liveart.gate import PATTERN_DRAW, finish_explain, quality_gate, seal_widget
+    from rrm.liveart.archetypes import shots_for
+    from rrm.liveart.gate import finish_explain, quality_gate, seal_widget
 
     claim = {"text": "Adam steps by the first moment.", "latex": "", "context": "", "arxiv": "1412.6980"}
-    stage = "Adam keeps the step bounded. arXiv 1412.6980. The curve is a toy. It only holds if the valley is narrow."
+    stage = "Adam keeps the step bounded by the second moment. arXiv 1412.6980. The curve is a toy of that step."
     questions = [
         {"q": "Predict the step at lr 0.2?", "why": "that is the default"},
         {"q": "At lr 0.8, does the line clip?", "why": "the top of the range leaves the frame"},
-        {"q": "At lr 0.1, which side of the threshold is the step?", "why": "the line splits the regimes"},
+        {"q": "At lr 0.1, which side of the line is the step?", "why": "the line splits the regimes"},
         {"q": "At lr 0.4, what does the readout say?", "why": "the number is the step"},
     ]
     controls = [{"id": "lr", "label": "lr", "min": 0, "max": 1, "value": 0.2, "step": 0.1}]
-    rewritten = {"explain": "Adam steps by m-hat. Early on bias correction restores the ratio.", "questions": questions[:3], "draw": "function draw(ctx, state, t) { ctx.fillText(state.lr, 10, 10); }"}
+    draw = (
+        "function draw(ctx, state, t) {\n"
+        "  var y = state.lr * 80;\n"
+        "  function fmt(v) { return Math.round(v * 100) / 100; }\n"
+        "  ctx.beginPath();\n"
+        "  ctx.moveTo(48, 286);\n"
+        "  ctx.lineTo(560, 286 - y);\n"
+        "  ctx.stroke();\n"
+        "  var ythr = 286 - state.lr * 40;\n"
+        "  ctx.beginPath();\n"
+        "  ctx.moveTo(48, ythr);\n"
+        "  ctx.lineTo(560, ythr);\n"
+        "  ctx.stroke();\n"
+        "  ctx.fillText(\"threshold \" + fmt(state.lr), 48, 28);\n"
+        "  ctx.fillText(\"step = \" + fmt(y), 48, 318);\n"
+        "  ctx.fillText(\"clipped\", 500, 20);\n"
+        "}\n"
+    )
+    spec = {
+        "archetype": "curve",
+        "threshold_formula": "lr",
+        "direction": [{"control": "lr", "readout": "step", "effect": "up"}],
+        "controls": controls,
+        "derived": [{"name": "step", "formula": "lr * 80"}],
+        "questions": questions,
+        "explain": stage,
+    }
+    rewritten = {"explain": "Adam steps by m-hat.", "questions": questions[:3], "draw": "function draw(ctx, state, t) { ctx.fillText(state.lr, 10, 10); }"}
     sealed = seal_widget(rewritten, stage, questions)
     assert sealed["explain"] == stage
     assert "1412.6980" in sealed["explain"]
@@ -227,21 +258,35 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
     assert len(sealed["questions"]) == 4
     bare = finish_explain("Adam keeps the step bounded.", claim)
     assert bare.startswith("Adam keeps the step bounded.")
-    assert "1412.6980" in bare and "toy" in bare and "only holds if" in bare
+    assert "1412.6980" in bare
+    assert "toy" not in bare and "only holds if" not in bare
+    assert finish_explain(stage, claim) == stage
 
-    widget = {"id": "adam-valley", "topic": "adam", "title": "Adam step", "explain": stage, "questions": questions, "controls": controls, "draw": PATTERN_DRAW}
-    assert quality_gate(widget, claim) == []
-    bad = dict(widget, explain="Adam steps.", questions=[{"q": "If you move it, what happens to the step?", "why": "generic"}], draw="function draw(ctx, state, t) { ctx.fillText(1.5819292019556375, 10, 10); }")
+    widget = {"id": "adam-valley", "topic": "adam", "title": "Adam step", "explain": stage, "questions": questions, "controls": controls, "draw": draw}
+    assert quality_gate(widget, claim, spec) == []
+    bad = dict(
+        widget,
+        explain="Adam steps.",
+        questions=[{"q": "If you move it, what happens to the step?", "why": "generic"}],
+        draw="function draw(ctx, state, t) { ctx.fillText(1.5819292019556375, 10, 10); }",
+    )
     reasons = quality_gate(bad, claim)
-    for code in ("no_threshold", "no_fmt", "raw_decimal", "no_citation", "no_toy", "no_limit", "generic_questions"):
-        assert code in reasons, code
+    assert "raw_decimal" in reasons and "no_citation" in reasons and "generic_questions" in reasons
+    for dropped in ("no_threshold", "no_fmt", "no_toy", "no_limit"):
+        assert dropped not in reasons
     plateau = dict(widget, explain=stage + " The curve becomes a plateau.")
-    assert "contradicts" in quality_gate(plateau, claim)
+    assert "contradicts" in quality_gate(plateau, claim, spec)
     from rrm.liveart.prompts import schemas
     assert schemas()["codegen"]["properties"]["controls"]["items"]["properties"]["label"]["description"] == "at most 28 characters"
+    assert set(schemas()["spec"]["required"]) == {
+        "archetype", "controls", "derived", "threshold_formula", "direction", "questions", "explain",
+    }
     assert "Predice" in question_system() and "what happens" in question_system()
     assert "function fmt" in codegen_system() and "clipped" in codegen_system()
     assert "accept es false" in verifier_system()
+    pair = shots_for("dial", "rope", "rope-shift")
+    assert len(pair) == 2 and {item["id"] for item in pair}.isdisjoint({"rope-shift"})
+    assert len({item["topic"] for item in pair}) == 2
 
     import sys
     from pathlib import Path
@@ -250,12 +295,56 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
     graded = scripts_live._grade(
         Path(__file__).resolve().parents[1] / "apps/reader/scripts/liveart_audit.mjs",
         tmp_path,
-        "adam-pattern",
+        "adam-step",
         claim["text"],
         widget,
         False,
     )
     assert graded["verify"] == "pass", graded
+
+
+def test_round2_fixtures_match_the_new_gate():
+    from pathlib import Path
+
+    from rrm.liveart.gate import _render, _state, quality_gate
+
+    root = Path(__file__).resolve().parents[1] / "evals" / "liveart" / "rrm85"
+    names = (
+        "adam-valley", "rope-shift", "kl-policy", "pe-sincos",
+        "lora-rank", "gqa-share", "rmsnorm-eps", "gelu-tail",
+    )
+    for name in names:
+        widget = json.loads((root / f"{name}.json").read_text(encoding="utf-8"))
+        claim = {"text": widget.get("title") or name, "latex": "", "context": "", "arxiv": ""}
+        reasons = quality_gate(widget, claim)
+        assert "leaked" in reasons, (name, reasons)
+        assert "threshold_unasked" not in reasons
+    gelu = json.loads((root / "gelu-tail.json").read_text(encoding="utf-8"))
+    gelu_claim = {"text": "GELU leaks.", "latex": "", "context": "", "arxiv": "1606.08415"}
+    shown = _render(gelu["draw"], [_state(gelu["controls"])])
+    assert not shown[0].get("error"), shown
+    assert "1606.08415" in "\n".join(shown[0]["texts"])
+    gelu_reasons = quality_gate(gelu, gelu_claim)
+    assert "raw_decimal" not in gelu_reasons, gelu_reasons
+    assert "1606.08415" in gelu["draw"]
+    assert "threshold_zero" in gelu_reasons or "threshold_constant" in gelu_reasons
+    rms = json.loads((root / "rmsnorm-eps.json").read_text(encoding="utf-8"))
+    rms_claim = {"text": "RMSNorm divides by the root mean square.", "latex": "", "context": "", "arxiv": "1910.07467"}
+    wrong = {
+        "archetype": "curve",
+        "threshold_formula": "1",
+        "direction": [{"control": "eps", "readout": "y", "effect": "up"}],
+        "controls": rms["controls"],
+        "derived": [{"name": "y", "formula": "x / sqrt(x*x + eps)"}],
+        "questions": rms["questions"],
+        "explain": rms["explain"],
+    }
+    rms_reasons = quality_gate(rms, rms_claim, wrong)
+    assert "direction" in rms_reasons, rms_reasons
+    assert "unknown_control" in quality_gate(
+        json.loads((root / "adam-valley.json").read_text(encoding="utf-8")),
+        {"text": "Adam.", "arxiv": "1412.6980"},
+    )
 
 
 def test_probe_retries_once_on_504_or_timeout(monkeypatch):
