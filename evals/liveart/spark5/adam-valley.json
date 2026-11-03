@@ -1,0 +1,110 @@
+{
+ "id": "adam-valley",
+ "claim": {
+  "text": "Adam steps by the bias-corrected first moment over the square root of the second moment, so a narrow valley does not mak",
+  "latex": "",
+  "context": "",
+  "arxiv": "1412.6980"
+ },
+ "spec": {
+  "archetype": "bars",
+  "constraints": [
+   "abs(m) <= sqrt(v)"
+  ],
+  "controls": [
+   {
+    "id": "m",
+    "label": "bias-corrected first moment",
+    "max": 0.4,
+    "min": 0,
+    "step": 0.05,
+    "value": 0.2
+   },
+   {
+    "id": "v",
+    "label": "bias-corrected second moment",
+    "max": 1,
+    "min": 0.25,
+    "step": 0.05,
+    "value": 0.36
+   }
+  ],
+  "derived": [
+   {
+    "formula": "m / sqrt(v)",
+    "name": "step"
+   }
+  ],
+  "direction": [
+   {
+    "control": "m",
+    "effect": "up",
+    "readout": "step"
+   }
+  ],
+  "explain": "Toy illustration of arXiv 1412.6980: watch the step number, the bias-corrected moment ratio that stays bounded in a narrow valley.",
+  "questions": [
+   {
+    "q": "Predict what happens when m = 0.3?",
+    "why": "Tests that larger first moment raises the step."
+   },
+   {
+    "q": "What is step when m = 0.2 and v = 0.36?",
+    "why": "Checks reading the normalized update value."
+   },
+   {
+    "q": "How does step change if v = 0.81 with m fixed?",
+    "why": "Tests that larger second moment shrinks the step."
+   },
+   {
+    "q": "Why does v = 0.25 not make the step explode?",
+    "why": "Probes the valley normalization intuition."
+   }
+  ],
+  "scale": true,
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "m",
+    "label": "bias-corrected first moment",
+    "max": 0.4,
+    "min": 0,
+    "step": 0.05,
+    "value": 0.2
+   },
+   {
+    "id": "v",
+    "label": "bias-corrected second moment",
+    "max": 1,
+    "min": 0.25,
+    "step": 0.05,
+    "value": 0.36
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { function fmt(v) { return Math.round(v * 100) / 100; } var w = state.w; var h = state.h; var m = state.m; var v = state.v; var s = Math.sqrt(v); var step = m / s; ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); var baseX = 150; var maxLen = 380; var labels = [\"m\", \"sqrt(v)\", \"step\"]; var vals = [m, s, step]; var colors = [\"#1f4b99\", \"#5a7dc4\", \"#c4512c\"]; var i = 0; ctx.font = \"13px sans-serif\"; ctx.textAlign = \"left\"; ctx.textBaseline = \"middle\"; for (i = 0; i < 3; i = i + 1) { var y = 70 + i * 70; var len = vals[i] * maxLen; ctx.fillStyle = \"#e4d6c4\"; ctx.fillRect(baseX, y, maxLen, 22); ctx.fillStyle = colors[i]; ctx.fillRect(baseX, y, len, 22); ctx.fillStyle = \"#1d1a16\"; ctx.fillText(labels[i], 30, y + 11); } ctx.font = \"14px sans-serif\"; ctx.fillStyle = \"#1d1a16\"; ctx.fillText(\"m = \" + fmt(m), 30, 300); ctx.fillText(\"v = \" + fmt(v), 180, 300); ctx.fillText(\"step = \" + fmt(step), 330, 300); ctx.font = \"12px sans-serif\"; ctx.fillStyle = \"#5c564c\"; ctx.fillText(\"to scale: length proportional to value\", 30, 30); ctx.fillText(\"valley stays bounded\", 30, 330); }",
+  "explain": "Toy illustration of arXiv 1412.6980: watch the step number, the bias-corrected moment ratio that stays bounded in a narrow valley.",
+  "id": "adam-step",
+  "questions": [
+   {
+    "q": "Predict what happens when m = 0.3?",
+    "why": "Tests that larger first moment raises the step."
+   },
+   {
+    "q": "What is step when m = 0.2 and v = 0.36?",
+    "why": "Checks reading the normalized update value."
+   },
+   {
+    "q": "How does step change if v = 0.81 with m fixed?",
+    "why": "Tests that larger second moment shrinks the step."
+   },
+   {
+    "q": "Why does v = 0.25 not make the step explode?",
+    "why": "Probes the valley normalization intuition."
+   }
+  ],
+  "title": "Adam step stays bounded in a narrow valley",
+  "topic": "adam"
+ }
+}

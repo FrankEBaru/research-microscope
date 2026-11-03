@@ -16,6 +16,7 @@ from rrm.liveart.prompts import (
     package,
     question_system,
     schemas,
+    spec_system,
     selector_messages,
     selector_system,
     verifier_messages,
@@ -217,10 +218,10 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
     claim = {"text": "Adam steps by the first moment.", "latex": "", "context": "", "arxiv": "1412.6980"}
     stage = "Adam keeps the step bounded by the second moment. arXiv 1412.6980. The curve is a toy of that step."
     questions = [
-        {"q": "Before you move lr to 0.8, do you expect the step to leave the valley?", "why": "the narrow valley is the misconception"},
-        {"q": "Predict which side of the line the step sits on at lr 0.2?", "why": "the default is already solved"},
-        {"q": "At lr 0.1, does the step stay under the line?", "why": "the line splits the regimes"},
-        {"q": "At lr 0.4, does the step stay bounded?", "why": "the bound is the claim"},
+        {"q": "Set lr to 0.8 and watch the step. Do you expect it to leave the valley?", "why": "the narrow valley is the misconception"},
+        {"q": "Set lr to 0.5 and watch the break?", "why": "the regime point"},
+        {"q": "Set lr to 0.1 and watch the step?", "why": "a reading"},
+        {"q": "Set lr to 0.4 and watch the step?", "why": "another reading"},
     ]
     controls = [{"id": "lr", "label": "lr", "min": 0, "max": 1, "value": 0.2, "step": 0.1}]
     draw = (
@@ -238,6 +239,11 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
         "  ctx.stroke();\n"
         "  ctx.fillText(\"threshold \" + fmt(state.lr), 48, 28);\n"
         "  ctx.fillText(\"step = \" + fmt(y), 48, 318);\n"
+        "  ctx.beginPath();\n"
+        "  ctx.moveTo(200, 40);\n"
+        "  ctx.lineTo(200, 280);\n"
+        "  ctx.stroke();\n"
+        "  ctx.fillText(\"break = \" + fmt(0.5), 188, 36);\n"
         "  if (y > 250) { ctx.fillText(\"clipped\", 500, 20); }\n"
         "}\n"
     )
@@ -249,6 +255,7 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
         "derived": [{"name": "step", "formula": "lr * 80"}],
         "questions": questions,
         "explain": stage,
+        "regime": [{"label": "break", "control": "lr", "formula": "0.5"}],
     }
     rewritten = {"explain": "Adam steps by m-hat.", "questions": questions[:3], "draw": "function draw(ctx, state, t) { ctx.fillText(state.lr, 10, 10); }"}
     sealed = seal_widget(rewritten, stage, questions)
@@ -280,7 +287,7 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
     assert schemas()["codegen"]["properties"]["controls"]["items"]["properties"]["label"]["description"] == "at most 28 characters"
     assert set(schemas()["spec"]["required"]) == {
         "archetype", "controls", "derived", "threshold_formula", "direction",
-        "constraints", "scale", "questions", "explain",
+        "constraints", "regime", "scale", "questions", "explain",
     }
     from rrm.liveart.gate import _heads_dont_divide, question_problems
     predict = [
@@ -289,12 +296,12 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
         {"q": "At lr 0.4, does the step stay bounded?", "why": "range"},
         {"q": "Before you move lr to 0.8, do you expect the step to leave the valley?", "why": "misconception"},
     ]
-    assert question_problems(predict, controls) == []
+    assert question_problems(predict, controls) == ["generic_questions"]
     lora_q = [
-        {"q": "Predict what r = 4 means for the two factors with d = 256?", "why": "shape"},
-        {"q": "Many think full fine-tuning needs the same parameters; what is wrong before you move r to 4?", "why": "misconception"},
-        {"q": "How would you describe the savings if d = 128 while holding r = 2?", "why": "width"},
-        {"q": "Why keep r = 8 small when d = 64?", "why": "rank"},
+        {"q": "Set r to 4 and watch the factors. What is wrong with the same count?", "why": "misconception"},
+        {"q": "Set d to 256 and watch the bar?", "why": "reading"},
+        {"q": "Set r to 2 and watch the savings?", "why": "reading"},
+        {"q": "Set d to 128 and watch the width?", "why": "width"},
     ]
     lora_controls = [
         {"id": "r", "label": "rank", "min": 1, "max": 8, "value": 4, "step": 1},
@@ -323,6 +330,10 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
     ]
     assert _heads_dont_divide(open_heads)
     assert not _heads_dont_divide(closed_heads)
+    mixed = dict(widget, title="Queries comparten bloques")
+    assert "language" in quality_gate(mixed, claim, spec)
+    narrow = dict(widget, controls=[{"id": "lr", "label": "lr", "min": 0, "max": 1, "value": 0.5, "step": 0.5}])
+    assert "steps" in quality_gate(narrow, claim, spec)
     illegal = dict(spec, constraints=["abs(lr) <= 0.1"])
     assert "constraint" in quality_gate(widget, claim, illegal)
     legal = dict(spec, constraints=["lr <= 1"])
@@ -330,6 +341,11 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
     held = dict(widget, draw=draw.replace('if (y > 250) { ctx.fillText("clipped", 500, 20); }', 'ctx.fillText("holds", 48, 40);'))
     assert "dead_label" in quality_gate(held, claim, spec)
     assert "Predice" in question_system() and "what happens" in question_system()
+    spec_text = spec_system()
+    assert "ten times larger" in spec_text
+    assert "keep falling like ReLU" in spec_text
+    assert "2 * pi" in spec_text
+    assert "periodo baja" not in spec_text
     assert "function fmt" in codegen_system() and "clipped" in codegen_system()
     assert "accept es false" in verifier_system()
     pair = shots_for("dial", "rope", "rope-shift")
@@ -395,61 +411,72 @@ def test_round2_fixtures_match_the_new_gate():
     )
 
 
-def test_round3_replay_direction_clears_six():
+def _replay(folder):
     from pathlib import Path
 
     from rrm.liveart.gate import quality_gate
 
-    root = Path(__file__).resolve().parents[1] / "evals" / "liveart" / "spark3"
-    clear, full = [], []
-    dead, bad = set(), set()
+    root = Path(__file__).resolve().parents[1] / "evals" / "liveart" / folder
+    got = {}
     for path in sorted(root.glob("*.json")):
         row = json.loads(path.read_text(encoding="utf-8"))
-        reasons = quality_gate(row["widget"], row["claim"], row["spec"])
-        if "direction" not in reasons:
-            clear.append(path.stem)
-        else:
-            assert "direction" in reasons
-        if not reasons:
-            full.append(path.stem)
-        if "dead_label" in reasons:
-            dead.add(path.stem)
-        if "generic_questions" in reasons or "bad_question" in reasons:
-            bad.add(path.stem)
-    assert clear == ["adam-valley", "gelu-tail", "gqa-share", "kl-policy", "rmsnorm-eps", "rope-shift"]
-    assert "lora-rank" not in clear and "pe-sincos" not in clear
-    # The question veto is gone, so the four whose other checks were clean now pass.
-    assert full == ["adam-valley", "gelu-tail", "kl-policy", "rope-shift"]
-    assert dead == {"gqa-share", "pe-sincos", "rmsnorm-eps"}
-    assert bad == set()
-    gqa = json.loads((root / "gqa-share.json").read_text(encoding="utf-8"))
-    assert "divides" in quality_gate(gqa["widget"], gqa["claim"], gqa["spec"])
+        got[path.stem] = quality_gate(row["widget"], row["claim"], row["spec"])
+    return got
 
 
-def test_round4_replay_keeps_kl_and_gelu_questions():
-    from pathlib import Path
-
-    from rrm.liveart.gate import quality_gate
-
-    root = Path(__file__).resolve().parents[1] / "evals" / "liveart" / "spark4"
-    expect = {
-        "adam-valley": ["filler"],
-        "gelu-tail": ["filler"],
-        "gqa-share": ["divides"],
-        "kl-policy": [],
-        "lora-rank": [],
-        "pe-sincos": [],
-        "rmsnorm-eps": ["generic_questions"],
-        "rope-shift": ["filler", "dead_label"],
+def test_round3_replay_direction_clears_six():
+    got = _replay("spark3")
+    assert got == {
+        "adam-valley": ["generic_questions", "regime"],
+        "gelu-tail": ["generic_questions", "regime"],
+        "gqa-share": ["generic_questions", "divides", "regime", "dead_label"],
+        "kl-policy": ["generic_questions", "regime"],
+        "lora-rank": ["generic_questions", "direction", "regime"],
+        "pe-sincos": ["generic_questions", "direction", "regime", "dead_label"],
+        "rmsnorm-eps": ["generic_questions", "regime", "dead_label"],
+        "rope-shift": ["generic_questions", "regime"],
     }
-    for name, wanted in expect.items():
-        row = json.loads((root / f"{name}.json").read_text(encoding="utf-8"))
-        reasons = quality_gate(row["widget"], row["claim"], row["spec"])
-        assert reasons == wanted, (name, reasons)
+    clear = [name for name, reasons in got.items() if "direction" not in reasons]
+    assert clear == ["adam-valley", "gelu-tail", "gqa-share", "kl-policy", "rmsnorm-eps", "rope-shift"]
+    dead = {name for name, reasons in got.items() if "dead_label" in reasons}
+    assert dead == {"gqa-share", "pe-sincos", "rmsnorm-eps"}
+
+
+def test_round4_replay_requires_regime_and_set_watch():
+    got = _replay("spark4")
+    assert got == {
+        "adam-valley": ["filler", "generic_questions", "regime"],
+        "gelu-tail": ["filler", "generic_questions", "regime"],
+        "gqa-share": ["generic_questions", "divides", "regime"],
+        "kl-policy": ["generic_questions", "regime"],
+        "lora-rank": ["generic_questions", "regime"],
+        "pe-sincos": ["generic_questions", "regime"],
+        "rmsnorm-eps": ["generic_questions", "regime"],
+        "rope-shift": ["filler", "generic_questions", "regime", "dead_label"],
+    }
     for name in ("kl-policy", "gelu-tail"):
-        row = json.loads((root / f"{name}.json").read_text(encoding="utf-8"))
-        reasons = quality_gate(row["widget"], row["claim"], row["spec"])
-        assert "generic_questions" not in reasons and "bad_question" not in reasons
+        assert "generic_questions" in got[name]
+        assert "regime" in got[name]
+
+
+def test_round5_replay_stalls_without_a_marked_regime():
+    got = _replay("spark5")
+    assert got == {
+        "adam-valley": ["generic_questions", "regime"],
+        "gelu-tail": ["generic_questions", "regime"],
+        "gqa-share": ["generic_questions", "steps", "language", "regime"],
+        "kl-policy": ["generic_questions", "regime"],
+        "lora-rank": ["generic_questions", "regime", "shapes"],
+        "pe-sincos": ["generic_questions", "regime"],
+        "rmsnorm-eps": ["generic_questions", "scale", "regime"],
+        "rope-shift": ["generic_questions", "regime"],
+    }
+    assert all(reasons for reasons in got.values())
+    for name in ("kl-policy", "gelu-tail"):
+        assert "generic_questions" in got[name] and "regime" in got[name]
+    assert "steps" in got["gqa-share"] and "language" in got["gqa-share"]
+    assert "scale" in got["rmsnorm-eps"]
+    assert "shapes" in got["lora-rank"]
 
 
 def test_spec_retries_once_when_cut_off(monkeypatch, tmp_path):

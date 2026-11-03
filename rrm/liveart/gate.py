@@ -6,11 +6,20 @@ The check runs the draw. It does not look for a canned sentence in the source.
 from __future__ import annotations
 
 import json
+import math
 import re
 import subprocess
 from pathlib import Path
 
 _PREDICT = re.compile(r"^\s*(predice|predict)\b", re.I)
+_SET = re.compile(r"\b(?:set|pon|mueve)\b", re.I)
+_WATCH = re.compile(r"\b(?:watch|mira|look)\b", re.I)
+_MISREAD = re.compile(r"\b(?:expect|predice|predict|think|cree|suppose|malentend|wrong)\b", re.I)
+_ES = re.compile(
+    r"[áéíóúñ¿¡]|\b(?:el|la|los|las|que|para|por|una|del|este|esta|comparten|comparte|bloques|bloque)\b",
+    re.I,
+)
+_EN = re.compile(r"\b(?:the|and|with|when|what|watch|from|this|that|queries|heads)\b", re.I)
 _SIGNED = re.compile(r"-?\d+(?:\.\d+)?")
 _JUNK_LABEL = re.compile(r"\b(?:holds|pow)\b", re.I)
 # Phrases the round-4 prompt leaked into explain. Not a ban on "bounded by sqrt(v)".
@@ -76,18 +85,19 @@ def seal_widget(widget, explain, questions=None):
     return out
 
 
-def question_problems(questions, controls):
-    """Exactly four questions, and one of them predicts a named control.
+def question_problems(questions, controls, regime=None):
+    """Four questions, each 'Set X to v and watch Y'.
 
-    The question may say "Predict what happens". It has to name a real control
-    and a number inside that control's range. No other veto.
+    One states the misconception, one sits on a regime value, two read a number.
     """
     if not isinstance(questions, list) or len(questions) != 4:
         return ["generic_questions"]
     texts = []
     for item in questions:
         texts.append((item or {}).get("q") or "" if isinstance(item, dict) else "")
-    if not any(_predicts_control(q, controls) for q in texts):
+    if not all(_SET.search(q) and _WATCH.search(q) for q in texts):
+        return ["generic_questions"]
+    if sum(1 for q in texts if _MISREAD.search(q)) != 1:
         return ["generic_questions"]
     for q in texts:
         nums = [float(n) for n in _NUMBER.findall(q)]
@@ -95,6 +105,10 @@ def question_problems(questions, controls):
             return ["generic_questions"]
         if controls and not any(_in_range(n, controls) for n in nums):
             return ["generic_questions"]
+        if controls and not any(_names(q, control) for control in controls if isinstance(control, dict)):
+            return ["generic_questions"]
+    if regime and not _one_regime_question(texts, controls, regime):
+        return ["generic_questions"]
     return []
 
 
@@ -119,7 +133,8 @@ def quality_gate(widget, claim, spec=None):
         reasons.append("no_citation")
     if _filler(explain):
         reasons.append("filler")
-    reasons.extend(question_problems(widget.get("questions"), controls))
+    regime = spec.get("regime") if spec is not None else None
+    reasons.extend(question_problems(widget.get("questions"), controls, regime))
     if _unknown_question(widget.get("questions"), controls) or _unknown_explain(explain, controls):
         reasons.append("unknown_control")
     for control in controls:
@@ -140,8 +155,16 @@ def quality_gate(widget, claim, spec=None):
         reasons.append("constraint")
     if _heads_dont_divide(controls):
         reasons.append("divides")
-    if spec is not None and spec.get("scale") is False and "not to scale" not in "\n".join(texts).lower():
+    if _few_stops(controls):
+        reasons.append("steps")
+    if _mixed_language(widget, claim):
+        reasons.append("language")
+    if spec is not None and _scale_problem(spec, texts):
         reasons.append("scale")
+    if spec is not None and _regime_problem(controls, spec.get("regime"), base):
+        reasons.append("regime")
+    if _unexplained_shapes(base):
+        reasons.append("shapes")
     if _dead_label(draw, controls):
         reasons.append("dead_label")
     if _contradicts(explain, draw):
@@ -183,6 +206,221 @@ def _names(question, control):
 def _filler(explain):
     text = (explain or "").lower()
     return any(phrase in text for phrase in _FILLER)
+
+
+def _one_regime_question(texts, controls, regime):
+    values = []
+    state = _state(controls)
+    for item in regime or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            values.append(float(_expr_value(str(item.get("formula") or ""), state)))
+        except (ValueError, KeyError, ZeroDivisionError, TypeError):
+            continue
+    if not values:
+        return True
+    hits = 0
+    for text in texts:
+        signed = [float(n) for n in _SIGNED.findall(text or "")]
+        if any(abs(num - value) <= 0.06 for num in signed for value in values):
+            hits += 1
+    return hits == 1
+
+
+def _few_stops(controls):
+    """A slider with fewer than 4 reachable values is a collapsed range."""
+    for control in controls or []:
+        if not isinstance(control, dict):
+            continue
+        try:
+            lo = float(control["min"])
+            hi = float(control["max"])
+            step = float(control.get("step") or 0)
+        except (KeyError, TypeError, ValueError):
+            return True
+        if step <= 0 or hi < lo:
+            return True
+        if int(round((hi - lo) / step)) + 1 < 4:
+            return True
+    return False
+
+
+def _mixed_language(widget, claim):
+    """Title, labels, questions and explain stay in the claim's language."""
+    parts = [
+        widget.get("title") or "",
+        widget.get("explain") or "",
+    ]
+    for control in widget.get("controls") or []:
+        if isinstance(control, dict):
+            parts.append(control.get("label") or "")
+    parts.append(_question_blob(widget))
+    blob = "\n".join(parts)
+    claim_text = (claim or {}).get("text") or ""
+    if _ES.search(claim_text):
+        return bool(_EN.search(blob))
+    return bool(_ES.search(blob))
+
+
+def _scale_problem(spec, texts):
+    """'not to scale' only when the figure is a schematic, not a real axis."""
+    blob = "\n".join(texts or []).lower()
+    phrase = "not to scale" in blob
+    scale = spec.get("scale")
+    if scale is False and not phrase:
+        return True
+    if scale is True and phrase:
+        return True
+    if phrase and re.search(r"\baxis\b", blob):
+        return True
+    return False
+
+
+def _regime_problem(controls, regime, rendered):
+    """The mark's label shows the formula, and it sits on the stroke."""
+    if not isinstance(regime, list) or not regime:
+        return True
+    state = _state(controls)
+    by_id = {c.get("id"): c for c in controls or [] if isinstance(c, dict)}
+    glyphs = rendered.get("glyphs") or []
+    for item in regime:
+        if not isinstance(item, dict):
+            return True
+        label = str(item.get("label") or "").strip()
+        cid = str(item.get("control") or "")
+        control = by_id.get(cid)
+        if not label or control is None:
+            return True
+        try:
+            value = float(_expr_value(str(item.get("formula") or ""), state))
+            lo = float(control["min"])
+            hi = float(control["max"])
+            step = float(control.get("step") or 0)
+        except (KeyError, TypeError, ValueError):
+            return True
+        if step <= 0 or value < lo - 1e-6 or value > hi + 1e-6:
+            return True
+        nearest = round((value - lo) / step) * step + lo
+        if abs(nearest - value) > step / 2 + 1e-6:
+            return True
+        if not _label_on_mark(glyphs, rendered, label, value):
+            return True
+    return False
+
+
+def _label_on_mark(glyphs, rendered, label, value):
+    want = label.lower()
+    for glyph in glyphs:
+        text = str(glyph.get("t") or "")
+        if want not in text.lower():
+            continue
+        nums = [float(n) for n in _SIGNED.findall(text)]
+        if not any(abs(num - value) <= 0.05 for num in nums):
+            continue
+        if _near_geometry(glyph, rendered):
+            return True
+    return False
+
+
+def _near_geometry(glyph, rendered, pad=48):
+    x = float(glyph.get("x") or 0)
+    y = float(glyph.get("y") or 0)
+    for seg in rendered.get("segs") or []:
+        if _dist_seg(x, y, seg) <= pad:
+            return True
+    for rect in rendered.get("rects") or []:
+        if _near_rect(x, y, rect, pad):
+            return True
+    return False
+
+
+def _dist_seg(x, y, seg):
+    x0, y0 = float(seg.get("x0") or 0), float(seg.get("y0") or 0)
+    x1, y1 = float(seg.get("x1") or 0), float(seg.get("y1") or 0)
+    dx, dy = x1 - x0, y1 - y0
+    length = dx * dx + dy * dy
+    if length <= 1e-9:
+        return math.hypot(x - x0, y - y0)
+    t = max(0.0, min(1.0, ((x - x0) * dx + (y - y0) * dy) / length))
+    return math.hypot(x - (x0 + t * dx), y - (y0 + t * dy))
+
+
+def _near_rect(x, y, rect, pad):
+    left = float(rect.get("x") or 0)
+    top = float(rect.get("y") or 0)
+    right = left + float(rect.get("w") or 0)
+    bottom = top + float(rect.get("h") or 0)
+    if right < left:
+        left, right = right, left
+    if bottom < top:
+        top, bottom = bottom, top
+    return (left - pad) <= x <= (right + pad) and (top - pad) <= y <= (bottom + pad)
+
+
+def _unexplained_shapes(rendered):
+    """A filled block with no word beside it."""
+    rects = []
+    for rect in rendered.get("rects") or []:
+        w = abs(float(rect.get("w") or 0))
+        h = abs(float(rect.get("h") or 0))
+        if w >= 480 and h >= 200:
+            continue
+        if w * h < 36:
+            continue
+        rects.append(rect)
+    if not rects:
+        return False
+    glyphs = [g for g in (rendered.get("glyphs") or []) if _caption(g.get("t"))]
+    groups = _shape_groups(rects)
+    for group in groups:
+        if not any(
+            _near_rect(float(g.get("x") or 0), float(g.get("y") or 0), rect, 150)
+            for g in glyphs
+            for rect in group
+        ):
+            return True
+    return False
+
+
+def _caption(text):
+    """A nearby word that names the shape, not a name = number readout."""
+    raw = str(text or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9_ ]+=\s*-?\d+(?:\.\d+)?", raw):
+        return False
+    return any(len(word) >= 4 for word in re.findall(r"[A-Za-z]+", raw))
+
+
+def _shape_groups(rects):
+    parent = list(range(len(rects)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def join(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for i, left in enumerate(rects):
+        for j in range(i + 1, len(rects)):
+            if _rects_touch(left, rects[j], 24):
+                join(i, j)
+    buckets = {}
+    for i in range(len(rects)):
+        buckets.setdefault(find(i), []).append(rects[i])
+    return list(buckets.values())
+
+
+def _rects_touch(a, b, gap):
+    ax, ay = float(a.get("x") or 0), float(a.get("y") or 0)
+    aw, ah = abs(float(a.get("w") or 0)), abs(float(a.get("h") or 0))
+    bx, by = float(b.get("x") or 0), float(b.get("y") or 0)
+    bw, bh = abs(float(b.get("w") or 0)), abs(float(b.get("h") or 0))
+    return not (ax + aw + gap < bx or bx + bw + gap < ax or ay + ah + gap < by or by + bh + gap < ay)
 
 
 def _in_range(num, controls):
@@ -643,6 +881,13 @@ def _value(node, state):
         if inner < 0:
             raise ValueError("sqrt")
         return inner ** 0.5
+    if kind == "ln":
+        inner = _value(node[1], state)
+        if inner <= 0:
+            raise ValueError("ln")
+        return math.log(inner)
+    if kind == "pi":
+        return math.pi
     left, right = _value(node[1], state), _value(node[2], state)
     if kind == "+":
         return left + right
@@ -653,6 +898,72 @@ def _value(node, state):
     if right == 0:
         raise ZeroDivisionError
     return left / right
+
+
+def _expr_value(text, state):
+    """Value of a regime formula. Same operators as a constraint side, plus ln and pi."""
+    tokens = _lex((text or "").replace("−", "-").strip())
+    pos = 0
+
+    def peek():
+        return tokens[pos] if pos < len(tokens) else None
+
+    def take():
+        nonlocal pos
+        tok = tokens[pos]
+        pos += 1
+        return tok
+
+    def parse_expr():
+        node = parse_term()
+        while peek() in ("+", "-"):
+            op = take()
+            node = (op, node, parse_term())
+        return node
+
+    def parse_term():
+        node = parse_unary()
+        while peek() in ("*", "/"):
+            op = take()
+            node = (op, node, parse_unary())
+        return node
+
+    def parse_unary():
+        if peek() == "-":
+            take()
+            return ("neg", parse_unary())
+        return parse_primary()
+
+    def parse_primary():
+        tok = peek()
+        if tok is None:
+            raise ValueError("end")
+        if isinstance(tok, tuple) and tok[0] == "num":
+            take()
+            return ("num", tok[1])
+        if isinstance(tok, tuple) and tok[0] == "id":
+            take()
+            if peek() == "(" and tok[1] in ("abs", "sqrt", "ln"):
+                take()
+                inner = parse_expr()
+                if take() != ")":
+                    raise ValueError(")")
+                return (tok[1], inner)
+            if tok[1] == "pi":
+                return ("pi",)
+            return ("var", tok[1])
+        if tok == "(":
+            take()
+            inner = parse_expr()
+            if take() != ")":
+                raise ValueError(")")
+            return inner
+        raise ValueError("primary")
+
+    node = parse_expr()
+    if pos != len(tokens):
+        raise ValueError("tail")
+    return _value(node, state)
 
 
 def _wrong_direction(draw, controls, spec):
