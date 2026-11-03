@@ -16,6 +16,13 @@ Rama: `cursor/rrm-80-mockups-2121`. Contrato: `rrm-widget/0.3` (RRM-79, PR #59).
 - Galería en `apps/reader/src/app/live/`, bandera `NEXT_PUBLIC_RRM_LIVE_ARTIFACTS` en `1` / `true` / `yes` / `on`. Apagada, el lector no cambia.
 - Notas de coordinación: `compass_updates/RRM-80.md` y `compass_updates/equipo-artefactos/`.
 
+## Pase del 3 nov ~2:40
+
+- Catálogo 134. JSON regenerado, `rrm-widget/0.3`. Few-shots 40, uno por tema. `verifyWidget`: 134/134. Prueba local 4/4.
+- Catorce draws en `apps/reader/src/live/areas.js`. Áreas: parches de ViT, campo efectivo, emparejamiento de DETR, clip de PPO, GAE, GCN, espacio de CLIP, BPE de una palabra rara, páginas de KV, nucleus contra temperatura, warmup y coseno, doble descenso, grokking, lottery ticket.
+- El top 15 cambia una vez: entra `grok-delay` en el puesto 6 y sale `lora-rank`. La hoja de la galería sigue ese orden.
+- Enunciados en el repo compass, `equipo-artefactos/PROBE-3-CLAIMS.md`. Temas que faltan: `erf`, `gcn`, `clip_align`. `quant` ya lo abrió RRM-79. No se llamó a Meta.
+
 ## Pase del 3 nov ~2:10
 
 - Catálogo 120. JSON regenerado, `rrm-widget/0.3`. `verifyWidget`: 120/120. Prueba local 4/4.

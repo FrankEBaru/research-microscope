@@ -5,18 +5,20 @@ import { VARIANTS3 } from "./variants3.js";
 import { EXPLORE, LEADS } from "./explore.js";
 import { RICH, RICH_LEADS } from "./rich.js";
 import { MORE, MORE_LEADS } from "./more.js";
+import { AREAS, AREAS_LEADS } from "./areas.js";
 
-export const WIDGETS = [...PRIMARY, ...VARIANTS, ...VARIANTS2, ...VARIANTS3, ...EXPLORE, ...RICH, ...MORE];
+export const WIDGETS = [...PRIMARY, ...VARIANTS, ...VARIANTS2, ...VARIANTS3, ...EXPLORE, ...RICH, ...MORE, ...AREAS];
 
 // One draw per topic. The first four match the gold ids from RRM-78.
 // LEADS cover topics added after the original 14.
-export const FEWSHOTS = [...PRIMARY, ...LEADS, ...RICH_LEADS, ...MORE_LEADS];
+export const FEWSHOTS = [...PRIMARY, ...LEADS, ...RICH_LEADS, ...MORE_LEADS, ...AREAS_LEADS];
 export const HIGHLIGHTS = [
   "adam-valley",
   "attn-walk",
   "int8-outlier",
   "rope-shift",
   "beam-trap",
+  "grok-delay",
   "denoise-strip",
   "kl-policy",
   "moe-drop",
@@ -26,5 +28,4 @@ export const HIGHLIGHTS = [
   "pe-sincos",
   "resid-stream",
   "kv-grow",
-  "lora-rank",
 ];

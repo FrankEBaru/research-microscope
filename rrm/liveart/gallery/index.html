@@ -78,6 +78,11 @@ function group(title, ids) {
 
 group("Para ver", HIGHLIGHTS);
 group("De Claude", ["mamba-delta", "smooth-seesaw", "yarn-parts"]);
+group("Otras areas", [
+  "vit-tokens", "erf-glow", "detr-assign", "ppo-clip", "gae-credit", "gcn-heat",
+  "clip-space", "bpe-rare", "paged-waste", "nucleus-temp", "warm-cosine",
+  "double-descent", "grok-delay", "lottery-ticket",
+]);
 group("Los 14 de oro", WIDGETS.filter((item) => item.id === item.topic || [
   "positional-encoding", "softmax-temperature", "attention-scale", "stddev", "rope",
   "dpo-beta", "yarn-scale", "speculative", "noise-schedule", "guidance", "detr-match",
@@ -171,6 +176,7 @@ if (params.get("sheet") === "1") {
     ["int8-outlier", { keep: 1 }, "el outlier entra al paso → se queda afuera"],
     ["rope-shift", { shift: 32 }, "desplaza 0 → 32"],
     ["beam-trap", { width: 2 }, "ancho 1 → 2"],
+    ["grok-delay", { step: 80 }, "paso 42 → 80, de pronto generaliza"],
     ["denoise-strip", { step: 0 }, "t 200 → 0, el dibujo todavía está"],
     ["kl-policy", { beta: 0.18 }, "beta 0.7 → 0.18"],
     ["moe-drop", { k: 2 }, "k 1 → 2"],
@@ -180,7 +186,6 @@ if (params.get("sheet") === "1") {
     ["pe-sincos", { base: 300 }, "base 10000 → 300"],
     ["resid-stream", { skip: 0 }, "atajo 1 → 0"],
     ["kv-grow", { kv: 1 }, "grupos 8 → 1"],
-    ["lora-rank", { rank: 3 }, "rango 2 → 3"],
   ];
   for (const [id, alt, note] of pairs) {
     const widget = byId.get(id);

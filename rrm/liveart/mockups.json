@@ -1,6 +1,6 @@
 {
   "version": "rrm-widget/0.3",
-  "count": 120,
+  "count": 134,
   "fewshot_ids": [
     "positional-encoding",
     "softmax-temperature",
@@ -29,7 +29,19 @@
     "int8-outlier",
     "mamba-delta",
     "smooth-seesaw",
-    "yarn-parts"
+    "yarn-parts",
+    "vit-tokens",
+    "erf-glow",
+    "ppo-clip",
+    "gae-credit",
+    "gcn-heat",
+    "clip-space",
+    "bpe-rare",
+    "paged-waste",
+    "warm-cosine",
+    "double-descent",
+    "grok-delay",
+    "lottery-ticket"
   ],
   "widgets": [
     {
@@ -3927,6 +3939,488 @@
         }
       ],
       "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, sc = state.scale, L = state.ctxlen;\n  var base = 10000, dim = 16, n = 8, i, lam, r, g, th, th2, lam2, bh, bw;\n  var lo = 1, hi = 32;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  bw = (w - 48) / n;\n  var baseY = h * 0.78, span = h * 0.58;\n  function Y(v) { return baseY - (Math.log(v) / Math.log(10) - 0.6) / 5.4 * span; }\n  for (i = 0; i < n; i++) {\n    lam = 2 * Math.PI * Math.pow(base, (2 * i) / dim);\n    r = L / lam;\n    if (r < lo) g = 0;\n    else if (r > hi) g = 1;\n    else g = (r - lo) / (hi - lo);\n    th = Math.pow(base, -(2 * i) / dim);\n    th2 = (1 - g) * th / sc + g * th;\n    lam2 = 2 * Math.PI / th2;\n    bh = baseY - Y(lam2);\n    if (bh < 4) bh = 4;\n    ctx.fillStyle = g > 0.85 ? \"#1f4b99\" : (g < 0.15 ? \"#c4512c\" : \"#2e7d32\");\n    ctx.fillRect(24 + i * bw, baseY - bh, bw - 8, bh);\n    ctx.fillStyle = \"#5c564c\";\n    ctx.font = \"12px sans-serif\";\n    ctx.fillText(\"\" + i, 28 + i * bw, baseY + 16);\n  }\n  var ly = Y(L);\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1.5;\n  ctx.beginPath();\n  ctx.moveTo(16, ly);\n  ctx.lineTo(w - 12, ly);\n  ctx.stroke();\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"14px sans-serif\";\n  ctx.fillText(\"coral: se estira   azul: se queda   la raya es el contexto\", 16, 22);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"alfa 1   beta 32   como Llama\", 16, 42);\n}"
+    },
+    {
+      "id": "vit-tokens",
+      "topic": "vit_patch",
+      "title": "Un parche grande se come los tokens",
+      "explain": "ViT corta la imagen en parches del mismo tamaño. El número de tokens es alto por ancho, partido por el parche, al cuadrado. Un parche más grande se traga el detalle y deja menos tokens.",
+      "questions": [
+        {
+          "q": "¿Por qué un parche más grande deja menos tokens?",
+          "why": "el conteo es el área del parche, no el lado"
+        },
+        {
+          "q": "¿Qué le pasa a un objeto chico si el parche crece?",
+          "why": "cabe entero en un solo token"
+        },
+        {
+          "q": "¿De dónde sale el 224 de la figura?",
+          "why": "es el lado que usa el paper con esos parches"
+        }
+      ],
+      "controls": [
+        {
+          "id": "patch",
+          "label": "parche",
+          "min": 16,
+          "max": 112,
+          "value": 32,
+          "step": 8
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, raw = state.patch;\n  var choices = [16, 32, 56, 112], bi = 0, bd = 999, k, P, n, N, s, cell, i, j, su, sv, sun, ground;\n  for (k = 0; k < 4; k++) if (Math.abs(choices[k] - raw) < bd) { bd = Math.abs(choices[k] - raw); bi = k; }\n  P = choices[bi];\n  n = 224 / P;\n  N = n * n;\n  s = Math.min(h - 40, w * 0.52);\n  cell = s / n;\n  su = 0.68;\n  sv = 0.32;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  for (i = 0; i < n; i++) for (j = 0; j < n; j++) {\n    sun = (j / n <= su && su < (j + 1) / n && i / n <= sv && sv < (i + 1) / n) ? 1 : 0;\n    ground = (i + 0.5) / n > 0.62 ? 1 : 0;\n    ctx.fillStyle = sun ? \"#c4512c\" : (ground ? \"#1f4b99\" : \"#efe6d8\");\n    ctx.fillRect(16 + j * cell, 24 + i * cell, Math.max(2, cell - 1), Math.max(2, cell - 1));\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"26px sans-serif\";\n  ctx.fillText(N + \" tokens\", s + 36, h * 0.32);\n  ctx.font = \"15px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"parche \" + P, s + 36, h * 0.44);\n  ctx.fillText(\"N = (224/P)^2\", s + 36, h * 0.54);\n  ctx.fillText(n < 5 ? \"el sol cabe en un parche\" : \"el sol es un parche\", s + 36, h * 0.66);\n}"
+    },
+    {
+      "id": "erf-glow",
+      "topic": "erf",
+      "title": "El brillo es más chico que el campo teórico",
+      "explain": "El campo teórico crece con cada capa y con el kernel. El brillo de verdad es una campana más angosta: el campo efectivo. El centro manda, aunque la caja diga que el borde también entra. La campana es ilustrativa.",
+      "questions": [
+        {
+          "q": "¿Por qué el brillo no llena toda la caja?",
+          "why": "el campo efectivo es más chico que el teórico"
+        },
+        {
+          "q": "¿Qué hace crecer la caja, la profundidad o el kernel?",
+          "why": "las dos: cada capa suma el radio del kernel"
+        },
+        {
+          "q": "¿Por qué el centro sigue siendo el que manda?",
+          "why": "la campana concentra el gradiente"
+        }
+      ],
+      "controls": [
+        {
+          "id": "depth",
+          "label": "profundidad",
+          "min": 1,
+          "max": 16,
+          "value": 8,
+          "step": 1
+        },
+        {
+          "id": "ker",
+          "label": "kernel",
+          "min": 3,
+          "max": 7,
+          "value": 3,
+          "step": 2
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, depth = Math.round(state.depth), ker = Math.round(state.ker);\n  var rf = 1 + (ker - 1) * depth, sig = 0.85 * Math.sqrt(depth), n = 41, i, dist, g, x, bw, base, bh;\n  if (sig < 0.4) sig = 0.4;\n  bw = (w * 0.7) / n;\n  base = h * 0.78;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var half = rf / 2, x0 = 16 + (20 - half) * bw, ww = rf * bw;\n  if (x0 < 16) { ww -= 16 - x0; x0 = 16; }\n  ctx.fillStyle = \"#e7dcc8\";\n  ctx.fillRect(x0, h * 0.2, ww, base - h * 0.2);\n  for (i = 0; i < n; i++) {\n    dist = i - 20;\n    g = Math.exp(-(dist * dist) / (2 * sig * sig));\n    bh = g * h * 0.5;\n    x = 16 + i * bw;\n    ctx.fillStyle = g > 0.45 ? \"#1f4b99\" : \"#9db4dc\";\n    ctx.fillRect(x, base - bh, Math.max(2, bw - 1), bh);\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"16px sans-serif\";\n  ctx.fillText(\"teorico \" + rf + \" px\", w * 0.74, h * 0.28);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"14px sans-serif\";\n  ctx.fillText(\"el brillo es mas chico\", w * 0.74, h * 0.38);\n  ctx.fillText(\"la campana es ilustrativa\", w * 0.74, h * 0.48);\n}"
+    },
+    {
+      "id": "detr-assign",
+      "topic": "detr_match",
+      "title": "La clase cruza el emparejamiento",
+      "explain": "El costo junta la clase y la caja, y el emparejamiento es el de menor costo. Con el peso de la clase bajo, cada query se queda con la caja barata. Si el peso sube, la línea cruza hacia la clase correcta.",
+      "questions": [
+        {
+          "q": "¿Por qué la línea cruza cuando sube el peso de la clase?",
+          "why": "el costo de clase le gana al de la caja"
+        },
+        {
+          "q": "¿Quién elige el emparejamiento, cada query por su cuenta?",
+          "why": "el mínimo es sobre las asignaciones enteras"
+        },
+        {
+          "q": "¿Qué pasa con el costo si dos queries quieren el mismo objeto?",
+          "why": "una asignación usa cada objeto una vez"
+        }
+      ],
+      "controls": [
+        {
+          "id": "class_w",
+          "label": "peso clase",
+          "min": 0,
+          "max": 1,
+          "value": 0.7,
+          "step": 0.05
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, cw = state.class_w;\n  var box = [0.1, 0.9, 0.8, 0.8, 0.1, 0.7, 0.6, 0.7, 0.1];\n  var cls = [0.9, 0.1, 0.8, 0.2, 0.9, 0.1, 0.1, 0.8, 0.7];\n  var perm = [0, 1, 2, 0, 2, 1, 1, 0, 2, 1, 2, 0, 2, 0, 1, 2, 1, 0];\n  var best = 0, cost = 999, p, k, o, c, pick = [];\n  for (p = 0; p < 6; p++) {\n    c = 0;\n    for (k = 0; k < 3; k++) {\n      o = perm[p * 3 + k];\n      c += (1 - cw) * box[k * 3 + o] + cw * cls[k * 3 + o];\n    }\n    if (c < cost) { cost = c; best = p; }\n  }\n  for (k = 0; k < 3; k++) pick[k] = perm[best * 3 + k];\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var y0 = h * 0.22, gap = h * 0.22, xq = w * 0.16, xo = w * 0.62;\n  for (k = 0; k < 3; k++) {\n    ctx.fillStyle = \"#1f4b99\";\n    ctx.fillRect(xq, y0 + k * gap, 28, 28);\n    ctx.fillStyle = pick[k] === k ? \"#2e7d32\" : \"#c4512c\";\n    ctx.fillRect(xo, y0 + pick[k] * gap, 28, 28);\n    ctx.strokeStyle = \"#1d1a16\";\n    ctx.lineWidth = 3;\n    ctx.beginPath();\n    ctx.moveTo(xq + 28, y0 + k * gap + 14);\n    ctx.lineTo(xo, y0 + pick[k] * gap + 14);\n    ctx.stroke();\n    ctx.fillStyle = \"#5c564c\";\n    ctx.font = \"14px sans-serif\";\n    ctx.fillText(\"q\" + k, xq - 28, y0 + k * gap + 18);\n    ctx.fillText(\"obj \" + k, xo + 36, y0 + k * gap + 18);\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"16px sans-serif\";\n  ctx.fillText(cw < 0.45 ? \"sigue la caja\" : \"sigue la clase\", w * 0.34, h * 0.12);\n}"
+    },
+    {
+      "id": "ppo-clip",
+      "topic": "ppo_clip",
+      "title": "Pasado el clip, la ventaja ya no paga",
+      "explain": "PPO toma el mínimo entre la razón por la ventaja y esa misma razón recortada. El clip es el intervalo de 1 menos épsilon a 1 más épsilon. Fuera de él, si la ventaja empuja a favor, la curva se aplana y ya no paga más.",
+      "questions": [
+        {
+          "q": "¿Por qué la curva se aplana pasado 1 más épsilon?",
+          "why": "el clip le gana a la razón y el mínimo se queda ahí"
+        },
+        {
+          "q": "¿Qué lado se aplana si la ventaja es negativa?",
+          "why": "el de las razones chicas, por debajo de 1 menos épsilon"
+        },
+        {
+          "q": "¿Qué se mueve al abrir épsilon?",
+          "why": "el ancho de la franja donde la razón todavía cuenta"
+        }
+      ],
+      "controls": [
+        {
+          "id": "eps",
+          "label": "epsilon",
+          "min": 0.05,
+          "max": 0.45,
+          "value": 0.2,
+          "step": 0.01
+        },
+        {
+          "id": "adv",
+          "label": "ventaja",
+          "min": -2,
+          "max": 2,
+          "value": 1,
+          "step": 0.1
+        },
+        {
+          "id": "ratio",
+          "label": "razon",
+          "min": 0,
+          "max": 2,
+          "value": 1.6,
+          "step": 0.05
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, eps = state.eps, adv = state.adv, ratio = state.ratio;\n  var L = 48, R = w * 0.72, T = 36, B = h * 0.82, i, r, y, lo, hi;\n  function clipR(v) {\n    if (v < 1 - eps) return 1 - eps;\n    if (v > 1 + eps) return 1 + eps;\n    return v;\n  }\n  function loss(v) {\n    var a = v * adv, b = clipR(v) * adv;\n    return a < b ? a : b;\n  }\n  function X(v) { return L + (v / 2) * (R - L); }\n  function Y(v) {\n    if (v > 2.2) v = 2.2;\n    if (v < -2.2) v = -2.2;\n    return B - ((v + 2.2) / 4.4) * (B - T);\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  lo = X(1 - eps);\n  hi = X(1 + eps);\n  ctx.fillStyle = \"#e7e2d4\";\n  ctx.fillRect(lo, T, Math.max(2, hi - lo), B - T);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  for (i = 0; i <= 60; i++) {\n    r = (i / 60) * 2;\n    y = Y(loss(r));\n    if (i === 0) ctx.moveTo(X(r), y);\n    else ctx.lineTo(X(r), y);\n  }\n  ctx.stroke();\n  ctx.fillStyle = \"#c4512c\";\n  ctx.beginPath();\n  ctx.arc(X(ratio), Y(loss(ratio)), 6, 0, Math.PI * 2);\n  ctx.fill();\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"15px sans-serif\";\n  var flat = (adv > 0 && ratio > 1 + eps) || (adv < 0 && ratio < 1 - eps);\n  ctx.fillText(flat ? \"el clip ya no deja pasar\" : \"todavia dentro del clip\", 16, 22);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"razon \" + Math.round(ratio * 100) / 100, R + 12, h * 0.4);\n}"
+    },
+    {
+      "id": "gae-credit",
+      "topic": "gae",
+      "title": "Lambda devuelve el crédito hacia atrás",
+      "explain": "GAE arma la ventaja como una suma de errores de un paso, descontados por gamma por lambda. Con lambda 0 solo cuenta el paso del premio. Con lambda alto el crédito vuelve hacia los pasos de atrás.",
+      "questions": [
+        {
+          "q": "¿Por qué lambda 0 deja una sola barra?",
+          "why": "no suma los errores de los pasos siguientes"
+        },
+        {
+          "q": "¿Qué hace lambda 1 con un solo premio?",
+          "why": "reparte el crédito hacia atrás, con el descuento"
+        },
+        {
+          "q": "¿El gamma de la figura es el único posible?",
+          "why": "no: 0.9 es el de este ejemplo"
+        }
+      ],
+      "controls": [
+        {
+          "id": "lam",
+          "label": "lambda",
+          "min": 0,
+          "max": 1,
+          "value": 0.85,
+          "step": 0.05
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, lam = state.lam, n = 16, prize = 10, i, x, bw, bh, g, pow;\n  var gamma = 0.9;\n  bw = (w - 36) / n;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.font = \"13px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"premio\", 8, h * 0.18);\n  for (i = 0; i < n; i++) {\n    x = 28 + i * bw;\n    ctx.fillStyle = i === prize ? \"#c4512c\" : \"#e4d6c4\";\n    ctx.fillRect(x, h * 0.1, bw - 3, i === prize ? 22 : 8);\n  }\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"ventaja\", 8, h * 0.42);\n  for (i = 0; i < n; i++) {\n    g = 0;\n    if (i <= prize) {\n      pow = Math.pow(gamma * lam, prize - i);\n      g = pow;\n    }\n    x = 28 + i * bw;\n    bh = Math.max(2, g * h * 0.4);\n    ctx.fillStyle = g > 0.55 ? \"#1f4b99\" : \"#9db4dc\";\n    ctx.fillRect(x, h * 0.84 - bh, bw - 3, bh);\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"15px sans-serif\";\n  ctx.fillText(lam < 0.08 ? \"solo el paso del premio\" : \"el credito vuelve atras\", 28, h * 0.94);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"gamma 0.9\", w * 0.78, h * 0.18);\n}"
+    },
+    {
+      "id": "gcn-heat",
+      "topic": "gcn",
+      "title": "Una capa enciende a los vecinos",
+      "explain": "Una capa de GCN mezcla cada nodo con su vecino, normalizando por el grado. El calor sale del centro y enciende a los vecinos. El nodo suelto no tiene vecino, así que se queda frío.",
+      "questions": [
+        {
+          "q": "¿Por qué una capa enciende a los de alrededor?",
+          "why": "el mensaje pasa por las aristas"
+        },
+        {
+          "q": "¿Por qué el nodo suelto no cambia?",
+          "why": "no tiene vecino con quien mezclarse"
+        },
+        {
+          "q": "¿Qué le hace la normalización al centro?",
+          "why": "reparte su valor entre más aristas"
+        }
+      ],
+      "controls": [
+        {
+          "id": "depth",
+          "label": "capas",
+          "min": 0,
+          "max": 4,
+          "value": 1,
+          "step": 1
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, depth = Math.round(state.depth);\n  var n = 6, deg = [1, 1, 1, 1, 1, 1], e, layer, i, j, mx, ang, rad, x, y;\n  var linkA = [0, 0, 0, 0], linkB = [1, 2, 3, 4];\n  for (e = 0; e < 4; e++) { deg[linkA[e]] += 1; deg[linkB[e]] += 1; }\n  function linked(a, b) {\n    if (a === b) return 1;\n    if (a === 0 && b > 0 && b < 5) return 1;\n    if (b === 0 && a > 0 && a < 5) return 1;\n    return 0;\n  }\n  var heat = [1, 0, 0, 0, 0, 0], nh = [], s;\n  for (layer = 0; layer < depth; layer++) {\n    for (i = 0; i < n; i++) nh[i] = 0;\n    for (i = 0; i < n; i++) for (j = 0; j < n; j++) {\n      if (linked(i, j)) nh[i] += heat[j] / Math.sqrt(deg[i] * deg[j]);\n    }\n    for (i = 0; i < n; i++) heat[i] = nh[i];\n  }\n  mx = 0.01;\n  for (i = 0; i < n; i++) if (heat[i] > mx) mx = heat[i];\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var cx = w * 0.36, cy = h * 0.52, R = Math.min(w, h) * 0.26, px = [], py = [];\n  px[0] = cx; py[0] = cy;\n  for (i = 1; i <= 4; i++) {\n    ang = -Math.PI / 2 + (i - 1) * Math.PI / 2;\n    px[i] = cx + Math.cos(ang) * R;\n    py[i] = cy + Math.sin(ang) * R;\n  }\n  px[5] = w * 0.84;\n  py[5] = cy;\n  ctx.strokeStyle = \"#b7aa9a\";\n  ctx.lineWidth = 2;\n  for (i = 1; i <= 4; i++) {\n    ctx.beginPath();\n    ctx.moveTo(px[0], py[0]);\n    ctx.lineTo(px[i], py[i]);\n    ctx.stroke();\n  }\n  for (i = 0; i < n; i++) {\n    rad = 7 + 32 * heat[i] / mx;\n    ctx.fillStyle = heat[i] > 0.12 * mx ? \"#1f4b99\" : \"#e4d6c4\";\n    ctx.beginPath();\n    ctx.arc(px[i], py[i], rad, 0, Math.PI * 2);\n    ctx.fill();\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"15px sans-serif\";\n  ctx.fillText(depth === 0 ? \"solo el centro\" : \"los vecinos se encienden\", 16, 24);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"suelto\", px[5] - 16, py[5] + 36);\n}"
+    },
+    {
+      "id": "clip-space",
+      "topic": "clip_align",
+      "title": "La temperatura elige el texto cercano",
+      "explain": "CLIP pone la imagen y los textos en el mismo espacio. El parecido es el coseno de sus direcciones, y la temperatura parte esos cosenos antes del softmax. Baja, y gana el texto más cercano.",
+      "questions": [
+        {
+          "q": "¿Por qué gana el texto que está en la misma dirección?",
+          "why": "el coseno es alto cuando el ángulo es chico"
+        },
+        {
+          "q": "¿Qué hace una temperatura baja?",
+          "why": "el softmax se queda con el coseno mayor"
+        },
+        {
+          "q": "¿Qué se mueve al cambiar el ángulo de la imagen?",
+          "why": "cuál texto queda más cerca"
+        }
+      ],
+      "controls": [
+        {
+          "id": "tau",
+          "label": "tau",
+          "min": 0.08,
+          "max": 1.2,
+          "value": 0.18,
+          "step": 0.02
+        },
+        {
+          "id": "slide",
+          "label": "angulo",
+          "min": 0.2,
+          "max": 3.6,
+          "value": 1.35,
+          "step": 0.05
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, tau = state.tau, ang = state.slide;\n  var texts = [0.4, 1.35, 2.25, 3.15], name = [\"gato\", \"casa\", \"tren\", \"mar\"];\n  var sim = [], pr = [], i, m, acc, ex, cx, cy, rad, x, y, bw, win = 0;\n  if (tau < 0.05) tau = 0.05;\n  m = -2;\n  for (i = 0; i < 4; i++) {\n    sim[i] = Math.cos(ang - texts[i]);\n    if (sim[i] / tau > m) m = sim[i] / tau;\n  }\n  acc = 0;\n  for (i = 0; i < 4; i++) { ex = Math.exp(sim[i] / tau - m); pr[i] = ex; acc += ex; }\n  for (i = 0; i < 4; i++) { pr[i] = pr[i] / acc; if (pr[i] > pr[win]) win = i; }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  cx = w * 0.28;\n  cy = h * 0.55;\n  rad = Math.min(w, h) * 0.22;\n  ctx.strokeStyle = \"#e0d5c6\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  ctx.arc(cx, cy, rad, 0, Math.PI * 2);\n  ctx.stroke();\n  for (i = 0; i < 4; i++) {\n    x = cx + Math.cos(texts[i]) * rad;\n    y = cy + Math.sin(texts[i]) * rad;\n    ctx.fillStyle = i === win ? \"#1f4b99\" : \"#9db4dc\";\n    ctx.beginPath();\n    ctx.arc(x, y, i === win ? 9 : 6, 0, Math.PI * 2);\n    ctx.fill();\n    ctx.fillStyle = \"#5c564c\";\n    ctx.font = \"13px sans-serif\";\n    ctx.fillText(name[i], x + 12, y + (y < cy ? -14 : 16));\n  }\n  x = cx + Math.cos(ang) * rad * 0.62;\n  y = cy + Math.sin(ang) * rad * 0.62;\n  ctx.fillStyle = \"#c4512c\";\n  ctx.beginPath();\n  ctx.arc(x, y, 8, 0, Math.PI * 2);\n  ctx.fill();\n  bw = w * 0.28;\n  for (i = 0; i < 4; i++) {\n    ctx.fillStyle = i === win ? \"#1f4b99\" : \"#d9e3f5\";\n    ctx.fillRect(w * 0.62, 40 + i * (h * 0.16), Math.max(4, pr[i] * bw), h * 0.1);\n    ctx.fillStyle = \"#5c564c\";\n    ctx.font = \"13px sans-serif\";\n    ctx.fillText(name[i], w * 0.62 + bw + 8, 40 + i * (h * 0.16) + 16);\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"16px sans-serif\";\n  ctx.fillText(\"gana \" + name[win], 16, 24);\n}"
+    },
+    {
+      "id": "bpe-rare",
+      "topic": "bpe_merge",
+      "title": "La palabra rara no entra en la fusión",
+      "explain": "Cada fusión junta el par que ya se vio junto. La palabra común entra en esas fusiones y se encoge a pocos tokens. La rara no está en la lista y sigue letra por letra.",
+      "questions": [
+        {
+          "q": "¿Por qué la palabra común se queda en menos cajas?",
+          "why": "sus pares están en la lista de fusiones"
+        },
+        {
+          "q": "¿Por qué la rara no cambia al subir las fusiones?",
+          "why": "ningún par suyo está en la lista"
+        },
+        {
+          "q": "¿Qué se junta en cada paso, letras sueltas o el par de al lado?",
+          "why": "el par de tokens que la regla nombra"
+        }
+      ],
+      "controls": [
+        {
+          "id": "merges",
+          "label": "fusiones",
+          "min": 0,
+          "max": 6,
+          "value": 3,
+          "step": 1
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, merges = Math.round(state.merges);\n  var ruleL = [1, 3, 20, 5, 23, 22], ruleR = [2, 4, 21, 6, 7, 24], ruleN = [20, 21, 22, 23, 24, 25];\n  var id = [1, 2, 3, 4, 5, 6, 7], span = [1, 1, 1, 1, 1, 1, 1], n = 7, rare = [8, 9, 10, 11];\n  var mi, j, m, outI = [], outS = [], i, x, unit, y;\n  function apply(L, R, nid) {\n    m = 0;\n    j = 0;\n    while (j < n) {\n      if (j + 1 < n && id[j] === L && id[j + 1] === R) {\n        outI[m] = nid;\n        outS[m] = span[j] + span[j + 1];\n        m += 1;\n        j += 2;\n      } else {\n        outI[m] = id[j];\n        outS[m] = span[j];\n        m += 1;\n        j += 1;\n      }\n    }\n    n = m;\n    for (j = 0; j < n; j++) { id[j] = outI[j]; span[j] = outS[j]; }\n  }\n  for (mi = 0; mi < merges && mi < 6; mi++) apply(ruleL[mi], ruleR[mi], ruleN[mi]);\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  unit = (w - 48) / 7;\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"14px sans-serif\";\n  ctx.fillText(\"comun\", 8, h * 0.2);\n  x = 80;\n  y = h * 0.12;\n  for (i = 0; i < n; i++) {\n    ctx.fillStyle = \"#1f4b99\";\n    ctx.fillRect(x, y, Math.max(8, span[i] * unit - 6), 36);\n    x += span[i] * unit;\n  }\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"rara\", 8, h * 0.55);\n  x = 80;\n  y = h * 0.46;\n  for (i = 0; i < 4; i++) {\n    ctx.fillStyle = \"#c4512c\";\n    ctx.fillRect(x, y, unit - 6, 36);\n    x += unit;\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"16px sans-serif\";\n  ctx.fillText(\"comun en \" + n + \"   rara en 4\", 16, h * 0.82);\n}"
+    },
+    {
+      "id": "paged-waste",
+      "topic": "paged_kv",
+      "title": "Solo sobra hueco en la última página",
+      "explain": "Reservar hasta el largo máximo deja un hueco en cada secuencia. Con páginas, el hueco es solo lo que sobra en la última página. El paper midió usos del 20% al 38% cuando se reserva el máximo. Las longitudes de aquí son un ejemplo.",
+      "questions": [
+        {
+          "q": "¿Por qué reservar el máximo deja tanto hueco?",
+          "why": "se aparta el largo peor aunque la frase sea corta"
+        },
+        {
+          "q": "¿Dónde queda el hueco si la memoria va por páginas?",
+          "why": "solo en la última página de cada secuencia"
+        },
+        {
+          "q": "¿Qué pasa con el hueco si la página es del tamaño del máximo?",
+          "why": "vuelve a ser casi toda la reserva"
+        }
+      ],
+      "controls": [
+        {
+          "id": "page",
+          "label": "pagina",
+          "min": 8,
+          "max": 64,
+          "value": 16,
+          "step": 8
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, page = Math.round(state.page);\n  var len = [40, 90, 20, 70], maxL = 128, i, pages, waste, used = 0, reserved = 0, paged = 0, y, bw, x0;\n  if (page < 1) page = 1;\n  for (i = 0; i < 4; i++) {\n    used += len[i];\n    reserved += maxL;\n    pages = Math.ceil(len[i] / page);\n    paged += pages * page;\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  x0 = 16;\n  bw = (w * 0.42);\n  ctx.font = \"13px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"reserva el maximo\", x0, 20);\n  ctx.fillText(\"por paginas\", w * 0.54, 20);\n  for (i = 0; i < 4; i++) {\n    y = 36 + i * (h * 0.16);\n    ctx.fillStyle = \"#e4d6c4\";\n    ctx.fillRect(x0, y, bw, 22);\n    ctx.fillStyle = \"#1f4b99\";\n    ctx.fillRect(x0, y, bw * len[i] / maxL, 22);\n    pages = Math.ceil(len[i] / page);\n    waste = pages * page - len[i];\n    ctx.fillStyle = \"#1f4b99\";\n    ctx.fillRect(w * 0.54, y, bw * len[i] / maxL, 22);\n    ctx.fillStyle = \"#c4512c\";\n    ctx.fillRect(w * 0.54 + bw * len[i] / maxL, y, Math.max(2, bw * waste / maxL), 22);\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"16px sans-serif\";\n  ctx.fillText(\"uso \" + Math.round(100 * used / reserved) + \"%\", 16, h * 0.9);\n  ctx.fillText(\"uso \" + Math.round(100 * used / paged) + \"%\", w * 0.54, h * 0.9);\n}"
+    },
+    {
+      "id": "nucleus-temp",
+      "topic": "nucleus",
+      "title": "La misma masa entra más si hay temperatura",
+      "explain": "Nucleus se queda con la masa más chica que pasa de p, no con un conteo fijo. La temperatura aplana los logits, así que la misma masa deja entrar más tokens. Fría, uno o dos ya la llenan.",
+      "questions": [
+        {
+          "q": "¿Por qué p = 0.9 no significa quedarse con el 90% de los tokens?",
+          "why": "el corte es de masa, no de conteo"
+        },
+        {
+          "q": "¿Qué cambia si la temperatura sube y p se queda?",
+          "why": "la masa se reparte y entran más tokens"
+        },
+        {
+          "q": "¿Cuándo un solo token ya llena la masa?",
+          "why": "con temperatura baja el softmax se concentra"
+        }
+      ],
+      "controls": [
+        {
+          "id": "p",
+          "label": "masa p",
+          "min": 0.2,
+          "max": 1,
+          "value": 0.9,
+          "step": 0.05
+        },
+        {
+          "id": "temp",
+          "label": "temperatura",
+          "min": 0.3,
+          "max": 2,
+          "value": 0.45,
+          "step": 0.05
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, p = state.p, temp = state.temp;\n  var logits = [3.2, 2.4, 1.1, 0.4, -0.2, -0.6, -1.2, -1.8];\n  var n = 8, i, m = -99, acc = 0, ex, pr = [], kept = 0, sum = 0, x, bw, bh;\n  if (temp < 0.05) temp = 0.05;\n  for (i = 0; i < n; i++) if (logits[i] / temp > m) m = logits[i] / temp;\n  for (i = 0; i < n; i++) { ex = Math.exp(logits[i] / temp - m); pr[i] = ex; acc += ex; }\n  for (i = 0; i < n; i++) pr[i] = pr[i] / acc;\n  sum = 0;\n  for (i = 0; i < n; i++) { sum += pr[i]; kept += 1; if (sum >= p) break; }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  bw = (w - 40) / n;\n  for (i = 0; i < n; i++) {\n    x = 20 + i * bw;\n    if (i < kept) {\n      bh = pr[i] * h * 0.7;\n      ctx.fillStyle = \"#1f4b99\";\n      ctx.fillRect(x, h * 0.78 - bh, bw - 8, Math.max(2, bh));\n    } else {\n      ctx.fillStyle = \"#e4d6c4\";\n      ctx.fillRect(x, h * 0.78 - 8, bw - 8, 8);\n    }\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"18px sans-serif\";\n  ctx.fillText(\"masa \" + Math.round(p * 100) / 100 + \"  entran \" + kept, 16, 28);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"14px sans-serif\";\n  ctx.fillText(\"temperatura \" + Math.round(temp * 100) / 100, 16, 50);\n}"
+    },
+    {
+      "id": "warm-cosine",
+      "topic": "warmup",
+      "title": "El warmup corre el pico y el coseno baja",
+      "explain": "El warmup sube la tasa en línea hasta un pico y el coseno la baja después. Mover el warmup corre ese pico. La curva azul es la de Vaswani: sube y luego cae como uno sobre raíz del paso.",
+      "questions": [
+        {
+          "q": "¿Por qué el pico se corre con el warmup?",
+          "why": "las dos curvas cambian de régimen en ese paso"
+        },
+        {
+          "q": "¿Qué hace la curva azul después del pico?",
+          "why": "cae como uno sobre la raíz del paso"
+        },
+        {
+          "q": "¿Qué hace el coseno después del pico?",
+          "why": "baja suave hasta el piso"
+        }
+      ],
+      "controls": [
+        {
+          "id": "warm",
+          "label": "warmup",
+          "min": 5,
+          "max": 70,
+          "value": 20,
+          "step": 1
+        },
+        {
+          "id": "floor",
+          "label": "piso",
+          "min": 0,
+          "max": 0.6,
+          "value": 0.1,
+          "step": 0.05
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, warm = state.warm, floor = state.floor;\n  var N = 100, i, s, a, b, c, p, vas = [], cos = [], mv = 0.0001, mc = 0.0001;\n  var L = 36, R = w * 0.78, T = 28, B = h * 0.78;\n  function X(v) { return L + (v / N) * (R - L); }\n  function Y(v) { return B - v * (B - T); }\n  for (i = 1; i <= N; i++) {\n    s = i;\n    a = 1 / Math.sqrt(s);\n    b = s / (warm * Math.sqrt(warm));\n    vas[i] = a < b ? a : b;\n    if (vas[i] > mv) mv = vas[i];\n    if (s < warm) c = s / warm;\n    else {\n      p = (s - warm) / (N - warm);\n      c = floor + (1 - floor) * 0.5 * (1 + Math.cos(Math.PI * p));\n    }\n    cos[i] = c;\n    if (c > mc) mc = c;\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  for (i = 1; i <= N; i++) {\n    if (i === 1) ctx.moveTo(X(i), Y(vas[i] / mv));\n    else ctx.lineTo(X(i), Y(vas[i] / mv));\n  }\n  ctx.stroke();\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.beginPath();\n  for (i = 1; i <= N; i++) {\n    if (i === 1) ctx.moveTo(X(i), Y(cos[i] / mc));\n    else ctx.lineTo(X(i), Y(cos[i] / mc));\n  }\n  ctx.stroke();\n  ctx.strokeStyle = \"#2e7d32\";\n  ctx.beginPath();\n  ctx.moveTo(X(warm), T);\n  ctx.lineTo(X(warm), B);\n  ctx.stroke();\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"15px sans-serif\";\n  ctx.fillText(\"el pico esta en el warmup\", 16, 20);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"1/raiz\", R + 8, h * 0.4);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillText(\"coseno\", R + 8, h * 0.5);\n}"
+    },
+    {
+      "id": "double-descent",
+      "topic": "descent",
+      "title": "Al interpolar, el test vuelve a subir",
+      "explain": "Al interpolar, el error de entrenamiento llega cerca de cero y el de prueba sube. Pasado ese ancho, el de prueba vuelve a bajar. La forma de las dos curvas es ilustrativa de esa doble bajada.",
+      "questions": [
+        {
+          "q": "¿Por qué el test sube justo cuando el entrenamiento ya cabe?",
+          "why": "ahí el modelo interpola los datos"
+        },
+        {
+          "q": "¿Qué pasa si el ancho sigue creciendo?",
+          "why": "el test vuelve a bajar"
+        },
+        {
+          "q": "¿La curva es una medición o un esquema?",
+          "why": "un esquema de la forma que muestra el paper"
+        }
+      ],
+      "controls": [
+        {
+          "id": "width",
+          "label": "ancho",
+          "min": 1,
+          "max": 30,
+          "value": 10,
+          "step": 1
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, width = state.width;\n  var N = 30, i, x, te, tr, peak = 0, L = 36, R = w * 0.72, T = 36, B = h * 0.8;\n  function testAt(v) {\n    return 0.18 + 0.62 * Math.exp(-((v - 10) * (v - 10)) / 6) + 0.5 / (v + 1);\n  }\n  function trainAt(v) {\n    if (v < 10) return 0.12 + 0.7 * (10 - v) / 10;\n    return 0.04;\n  }\n  for (i = 1; i <= N; i++) if (testAt(i) > peak) peak = testAt(i);\n  function X(v) { return L + (v / N) * (R - L); }\n  function Y(v) { return B - (v / (peak + 0.05)) * (B - T); }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  for (i = 1; i <= N; i++) {\n    if (i === 1) ctx.moveTo(X(i), Y(trainAt(i)));\n    else ctx.lineTo(X(i), Y(trainAt(i)));\n  }\n  ctx.stroke();\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.beginPath();\n  for (i = 1; i <= N; i++) {\n    if (i === 1) ctx.moveTo(X(i), Y(testAt(i)));\n    else ctx.lineTo(X(i), Y(testAt(i)));\n  }\n  ctx.stroke();\n  te = testAt(width);\n  tr = trainAt(width);\n  ctx.fillStyle = \"#2e7d32\";\n  ctx.beginPath();\n  ctx.arc(X(width), Y(te), 6, 0, Math.PI * 2);\n  ctx.fill();\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"15px sans-serif\";\n  ctx.fillText(width > 8 && width < 14 ? \"aqui se interpola\" : (width >= 14 ? \"el test vuelve a bajar\" : \"todavia falta modelo\"), 16, 22);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillRect(R + 16, B - tr / (peak + 0.05) * (B - T), 18, tr / (peak + 0.05) * (B - T));\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(R + 42, B - te / (peak + 0.05) * (B - T), 18, Math.max(2, te / (peak + 0.05) * (B - T)));\n  ctx.font = \"12px sans-serif\";\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillText(\"train\", R + 12, B + 16);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillText(\"test\", R + 42, B + 16);\n}"
+    },
+    {
+      "id": "grok-delay",
+      "topic": "grok",
+      "title": "La validación generaliza mucho después",
+      "explain": "En grokking el entrenamiento acierta mucho antes. La validación se queda en el azar un tramo largo y después, de pronto, generaliza. El lugar del salto en la figura es ilustrativo.",
+      "questions": [
+        {
+          "q": "¿Por qué entrenar bien no quiere decir que ya generaliza?",
+          "why": "la validación puede seguir en el azar"
+        },
+        {
+          "q": "¿Qué se ve cuando el cursor pasa el salto?",
+          "why": "la validación sube de golpe"
+        },
+        {
+          "q": "¿El paso del salto es el del paper?",
+          "why": "no: el lugar es ilustrativo, el retraso es el fenómeno"
+        }
+      ],
+      "controls": [
+        {
+          "id": "step",
+          "label": "paso",
+          "min": 0,
+          "max": 100,
+          "value": 42,
+          "step": 1
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, step = Math.round(state.step);\n  var N = 100, i, tr, va, L = 36, R = w * 0.78, T = 40, B = h * 0.78;\n  function trainAt(s) { return 1 - Math.exp(-s / 8); }\n  function valAt(s) {\n    if (s < 60) return 0.12;\n    return 0.12 + (1 - Math.exp(-(s - 60) / 6)) * 0.86;\n  }\n  function X(v) { return L + (v / N) * (R - L); }\n  function Y(v) { return B - v * (B - T); }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  for (i = 0; i <= N; i++) {\n    tr = trainAt(i);\n    if (i === 0) ctx.moveTo(X(i), Y(tr));\n    else ctx.lineTo(X(i), Y(tr));\n  }\n  ctx.stroke();\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.beginPath();\n  for (i = 0; i <= N; i++) {\n    va = valAt(i);\n    if (i === 0) ctx.moveTo(X(i), Y(va));\n    else ctx.lineTo(X(i), Y(va));\n  }\n  ctx.stroke();\n  ctx.strokeStyle = \"#2e7d32\";\n  ctx.beginPath();\n  ctx.moveTo(X(step), T);\n  ctx.lineTo(X(step), B);\n  ctx.stroke();\n  tr = trainAt(step);\n  va = valAt(step);\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"16px sans-serif\";\n  ctx.fillText(va < 0.3 ? \"entrena ya, valida no\" : \"de pronto generaliza\", 16, 24);\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"azul entrena  \" + Math.round(tr * 100) + \"%\", 16, h * 0.92);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillText(\"coral valida  \" + Math.round(va * 100) + \"%\", w * 0.48, h * 0.92);\n}"
+    },
+    {
+      "id": "lottery-ticket",
+      "topic": "lottery",
+      "title": "El boleto aguanta y el azar no",
+      "explain": "El boleto es la subred de los pesos grandes, entrenada otra vez desde el inicio original. Aguanta aunque se quede con pocos. Una máscara al azar, con la misma cantidad, se cae. Las alturas son ilustrativas.",
+      "questions": [
+        {
+          "q": "¿Por qué el boleto sigue alto con pocos pesos?",
+          "why": "se quedó con los pesos grandes y con su inicio"
+        },
+        {
+          "q": "¿Qué le pasa a la máscara al azar con la misma cantidad?",
+          "why": "se cae, porque no son esos pesos"
+        },
+        {
+          "q": "¿Qué se tira al bajar el control?",
+          "why": "los pesos chicos, no una muestra al azar"
+        }
+      ],
+      "controls": [
+        {
+          "id": "keep",
+          "label": "quedan",
+          "min": 0.05,
+          "max": 1,
+          "value": 0.22,
+          "step": 0.01
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, keep = state.keep;\n  var n = 64, mag = [], i, j, greater, keepN, drawn = 0, ticket, random, side, x, y, cell;\n  keepN = Math.round(keep * n);\n  if (keepN < 1) keepN = 1;\n  for (i = 0; i < n; i++) mag[i] = Math.abs(Math.sin(i * 1.3 + 0.4));\n  side = Math.min(w * 0.42, h * 0.7);\n  cell = side / 8;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  for (i = 0; i < n; i++) {\n    greater = 0;\n    for (j = 0; j < n; j++) if (mag[j] > mag[i]) greater += 1;\n    if (greater < keepN) {\n      drawn += 1;\n      x = 16 + (i % 8) * cell;\n      y = 36 + Math.floor(i / 8) * cell;\n      ctx.fillStyle = \"#1f4b99\";\n      ctx.fillRect(x, y, cell - 3, cell - 3);\n    }\n  }\n  ticket = 0.92 / (1 + Math.exp(-(keep - 0.14) * 28));\n  random = 0.12 + 0.8 * keep;\n  var bx = w * 0.56, bw = w * 0.32, base = h * 0.72;\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(bx, base - ticket * h * 0.45, bw * 0.4, Math.max(2, ticket * h * 0.45));\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillRect(bx + bw * 0.5, base - random * h * 0.45, bw * 0.4, Math.max(2, random * h * 0.45));\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"16px sans-serif\";\n  ctx.fillText(keep < 0.35 ? \"el boleto aguanta\" : \"casi toda la red\", 16, 24);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"boleto\", bx, base + 18);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillText(\"azar\", bx + bw * 0.5, base + 18);\n}"
     }
   ]
 }

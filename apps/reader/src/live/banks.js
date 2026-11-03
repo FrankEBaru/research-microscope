@@ -237,6 +237,102 @@ export const BANKS = {
       ["¿Qué marcan alfa 1 y beta 32?", "dónde empieza y dónde termina la mezcla"],
     ]),
   },
+  vit_patch: {
+    explain: "ViT corta la imagen en parches del mismo tamaño. El número de tokens es alto por ancho, partido por el parche, al cuadrado. Un parche más grande se traga el detalle y deja menos tokens.",
+    questions: qs([
+      ["¿Por qué un parche más grande deja menos tokens?", "el conteo es el área del parche, no el lado"],
+      ["¿Qué le pasa a un objeto chico si el parche crece?", "cabe entero en un solo token"],
+      ["¿De dónde sale el 224 de la figura?", "es el lado que usa el paper con esos parches"],
+    ]),
+  },
+  erf: {
+    explain: "El campo teórico crece con cada capa y con el kernel. El brillo de verdad es una campana más angosta: el campo efectivo. El centro manda, aunque la caja diga que el borde también entra. La campana es ilustrativa.",
+    questions: qs([
+      ["¿Por qué el brillo no llena toda la caja?", "el campo efectivo es más chico que el teórico"],
+      ["¿Qué hace crecer la caja, la profundidad o el kernel?", "las dos: cada capa suma el radio del kernel"],
+      ["¿Por qué el centro sigue siendo el que manda?", "la campana concentra el gradiente"],
+    ]),
+  },
+  ppo_clip: {
+    explain: "PPO toma el mínimo entre la razón por la ventaja y esa misma razón recortada. El clip es el intervalo de 1 menos épsilon a 1 más épsilon. Fuera de él, si la ventaja empuja a favor, la curva se aplana y ya no paga más.",
+    questions: qs([
+      ["¿Por qué la curva se aplana pasado 1 más épsilon?", "el clip le gana a la razón y el mínimo se queda ahí"],
+      ["¿Qué lado se aplana si la ventaja es negativa?", "el de las razones chicas, por debajo de 1 menos épsilon"],
+      ["¿Qué se mueve al abrir épsilon?", "el ancho de la franja donde la razón todavía cuenta"],
+    ]),
+  },
+  gae: {
+    explain: "GAE arma la ventaja como una suma de errores de un paso, descontados por gamma por lambda. Con lambda 0 solo cuenta el paso del premio. Con lambda alto el crédito vuelve hacia los pasos de atrás.",
+    questions: qs([
+      ["¿Por qué lambda 0 deja una sola barra?", "no suma los errores de los pasos siguientes"],
+      ["¿Qué hace lambda 1 con un solo premio?", "reparte el crédito hacia atrás, con el descuento"],
+      ["¿El gamma de la figura es el único posible?", "no: 0.9 es el de este ejemplo"],
+    ]),
+  },
+  gcn: {
+    explain: "Una capa de GCN mezcla cada nodo con su vecino, normalizando por el grado. El calor sale del centro y enciende a los vecinos. El nodo suelto no tiene vecino, así que se queda frío.",
+    questions: qs([
+      ["¿Por qué una capa enciende a los de alrededor?", "el mensaje pasa por las aristas"],
+      ["¿Por qué el nodo suelto no cambia?", "no tiene vecino con quien mezclarse"],
+      ["¿Qué le hace la normalización al centro?", "reparte su valor entre más aristas"],
+    ]),
+  },
+  clip_align: {
+    explain: "CLIP pone la imagen y los textos en el mismo espacio. El parecido es el coseno de sus direcciones, y la temperatura parte esos cosenos antes del softmax. Baja, y gana el texto más cercano.",
+    questions: qs([
+      ["¿Por qué gana el texto que está en la misma dirección?", "el coseno es alto cuando el ángulo es chico"],
+      ["¿Qué hace una temperatura baja?", "el softmax se queda con el coseno mayor"],
+      ["¿Qué se mueve al cambiar el ángulo de la imagen?", "cuál texto queda más cerca"],
+    ]),
+  },
+  bpe_merge: {
+    explain: "Cada fusión junta el par que ya se vio junto. La palabra común entra en esas fusiones y se encoge a pocos tokens. La rara no está en la lista y sigue letra por letra.",
+    questions: qs([
+      ["¿Por qué la palabra común se queda en menos cajas?", "sus pares están en la lista de fusiones"],
+      ["¿Por qué la rara no cambia al subir las fusiones?", "ningún par suyo está en la lista"],
+      ["¿Qué se junta en cada paso, letras sueltas o el par de al lado?", "el par de tokens que la regla nombra"],
+    ]),
+  },
+  paged_kv: {
+    explain: "Reservar hasta el largo máximo deja un hueco en cada secuencia. Con páginas, el hueco es solo lo que sobra en la última página. El paper midió usos del 20% al 38% cuando se reserva el máximo. Las longitudes de aquí son un ejemplo.",
+    questions: qs([
+      ["¿Por qué reservar el máximo deja tanto hueco?", "se aparta el largo peor aunque la frase sea corta"],
+      ["¿Dónde queda el hueco si la memoria va por páginas?", "solo en la última página de cada secuencia"],
+      ["¿Qué pasa con el hueco si la página es del tamaño del máximo?", "vuelve a ser casi toda la reserva"],
+    ]),
+  },
+  warmup: {
+    explain: "El warmup sube la tasa en línea hasta un pico y el coseno la baja después. Mover el warmup corre ese pico. La curva azul es la de Vaswani: sube y luego cae como uno sobre raíz del paso.",
+    questions: qs([
+      ["¿Por qué el pico se corre con el warmup?", "las dos curvas cambian de régimen en ese paso"],
+      ["¿Qué hace la curva azul después del pico?", "cae como uno sobre la raíz del paso"],
+      ["¿Qué hace el coseno después del pico?", "baja suave hasta el piso"],
+    ]),
+  },
+  descent: {
+    explain: "Al interpolar, el error de entrenamiento llega cerca de cero y el de prueba sube. Pasado ese ancho, el de prueba vuelve a bajar. La forma de las dos curvas es ilustrativa de esa doble bajada.",
+    questions: qs([
+      ["¿Por qué el test sube justo cuando el entrenamiento ya cabe?", "ahí el modelo interpola los datos"],
+      ["¿Qué pasa si el ancho sigue creciendo?", "el test vuelve a bajar"],
+      ["¿La curva es una medición o un esquema?", "un esquema de la forma que muestra el paper"],
+    ]),
+  },
+  grok: {
+    explain: "En grokking el entrenamiento acierta mucho antes. La validación se queda en el azar un tramo largo y después, de pronto, generaliza. El lugar del salto en la figura es ilustrativo.",
+    questions: qs([
+      ["¿Por qué entrenar bien no quiere decir que ya generaliza?", "la validación puede seguir en el azar"],
+      ["¿Qué se ve cuando el cursor pasa el salto?", "la validación sube de golpe"],
+      ["¿El paso del salto es el del paper?", "no: el lugar es ilustrativo, el retraso es el fenómeno"],
+    ]),
+  },
+  lottery: {
+    explain: "El boleto es la subred de los pesos grandes, entrenada otra vez desde el inicio original. Aguanta aunque se quede con pocos. Una máscara al azar, con la misma cantidad, se cae. Las alturas son ilustrativas.",
+    questions: qs([
+      ["¿Por qué el boleto sigue alto con pocos pesos?", "se quedó con los pesos grandes y con su inicio"],
+      ["¿Qué le pasa a la máscara al azar con la misma cantidad?", "se cae, porque no son esos pesos"],
+      ["¿Qué se tira al bajar el control?", "los pesos chicos, no una muestra al azar"],
+    ]),
+  },
 };
 
 export function knob(id, label, min, max, value, step) {

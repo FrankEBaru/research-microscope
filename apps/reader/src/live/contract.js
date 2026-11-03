@@ -48,7 +48,20 @@ export const TOPICS = {
   ssm_delta: { controls: ["delta"], mark: "selectivo" },
   smoothquant: { controls: ["alpha"], mark: "activa" },
   yarn_parts: { controls: ["scale"], mark: "parte" },
-  // No published id yet. Proposed to RRM-79; the selector should stay static until then.
+  // Published in the 0.2 topic list. The control id is the one Muse used on probe 1.
+  vit_patch: { controls: ["patch"], mark: "parche" },
+  ppo_clip: { controls: ["eps"], mark: "clip" },
+  warmup: { controls: ["warm"], mark: "warmup" },
+  bpe_merge: { controls: ["merges"], mark: "fusion" },
+  // Proposed to RRM-79. The selector should stay static until the topic exists.
+  erf: { controls: ["depth"], mark: "campo" },
+  gae: { controls: ["lam"], mark: "ventaja" },
+  gcn: { controls: ["depth"], mark: "vecino" },
+  clip_align: { controls: ["tau"], mark: "coseno" },
+  paged_kv: { controls: ["page"], mark: "hueco" },
+  descent: { controls: ["width"], mark: "interpol" },
+  grok: { controls: ["step"], mark: "generaliza" },
+  lottery: { controls: ["keep"], mark: "boleto" },
   quant: { controls: ["mag"], mark: "error" },
 };
 
