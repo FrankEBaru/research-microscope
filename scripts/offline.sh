@@ -32,6 +32,9 @@ resolve_fixtures "$ROOT" || exit 1
 
 export RRM_FEATURES="${RRM_FEATURES:-core}"
 export NEXT_PUBLIC_RRM_FEATURES="${NEXT_PUBLIC_RRM_FEATURES:-$RRM_FEATURES}"
+# Offline no llama a Meta aunque la llave esté en el entorno.
+export RRM_META=off
+unset RRM_OFFLINE_PANORAMA
 export NEXT_PUBLIC_BURST_URL="http://127.0.0.1:${PORT}"
 export NEXT_PUBLIC_READER_URL="http://127.0.0.1:${PORT}"
 export NEXT_PUBLIC_RRM_DEMO_TOKEN="${NEXT_PUBLIC_RRM_DEMO_TOKEN:-local}"

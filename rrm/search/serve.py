@@ -63,6 +63,7 @@ vol = modal.Volume.from_name("rrm-data", create_if_missing=True)
 if modal.is_local():
     model_secret = modal.Secret.from_dict({
         "MODEL_API_KEY": os.environ.get("MODEL_API_KEY", ""),
+        "S2_API_KEY": os.environ.get("S2_API_KEY", ""),
         "RRM_DEMO_TOKEN": os.environ.get("RRM_DEMO_TOKEN", ""),
         "RRM_FEATURES": os.environ.get("RRM_FEATURES", "core"),
         "RRM_GROUP_NAMES": os.environ.get("RRM_GROUP_NAMES", ""),

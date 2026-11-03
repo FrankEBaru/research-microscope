@@ -160,6 +160,8 @@ export default function Engine() {
   }, []);
 
   useEffect(() => {
+    // B1 en vivo no usa los papers curados (el Release viejo). Atlas, lector y caja salen del backend.
+    if (live && core) return;
     (async () => {
       try {
         const c = await curatedContent();
@@ -172,7 +174,7 @@ export default function Engine() {
         setErr("No se encontraron los datos. Ejecuta `npm run data` (descarga los papers de arXiv; no se commitean).");
       }
     })();
-  }, []);
+  }, [live, core]);
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
