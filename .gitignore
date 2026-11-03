@@ -68,5 +68,5 @@ e2e-report*.json
 offline-fixtures/
 offline-fixtures.tmp.*/
 offline-fixtures-synth/
-offline-fixtures-v1.tar.gz
+offline-fixtures-v*.tar.gz
 apps/reader/shots/

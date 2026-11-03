@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Arranca la API local y la UI con datos locales. Sin Modal ni Meta, sin red.
-#   RRM_OFFLINE_DIR=<dir con manifest.json>   usa ese directorio.
+# Arranca la API local y la UI. Sin Modal ni Meta.
+#   RRM_OFFLINE_DIR=<dir con manifest.json>   usa ese directorio. No llama a gh.
 #   RRM_OFFLINE_TAR=<.tar.gz o prefijo de *.part-aa…>   lo descomprime en offline-fixtures/.
-#   RRM_OFFLINE_SYNTH=1   fuerza los fixtures sintéticos (también si no hay nada más).
+#   RRM_OFFLINE_SYNTH=1   fixtures sintéticos. No llama a gh.
+#   RRM_OFFLINE_VERSION=v2|v3   Release de FrankEBaru/research-microscope-compass
+#                               (datos/offline/). Default v2. v3 selecciona offline-fixtures-v3.
 #   RRM_OFFLINE_NO_UI=1   solo arranca la API.
+# Si no hay carpeta local ni sintéticos, baja el Release con gh. Si gh no está
+# autenticado, se detiene y lo dice.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"

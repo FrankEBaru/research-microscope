@@ -75,7 +75,7 @@ cpu_image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("nodejs", "npm", "ghostscript", "ca-certificates")
     .pip_install("torch", extra_index_url="https://download.pytorch.org/whl/cpu")
-    .pip_install("pymupdf", "requests", "pyarrow", "numpy", "fastapi[standard]", "transformers", "adapters")
+    .pip_install("pymupdf", "requests", "pyarrow", "numpy", "faiss-cpu", "fastapi[standard]", "transformers", "adapters")
     .run_commands(
         "npm install --prefix /opt/katex katex@0.19.1",
         "python -c \"from transformers import AutoTokenizer; from adapters import AutoAdapterModel; "
@@ -117,6 +117,8 @@ if modal.is_local():
         "RRM_OCR_MAX": os.environ.get("RRM_OCR_MAX", ""),
         # RRM-49: 0 vuelve a la caja de una sola afirmación (RRM-43).
         "RRM_CLAIMS": os.environ.get("RRM_CLAIMS", ""),
+        # Vacío: el lector no abre /data/passages. 1 consulta el índice por embedding.
+        "RRM_PASSAGES": os.environ.get("RRM_PASSAGES", ""),
     })
 else:
     secret = modal.Secret.from_dict({})

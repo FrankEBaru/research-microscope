@@ -1,6 +1,7 @@
 """scripts/live.sh sin Modal ni Meta: modal, curl y el resto son dobles en PATH."""
 
 import os
+import shutil
 import signal
 import subprocess
 import time
@@ -96,6 +97,35 @@ while true; do /bin/sleep 0.2; done
 """)
     _exe(bindir / "gh", """#!/bin/bash
 echo "gh $*" >> "$RRM_FAKE_LOG"
+if [[ "$1" == "auth" ]]; then
+  if [[ "${RRM_FAKE_GH_AUTH:-}" == "1" ]]; then
+    exit 0
+  fi
+  echo "You are not logged into any GitHub hosts." >&2
+  exit 1
+fi
+if [[ "${RRM_FAKE_GH_AUTH:-}" != "1" ]]; then
+  echo "not logged in" >&2
+  exit 1
+fi
+if [[ "$1" == "release" && "$2" == "download" ]]; then
+  tag="$3"
+  dir="."
+  repo=""
+  prev=""
+  for arg in "$@"; do
+    if [[ "$prev" == "--dir" ]]; then dir="$arg"; fi
+    if [[ "$prev" == "--repo" ]]; then repo="$arg"; fi
+    prev="$arg"
+  done
+  echo "repo=$repo tag=$tag" >> "$RRM_FAKE_LOG"
+  work="$(mktemp -d)"
+  mkdir -p "$work/offline-fixtures"
+  echo '{"queries":[{"q":"grabada"}]}' > "$work/offline-fixtures/manifest.json"
+  /bin/tar -czf "$dir/${tag}.tar.gz" -C "$work" offline-fixtures
+  rm -rf "$work"
+  exit 0
+fi
 exit 1
 """)
     return bindir, log
@@ -167,6 +197,7 @@ def _stops(text: str):
 
 def _off_sin_datos(tmp_path, **extra):
     bindir, log = _fakes(tmp_path)
+    extra.setdefault("RRM_OFFLINE_SYNTH", "1")
     env = _env(bindir, log, RRM_DEMO_TOKEN=TOKEN, RRM_OFFLINE_SYNTH_DIR=str(tmp_path / "synth"), **extra)
     proc = _start(env)
     try:
@@ -343,6 +374,75 @@ def test_el_tope_de_minutos_dispara_el_trap(tmp_path):
     assert "Corte: RRM_MAX_MINUTES=1." in out
     assert TOKEN not in out and TOKEN not in text
     assert code != 0
+
+
+def _sin_fixtures_locales():
+    fx = ROOT / "offline-fixtures"
+    if fx.exists():
+        shutil.rmtree(fx)
+    return fx
+
+
+def test_off_sin_gh_auth_se_detiene(tmp_path):
+    _sin_fixtures_locales()
+    bindir, log = _fakes(tmp_path)
+    code, out = _run(_env(bindir, log, RRM_LIVE="off", RRM_OFFLINE_SYNTH_DIR=str(tmp_path / "synth")))
+    text = log.read_text(encoding="utf-8") if log.is_file() else ""
+    assert code != 0
+    assert "gh no está autenticado" in out
+    assert "gh auth login" in out
+    assert "gh auth status" in text
+    assert "build_ui_fixtures.py" not in text
+    assert "modal " not in text
+
+
+def test_off_baja_v3_de_compass(tmp_path):
+    fx = _sin_fixtures_locales()
+    bindir, log = _fakes(tmp_path)
+    env = _env(
+        bindir, log,
+        RRM_LIVE="off",
+        RRM_DEMO_TOKEN=TOKEN,
+        RRM_FAKE_GH_AUTH="1",
+        RRM_OFFLINE_VERSION="v3",
+        RRM_OFFLINE_SYNTH_DIR=str(tmp_path / "synth"),
+    )
+    proc = _start(env)
+    try:
+        _wait_log(log, "npm run dev")
+        code, out = _stop(proc, signal.SIGTERM)
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait(timeout=5)
+        shutil.rmtree(fx, ignore_errors=True)
+    text = log.read_text(encoding="utf-8")
+    assert "repo=FrankEBaru/research-microscope-compass tag=offline-fixtures-v3" in text
+    assert "gh release download offline-fixtures-v3 --repo FrankEBaru/research-microscope-compass" in text
+    assert "build_ui_fixtures.py" not in text
+    assert "modal " not in text
+    assert "sintéticos" not in out
+    assert code is not None
+
+
+def test_el_tag_por_defecto_es_v2():
+    script = f"""
+set -euo pipefail
+source "{ROOT}/scripts/_fixtures.sh"
+unset RRM_OFFLINE_VERSION
+offline_release_tag
+RRM_OFFLINE_VERSION=v3 offline_release_tag
+RRM_OFFLINE_VERSION=3 offline_release_tag
+RRM_OFFLINE_VERSION=offline-fixtures-v2 offline_release_tag
+"""
+    proc = subprocess.run(["/bin/bash", "-c", script], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.splitlines() == [
+        "offline-fixtures-v2",
+        "offline-fixtures-v3",
+        "offline-fixtures-v3",
+        "offline-fixtures-v2",
+    ]
 
 
 def test_minutos_invalidos(tmp_path):

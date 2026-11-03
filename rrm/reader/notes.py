@@ -5,7 +5,7 @@ import re
 
 from rrm.reader.gaps import find_gaps, normalize_math, tokens_of
 from rrm.reader.metacall import meta_status, parse_json, post_responses, response_text
-from rrm.reader.passage_lookup import lookup
+from rrm.reader.passage_lookup import lookup, scrub_passage
 
 CONTRIBUTOR = "muse-spark-1.3-contributor"
 STANDARD = "muse-spark-1.3"
@@ -77,26 +77,42 @@ def _fuentes(gaps, passages):
     """Párrafo del paper y pasajes del lookup. El servidor copia este texto."""
     rows, seen = [], set()
 
-    def add(rid, text, latex, paper, section, hint=""):
+    def add(rid, text, latex, paper, section, hint="", url="", from_db=False, closed=False, kind=""):
         rid, flat = str(rid or ""), " ".join(str(text or "").split())
         if not rid or rid in seen or not flat:
             return
-        keys = ("variance", "gradient") if hint == "con_sin" else ("wavelength", "sinusoid", "frequen") if hint == "matriz" else ()
-        low, at = flat.casefold(), -1
-        for key in keys:
-            at = low.find(key)
-            if at >= 0:
-                break
-        lo, hi = (max(0, at - 180), at + 340) if at >= 0 else (0, 500)
-        flat, more = _fit(flat, lo, hi)
+        if from_db:
+            # El modelo lee el pasaje completo. El recorte es solo de lo que ve la persona.
+            more = False
+        else:
+            keys = ("variance", "gradient") if hint == "con_sin" else ("wavelength", "sinusoid", "frequen") if hint == "matriz" else ()
+            low, at = flat.casefold(), -1
+            for key in keys:
+                at = low.find(key)
+                if at >= 0:
+                    break
+            lo, hi = (max(0, at - 180), at + 340) if at >= 0 else (0, 500)
+            flat, more = _fit(flat, lo, hi)
         seen.add(rid)
-        rows.append({"id": rid, "text": flat, "latex": str(latex or ""), "paper": str(paper or ""), "section": str(section or ""), "more": more})
+        item = {"id": rid, "text": flat, "latex": str(latex or ""), "paper": str(paper or ""), "section": str(section or ""), "more": more}
+        if url:
+            item["url"] = str(url)
+        if from_db:
+            item["from_db"] = True
+            item["closed"] = bool(closed)
+            if kind:
+                item["kind"] = str(kind)
+        rows.append(item)
 
     eqs = sorted((gaps or {}).get("equations") or [], key=lambda eq: eq.get("hint") not in ("matriz", "con_sin"))
     for eq in eqs:
         add(eq.get("block_id"), eq.get("para") or eq.get("tex"), eq.get("tex"), "", eq.get("section"), eq.get("hint") or "")
     for row in passages or []:
-        add(row.get("id"), row.get("text"), row.get("latex"), row.get("paper"), row.get("section"))
+        add(
+            row.get("id"), row.get("text"), row.get("latex"), row.get("paper"), row.get("section"),
+            url=row.get("url") or "", from_db=bool(row.get("from_db")), closed=bool(row.get("closed")),
+            kind=row.get("kind") or "",
+        )
     return rows[:8]
 
 
@@ -175,6 +191,22 @@ def _known(gaps):
     return ids
 
 
+def _mentions_gap(note, eq):
+    """La nota nombra un símbolo del hueco. No exige que el pasaje lo traiga escrito."""
+    flat = lambda text: re.sub(r"\s+", "", normalize_math(text or ""))
+    note_flat = flat(note)
+    toks = tokens_of((eq or {}).get("tex") or "")
+    missing = [tok for tok in ((eq or {}).get("missing") or []) if tok]
+    need = missing or toks
+    if not need:
+        return True
+    return any(flat(tok) and flat(tok) in note_flat for tok in need)
+
+
+def _closed_db(row):
+    return bool(row and row.get("from_db") and row.get("closed"))
+
+
 def _passage(passages, pid):
     for row in passages or []:
         if str(row.get("id") or "") == str(pid or ""):
@@ -233,8 +265,20 @@ def compose(paper_id, gaps, passages):
             + (f" instrucción={ask}" if ask else "")
         )
     lines.append("FUENTES")
+    saw_db = False
     for row in fuentes:
-        lines.append(f"- id={row['id']} texto={row['text'][:400]}")
+        if row.get("from_db"):
+            saw_db = True
+            lic = "closed" if row.get("closed") else "open"
+            lines.append(
+                f"- id={row['id']} paper={row.get('paper') or ''} kind={row.get('kind') or ''} "
+                f"licencia={lic} texto={row['text']}"
+            )
+        else:
+            lines.append(f"- id={row['id']} texto={row['text'][:400]}")
+    if saw_db:
+        lines.append("CONTEXTO: esos pasajes completos son para entender el hueco. No se usan para entrenar.")
+        lines.append("Si licencia=closed, no copies el pasaje. La nota va en tus palabras, una o dos frases. El enlace lo pone el servidor.")
     if not _substring():
         lines.append("fuente es uno de esos ids. No escribas la cita.")
     lines.append("ORACIONES")
@@ -303,15 +347,32 @@ def apply(raw, gaps, passages, paper_text):
             else:
                 fuente = str(item.get("fuente") or "")
                 row = fuentes.get(fuente)
-                if row is None or not _symbol_ok(row, eq, note):
+                if row is None:
                     continue
-                cite = row["text"]
+                if _closed_db(row):
+                    if not _mentions_gap(note, eq):
+                        continue
+                    cite = note
+                else:
+                    if not _symbol_ok(row, eq, note):
+                        continue
+                    cite = row["text"]
+            if _closed_db(row):
+                # Lo que ve la persona: palabras del modelo, nunca el pasaje, más el enlace.
+                visible = scrub_passage(note, row.get("text") or "")
+                if not visible:
+                    continue
+                note = visible
+                cite = visible
             if not _numbers_ok(note, cite, tex):
                 continue
-            if not _substring():
+            if not _substring() and not _closed_db(row):
                 cite = _clip_cite(cite, tokens_of(tex))
                 if row.get("more") and cite and not cite.endswith("…"):
                     cite += "…"
+            link = str((row or {}).get("url") or "")
+            if link and link not in cite and (_closed_db(row) or (row or {}).get("from_db")):
+                cite = f"{cite} {link}".strip()
             paper = str((row or {}).get("paper") or "")
             section = str((row or {}).get("section") or eq.get("section") or "")
             sent = item.get("sent_index")
@@ -344,13 +405,20 @@ def apply(raw, gaps, passages, paper_text):
             continue
         if why and not _numbers_ok(why, "", eq.get("tex") or ""):
             why = ""
-        artifacts.append({
+        for src in passages or []:
+            if _closed_db(src) and why:
+                why = scrub_passage(why, src.get("text") or "")
+        item_out = {
             "block_id": eq.get("block_id"),
             "type": eq.get("hint"),
             "why_look": why[:280],
             "tex": eq.get("tex") or "",
             "drop": eq.get("drop") or "",
-        })
+        }
+        link = next((str(src.get("url") or "") for src in (passages or []) if _closed_db(src) and src.get("url")), "")
+        if link:
+            item_out["url"] = link
+        artifacts.append(item_out)
     return {"notes": notes, "artifacts": artifacts}
 
 
@@ -401,17 +469,39 @@ def _reminder_cards(gaps, paper_id):
     return cards
 
 
+def _gap_query(eq):
+    bits = [str(tok) for tok in (eq.get("missing") or []) if tok]
+    for key in ("tex", "para"):
+        if eq.get(key):
+            bits.append(str(eq.get(key)))
+    return "\n".join(bits)
+
+
 def gather_passages(gaps, rows, burst_ids):
     passages = []
     seen = set()
+
+    def add(row):
+        rid = str((row or {}).get("id") or "")
+        if not rid or rid in seen:
+            return False
+        if not row.get("text") and not row.get("latex"):
+            return False
+        seen.add(rid)
+        passages.append(row)
+        return len(passages) >= 8
+
     for eq in gaps.get("equations") or []:
+        # Con el flag, lookup embebe el hueco y trae el pasaje completo.
+        # Sin el flag, el símbolo vacío no toca la base ni cambia el resultado.
+        query = _gap_query(eq)
+        if query.strip():
+            for row in lookup("", limit=3, query=query):
+                if add(row):
+                    return passages
         for token in eq.get("missing") or []:
-            for row in lookup(token, rows=rows, burst_ids=burst_ids):
-                if row["id"] in seen:
-                    continue
-                seen.add(row["id"])
-                passages.append(row)
-                if len(passages) >= 8:
+            for row in lookup(token, rows=rows, burst_ids=burst_ids, volume=False):
+                if add(row):
                     return passages
     return passages
 
