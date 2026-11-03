@@ -38,7 +38,8 @@ export default async function (page, { width, base, shot, fixtures }) {
   const closed = await page.locator(".rights").innerText();
   if (!/arXiv license/.test(closed)) throw new Error(`linea cerrada: ${closed}`);
   const abstract = await page.locator(".ah-quote, .blk.abstract").count();
-  if (!abstract) throw new Error("el paper cerrado no muestra abstract");
+  const missingAbstract = await page.getByText("Abstract not available").count();
+  if (!abstract && !missingAbstract) throw new Error("el paper cerrado no muestra abstract");
   const leaked = await page.evaluate(() => {
     const figs = document.querySelectorAll("figure, iframe").length;
     const body = [...document.querySelectorAll(".blk")].filter((el) => !el.classList.contains("abstract")).length;

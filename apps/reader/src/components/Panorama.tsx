@@ -34,7 +34,7 @@ export default function Panorama({ q, papers, content, go }: any) {
     <>{modes}<section className="pano" aria-label="Panorama">
       <div className="chips">
         <ProvChip kind="curado" text="curated statements and grouping" />
-        <ProvChip kind="simulado" text={`paso de Muse Spark: ${museMode()}`} />
+        <ProvChip kind="simulado" text={`Muse Spark step: ${museMode() === "simulado" ? "simulated" : museMode()}`} />
       </div>
       <p className="pano-lead">A live review of <b>{ids.length} papers read</b> ({full} with full text, {ids.length - full} abstract only). Each sentence is verbatim and the compiler checks that it exists in its paper. <b>This is not a verdict</b>: “convergence” counts how many of the papers read have a sentence that supports the statement.</p>
       {pan.claims.map((c: any) => {

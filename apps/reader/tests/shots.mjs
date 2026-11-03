@@ -8,7 +8,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -88,7 +88,47 @@ function readJson(file) {
   try { return JSON.parse(readFileSync(file, "utf8")); } catch { return null; }
 }
 
-/** Pregunta, papers y texto de la caja, leídos del directorio de datos. */
+const SKIP_READ = "skip: no open paper with an equation, inline math, and a footnote";
+
+function isOpenLicense(raw) {
+  const low = String(raw || "").toLowerCase();
+  if (!low || low.includes("nonexclusive-distrib") || low.includes("by-nc") || low.includes("by-nd")) return false;
+  return low.includes("publicdomain/zero") || low.includes("licenses/publicdomain/") || low.includes("cc0")
+    || low.includes("creativecommons.org/licenses/by-sa/") || low.includes("creativecommons.org/licenses/by/");
+}
+
+function isByLicense(raw) {
+  const low = String(raw || "").toLowerCase();
+  return isOpenLicense(raw) && (low.includes("/by/") || low.includes("/by-sa/") || /\bcc[-\s]?by\b/.test(low));
+}
+
+/** Ecuación, math inline, nota y abstract, sin parsear el JSON entero. */
+function sniff(file) {
+  const flags = { eq: false, math: false, note: false, abs: false };
+  let fd;
+  try { fd = openSync(file, "r"); } catch { return flags; }
+  const buf = Buffer.alloc(1024 * 1024);
+  let carry = "";
+  try {
+    while (!(flags.eq && flags.math && flags.note && flags.abs)) {
+      const n = readSync(fd, buf, 0, buf.length, null);
+      if (!n) break;
+      const text = carry + buf.toString("utf8", 0, n);
+      if (!flags.eq && /"kind"\s*:\s*"eq"/.test(text)) flags.eq = true;
+      if (!flags.math && /"t"\s*:\s*"math"/.test(text)) flags.math = true;
+      if (!flags.note && /"t"\s*:\s*"note"/.test(text)) flags.note = true;
+      if (!flags.abs && (/"abstract"\s*:\s*"(?:\\.|[^"\\]){12,}/.test(text) || /"abs"\s*:\s*true/.test(text))) flags.abs = true;
+      carry = text.slice(-80);
+    }
+  } finally {
+    closeSync(fd);
+  }
+  return flags;
+}
+
+/** Pregunta, papers y texto de la caja, leídos del directorio de datos.
+ *  box = el paper del ask (aunque esté cerrado: la caja sigue ahí).
+ *  read = un paper abierto con ecuación, math y nota, si existe. */
 function describe(dir) {
   const manifest = readJson(path.join(dir, "manifest.json")) || {};
   const row = (manifest.queries || [])[0] || {};
@@ -106,21 +146,34 @@ function describe(dir) {
   const ask = rows.find((r) => r.stage === "revisar") || rows[0] || null;
   const done = Object.keys(papers).filter((id) => papers[id] === "done");
   const licenses = readJson(path.join(dir, "licenses.json"));
-  const hasMap = licenses && typeof licenses === "object";
-  const openOf = (id) => {
-    if (!hasMap) return true;
+  const hasMap = Boolean(licenses && typeof licenses === "object");
+  const gateOff = process.env.RRM_LICENSE_GATE === "0";
+  const rawOf = (id) => {
+    if (!hasMap) return "";
     const hit = Object.entries(licenses).find(([key, val]) => !key.startsWith("_") && val && String(val.corpusid) === String(id));
-    if (!hit) return false;
-    const raw = String(hit[1].license || "").toLowerCase();
-    if (!raw || raw.includes("nonexclusive-distrib") || raw.includes("by-nc") || raw.includes("by-nd")) return false;
-    return raw.includes("publicdomain/zero") || raw.includes("licenses/publicdomain/") || raw.includes("cc0")
-      || raw.includes("creativecommons.org/licenses/by-sa/") || raw.includes("creativecommons.org/licenses/by/");
+    return hit ? String(hit[1].license || "") : "";
   };
+  const openOf = (id) => !hasMap || isOpenLicense(rawOf(id));
   const focus = ask && papers[String(ask.focus)] === "done" ? String(ask.focus) : "";
-  const full = (hasMap ? ((focus && openOf(focus) ? focus : done.find((id) => openOf(id))) || "") : (focus || done[0] || ""));
-  const gated = hasMap ? (done.find((id) => !openOf(id)) || "") : "";
+  const seen = new Map();
+  const flagsOf = (id) => {
+    if (!seen.has(id)) seen.set(id, sniff(path.join(folder, `${id}.json`)));
+    return seen.get(id);
+  };
+  const readable = done
+    .filter((id) => gateOff || openOf(id))
+    .map((id) => ({ id, ...flagsOf(id) }))
+    .filter((item) => item.eq && item.math && item.note)
+    .sort((a, b) => Number(isByLicense(rawOf(b.id))) - Number(isByLicense(rawOf(a.id))) || Number(b.id === focus) - Number(a.id === focus));
+  const read = readable[0]?.id || "";
+  const openDone = done.filter(openOf);
+  const show = openDone.find((id) => !hasMap || isByLicense(rawOf(id))) || openDone[0] || "";
+  const full = (read && (!hasMap || isByLicense(rawOf(read))) ? read : "") || show;
+  const box = focus || read || full;
+  const closed = hasMap && !gateOff ? done.filter((id) => !openOf(id)) : [];
+  const gated = closed.find((id) => flagsOf(id).abs) || closed[0] || "";
   const abstract = Object.keys(papers).find((id) => papers[id] === "abstract_only") || "";
-  return { question: String(row.q || ""), full, abstract, gated, askText: ask ? String(ask.text || "") : "" };
+  return { question: String(row.q || ""), full, read, box, abstract, gated, askText: ask ? String(ask.text || "") : "" };
 }
 
 const sel = (...list) => list.join(", ");
@@ -188,8 +241,8 @@ async function main() {
       await page.goto(BASE, { waitUntil: "domcontentloaded" });
       await ask(page, info.question);
       await page.waitForSelector(S.atlas, { timeout: 90000 });
-      if (info.full) {
-        await page.evaluate((cid) => { location.hash = `#/p/${cid}`; }, info.full);
+      if (info.read || info.full || info.box) {
+        await page.evaluate((cid) => { location.hash = `#/p/${cid}`; }, info.read || info.full || info.box);
         await page.waitForSelector(S.paper, { timeout: 90000 });
       }
       await sleep(1000);
@@ -301,15 +354,18 @@ async function main() {
       await sleep(1500);
     };
     await step("05-paper-vistazo", async () => {
-      await openPaper(info.full);
+      await openPaper(info.full || info.read || info.box);
       await shot("05-paper-vistazo");
     });
     await step("05b-paper-leer", async () => {
+      if (!info.read) throw new Error(SKIP_READ);
+      if (info.read !== (info.full || info.box)) await openPaper(info.read);
       await page.getByRole("tab", { name: "Read", exact: true }).click({ timeout: 5000 });
       await sleep(800);
       await shot("05b-paper-leer");
     });
     await step("05c-ecuacion-hover", async () => {
+      if (!info.read) throw new Error(SKIP_READ);
       const eq = page.locator(".eq.blk").first();
       await eq.scrollIntoViewIfNeeded({ timeout: 5000 });
       await eq.hover({ timeout: 5000 });
@@ -326,7 +382,9 @@ async function main() {
       await page.waitForSelector(".ovl", { state: "detached", timeout: 3000 });
     });
     await step("06-caja", async () => {
-      if (!info.askText) throw new Error("los datos no traen texto para la caja");
+      if (!info.askText) throw new Error("skip: the data has no text for the box");
+      if (!info.box) throw new Error("skip: no paper for the ask box");
+      if (info.box !== info.read) await openPaper(info.box);
       let form = page.locator(S.ask).first();
       if (!(await form.count())) {
         await page.locator(".yw").first().click({ timeout: 5000 });
@@ -341,6 +399,8 @@ async function main() {
       await shot("06-caja");
     });
     await step("07-tabla", async () => {
+      const back = info.read || info.full;
+      if (back && info.box && back !== info.box) await openPaper(back);
       const table = page.locator(".table-fig").first();
       await table.scrollIntoViewIfNeeded({ timeout: 5000 });
       await sleep(500);
@@ -413,13 +473,23 @@ async function main() {
     await step("10-debug", () => failing("10-debug", info.question, (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }), `${BASE}/?debug=1&dev=1`));
 
     // Pasos extra de otras entregas: shots.d/*.mjs, en orden alfabético.
+    const readShots = new Set(["66-lectura.mjs", "71-a11y.mjs"]);
+    const boxShots = new Set(["68-caja.mjs"]);
     for (const file of extras) {
       await step(`extra:${file}`, async () => {
         await page.goto(BASE, { waitUntil: "domcontentloaded" });
         await dropCache(page);
         await ask(page, info.question);
         await page.waitForSelector(S.atlas, { timeout: 30000 });
-        if (info.full) await openPaper(info.full);
+        if (readShots.has(file)) {
+          if (!info.read) throw new Error(SKIP_READ);
+          await openPaper(info.read);
+        } else if (boxShots.has(file)) {
+          if (!info.box) throw new Error("skip: no paper for the ask box");
+          await openPaper(info.box);
+        } else if (info.full || info.read) {
+          await openPaper(info.full || info.read);
+        }
         const mod = await import(pathToFileURL(path.join(HERE, "shots.d", file)).href);
         await mod.default(page, { width, base: BASE, shot, fixtures: { dir, ...info } });
       });
@@ -437,17 +507,25 @@ async function main() {
   console.log(`ruta: ${OUT}`);
   if (report.pageerrors.length) { console.error("pageerror:", report.pageerrors.map((e) => e.message).join(" | ")); return 1; }
   if (missing.length) { console.error(`faltan capturas obligatorias: ${missing.join(", ")}`); return 1; }
-  const a11y = report.omitidos.filter((name) => name.includes("71-a11y"));
+  const a11y = Object.entries(report.widths).flatMap(([w, list]) => list
+    .filter((step) => String(step.name).includes("71-a11y") && step.status !== "ok" && !String(step.why || "").startsWith("skip:"))
+    .map((step) => `${w}:${step.name}`));
   if (a11y.length) { console.error(`71-a11y falló: ${a11y.join(", ")}`); return 1; }
   return 0;
 }
 
-let code = 1;
-try {
-  code = await main();
-} catch (err) {
-  console.error(String(err?.stack || err));
-} finally {
-  stopAll();
+const invoked = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invoked) {
+  let code = 1;
+  try {
+    code = await main();
+  } catch (err) {
+    console.error(String(err?.stack || err));
+    code = 1;
+  } finally {
+    stopAll();
+  }
+  process.exit(code);
 }
-process.exit(code);
+
+export { describe };

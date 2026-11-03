@@ -85,7 +85,7 @@ def test_offline_warm_file_cache_and_core_skips_muse(tmp_path, monkeypatch):
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/warm", timeout=5) as res:
             body = json.loads(res.read().decode())
-            assert res.status == 200 and body["ready"] is True and body["features"] == "core"
+            assert res.status == 200 and body["ready"] is True and body["features"] == "core" and body["licenses"] == 1
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/file?id=7&name=p0.png", timeout=5) as res:
             assert res.headers.get("Cache-Control") == "public, max-age=86400"
             assert res.read() == b"png"

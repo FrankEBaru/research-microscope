@@ -3,6 +3,7 @@ export const metadata = { title: "Licenses & use — Reading Microscope" };
 export default function LicensesPage() {
   return (
     <main className="licenses">
+      <p><a href="/">← Back to reader</a></p>
       <h1>Licenses & use</h1>
       <p>What you see depends on the paper’s license. We do not guess. An unknown license is treated as closed.</p>
       <ul>

@@ -801,6 +801,9 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             {showCrops && remote && paper.corpusid != null && /^\d+$/.test(String(paper.corpusid)) && <CropStrip id={String(paper.corpusid)} />}
           </header>
         </Boundary>
+        {undrawn && gated && !quote && (
+          <p className="ah-links">Abstract not available — read on {absHref ? <a href={absHref} target="_blank" rel="noreferrer">arXiv</a> : "arXiv"}</p>
+        )}
         {undrawn && gated && (
           <Notice kind="absence">
             Full text on arXiv

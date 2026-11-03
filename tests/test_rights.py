@@ -20,8 +20,10 @@ from rrm.reader.rights import (
     license_class,
     license_label,
     load_map,
+    map_size,
     rights_for,
     share_alike,
+    warn_map,
 )
 
 ROOT = Path(__file__).parents[1]
@@ -263,3 +265,35 @@ def test_build_license_map_from_tiny_parquet(tmp_path):
     assert built["1706.03762"]["version"] == "v7" and built["1706.03762"]["corpusid"] == 44
     assert "9999.99999" not in built and built["_source"]
     assert load_map(out)["by_corpus"]["44"]["arxiv"] == "1706.03762"
+
+    papers = tmp_path / "fx" / "papers"
+    papers.mkdir(parents=True)
+    (papers / "11.json").write_text(json.dumps({
+        "paper": {"arxivId": "2302.13971", "corpusid": 11},
+    }), encoding="utf-8")
+    (papers / "44.json").write_text(json.dumps({
+        "meta": {"arxiv": "1706.03762v7", "corpusid": 44},
+    }), encoding="utf-8")
+    from_dir = mod.build(str(snap), str(ids), str(tmp_path / "from-dir.json"), str(tmp_path / "fx"))
+    assert from_dir["2302.13971"]["corpusid"] == 11 and from_dir["1706.03762"]["corpusid"] == 44
+
+    import sqlite3
+    db = tmp_path / "passages.sqlite"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE passages (arxiv TEXT, corpusid INTEGER, text TEXT)")
+    con.execute("INSERT INTO passages VALUES ('2302.13971', 11, 'body')")
+    con.execute("INSERT INTO passages VALUES ('1706.03762', 44, 'body')")
+    con.commit()
+    con.close()
+    from_db = mod.build(str(snap), str(ids), str(tmp_path / "from-db.json"), str(db))
+    assert from_db["1706.03762"]["corpusid"] == 44 and from_db["2302.13971"]["corpusid"] == 11
+
+
+def test_warn_map_when_empty(capsys):
+    assert warn_map("", {"by_arxiv": {}, "by_corpus": {}}) == 0
+    text = capsys.readouterr().out
+    assert "WARNING" in text and "closed" in text
+    row = {"license": LLAMA}
+    assert map_size({"by_arxiv": {"2302.13971": row}, "by_corpus": {"11": row}}) == 1
+    assert warn_map("licenses.json", {"by_arxiv": {"2302.13971": row}, "by_corpus": {}}) == 1
+    assert capsys.readouterr().out == ""

@@ -178,8 +178,9 @@ export default async function (page, { width, base, fixtures }) {
   await noSideScroll(page, "lista");
   await tabFocus(page, "lista");
 
-  if (fixtures.full) {
-    await page.evaluate((cid) => { location.hash = `#/p/${cid}`; }, String(fixtures.full));
+  const paperId = fixtures.read || fixtures.full;
+  if (paperId) {
+    await page.evaluate((cid) => { location.hash = `#/p/${cid}`; }, String(paperId));
     await page.waitForSelector('[data-screen="paper"] h1', { timeout: 20000 });
     await page.waitForTimeout(300);
     await noSideScroll(page, "paper");

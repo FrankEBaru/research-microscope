@@ -28,7 +28,7 @@ from rrm.features import core_mode, features_mode
 from rrm.panorama import docs_for, parse_request, run as run_panorama
 from rrm.search.qcache import CACHE_DIR, apply_status_cache, load_entry, save_entry, status_map
 from rrm.reader.files import resolve_figure, resolve_source_pdf
-from rrm.reader.rights import gate_ask, gate_file, gate_paper_response, gate_status_row, load_map, map_path
+from rrm.reader.rights import gate_ask, gate_file, gate_paper_response, gate_status_row, load_map, map_path, map_size, warn_map
 
 import rrm.reader.fetch as _fetch
 from rrm.reader.fetch import ARXIV, arxiv_index_at, arxiv_pdf, arxiv_slot_start, reader_identity
@@ -970,6 +970,8 @@ def api():
     from fastapi.responses import FileResponse, JSONResponse, Response
 
     web = FastAPI()
+    _license_path = map_path()
+    warn_map(_license_path, load_map(_license_path))
     if os.environ.get("RRM_PHRASE_VECTORS") == "1":
         def _warm_phrases():
             try:
@@ -1004,7 +1006,7 @@ def api():
         denied = gate(request, True)
         if denied:
             return denied
-        return {"ready": True, "features": features_mode()}
+        return {"ready": True, "features": features_mode(), "licenses": map_size(load_map(map_path()))}
 
     @web.get("/status")
     def route_status(request: Request, ids: str = "", q: str = ""):

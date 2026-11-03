@@ -25,7 +25,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from rrm.features import core_mode, features_mode
-from rrm.reader.rights import gate_ask, gate_file, gate_paper_response, gate_status_row, load_map, map_path
+from rrm.reader.rights import gate_ask, gate_file, gate_paper_response, gate_status_row, load_map, map_path, map_size, warn_map
 from rrm.search.layout import map_rows, place_papers
 
 MISS = "consulta no grabada"
@@ -290,7 +290,7 @@ def build_handler(store: Store):
                 self._json(200, {"ok": True, "queries": sorted(store.queries)})
                 return
             if path == "/warm":
-                self._json(200, {"ready": True, "features": features_mode(), "loaded": ["fixtures"]})
+                self._json(200, {"ready": True, "features": features_mode(), "loaded": ["fixtures"], "licenses": map_size(store.licenses)})
                 return
             if path == "/burst":
                 hit = store.question(one("q"))
@@ -506,6 +506,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     httpd = make_server(args.root, args.host, args.port)
     bound = httpd.server_address
+    warn_map(map_path(args.root), load_map(map_path(args.root)))
     print(f"offline en http://{bound[0]}:{bound[1]}", flush=True)
     try:
         httpd.serve_forever()

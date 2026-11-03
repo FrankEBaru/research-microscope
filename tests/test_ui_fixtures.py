@@ -60,6 +60,7 @@ def test_store_carga_el_set_sintetico(tmp_path, monkeypatch):
 
 
 def test_el_servidor_responde_con_los_sinteticos(tmp_path, monkeypatch):
+    monkeypatch.delenv("RRM_LICENSE_GATE", raising=False)
     monkeypatch.setenv("RRM_FEATURES", "core")
     monkeypatch.delenv("MODEL_API_KEY", raising=False)
     mod = _builder()

@@ -60,24 +60,14 @@ def license_label(url):
     if "nonexclusive-distrib" in low:
         return "arXiv license"
     ver = _ver_num(low)
-
-    def named(name):
-        return f"{name} {ver}".strip() if ver else name
-
-    if "by-nc-nd" in low:
-        return named("CC BY-NC-ND")
-    if "by-nc-sa" in low:
-        return named("CC BY-NC-SA")
-    if "by-nd" in low:
-        return named("CC BY-ND")
-    if "by-nc" in low:
-        return named("CC BY-NC")
+    named = (lambda name: f"{name} {ver}".strip() if ver else name)
+    for needle, name in (("by-nc-nd", "CC BY-NC-ND"), ("by-nc-sa", "CC BY-NC-SA"), ("by-nd", "CC BY-ND"), ("by-nc", "CC BY-NC"), ("by-sa", "CC BY-SA")):
+        if needle in low:
+            return named(name)
     if "publicdomain/zero" in low or re.search(r"\bcc0\b", low):
         return named("CC0") if ver else "CC0 1.0"
     if "licenses/publicdomain/" in low:
         return "Public domain"
-    if "by-sa" in low:
-        return named("CC BY-SA")
     if license_class(raw) == "open":
         return named("CC BY")
     return "License unknown"
@@ -167,6 +157,24 @@ def load_map(path):
     built = _index(data)
     _CACHE[key] = (st.st_mtime_ns, built)
     return built
+
+
+def map_size(m):
+    """Papers indexed by arXiv id, by corpusid, or by both."""
+    if not isinstance(m, dict):
+        return 0
+    rows = list((m.get("by_arxiv") or {}).values()) + list((m.get("by_corpus") or {}).values())
+    return len({id(row) for row in rows})
+
+
+def warn_map(path, m):
+    """Print when the map is missing, unreadable, or empty. Returns the count."""
+    n = map_size(m)
+    if n:
+        return n
+    where = path or "no licenses.json"
+    print(f"WARNING: license map missing or unreadable ({where}); every paper is treated as closed", flush=True)
+    return 0
 
 
 def _ident(src):
