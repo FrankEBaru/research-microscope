@@ -88,11 +88,101 @@ _require_gh() {
   fi
 }
 
+_stamp_matches() {
+  local dest="$1"
+  local stamp="branch=${COMPASS_BRANCH} version=${2} sha256="
+  [[ -f "$dest/manifest.json" && -f "$dest/.rrm-release" ]] && [[ "$(cat "$dest/.rrm-release")" == "$stamp"* ]]
+}
+
+# Checkout de compass al lado del repo, o la ruta de Frank. No cambia de rama.
+_compass_candidates() {
+  local root="$1" dir
+  if [[ -n "${RRM_OFFLINE_COMPASS:-}" ]]; then
+    printf '%s\n' "$RRM_OFFLINE_COMPASS"
+  fi
+  for dir in "$root/../research-microscope-compass" "${HOME:-}/projects/hackaton/research-microscope-compass"; do
+    if [[ -d "$dir" ]]; then
+      (cd "$dir" && pwd)
+    fi
+  done
+}
+
+_tree_has_version() {
+  local dir="$1" ver="$2" hit=""
+  [[ -d "$dir/datos/offline" ]] || return 1
+  hit="$(find "$dir/datos/offline" -type f -name "*fixtures-${ver}*" -print -quit 2>/dev/null || true)"
+  [[ -n "$hit" ]]
+}
+
+# Imprime el directorio raíz (el que contiene datos/offline). Si es un extracto
+# temporal, la segunda línea es ese temporal para borrarlo después.
+_materialize_compass() {
+  local dir="$1" ver="$2" ref="" tmp
+  if _tree_has_version "$dir" "$ver"; then
+    printf '%s\n' "$dir"
+    return 0
+  fi
+  if [[ ! -d "$dir/.git" && ! -f "$dir/.git" ]]; then
+    return 1
+  fi
+  if git -C "$dir" rev-parse --verify --quiet "refs/remotes/origin/${COMPASS_BRANCH}" >/dev/null; then
+    ref="origin/${COMPASS_BRANCH}"
+  elif git -C "$dir" rev-parse --verify --quiet "${COMPASS_BRANCH}" >/dev/null; then
+    ref="${COMPASS_BRANCH}"
+  else
+    return 1
+  fi
+  tmp="$(mktemp -d)"
+  if ! git -C "$dir" archive "$ref" datos/offline | tar -x -C "$tmp"; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  if ! _tree_has_version "$tmp" "$ver"; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  printf '%s\n%s\n' "$tmp" "$tmp"
+}
+
+_fetch_local() {
+  local root="$1" dest="$2" ver="$3" dir tree cleanup rc
+  [[ "${RRM_OFFLINE_NO_LOCAL:-}" == "1" ]] && return 1
+  while IFS= read -r dir; do
+    [[ -n "$dir" ]] || continue
+    cleanup=""
+    tree="$(_materialize_compass "$dir" "$ver")" || continue
+    cleanup="$(printf '%s\n' "$tree" | sed -n '2p')"
+    tree="$(printf '%s\n' "$tree" | sed -n '1p')"
+    if python3 "$root/scripts/fetch_offline_fixtures.py" \
+      --from-dir "$tree" \
+      --branch "$COMPASS_BRANCH" \
+      --version "$ver" \
+      --dest "$dest" \
+      --cache "$root/offline-fixtures.cache"; then
+      rc=0
+    else
+      rc=1
+    fi
+    [[ -n "$cleanup" ]] && rm -rf "$cleanup"
+    if [[ "$rc" == 0 ]]; then
+      echo "Fixtures ${ver} leídos del checkout local: ${dir}"
+      FIX_DIR="$dest"
+      return 0
+    fi
+    if [[ -n "${RRM_OFFLINE_COMPASS:-}" && "$dir" == "$RRM_OFFLINE_COMPASS" ]]; then
+      return 1
+    fi
+  done < <(_compass_candidates "$root" | awk '!seen[$0]++')
+  return 1
+}
+
 _fetch_branch() {
   local root="$1" dest="$2" ver="$3"
-  local stamp="branch=${COMPASS_BRANCH} version=${ver} sha256="
-  if [[ -f "$dest/manifest.json" && -f "$dest/.rrm-release" ]] && [[ "$(cat "$dest/.rrm-release")" == "$stamp"* ]]; then
+  if _stamp_matches "$dest" "$ver"; then
     FIX_DIR="$dest"
+    return 0
+  fi
+  if _fetch_local "$root" "$dest" "$ver"; then
     return 0
   fi
   _require_gh "$ver" || return 1

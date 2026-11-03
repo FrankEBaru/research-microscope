@@ -7,9 +7,11 @@
 #                               FrankEBaru/research-microscope-compass.
 #                               Rama default claude/rrm-50-plan-b1. Default v2.
 #   RRM_OFFLINE_BRANCH=<rama>   otra rama del mismo repo. No crea Releases.
+#   RRM_OFFLINE_COMPASS=<checkout>   lee datos/offline/ de esa copia, sin gh.
 #   RRM_OFFLINE_NO_UI=1   solo arranca la API.
-# Si no hay carpeta local ni sintéticos, baja esos archivos con gh api.
-# Si gh no está autenticado, se detiene y lo dice.
+# Si no hay carpeta local ni sintéticos, usa un checkout de compass que ya
+# tenga la rama (al lado de este repo, o ~/projects/hackaton/...). Si no, baja
+# los archivos con gh api. Si tampoco hay gh, se detiene y lo dice.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
