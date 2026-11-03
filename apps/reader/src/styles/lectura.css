@@ -103,6 +103,27 @@
 .folio sup.fn { font: 700 .62em/1 var(--font-ui); color: var(--accent); cursor: help; padding: 0; }
 .folio .xref { text-decoration: underline dotted; text-decoration-color: var(--accent-line); text-underline-offset: 4px; border-bottom: 0; }
 
+.folio .cited { margin-top: 12px; max-width: 100%; text-align: left; }
+.folio .cited .pv { display: flex; margin-bottom: 4px; }
+.folio .cited-row {
+  display: flex; align-items: baseline; gap: 12px; width: 100%; max-width: 100%;
+  min-height: 40px; padding: 6px 0; border: 0; background: none; color: var(--ink);
+  font: 400 15.5px/1.45 var(--font-read); text-align: left; cursor: pointer;
+}
+.folio .cited-q {
+  flex: 1; min-width: 0; overflow-wrap: anywhere;
+  text-decoration: underline; text-decoration-color: var(--accent-line); text-underline-offset: 3px;
+}
+.folio .cited-sec { flex: none; font: 500 13px/1 var(--font-ui); color: var(--ink-3); }
+.folio .cited-more {
+  display: inline-flex; align-items: center; min-height: 40px; margin-top: 2px; padding: 0;
+  border: 0; background: none; color: var(--accent); font: 600 13.5px/1 var(--font-ui); cursor: pointer;
+}
+.folio .blk.flash { animation: folio-blk-flash var(--dur-2) var(--ease-out) forwards; }
+.folio .sent.flash { background: var(--hl-soft); animation: folio-flash var(--dur-2) var(--ease-out); }
+@keyframes folio-flash { from { background: transparent; } }
+@keyframes folio-blk-flash { from { background: var(--hl-soft); } to { background: transparent; } }
+
 .folio .eq {
   position: relative;
   margin: 8px 0 22px;
@@ -283,6 +304,8 @@
   .folio .eq .copy:hover { color: var(--accent-h); border-color: var(--accent-line); }
   .folio .yw:hover { background: var(--accent-h); }
   .folio .pop-go:hover { color: var(--accent-h); }
+  .folio .cited-row:hover .cited-q { text-decoration-color: var(--accent); }
+  .folio .cited-more:hover { color: var(--accent-h); }
   .folio .read-minimap:hover { border-color: var(--accent-line); }
 }
 
@@ -315,6 +338,7 @@
   .folio .eq .katex-display { max-width: 100%; }
   .folio .eq .katex-display > .katex { font-size: .8em; }
   .folio .fig, .folio .fig img, .folio .table-fig, .folio .ins, .folio img { max-width: 100%; }
+  .folio .cited, .folio .cited-row, .folio .cited-q { overflow-wrap: anywhere; }
   .folio .table-wrap { overflow-x: auto; max-width: 100%; }
   .folio .popover {
     position: fixed; left: 12px; right: 12px; bottom: 12px; top: auto; width: auto;
@@ -323,5 +347,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .folio .sn, .folio .popover { animation: none; }
+  .folio .sn, .folio .popover, .folio .blk.flash, .folio .sent.flash { animation: none; }
 }

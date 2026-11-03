@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Block } from "@/lib/types";
 import { Rich } from "@/lib/math";
 import { axisMarks, bars } from "@/lib/tablechart.js";
@@ -108,7 +108,7 @@ export function TableChart({ model, n, predict = true, tableId }: { model: any; 
   );
 }
 
-export function Table({ b, ctx, n, predict = true }: { b: Block; ctx: Ctx; n: number; predict?: boolean; [extra: string]: unknown }) {
+export function Table({ b, ctx, n, predict = true, cited = null }: { b: Block; ctx: Ctx; n: number; predict?: boolean; cited?: ReactNode; [extra: string]: unknown }) {
   const [hc, setHc] = useState<number | null>(null);
   const [showChart, setShowChart] = useState(false);
   const [hl, setHl] = useState("");
@@ -158,6 +158,7 @@ export function Table({ b, ctx, n, predict = true }: { b: Block; ctx: Ctx; n: nu
         </table>
       </div>
       <figcaption><b>Table {n}.</b> <Inlines inls={b.caption} ctx={ctx} /></figcaption>
+      {cited}
     </figure>
   );
 }
