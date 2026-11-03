@@ -3,6 +3,7 @@ import { useState } from "react";
 import "@/styles/inicio.css";
 import { paperKey } from "@/lib/backend.js";
 import { phaseOf } from "@/lib/qcache.js";
+import { Rich } from "@/lib/math";
 import { Button, Prov } from "../ui";
 
 const PHASE_EN: Record<string, string> = {
@@ -34,17 +35,17 @@ export default function CoreList({ papers, states, onOpen, onWant }: { papers: a
                 {p.survey && <span className="row-flag">survey</span>}
                 {p.retracted && <span className="row-flag">retracted</span>}
               </p>
-              <h2><button type="button" onClick={() => onOpen(id)}>{p.title || id}</button></h2>
+              <h2><button type="button" onClick={() => onOpen(id)}><Rich text={p.title || id} /></button></h2>
               {p.abstract ? (
                 <>
-                  <p className={expanded ? "row-blurb" : "row-blurb is-clamp"}>{p.abstract}</p>
+                  <p className={expanded ? "row-blurb" : "row-blurb is-clamp"}><Rich text={p.abstract} /></p>
                   {long && !expanded && <button type="button" className="row-more" onClick={() => setOpen((cur) => ({ ...cur, [id]: true }))}>more</button>}
                 </>
               ) : p.tldr ? (
                 <>
                   <p className={expanded ? "row-blurb" : "row-blurb is-clamp"}>
                     <Prov kind="simulado" text="generated" title="generated" />
-                    {p.tldr}
+                    <Rich text={p.tldr} />
                   </p>
                   {long && !expanded && <button type="button" className="row-more" onClick={() => setOpen((cur) => ({ ...cur, [id]: true }))}>more</button>}
                 </>

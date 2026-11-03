@@ -1,7 +1,7 @@
 import katex from "katex";
 import { useMemo } from "react";
 import { displayTex, katexSource } from "@/lib/backend.js";
-import { splitRich } from "@/lib/richtext.js";
+import { presentInlines } from "@/lib/prose.js";
 import { reportFault } from "@/lib/faults.js";
 
 export interface Sym { id: string; latex: string; name: string; color: string }
@@ -57,11 +57,24 @@ export function Tex({ tex, display = false, syms = [] as Sym[], className = "" }
   return <span className={className} dangerouslySetInnerHTML={{ __html: html.h }} />;
 }
 
-/** Texto con $math$ y, si no hay delimitador, la fórmula en display. */
-export function Rich({ text }: { text: string }) {
-  const parts = String(text || "").split(/(\$[^$]+\$)/g).filter(Boolean);
-  return <>{parts.map((p, i) => {
-    if (p.startsWith("$") && p.endsWith("$") && p.length > 2) return <Tex key={i} tex={p.slice(1, -1)} />;
-    return <span key={i}>{splitRich(p).map((bit, j) => (bit[0] === "d" ? <Tex key={j} tex={bit[1]} display /> : <span key={j}>{bit[1]}</span>))}</span>;
+type ProseNode = { t: string; v?: string; c?: ProseNode[]; display?: boolean };
+
+/** Same nodes the paper body uses (`presentInlines`), then the same KaTeX `Tex`. */
+function Bits({ nodes }: { nodes: ProseNode[] }) {
+  return <>{nodes.map((x, i) => {
+    if (!x) return null;
+    if (x.t === "text") return <span key={i}>{String(x.v || "").replaceAll("~", "\u00a0")}</span>;
+    if (x.t === "math") return <Tex key={i} tex={String(x.v || "")} display={Boolean(x.display)} />;
+    if (x.t === "em") return <em key={i}><Bits nodes={x.c || []} /></em>;
+    if (x.t === "strong") return <strong key={i}><Bits nodes={x.c || []} /></strong>;
+    if (x.t === "code") return <code key={i}>{x.v}</code>;
+    if (x.t === "span" || x.t === "link") return <Bits key={i} nodes={x.c || []} />;
+    return null;
   })}</>;
+}
+
+/** Titles, quotes, and table labels. One path with the body: parse, then KaTeX. */
+export function Rich({ text }: { text: string }) {
+  const nodes = useMemo(() => presentInlines([{ t: "text", v: String(text ?? "") }]) as ProseNode[], [text]);
+  return <Bits nodes={nodes} />;
 }

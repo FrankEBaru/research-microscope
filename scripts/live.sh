@@ -41,6 +41,8 @@ if [[ "$RRM_FEATURES" != "core" && "$RRM_FEATURES" != "all" ]]; then
 fi
 export RRM_FEATURES
 export NEXT_PUBLIC_RRM_FEATURES="$RRM_FEATURES"
+# Demo personal: la compuerta de licencia queda, pero apagada. on/1 la prende.
+export RRM_LICENSE_GATE="${RRM_LICENSE_GATE:-off}"
 
 if [[ "$MODE" == "off" ]]; then
   echo "Modo: off. Features: ${RRM_FEATURES}. Igual que scripts/offline.sh. Sin Modal ni Meta."
@@ -173,7 +175,7 @@ trap cleanup EXIT INT TERM
 ) >/dev/null 2>&1 &
 WATCH_PID=$!
 
-echo "Modo: ${MODE}. Tope: ${MAX_MIN} min. Features: ${RRM_FEATURES}."
+echo "Modo: ${MODE}. Tope: ${MAX_MIN} min. Features: ${RRM_FEATURES}. Licencias: ${RRM_LICENSE_GATE}."
 echo "Panorama: ${RRM_PANORAMA_MODE}. SAM: ${RRM_SAM:-grabado}."
 
 ensure_fixtures() {

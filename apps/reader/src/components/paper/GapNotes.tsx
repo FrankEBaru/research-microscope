@@ -30,7 +30,7 @@ export function Stepper({ drawn }: { drawn: any }) {
   return (
     <div className="gap-art" data-artifact="pasos">
       <p className="gap-tag">illustrative</p>
-      {drawn.title && <p>{drawn.title}</p>}
+      {drawn.title && <p><Rich text={drawn.title} /></p>}
       {drawn.inputs?.length > 0 && <p className="gap-src">{drawn.inputs.map((line: string, k: number) => <span key={k}>{k ? " · " : ""}<Rich text={line} /></span>)}</p>}
       <ol className="step-list">{drawn.steps.map((line: string, k: number) => (
         <li key={k} className={k === cur ? "on" : ""}><Rich text={line} /></li>

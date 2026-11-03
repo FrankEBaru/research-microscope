@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import Atlas, { Legend } from "./Atlas";
+import Atlas, { Legend, ReadFirst } from "./Atlas";
 import { AtlasCard } from "./Card";
 import { Icon } from "../ui";
 
@@ -117,7 +117,8 @@ export default function Overlay({
           <div className="plot">
             <Atlas model={model} mode="full" hereId={hereId} suggestId={suggestId} selected={selected} drawSelection={linked} onSelect={pick} onOpen={onScan} />
           </div>
-          <AtlasCard model={model} explore={explore} states={states} selected={selected} hereId={hereId} suggestId={suggestId} onScan={onScan} onRead={onRead} onPick={pick} />
+          <AtlasCard model={model} explore={explore} states={states} selected={selected} hereId={hereId} suggestId={suggestId} onScan={onScan} onRead={onRead} onPick={pick} onOpen={onRead} />
+          <ReadFirst points={model?.points || []} onPick={pick} />
         </div>
       </div>
     </div>

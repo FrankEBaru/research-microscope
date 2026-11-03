@@ -2,14 +2,19 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import "@/styles/inicio.css";
 import { Cap, Icon } from "../ui";
+import { Rich } from "@/lib/math";
 
 type Step = { n: number; label: string; sub?: string; on?: () => void };
 
 export type Crumb = {
   question: string;
   onAtlas: () => void;
-  group?: { n: number; name: string } | null;
+  onGroup?: () => void;
+  group?: { id?: string; n: number; name: string } | null;
   paper?: string;
+  paperId?: string;
+  steps?: { id: string; title: string }[];
+  onStep?: (id: string) => void;
 };
 
 export default function TopBar({ core, live, liveOn, liveId, steps, level, draft, setDraft, onSearch, companion, setCompanion, onHome, crumb, back, recorded = [] }: {
@@ -113,22 +118,28 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
       <nav className="crumbs" aria-label="Breadcrumb">
         {crumb?.question && (
           <>
-            {crumb.paper
+            {crumb.paper || (crumb.steps && crumb.steps.length)
               ? <button type="button" onClick={crumb.onAtlas}>{crumb.question}</button>
               : <span className="cur" aria-current="page">{crumb.question}</span>}
             {crumb.group && crumb.paper && (
               <>
                 <span className="sep" aria-hidden="true">/</span>
-                <span className="cur">
+                <button type="button" onClick={crumb.onGroup || crumb.onAtlas}>
                   <i className="dot" style={{ ["--c" as string]: `var(--grp-${crumb.group.n})` }} aria-hidden="true" />
-                  {crumb.group.name}
-                </span>
+                  <Rich text={crumb.group.name} />
+                </button>
               </>
             )}
+            {(crumb.steps || []).filter((step) => step.id !== crumb.paperId).map((step) => (
+              <span key={step.id} className="crumb-step">
+                <span className="sep" aria-hidden="true">/</span>
+                <button type="button" onClick={() => crumb.onStep?.(step.id)}><Rich text={step.title || step.id} /></button>
+              </span>
+            ))}
             {crumb.paper && (
               <>
                 <span className="sep" aria-hidden="true">/</span>
-                <span className="cur" aria-current="page">{crumb.paper}</span>
+                <span className="cur" aria-current="page"><Rich text={crumb.paper} /></span>
               </>
             )}
           </>

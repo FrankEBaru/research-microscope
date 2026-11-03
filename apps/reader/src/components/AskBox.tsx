@@ -6,6 +6,7 @@ import { cleanExtract, markMidStart, storeLine } from "@/lib/extract.js";
 import { draftKey, legacyKey, loadDraft, saveDraft } from "@/lib/draft.js";
 import { storageFault } from "@/lib/faults.js";
 import { Button, Cap, Icon, Prov } from "@/components/ui";
+import { Pulse } from "@/components/ui/Pulse";
 import Notice from "@/components/faults/Notice";
 import "@/styles/box.css";
 
@@ -335,7 +336,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
       )}
       <header className="box-h">
         <Icon name="pen" />
-        <h3>Your words · {sectionLabel}</h3>
+        <h3>Your words · <Rich text={sectionLabel} /></h3>
         {savedOn && <span className="saved"><Icon name="check" size={14} />Draft saved</span>}
       </header>
       {storeText && <Notice kind="absence">{storeText}</Notice>}
@@ -344,9 +345,12 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
       <div className="box-act">
         <Button variant="primary" type="submit" disabled={busy || !text.trim()}>Review</Button>
       </div>
+      {(busy || live) && !err && <Pulse mode="ai" compact />}
       {live && <p className="box-status tnum" aria-live="polite">{live}</p>}
+      {(err || slow) && <Pulse mode="error" compact detail={err ? ASK_FAULT : ASK_SLOW} />}
       {slow && <Notice kind="fault" code="F-ASK-SLOW">{ASK_SLOW}</Notice>}
       {err && <Notice kind="fault" code="F-ASK">{ASK_FAULT}</Notice>}
+      {result && !busy && !err && !slow && <Pulse mode="ready" compact />}
       {result?.empty && <Notice kind="absence">{result.note || EMPTY_PHRASES}</Notice>}
       {missing && <Notice kind="absence">{missing}</Notice>}
       <div className="ask-result feedback" ref={answer}>

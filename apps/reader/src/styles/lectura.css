@@ -82,6 +82,8 @@
   text-underline-offset: 4px;
 }
 .folio .ah-prov { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 12px; }
+.folio .paper-head h1 .katex, .folio .ah-quote .katex, .crumbs .katex, .tb-label .katex, .row-blurb .katex { font-size: 1em; }
+.folio .paper-head h1 { overflow-wrap: anywhere; }
 .folio .ah-quote { margin: 18px 0 0; padding: 0; background: none; border: 0; border-radius: 0; font: 400 var(--fs-read)/var(--lh-read) var(--font-read); color: var(--ink); }
 .folio .ah-quote .pv { display: flex; margin-bottom: 6px; }
 

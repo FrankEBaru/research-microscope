@@ -133,6 +133,20 @@ export function parseProse(input) {
         continue;
       }
     }
+    if (s.startsWith("\\(", i) || s.startsWith("\\[", i)) {
+      const display = s.startsWith("\\[", i);
+      const close = display ? "\\]" : "\\)";
+      const end = s.indexOf(close, i + 2);
+      if (end > i) {
+        const body = s.slice(i + 2, end).trim();
+        if (body) {
+          flush();
+          out.push({ t: "math", v: body, display });
+        }
+        i = end + close.length;
+        continue;
+      }
+    }
     if (s.startsWith("$$", i) || s[i] === "$") {
       const got = takeMath(s, i);
       if (got && got[0]) {

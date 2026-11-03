@@ -7,7 +7,7 @@ import Instrument from "./Instrument";
 import { bibtex } from "@/lib/bibtex.js";
 import { eqTex, fetchNotes, paperKey, refText, sourcePdfUrl } from "@/lib/backend.js";
 import { collectV2 } from "@/lib/artifacts.js";
-import { pdfPagesOnly, polishText, presentInlines, visibleInlines } from "@/lib/prose.js";
+import { pdfPagesOnly, presentInlines, visibleInlines } from "@/lib/prose.js";
 import { faltaText } from "@/lib/falta.js";
 import { hasConclusion, scanIds } from "@/lib/scan.js";
 import { citeName } from "@/lib/layout.js";
@@ -34,6 +34,7 @@ import Rights from "./paper/Rights";
 import { arxivPdf, isGated } from "@/lib/rights.js";
 import { Boundary, Notice } from "./faults";
 import { Cap, Icon, Prov, Segmented } from "./ui";
+import { Pulse, Skeleton } from "./ui/Pulse";
 import type { AtlasCtx } from "./screens/types";
 
 export { plainOf } from "./paper/inline";
@@ -217,6 +218,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const art = useRef<HTMLElement>(null);
   const [pop, setPop] = useState<PopState>(null);
   const [pack, setPack] = useState<any>(null);
+  const [notePhase, setNotePhase] = useState<"" | "ai" | "ready" | "error">("");
   const [symHot, setSymHot] = useState("");
   const [symPin, setSymPin] = useState("");
   const [pinAt, setPinAt] = useState<{ block: string; index: number } | null>(null);
@@ -288,7 +290,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     for (const b of paper.blocks) {
       byId[b.id] = b; noteBase[b.id] = notes.length;
       if (b.kind === "h" && b.unnumbered) {
-        cur = ""; toc.push({ id: b.id, label: polishText(plainOf(b.inlines)), num: "", level: 1 });
+        cur = ""; toc.push({ id: b.id, label: plainOf(b.inlines), num: "", level: 1 });
         if (/^(appendix|ap[ée]ndice)/i.test(plainOf(b.inlines))) { app = true; h = [0, 0, 0]; }
       } else if (b.kind === "h" && b.level <= 3) {
         if (b.number != null) cur = String(b.number);
@@ -298,7 +300,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         }
         nums[b.id] = cur;
         if (b.label) { xref[b.label] = `${app ? "Appendix" : "Section"} ${cur}`; target[b.label] = `sec-${b.id}`; }
-        if (b.level <= 2) toc.push({ id: b.id, label: polishText(plainOf(b.inlines)), num: cur, level: b.level });
+        if (b.level <= 2) toc.push({ id: b.id, label: plainOf(b.inlines), num: cur, level: b.level });
       }
       secOf[b.id] = cur;
       if (b.kind === "fig") { figN[b.id] = ++fig; if (b.label) { xref[b.label] = `Figure ${fig}`; byLabel[b.label] = b; figs.add(b.label); } }
@@ -466,21 +468,24 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   useEffect(() => { if (focus) setTimeout(() => goTo(focus), 250); }, [focus, paper.arxivId]);
   const blockCount = (paper.blocks || []).length;
   useEffect(() => {
-    if (!core || paper.corpusid == null || !blockCount) return;
+    if (!core || paper.corpusid == null || !blockCount) { setNotePhase(""); return; }
     const key = String(paper.corpusid);
     const hit = noteCache.get(key);
-    if (hit) { setPack(hit); return; }
+    if (hit) { setPack(hit); setNotePhase("ready"); return; }
     let stop = false;
+    setNotePhase("ai");
     const timer = window.setTimeout(() => { stop = true; }, 22000);
     fetchNotes(key).then((body) => {
       if (stop) return;
       noteCache.set(key, body);
       setPack(body);
+      setNotePhase("ready");
     }).catch(() => {
       if (stop) return;
       const empty = { notes: [], artifacts: [], usage: { cost_usd: 0 } };
       noteCache.set(key, empty);
       setPack(empty);
+      setNotePhase("error");
     });
     return () => { stop = true; window.clearTimeout(timer); };
   }, [core, paper.corpusid, blockCount]);
@@ -540,7 +545,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const scan = core && !reading ? scanIds(paper.blocks) : null;
   const firstHead = (paper.blocks || []).find((b) => b.kind === "h");
   const sectionNow = active.startsWith("sec-") ? (paper.blocks || []).find((b) => b.kind === "h" && b.id === active.slice(4)) : firstHead;
-  const sectionLabel = sectionNow ? polishText(plainOf(sectionNow.inlines)) : "Start";
+  const sectionLabel = sectionNow ? plainOf(sectionNow.inlines) : "Start";
   const abstractId = (paper.blocks || []).find((b) => b.kind === "p" && b.abs)?.id || "";
   const nameOf = (id: string, section?: string) => citeName((map?.papers || []).find((item) => paperKey(item) === String(id)), section);
   const focusId = paper.corpusid != null ? String(paper.corpusid) : "";
@@ -575,7 +580,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     const shown = Number.isFinite(n) ? n.toLocaleString("en-US") : String(cites);
     metaBits.push({ key: "cites", text: `${shown} ${n === 1 ? "citation" : "citations"}`, tnum: true });
   }
-  const quote = undrawn ? polishText(paper.abstract || "") : (remote ? polishText(autoSentence(paper.abstract)) : "");
+  const quote = undrawn ? (paper.abstract || "") : (remote ? autoSentence(paper.abstract) : "");
   const pin = symPin ? pinOf(symPin) : null;
   const showMini = Boolean(core && (map || (explore?.nodes || []).length > 0));
   const showNav = model.toc.length > 0 || showMini;
@@ -600,7 +605,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           <div key={`end-${sec.id}`} className="sec-end">
             {openAsk === sec.id
               ? askBox("section", sec.id, sec.title)
-              : <button type="button" className="yw press" onClick={() => { setOpenAsk(sec.id); if (paper.corpusid != null) rememberSession(`rrm.ask.${paper.corpusid}`, sec.id); }}><Icon name="pen" /><span>Explain “{sec.title}” in your words</span></button>}
+              : <button type="button" className="yw press" onClick={() => { setOpenAsk(sec.id); if (paper.corpusid != null) rememberSession(`rrm.ask.${paper.corpusid}`, sec.id); }}><Icon name="pen" /><span>Explain “<Rich text={sec.title} />” in your words</span></button>}
           </div>,
         );
       }
@@ -609,7 +614,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       if (scan && !scan.has(b.id)) return;
       if (core && reading && b.kind === "h" && b.level <= 2) {
         closeUntil(b.level);
-        stack.push({ id: b.id, level: b.level, title: polishText(plainOf(b.inlines)) });
+        stack.push({ id: b.id, level: b.level, title: plainOf(b.inlines) });
       }
       const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, refLabels: paper.refLabels, xref: model.xref, figs: model.figs, counter: { n: model.noteBase[b.id] }, core, block: b.id, popKey: pop?.key, pin };
       let el: ReactNode = null;
@@ -768,7 +773,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
                     <li key={t.id} className={`${t.level > 1 ? "sub" : ""}${on ? " is-on" : ""}`}>
                       <a href={`#sec-${t.id}`} aria-current={on ? "location" : undefined} onClick={(e) => { e.preventDefault(); toSection(t.id); }}>
                         <span className="n">{t.num}</span>
-                        <span className="t">{t.label}</span>
+                        <span className="t"><Rich text={t.label} /></span>
                       </a>
                     </li>
                   );
@@ -812,7 +817,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
                 />
               )}
             </div>
-            <h1>{polishText(paper.title)}</h1>
+            <h1><Rich text={paper.title || ""} /></h1>
             {authors && <p className="ah-auth">{authors}</p>}
             {rights ? <Rights rights={rights} /> : null}
             <p className="ah-links">
@@ -830,16 +835,19 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             {quote && (
               <blockquote className="ah-quote">
                 <Prov kind="paper" text="Abstract" />
-                «{quote}»
+                «<Rich text={quote} />»
               </blockquote>
             )}
             {core && !reading && !undrawn && paper.full && !hasConclusion(paper.blocks) && <Notice kind="absence">No conclusion section.</Notice>}
             {remote?.source === "ocr" && <Notice kind="absence">Read by OCR: equations may contain errors.</Notice>}
             {paper.license && <p className="license">{paper.license}</p>}
             {paper.authorNotes?.length > 0 && (
-              <details className="author-notes"><summary>Author notes</summary>{paper.authorNotes.map((n: string, i: number) => <p key={i}>{polishText(n)}</p>)}</details>
+              <details className="author-notes"><summary>Author notes</summary>{paper.authorNotes.map((n: string, i: number) => <p key={i}><Rich text={n} /></p>)}</details>
             )}
             {showCrops && remote && paper.corpusid != null && /^\d+$/.test(String(paper.corpusid)) && <CropStrip id={String(paper.corpusid)} />}
+            {notePhase === "ai" && <><Skeleton lines={3} /><Pulse mode="ai" /></>}
+            {notePhase === "error" && <Pulse mode="error" detail="No se pudieron preparar las notas" />}
+            {notePhase === "ready" && <Pulse mode="ready" compact />}
           </header>
         </Boundary>
         {undrawn && gated && !quote && (
@@ -857,6 +865,9 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         {undrawn && core && askBox("slot", abstractId, "Abstract")}
         {!undrawn && pdfPagesOnly(paper.blocks) && <Notice kind="absence">This e-print has no text: the pages are inserted from a PDF.</Notice>}
         {!undrawn && !abstractId && core && !reading && askBox("slot", "", sectionLabel)}
+        {core && remote && !["done", "abstract_only", "failed"].includes(String(remote.status || "")) && (paper.blocks || []).length < 2 && (
+          <><Skeleton lines={7} /><Pulse mode="loading" /></>
+        )}
         {!undrawn && rows}
         {!gated && (
           <footer className="paper-foot">

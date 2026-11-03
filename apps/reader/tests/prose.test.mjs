@@ -4,6 +4,15 @@ import { parseProse, polishText, presentInlines, visibleInlines, pdfPagesOnly } 
 
 const text = (nodes) => nodes.map((n) => n.t === "text" ? n.v : n.t === "em" ? `*${text(n.c)}*` : n.t === "strong" ? `**${text(n.c)}**` : n.t === "math" ? `$${n.v}$` : n.t === "cite" ? `[@${n.keys.join(",")}]` : n.t === "ref" ? `#${n.label}` : "").join("");
 
+test("titles and paren math stay as nodes the body renderer can draw", () => {
+  const nodes = presentInlines([{ t: "text", v: "\\texttt{OLMo}: Paper de prueba $L_2$" }]);
+  assert.equal(nodes.some((n) => n.t === "text" && n.v.includes("OLMo")), true);
+  assert.equal(nodes.some((n) => n.t === "math" && n.v === "L_2"), true);
+  assert.equal(nodes.some((n) => n.t === "text" && /\\texttt/.test(n.v)), false);
+  const paren = parseProse("see \\(L_2\\) now");
+  assert.equal(paren.some((n) => n.t === "math" && n.v === "L_2" && !n.display), true);
+});
+
 test("titles lose spacing commands and protect line breaks", () => {
   assert.equal(polishText("\\!\\!Mip-NeRF: A Multiscale Representation\\!"), "Mip-NeRF: A Multiscale Representation");
   assert.equal(polishText("Local Light Field Fusion: \\protect\\\\Practical View Synthesis"), "Local Light Field Fusion: Practical View Synthesis");

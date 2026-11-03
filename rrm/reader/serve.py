@@ -119,6 +119,8 @@ if modal.is_local():
         "RRM_CLAIMS": os.environ.get("RRM_CLAIMS", ""),
         # Vacío: el lector no abre /data/passages. 1 consulta el índice por embedding.
         "RRM_PASSAGES": os.environ.get("RRM_PASSAGES", ""),
+        # Demo personal: off muestra el texto completo. on/1 vuelve a la compuerta.
+        "RRM_LICENSE_GATE": os.environ.get("RRM_LICENSE_GATE", "off"),
     })
 else:
     secret = modal.Secret.from_dict({})

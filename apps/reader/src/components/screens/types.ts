@@ -7,6 +7,7 @@ export type AtlasCtx = {
   query: string;
   explore: { q?: string; nodes?: any[]; edges?: any[] } | null;
   openId: string;
+  laneId?: string;
   onOpen: (id: string, why: string) => void;
   onWant: (id: string) => void;
 };

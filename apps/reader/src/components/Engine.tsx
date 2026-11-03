@@ -12,6 +12,7 @@ import { classify, storageFault } from "@/lib/faults.js";
 import { coreMode } from "@/lib/features.js";
 import { applyGroupNames, groupPacks, mapPapers, pinPoint } from "@/lib/layout.js";
 import { alignVisit, mergeLabels, popVisit, pushVisit } from "@/lib/path.js";
+import { pathOf } from "./atlas/Card";
 import { EXPLORE_KEY, pickExplore, readExploreFor, recordVisit, whyLabel } from "@/lib/explore.js";
 import { normalizeQuestion, phaseOf, readOverflow, readQuestions, recallQuestion, rememberQuestion, writeOverflow } from "@/lib/qcache.js";
 import { bindDevLog, createDevLog } from "@/lib/devlog.js";
@@ -45,7 +46,7 @@ function openGroup(result: any, id: string) {
   if (!found) return null;
   const n = ((Number(point.cluster) % 6) + 6) % 6 + 1;
   const name = String(found.name || "").trim();
-  return { n, name: name || "Group" };
+  return { id: String(found.id), n, name: name || "Group" };
 }
 
 export default function Engine() {
@@ -73,6 +74,7 @@ export default function Engine() {
   const [opened, setOpened] = useState<any>(null);
   const [asList, setAsList] = useState(false);
   const [camino, setCamino] = useState<{ id: string; porQue: string; padre: string | null }[]>([]);
+  const [laneId, setLaneId] = useState("");
   const caminoRef = useRef(camino);
   caminoRef.current = camino;
   const [explore, setExplore] = useState<{ q: string; nodes: any[]; edges: any[] }>({ q: "", nodes: [], edges: [] });
@@ -226,6 +228,19 @@ export default function Engine() {
     setCamino(next);
     if (next.length) go({ p: next[next.length - 1].id });
     else go({});
+  };
+  const irPaso = (id: string) => {
+    const key = String(id || "");
+    if (!key) return;
+    const prev = caminoRef.current || [];
+    const idx = prev.map((step) => String(step.id)).lastIndexOf(key);
+    if (idx >= 0) {
+      setCamino(prev.slice(0, idx + 1));
+      if (key !== liveId) go({ p: key });
+      else window.scrollTo({ top: 0 });
+      return;
+    }
+    abrir(key, "from the path");
   };
   const home = () => {
     setLiveOn(false);
@@ -577,6 +592,7 @@ export default function Engine() {
     query: shownQ,
     explore,
     openId: liveId,
+    laneId,
     onOpen: abrir,
     onWant: wantThis,
   };
@@ -590,11 +606,16 @@ export default function Engine() {
     const why = top?.padre ? whyLabel(top.porQue) : "";
     return why ? <p className="jump-why">Jump: {why}</p> : null;
   })();
+  const groupNow = liveId ? openGroup(liveResult, liveId) : null;
   const crumb = core && (liveOn || liveId) ? {
     question: shownQ,
-    onAtlas: () => go({}),
-    group: liveId ? openGroup(liveResult, liveId) : null,
+    onAtlas: () => { setLaneId(""); go({}); },
+    onGroup: groupNow ? () => { setLaneId(groupNow.id); go({}); } : undefined,
+    group: groupNow,
     paper: liveId ? titleFor(liveId) : "",
+    paperId: liveId,
+    steps: pathOf(explore),
+    onStep: irPaso,
   } : null;
   const frame = {
     back, openLine, liveErr, liveCode, debug,

@@ -4,6 +4,7 @@ import { Cap, Button, Prov } from "../ui";
 import { phaseOf } from "@/lib/qcache.js";
 import { visitWhy } from "@/lib/explore.js";
 import { nodeLabel } from "@/lib/layout.js";
+import { Rich } from "@/lib/math";
 
 function ink(color: string): CSSProperties {
   return { ["--c" as string]: color } as CSSProperties;
@@ -35,7 +36,7 @@ export function phaseLabel(status: string | undefined) {
 }
 
 export default function Card({
-  point, status, phase, linked, path, license, gated, onScan, onRead, onPick,
+  point, status, phase, linked, path, license, gated, onScan, onRead, onPick, onOpen,
 }: {
   point: any;
   status?: string;
@@ -47,6 +48,7 @@ export default function Card({
   onScan?: (id: string) => void;
   onRead?: (id: string) => void;
   onPick?: (id: string) => void;
+  onOpen?: (id: string) => void;
 }) {
   if (!point) {
     return (
@@ -55,8 +57,8 @@ export default function Card({
         <ul className="near">
           {(path || []).map((row) => (
             <li key={row.id}>
-              <button type="button" onClick={() => onPick?.(row.id)}>
-                <span className="near-t">{row.title}</span>
+              <button type="button" onClick={() => (onOpen ? onOpen(row.id) : onPick?.(row.id))}>
+                <span className="near-t"><Rich text={row.title} /></span>
                 {row.why ? <span className="near-w">{row.why}</span> : null}
               </button>
             </li>
@@ -75,7 +77,7 @@ export default function Card({
         {point.laneName ? <span>{point.laneName}</span> : null}
         {mark ? <span className="card-st">{mark}</span> : null}
       </p>
-      <h2>{point.title || "Paper"}</h2>
+      <h2><Rich text={point.title || "Paper"} /></h2>
       {point.authorLine ? <p className="card-a">{point.authorLine}</p> : null}
       <dl className="card-m tnum">
         <div><dt>Year</dt><dd>{point.year ?? "No year"}</dd></div>
@@ -84,7 +86,7 @@ export default function Card({
       </dl>
       {quote ? (
         <blockquote>
-          <p>{quote}</p>
+          <p><Rich text={quote} /></p>
           <footer><Prov kind="paper" text="Abstract" /></footer>
         </blockquote>
       ) : null}
@@ -150,7 +152,7 @@ export function pathOf(explore: { nodes?: any[]; edges?: any[]; q?: string } | n
 
 /** Paper card, or the path list when nothing is selected and this question has visits. */
 export function AtlasCard({
-  model, explore, states, selected, hereId, suggestId, onScan, onRead, onPick,
+  model, explore, states, selected, hereId, suggestId, onScan, onRead, onPick, onOpen,
 }: {
   model: any;
   explore?: { nodes?: any[]; edges?: any[]; q?: string } | null;
@@ -161,6 +163,7 @@ export function AtlasCard({
   onScan?: (id: string) => void;
   onRead?: (id: string) => void;
   onPick?: (id: string) => void;
+  onOpen?: (id: string) => void;
 }) {
   const visited = new Set<string>(model?.visited || []);
   const here = hereId || "";
@@ -170,7 +173,7 @@ export function AtlasCard({
   const showId = picked || (showPath ? "" : (here || suggest));
   const by = new Map<string, any>((model?.points || []).map((p: any) => [p.id, p]));
   const point = showId ? by.get(showId) : null;
-  if (!point) return <Card point={null} path={pathOf(explore)} onPick={onPick} />;
+  if (!point) return <Card point={null} path={pathOf(explore)} onPick={onPick} onOpen={onOpen} />;
   const state = states?.[point.id];
   return (
     <Card
@@ -183,6 +186,7 @@ export function AtlasCard({
       onScan={onScan}
       onRead={onRead}
       onPick={onPick}
+      onOpen={onOpen}
     />
   );
 }

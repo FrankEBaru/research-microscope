@@ -20,8 +20,18 @@ _DROP = (
 _META_BITS = ("pdf", "path", "file", "tex", "figure", "crop", "eprint")
 
 
+_GATE_OFF = {"0", "off", "false", "no"}
+
+
 def gate_on():
-    return os.environ.get("RRM_LICENSE_GATE", "1") != "0"
+    """Compuerta activa salvo RRM_LICENSE_GATE=off (también 0, false, no).
+
+    Sin la variable sigue activa: el demo la apaga en scripts/run.sh.
+    """
+    raw = os.environ.get("RRM_LICENSE_GATE")
+    if raw is None or str(raw).strip() == "":
+        return True
+    return str(raw).strip().lower() not in _GATE_OFF
 
 
 def fixture_render(row):
