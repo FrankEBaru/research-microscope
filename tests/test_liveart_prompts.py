@@ -65,7 +65,13 @@ def test_flag_defaults_off_and_injection_stays_inside_the_fence(monkeypatch):
     assert "tercera fórmula" in explain_system()
     assert "¿Por qué una base más grande" in question_system()
     assert "tiene que leer el control" in codegen_system()
-    assert '"merit":"widget"' in selector_system()
+    assert "setLineDash" in codegen_system() and "continue" in codegen_system() and "undefined" in codegen_system()
+    assert "50000" in codegen_system() and "idioma del enunciado" in codegen_system()
+    assert "idioma del enunciado" in question_system() and "idioma del enunciado" in explain_system()
+    selector = selector_system()
+    assert '"merit":"widget"' in selector
+    assert '"topic":"rope"' in selector and '"topic":"swiglu"' in selector and '"topic":"speculative"' in selector
+    assert "no_parameter" in selector
     assert "no_injection_obeyed" in verifier_system() and "intuitive" in verifier_system()
     _code, pedido = codegen_messages(PE, [], "explica")
     assert "<<<PEDIDO>>>" in pedido

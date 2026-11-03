@@ -12,12 +12,15 @@ Los prompts siguen siendo de esta rama. Los límites son los de 0.3. Cambios de 
 - Temas nuevos, con arXiv chequeado: `giou` (1902.09630), `ppo_clip` (1707.06347), `nerf_freq` (2003.08934), `vit_patch` (2010.11929).
 - `rope-shift` reemplaza el giro de un solo vector: distancia y corrimiento. El parecido es el producto de los dos giros. No entra al prompt.
 - Temas del banco, misma versión 0.2, sin mover límites: softmax por bloques, Chinchilla, Adam, costo del borrador, YaRN por partes, BatchNorm, destilación, LoRA, KL, haz, BPE, SmoothQuant, delta selectivo. El delta para RRM-79 está en compass `CONTRACT.md`. `rope_relative` es `rope`. `scaling` es `chinchilla`.
-- El few-shot de posición ahora muestra la onda y el parecido entre posiciones. Siguen siendo 4 few-shots. El prompt de código mide 10659 caracteres.
+- El few-shot de posición ahora muestra la onda y el parecido entre posiciones. Siguen siendo 4 few-shots.
+- Tras la sonda 1: el prompt lista las llamadas `ctx.*` y prohíbe `setLineDash`; dice el subconjunto (`continue`, `undefined` y helpers no declarados no entran); pide title/explain/questions en el idioma del enunciado; a lo más dos `for` anidados y menos de 50000 vueltas; cada control mueve la figura. El selector tiene ejemplos de RoPE, SwiGLU y speculative decoding como widget.
 - Galería de prueba, fuera del lector: `liveart/host/gallery.html`. Lienzo 640×360, iframe `sandbox=allow-scripts`, sin `allow-same-origin`, sin `eval` (el CSP no lo deja).
 
 ### Pedido a RRM-79
 
 El iframe del lector sigue siendo tuyo. La galería no lo reemplaza. Host: `state.w=640`, `state.h=360`, frame 1000 ms. El verificador del modelo sigue rechazando slop; el sandbox ya rechaza `dead_control`, `slop_inert`, `slop_unrelated` y `slop_seal`.
+
+Sonda 2: no hace falta tocar el motor. No agregues `setLineDash`, `continue` ni `undefined`, no subas el corte de pasos y no hagas bilingüe `slop_unrelated`. Esos rechazos de la sonda 1 son los correctos. El prompt ya dice la lista, el subconjunto, el idioma, el tope de bucles y que cada control mueve la figura. Detalle en `rrm/liveart/CONTRACT.md`, sección «Sonda 2».
 
 ### Pedido a RRM-80
 

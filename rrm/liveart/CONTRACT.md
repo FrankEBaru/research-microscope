@@ -33,7 +33,9 @@ Canvas 2d: `clearRect`, `fillRect`, `strokeRect`, `beginPath`, `closePath`, `mov
 
 Math: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `log`, `sqrt`, `abs`, `hypot`, `sign`, `min`, `max`, `pow`, `floor`, `ceil`, `round`, `PI`, `E`.
 
-El lenguaje del sandbox es un subconjunto: `var` o `const`, `if` / `else`, `for`, `while`, funciones anidadas, arreglos, `===` y `!==`. Un string solo expone `.length`. Sin flechas, sin `new`, sin `toFixed`, sin `slice`.
+El lenguaje del sandbox es un subconjunto: `var` o `const`, `if` / `else`, `for`, `while`, `break`, `return`, funciones declaradas, arreglos, `===` y `!==`. Cada sentencia termina en `;`. Un string solo expone `.length`. Un arreglo tiene `push`, `pop` y `length`. Sin flechas, sin `let`, sin `new`, sin `continue`, sin `undefined`, sin `null`, sin objetos literales, sin `toFixed`, sin `slice`. No se llama una función que el draw no declaró. `ctx.setLineDash` no está: una línea punteada son segmentos cortos. A lo más dos `for` anidados y menos de 50000 vueltas. Cada control mueve una figura, no solo un texto.
+
+`title`, `explain` y `questions` van en el idioma del enunciado. El chequeo `slop_unrelated` compara palabras del enunciado con esa copia; no se afloja a bilingüe.
 
 Prohibido en el fuente (la lista viva está en `contract.py`): red, `fetch`, `eval`, `Function`, `import`, `document`, `window`, almacenamiento, `postMessage`, `innerHTML`, `setTimeout`, `requestAnimationFrame`, `Math.random`, `Date`, `Worker`, `WebAssembly`, `http://` y `https://`.
 
@@ -58,6 +60,16 @@ Cuatro draws de oro en `fewshots.py`: base del encoding posicional (la onda y el
 El verificador offline ya rechaza forma mala, API prohibida, tema cruzado, un enunciado que es una orden, y un widget que copia esa orden al título, la explicación o el draw. `intuitive` y `answers_a_question` quedan para el verificador de modelo, cuando haya sandbox.
 
 `prompts.schemas()` devuelve el JSON Schema de cada paso (`additionalProperties: false`). `prompts.package(claim)` arma la decisión, las preguntas, la explicación y, solo con la bandera, los mensajes. Sin bandera, `messages` es `None`.
+
+## Sonda 2 — quién arregla qué
+
+La sonda 1 (RRM-83, 19/29 widgets) falló en el prompt, no en el motor. Para la sonda 2 el sandbox se queda:
+
+- `setLineDash` sigue fuera de la lista. El prompt dice que no existe.
+- `continue`, `undefined` y una función no declarada siguen siendo error del intérprete.
+- `slop_unrelated` sigue pidiendo una palabra compartida. El prompt escribe en el idioma del enunciado.
+- El corte de 200000 pasos se queda. El prompt pide menos de 50000 vueltas y a lo más dos `for` anidados.
+- El verificador de modelo no reemplaza al motor: un `accept` suyo no monta un draw que el sandbox rechaza.
 
 ## Qué no entra en 0.3
 
