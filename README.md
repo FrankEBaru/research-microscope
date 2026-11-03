@@ -7,7 +7,7 @@ source ~/projects/hackaton/activate.sh
 cd ~/projects/hackaton/research-microscope && git checkout main && git pull && ./scripts/offline.sh
 ```
 
-Eso baja el Release `offline-fixtures-v1` si falta, instala la UI si falta, y arranca sin Modal ni Meta. Ábrelo en el navegador de Windows: `http://localhost:3000`. Preguntas grabadas, tal cual: `how does self-attention replace recurrence in sequence translation`, `neural radiance fields view synthesis`, `scaling laws compute dataset size language model loss`. Otra pregunta responde `consulta no grabada`. El panorama de esas tres es el de Muse ya grabado. Ctrl+C apaga la UI y el servidor. Atribución: Semantic Scholar.
+Eso baja los fixtures `v2` desde los archivos de `datos/offline/` en la rama `claude/rrm-50-plan-b1` del repo privado `FrankEBaru/research-microscope-compass` (no hay Release con ese nombre; v2 son dos partes y se comprueba el sha256 del archivo unido) si faltan, los guarda en `offline-fixtures/`, instala la UI si falta, y arranca sin Modal ni Meta. `RRM_OFFLINE_VERSION=v3` baja v3. `RRM_OFFLINE_BRANCH` cambia la rama. Si `gh` no está autenticado, el script se detiene y dice que corras `gh auth login`. `RRM_OFFLINE_DIR=/ruta` usa esa carpeta (con `manifest.json`) y no llama a `gh`. `RRM_OFFLINE_SYNTH=1` usa datos sintéticos. Ábrelo en el navegador de Windows: `http://localhost:3000`. Preguntas grabadas, tal cual: `how does self-attention replace recurrence in sequence translation`, `neural radiance fields view synthesis`, `scaling laws compute dataset size language model loss`. Otra pregunta responde `consulta no grabada`. El panorama de esas tres es el de Muse ya grabado. Ctrl+C apaga la UI y el servidor. Atribución: Semantic Scholar.
 
 ## Modo en vivo: scripts/live.sh
 
@@ -27,6 +27,8 @@ RRM_LIVE=off bash scripts/live.sh
 | modal | `RRM_LIVE=modal bash scripts/live.sh` | `modal deploy rrm/search/serve.py` y `modal deploy rrm/reader/serve.py`. Ráfaga y lector reales. `RRM_PANORAMA_MODE=sim`. `RRM_SAM=off`: `/crops` no llama a SAM. |
 | meta | `RRM_LIVE=meta bash scripts/live.sh` | Sin deploy. Datos grabados. `RRM_OFFLINE_PANORAMA=meta`: `POST /panorama` llama a Muse. `/crops` sigue grabado. |
 | full | `RRM_LIVE=full bash scripts/live.sh` | Los dos deploy, con `RRM_PANORAMA_MODE=meta` y `RRM_SAM=on`. |
+
+Pasajes del volumen: apagados si `RRM_PASSAGES` no es `1`. Con `RRM_PASSAGES=1`, al armar una explicación o un artefacto el lector embebe el hueco y toma el top-k del índice FAISS en `/data/passages` (filas de la etapa e3, app `rrm-passages`, volumen `rrm-data`). Esos pasajes completos, de licencia abierta o cerrada, entran al modelo como contexto y con `store: false` (no se usan para entrenar). Lo que ve la persona, si el paper es cerrado, vacío o trae la licencia default de arXiv, es una cita corta en palabras del modelo y un enlace: el pasaje no se reproduce. `RRM_PASSAGES_DIR` apunta a una copia local de esa carpeta. En el deploy, exporta `RRM_PASSAGES=1` antes de `scripts/live.sh` (`modal` o `full`); el lector ya monta el volumen.
 
 En `modal` y `full` hace falta `RRM_DEMO_TOKEN` en el entorno. La UI toma `NEXT_PUBLIC_BURST_URL`, `NEXT_PUBLIC_READER_URL` y ese token de la salida del deploy. En `meta` el token público queda en `local`, como el offline. Al terminar imprime el modo, los segundos y qué servicio pudo haber cobrado. No calcula dólares.
 
