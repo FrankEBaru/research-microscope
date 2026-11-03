@@ -110,7 +110,7 @@ export default function LiveArtPage() {
       <header>
         <p className="liveart-kicker">{VERSION} · sandboxed · no network</p>
         <h1>Live artifacts</h1>
-        <p className="liveart-lead">Fifteen topics. Ten are redrawn for this round. Five keep the current figure until their redraw lands. Nothing here is a measurement from a paper.</p>
+        <p className="liveart-lead">Fifteen topics, each redrawn for this round. Nothing here is a measurement from a paper.</p>
       </header>
       <Stage key={entry.widget.id} entry={entry} />
       <nav className="liveart-nav" aria-label="Widgets">

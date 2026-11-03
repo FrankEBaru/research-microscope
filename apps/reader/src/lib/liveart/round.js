@@ -1,46 +1,49 @@
-// The fifteen topics. "round" is a redesign posted for this quality pass.
-// "catalog" is the current figure until that topic is redesigned.
+// The fifteen topics. Every entry is a redesign posted for this quality pass.
 export const ROUND = [
   {
-    "source": "catalog",
+    "source": "round",
     "widget": {
       "id": "adam-valley",
       "topic": "adam",
-      "title": "En el valle, el segundo momento frena el rebote",
-      "explain": "Adam guarda dos momentos: hacia dónde empuja el gradiente y qué tan brusco es cada eje. En un valle angosto el segundo momento crece en la pared y achica ese paso. SGD, con el mismo lr, zigzaguea; si subes lr, se sale.",
+      "title": "En el valle angosto SGD rebota y Adam no",
+      "explain": "Adam (Kingma y Ba, 1412.6980) da el paso m̂/(√v̂+ε). Aquí β1 es 0.9 y β2 es 0.999, fijos. El valle f = ½x² + pared·y² es un juguete, no una figura medida: en y el gradiente es 2·pared veces el de x. Con pared 20, SGD rebota; si el lr pasa el umbral de la derecha, se sale. El segundo momento achica ese eje y Adam se queda. Baja la pared a 1 y SGD también baja liso. No es una corrida de entrenamiento.",
       "questions": [
         {
-          "q": "¿Por qué SGD rebota en un valle angosto y Adam no?",
-          "why": "el segundo momento achica el eje empinado"
+          "q": "Sube el paso a 0.08. ¿Quién se sale del valle?",
+          "why": "SGD cruza el umbral y Adam sigue dentro"
         },
         {
-          "q": "¿Qué se está promediando: la dirección o el tamaño del paso?",
-          "why": "los dos momentos, uno para cada cosa"
+          "q": "Baja la pared a 1. ¿SGD sigue rebotando?",
+          "why": "en un valle redondo el paso de y ya no es enorme"
         },
         {
-          "q": "¿Qué pasa si subo el lr y el valle sigue igual de angosto?",
-          "why": "SGD se sale y Adam aguanta más"
+          "q": "En el paso 0.04 y pared 20, ¿quién baja liso?",
+          "why": "Adam, porque el segundo momento frena la pared"
+        },
+        {
+          "q": "¿Este valle es una curva del paper?",
+          "why": "no: es un juguete para ver el paso"
         }
       ],
       "controls": [
         {
           "id": "lr",
           "label": "paso lr",
-          "min": 0.01,
+          "min": 0.02,
           "max": 0.1,
           "value": 0.04,
-          "step": 0.005
+          "step": 0.01
         },
         {
-          "id": "beta2",
-          "label": "beta2",
-          "min": 0.8,
-          "max": 0.999,
-          "value": 0.99,
-          "step": 0.001
+          "id": "wall",
+          "label": "pared",
+          "min": 1,
+          "max": 20,
+          "value": 20,
+          "step": 1
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, lr = state.lr, b2 = state.beta2, b1 = 0.9, eps = 1e-8;\n  var x0 = 28, y0 = 14, pw = w * 0.68, ph = h - 28;\n  function X(x) { return x0 + (x + 1.5) / 3 * pw; }\n  function Y(y) { return y0 + (1.15 - y) / 2.3 * ph; }\n  var levels = [0.5, 1.5, 3, 6, 9], li, a, c, ct, st;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.strokeStyle = \"#e4d6c4\";\n  ctx.lineWidth = 1;\n  for (li = 0; li < levels.length; li++) {\n    c = levels[li];\n    ctx.beginPath();\n    for (a = 0; a <= 48; a++) {\n      ct = Math.cos(a / 48 * 6.2832);\n      st = Math.sin(a / 48 * 6.2832);\n      var px = Math.sqrt(2 * c) * ct, py = Math.sqrt(c / 20) * st;\n      if (a === 0) ctx.moveTo(X(px), Y(py)); else ctx.lineTo(X(px), Y(py));\n    }\n    ctx.stroke();\n  }\n  function path(kind) {\n    var x = -1.15, y = 0.55, mx = 0, my = 0, vx = 0, vy = 0, step, gx, gy, out = 0;\n    ctx.beginPath();\n    ctx.moveTo(X(x), Y(y));\n    for (step = 1; step <= 26; step++) {\n      gx = x; gy = 40 * y;\n      if (kind === 0) { x -= lr * gx; y -= lr * gy; }\n      else {\n        mx = b1 * mx + (1 - b1) * gx; my = b1 * my + (1 - b1) * gy;\n        vx = b2 * vx + (1 - b2) * gx * gx; vy = b2 * vy + (1 - b2) * gy * gy;\n        var mhx = mx / (1 - Math.pow(b1, step)), mhy = my / (1 - Math.pow(b1, step));\n        var vhx = vx / (1 - Math.pow(b2, step)), vhy = vy / (1 - Math.pow(b2, step));\n        x -= lr * mhx / (Math.sqrt(vhx) + eps);\n        y -= lr * mhy / (Math.sqrt(vhy) + eps);\n      }\n      if (x > 1.45 || x < -1.45 || y > 1.1 || y < -1.1) { out = 1; break; }\n      ctx.lineTo(X(x), Y(y));\n    }\n    ctx.stroke();\n    return out;\n  }\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.lineWidth = 2;\n  var sgdOut = path(0);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  path(1);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillRect(x0 + pw + 8, 28, 10, 10);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(x0 + pw + 8, 48, 10, 10);\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.fillText(\"SGD rebota\", x0 + pw + 22, 37);\n  ctx.fillText(\"Adam baja\", x0 + pw + 22, 57);\n  ctx.fillStyle = \"#8a8175\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"valle angosto en y\", x0, 16);\n  if (sgdOut) {\n    ctx.fillStyle = \"#c4512c\";\n    ctx.fillText(\"SGD se sale\", x0 + pw + 8, 80);\n  }\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, lr = state.lr, wall = state.wall;\n  var b1 = 0.9, b2 = 0.999, eps = 0.00000001;\n  var x0 = 28, y0 = 18, pw = w * 0.62, ph = h - 36;\n  function X(x) { return x0 + (x + 1.5) / 3 * pw; }\n  function Y(y) { return y0 + (1.15 - y) / 2.3 * ph; }\n  var levels = [0.5, 1.5, 3, 6, 9], li, a, c, ct, st, px, py;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.strokeStyle = \"#e4d6c4\";\n  ctx.lineWidth = 1;\n  for (li = 0; li < levels.length; li++) {\n    c = levels[li];\n    ctx.beginPath();\n    for (a = 0; a <= 48; a++) {\n      ct = Math.cos(a / 48 * 6.2832);\n      st = Math.sin(a / 48 * 6.2832);\n      px = Math.sqrt(2 * c) * ct;\n      py = Math.sqrt(c / wall) * st;\n      if (a === 0) ctx.moveTo(X(px), Y(py)); else ctx.lineTo(X(px), Y(py));\n    }\n    ctx.stroke();\n  }\n  function path(kind) {\n    var x = -1.15, y = 0.55, mx = 0, my = 0, vx = 0, vy = 0;\n    var step, gx, gy, out = 0, mhx, mhy, vhx, vhy;\n    ctx.beginPath();\n    ctx.moveTo(X(x), Y(y));\n    for (step = 1; step <= 26; step++) {\n      gx = x;\n      gy = 2 * wall * y;\n      if (kind === 0) { x = x - lr * gx; y = y - lr * gy; }\n      else {\n        mx = b1 * mx + (1 - b1) * gx;\n        my = b1 * my + (1 - b1) * gy;\n        vx = b2 * vx + (1 - b2) * gx * gx;\n        vy = b2 * vy + (1 - b2) * gy * gy;\n        mhx = mx / (1 - Math.pow(b1, step));\n        mhy = my / (1 - Math.pow(b1, step));\n        vhx = vx / (1 - Math.pow(b2, step));\n        vhy = vy / (1 - Math.pow(b2, step));\n        x = x - lr * mhx / (Math.sqrt(vhx) + eps);\n        y = y - lr * mhy / (Math.sqrt(vhy) + eps);\n      }\n      if (x > 1.45 || x < -1.45 || y > 1.1 || y < -1.1) {\n        var cx = x, cy = y;\n        if (cx > 1.45) cx = 1.45;\n        if (cx < -1.45) cx = -1.45;\n        if (cy > 1.1) cy = 1.1;\n        if (cy < -1.1) cy = -1.1;\n        ctx.lineTo(X(cx), Y(cy));\n        out = 1;\n        break;\n      }\n      ctx.lineTo(X(x), Y(y));\n    }\n    ctx.stroke();\n    return out;\n  }\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.lineWidth = 2;\n  var sgdOut = path(0);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  path(1);\n  var lx = x0 + pw + 14;\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillRect(lx, 40, 10, 10);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(lx, 60, 10, 10);\n  ctx.font = \"13px sans-serif\";\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.fillText(\"SGD\", lx + 16, 50);\n  ctx.fillText(\"Adam\", lx + 16, 70);\n  ctx.fillStyle = sgdOut ? \"#c4512c\" : \"#1d1a16\";\n  if (sgdOut) ctx.fillText(\"SGD se sale\", lx, 98);\n  else if (wall < 8) ctx.fillText(\"pared suave\", lx, 98);\n  else ctx.fillText(\"SGD rebota\", lx, 98);\n  ctx.fillStyle = \"#8a8175\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"umbral \" + (Math.round(100 / wall) / 100), lx, 118);\n  ctx.fillText(\"f = 1/2 x^2 + pared y^2\", x0, 16);\n}"
     }
   },
   {
@@ -136,29 +139,33 @@ export const ROUND = [
     }
   },
   {
-    "source": "catalog",
+    "source": "round",
     "widget": {
       "id": "rope-shift",
       "topic": "rope",
-      "title": "Mover los dos tokens no cambia el producto",
-      "explain": "RoPE gira q y k con la posición absoluta. Desplaza los dos el mismo tramo: las flechas avanzan juntas y el producto no se mueve, la curva queda plana. Cambia la distancia m−n y el producto sí cambia. El giro es absoluto; el puntaje es relativo.",
+      "title": "Desplazar los dos tokens no mueve q·k",
+      "explain": "RoPE (Su et al., 2104.09864) gira q y k con la posición absoluta. En este juguete de tres pares, q·k es la suma de cosenos de (m−n): desplazar los dos el mismo tramo mueve las flechas y deja la recta plana. Aleja n de m y el producto cae; la marca «lejos» aparece cuando baja de 1. No es el RoPE de un modelo completo, solo tres frecuencias fijas.",
       "questions": [
         {
-          "q": "¿Por qué un giro absoluto termina comparando distancias?",
-          "why": "los dos giros se restan en el producto"
+          "q": "Pon desplaza en 32. ¿q·k cambió?",
+          "why": "las flechas giran y el punto corre sobre una recta plana"
         },
         {
-          "q": "¿Qué pasa con el puntaje si corro la frase entera?",
-          "why": "el desplazamiento mueve las flechas y no el producto"
+          "q": "Pon n en 20, con m en 3. ¿Qué le pasa al producto?",
+          "why": "la distancia m-n tumba q·k y sale la marca lejos"
         },
         {
-          "q": "¿Para qué sirven varias velocidades de giro?",
-          "why": "cada par mira otra escala de distancia"
+          "q": "Mira la flecha de la izquierda y la de la derecha. ¿Cuál da más vueltas al desplazar?",
+          "why": "la rápida cierra vueltas; la lenta casi no se mueve"
+        },
+        {
+          "q": "Con desplaza en 32, ¿q·k compara las posiciones o la distancia m−n?",
+          "why": "los dos giros se restan y queda m-n"
         }
       ],
       "controls": [
         {
-          "id": "shift",
+          "id": "theta",
           "label": "desplaza",
           "min": 0,
           "max": 40,
@@ -182,28 +189,32 @@ export const ROUND = [
           "step": 1
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, m = state.m + state.shift, n = state.n + state.shift;\n  var th = [1, 0.32, 0.1], qa = [0.4, 1.1, 2.1], ka = [1.5, 0.25, 2.5];\n  var i, s = 0, r = Math.min(h * 0.16, w / 11);\n  function arrow(cx, cy, a, col) {\n    ctx.strokeStyle = col;\n    ctx.lineWidth = 2;\n    ctx.beginPath();\n    ctx.moveTo(cx, cy);\n    ctx.lineTo(cx + r * Math.cos(a), cy - r * Math.sin(a));\n    ctx.stroke();\n    ctx.fillStyle = col;\n    ctx.beginPath();\n    ctx.arc(cx + r * Math.cos(a), cy - r * Math.sin(a), 3, 0, 6.2832);\n    ctx.fill();\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  for (i = 0; i < 3; i++) {\n    var cx = w * (0.12 + 0.2 * i), cy = h * 0.32;\n    var aq = qa[i] + m * th[i], ak = ka[i] + n * th[i];\n    ctx.strokeStyle = \"#e0d5c6\";\n    ctx.lineWidth = 1;\n    ctx.beginPath();\n    ctx.arc(cx, cy, r, 0, 6.2832);\n    ctx.stroke();\n    arrow(cx, cy, aq, \"#c4512c\");\n    arrow(cx, cy, ak, \"#1f4b99\");\n    s += Math.cos(aq - ak);\n    ctx.fillStyle = \"#8a8175\";\n    ctx.font = \"12px sans-serif\";\n    ctx.fillText(i === 0 ? \"rápida\" : (i === 1 ? \"media\" : \"lenta\"), cx - 18, cy + r + 18);\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"16px sans-serif\";\n  ctx.fillText(\"q·k \" + Math.round(s * 100) / 100, w * 0.74, h * 0.14);\n  ctx.font = \"13px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"no cambia al desplazar\", w * 0.74, h * 0.14 + 20);\n  ctx.fillText(\"q coral · k azul\", w * 0.74, h * 0.14 + 38);\n  var gx = 28, gy = h * 0.64, gw = w - 48, gh = h * 0.26, k, v;\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"10px sans-serif\";\n  ctx.fillText(\"q·k al desplazar (la distancia no cambia)\", gx, gy - 4);\n  ctx.strokeStyle = \"#e0d5c6\";\n  ctx.strokeRect(gx, gy, gw, gh);\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1.5;\n  ctx.beginPath();\n  for (k = 0; k <= 40; k++) {\n    v = 0;\n    for (i = 0; i < 3; i++) v += Math.cos(qa[i] - ka[i] + (state.m - state.n) * th[i]);\n    if (k === 0) ctx.moveTo(gx + gw * k / 40, gy + gh * (1 - (v + 3) / 6));\n    else ctx.lineTo(gx + gw * k / 40, gy + gh * (1 - (v + 3) / 6));\n  }\n  ctx.stroke();\n  ctx.fillStyle = \"#c4512c\";\n  ctx.beginPath();\n  ctx.arc(gx + gw * state.shift / 40, gy + gh * (1 - (s + 3) / 6), 4, 0, 6.2832);\n  ctx.fill();\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, m = state.m + state.theta, n = state.n + state.theta;\n  var th = [1, 0.32, 0.1], qa = [0.4, 1.1, 2.1], ka = [1.5, 0.25, 2.5];\n  var i, s = 0, r = Math.min(h * 0.16, w / 11), dist = state.m - state.n;\n  function arrow(cx, cy, a, col) {\n    ctx.strokeStyle = col;\n    ctx.lineWidth = 2;\n    ctx.beginPath();\n    ctx.moveTo(cx, cy);\n    ctx.lineTo(cx + r * Math.cos(a), cy - r * Math.sin(a));\n    ctx.stroke();\n    ctx.fillStyle = col;\n    ctx.beginPath();\n    ctx.arc(cx + r * Math.cos(a), cy - r * Math.sin(a), 3, 0, 6.2832);\n    ctx.fill();\n  }\n  if (dist < 0) dist = -dist;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  for (i = 0; i < 3; i++) {\n    var cx = w * (0.12 + 0.2 * i), cy = h * 0.30;\n    var aq = qa[i] + m * th[i], ak = ka[i] + n * th[i];\n    ctx.strokeStyle = \"#e0d5c6\";\n    ctx.lineWidth = 1;\n    ctx.beginPath();\n    ctx.arc(cx, cy, r, 0, 6.2832);\n    ctx.stroke();\n    arrow(cx, cy, aq, \"#c4512c\");\n    arrow(cx, cy, ak, \"#1f4b99\");\n    s = s + Math.cos(aq - ak);\n    ctx.fillStyle = \"#8a8175\";\n    ctx.font = \"12px sans-serif\";\n    ctx.fillText(i === 0 ? \"rapida\" : (i === 1 ? \"media\" : \"lenta\"), cx - 18, cy + r + 16);\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"16px sans-serif\";\n  ctx.fillText(\"q·k \" + Math.round(s * 100) / 100, w * 0.72, h * 0.12);\n  ctx.font = \"13px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"m-n \" + dist, w * 0.72, h * 0.12 + 20);\n  ctx.fillText(s < 1 ? \"lejos: el producto cae\" : \"cerca: se sostiene\", w * 0.72, h * 0.12 + 38);\n  ctx.fillText(\"desplazar no lo mueve\", w * 0.72, h * 0.12 + 56);\n  var gx = 28, gy = h * 0.62, gw = w - 48, gh = h * 0.26, k, v;\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"11px sans-serif\";\n  ctx.fillText(\"q·k contra el desplazamiento (recta plana)\", gx, gy - 4);\n  ctx.strokeStyle = \"#e0d5c6\";\n  ctx.strokeRect(gx, gy, gw, gh);\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1.5;\n  ctx.beginPath();\n  for (k = 0; k <= 40; k++) {\n    v = 0;\n    for (i = 0; i < 3; i++) v = v + Math.cos(qa[i] - ka[i] + (state.m - state.n) * th[i]);\n    if (k === 0) ctx.moveTo(gx + gw * k / 40, gy + gh * (1 - (v + 3) / 6));\n    else ctx.lineTo(gx + gw * k / 40, gy + gh * (1 - (v + 3) / 6));\n  }\n  ctx.stroke();\n  ctx.fillStyle = \"#c4512c\";\n  ctx.beginPath();\n  ctx.arc(gx + gw * state.theta / 40, gy + gh * (1 - (s + 3) / 6), 5, 0, 6.2832);\n  ctx.fill();\n}"
     }
   },
   {
-    "source": "catalog",
+    "source": "round",
     "widget": {
       "id": "beam-trap",
       "topic": "beam",
       "title": "El haz ancho rescata el camino que empezó peor",
-      "explain": "La búsqueda por haz guarda varios prefijos, no solo el primero. Con ancho 1 es codiciosa y cae en «el día», que empezó bien y termina mal. Con un haz de 2 sobrevive «un gato», peor al inicio y mejor al final.",
+      "explain": "GNMT (Wu et al., 1609.08144) decodifica con beam search. En el abstract normalizan la longitud y penalizan la cobertura; este juguete no lo hace y no es una frase medida. «el» empieza en −0.15 y «el día» termina cerca de −2.3; «un gato» empieza peor y termina cerca de −0.6. Ancho 1 cae en la trampa. Ancho 2 lo rescata. Ancho 3 no cambia el ganador. La barra larga de la izquierda no es la frase mejor.",
       "questions": [
         {
-          "q": "¿Por qué no elegir siempre la palabra más probable?",
-          "why": "un prefijo alto puede no tener buena continuación"
+          "q": "Baja el ancho a 1. ¿Qué frase queda?",
+          "why": "el codicioso se queda con el día, que empezó mejor"
         },
         {
-          "q": "¿Qué cambia cuando el ancho del haz pasa de 1 a 2?",
-          "why": "entra el prefijo que parecía peor"
+          "q": "En el ancho 2, ¿por qué gana un gato si un empezó peor?",
+          "why": "el haz compara la frase completa, no el primer token"
         },
         {
-          "q": "¿Qué se está comparando: el primer token o la frase completa?",
-          "why": "el haz se queda con el mejor total de los que guardó"
+          "q": "Sube el ancho a 3. ¿Cambia el ganador?",
+          "why": "ya entra al haz y un gato sigue ganando"
+        },
+        {
+          "q": "¿La barra más larga de la izquierda es la mejor frase?",
+          "why": "no: el empieza mejor y termina peor"
         }
       ],
       "controls": [
@@ -212,11 +223,11 @@ export const ROUND = [
           "label": "ancho",
           "min": 1,
           "max": 3,
-          "value": 1,
+          "value": 2,
           "step": 1
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, width = Math.round(state.width);\n  var w1 = [\"el\", \"un\", \"ya\"];\n  var s1 = [-0.15, -0.55, -1.8];\n  var w2 = [[\"día\", \"fin\", \"mar\"], [\"gato\", \"perro\", \"sol\"], [\"no\", \"va\", \"es\"]];\n  var s2 = [[-2.2, -2.5, -2.8], [-0.1, -1.1, -1.6], [-1, -1.2, -1.4]];\n  var order = [0, 1, 2], i, j, tmp, a, b, tot, best = -1e9, phrase = \"\", bi = 0;\n  for (i = 0; i < 3; i++) for (j = i + 1; j < 3; j++) if (s1[order[j]] > s1[order[i]]) {\n    tmp = order[i]; order[i] = order[j]; order[j] = tmp;\n  }\n  for (a = 0; a < width; a++) {\n    i = order[a];\n    for (b = 0; b < 3; b++) {\n      tot = s1[i] + s2[i][b];\n      if (tot > best) { best = tot; phrase = w1[i] + \" \" + w2[i][b]; bi = i; }\n    }\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"primer token\", 16, 16);\n  ctx.fillText(\"frase completa\", w * 0.48, 16);\n  for (a = 0; a < 3; a++) {\n    i = order[a];\n    var y = h * 0.14 + a * h * 0.22, kept = a < width;\n    var bestB = 0;\n    for (b = 1; b < 3; b++) if (s2[i][b] > s2[i][bestB]) bestB = b;\n    var total = s1[i] + s2[i][bestB];\n    var bw1 = (s1[i] + 2.2) / 2.2 * 70;\n    ctx.fillStyle = kept ? \"#1f4b99\" : \"#b7aa9a\";\n    ctx.fillRect(16, y, bw1, 16);\n    ctx.fillStyle = \"#1d1a16\";\n    ctx.fillText(w1[i], 20 + bw1, y + 12);\n    var bw2 = Math.max(6, (total + 3.2) / 3.2 * 64);\n    ctx.fillStyle = kept ? (i === bi ? \"#c4512c\" : \"#1f4b99\") : \"#b7aa9a\";\n    ctx.fillRect(w * 0.46, y, bw2, 16);\n    ctx.fillStyle = \"#1d1a16\";\n    ctx.fillText(w1[i] + \" \" + w2[i][bestB] + \"  \" + Math.round(total * 10) / 10, w * 0.46 + bw2 + 6, y + 12);\n  }\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1.5;\n  ctx.strokeRect(10, h * 0.1, w * 0.42, width * h * 0.22 - 4);\n  ctx.font = \"20px sans-serif\";\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.fillText((width === 1 ? \"codicioso: \" : \"el haz rescata: \") + phrase, 16, h - 16);\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, width = Math.round(state.width);\n  var w1 = [\"el\", \"un\", \"ya\"];\n  var s1 = [-0.15, -0.55, -1.8];\n  var w2 = [[\"dia\", \"fin\", \"mar\"], [\"gato\", \"perro\", \"sol\"], [\"no\", \"va\", \"es\"]];\n  var s2 = [[-2.2, -2.5, -2.8], [-0.1, -1.1, -1.6], [-1, -1.2, -1.4]];\n  var order = [0, 1, 2], i, j, tmp, a, b, tot, best = -1000000, phrase = \"\", bi = 0;\n  for (i = 0; i < 3; i++) for (j = i + 1; j < 3; j++) if (s1[order[j]] > s1[order[i]]) {\n    tmp = order[i]; order[i] = order[j]; order[j] = tmp;\n  }\n  for (a = 0; a < width; a++) {\n    i = order[a];\n    for (b = 0; b < 3; b++) {\n      tot = s1[i] + s2[i][b];\n      if (tot > best) { best = tot; phrase = w1[i] + \" \" + w2[i][b]; bi = i; }\n    }\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.font = \"12px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"primer token (empieza)\", 16, 18);\n  ctx.fillText(\"frase completa (termina)\", w * 0.46, 18);\n  for (a = 0; a < 3; a++) {\n    i = order[a];\n    var y = h * 0.16 + a * h * 0.20, kept = a < width, bestB = 0;\n    for (b = 1; b < 3; b++) if (s2[i][b] > s2[i][bestB]) bestB = b;\n    var total = s1[i] + s2[i][bestB];\n    var bw1 = (s1[i] + 2.2) / 2.2 * 78;\n    ctx.fillStyle = kept ? \"#1f4b99\" : \"#d5cbbd\";\n    ctx.fillRect(16, y, bw1, 18);\n    ctx.fillStyle = \"#1d1a16\";\n    ctx.fillText(w1[i] + \"  \" + s1[i], 22 + bw1, y + 14);\n    var bw2 = Math.max(8, (total + 3.2) / 3.2 * 70);\n    ctx.fillStyle = kept ? (i === bi ? \"#c4512c\" : \"#1f4b99\") : \"#d5cbbd\";\n    ctx.fillRect(w * 0.46, y, bw2, 18);\n    ctx.fillStyle = \"#1d1a16\";\n    ctx.fillText(w1[i] + \" \" + w2[i][bestB] + \"  \" + Math.round(total * 10) / 10, w * 0.46 + bw2 + 8, y + 14);\n  }\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1.5;\n  ctx.strokeRect(8, h * 0.12, w * 0.40, width * h * 0.20 + 8);\n  ctx.font = \"18px sans-serif\";\n  ctx.fillStyle = \"#1d1a16\";\n  if (width === 1) ctx.fillText(\"ancho 1 cae en \" + phrase, 16, h - 18);\n  else if (width === 2) ctx.fillText(\"ancho 2 rescata \" + phrase, 16, h - 18);\n  else ctx.fillText(\"ancho 3 no mejora: \" + phrase, 16, h - 18);\n}"
     }
   },
   {
@@ -312,24 +323,28 @@ export const ROUND = [
     }
   },
   {
-    "source": "catalog",
+    "source": "round",
     "widget": {
       "id": "kl-policy",
       "topic": "kl_rlhf",
-      "title": "Sin el KL, un token se queda con el premio",
-      "explain": "RLHF maximiza el premio menos beta por el KL contra la referencia. La política óptima es la referencia por e elevado al premio sobre beta. Con beta chico el KL ya no frena y toda la masa cae en el token de más premio.",
+      "title": "Sin el KL, ja se queda con el premio",
+      "explain": "InstructGPT (Ouyang et al., 2203.02155) maximiza premio menos β por el KL contra la referencia. Estas barras son la forma cerrada π ∝ π_ref · exp(premio/β), no una corrida de PPO. Los números son ilustrativos: ja tiene premio 2.4 y en la referencia solo pesa 0.04. Con β 0.7, ja no pasa de la mitad y el KL queda bajo 1. Bájalo de 0.4 y ja se queda el premio.",
       "questions": [
         {
-          "q": "¿Por qué no quedarse siempre con el token de más premio?",
-          "why": "el KL lo cobra si se aleja de la referencia"
+          "q": "Baja beta a 0.2. ¿Qué token se queda la masa?",
+          "why": "ja pasa del 50% y el KL deja de repartir"
         },
         {
-          "q": "¿Qué le pasa a la política si beta se acerca a cero?",
-          "why": "se concentra en un solo token"
+          "q": "En beta 0.7, ¿por qué ja no se lo lleva todo si su premio es 2.4?",
+          "why": "la referencia casi no dice ja y el KL lo cobra"
         },
         {
-          "q": "¿Qué se está viendo: el premio, la referencia, o las dos?",
-          "why": "la política mezcla las dos"
+          "q": "Sube beta a 4. ¿A quién se parece la política?",
+          "why": "a la referencia: ja vuelve a ser la barra chica"
+        },
+        {
+          "q": "¿Estas barras son una corrida de PPO del paper?",
+          "why": "no: son la forma cerrada, con premios de juguete"
         }
       ],
       "controls": [
@@ -342,7 +357,7 @@ export const ROUND = [
           "step": 0.02
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, beta = state.beta;\n  var name = [\"si\", \"ok\", \"eh\", \"bueno\", \"ja\"];\n  var ref = [0.42, 0.28, 0.16, 0.1, 0.04];\n  var reward = [0.1, 0.3, 0.5, 0.6, 2.4];\n  var raw = [], z = 0, i, p = [], kl = 0;\n  for (i = 0; i < 5; i++) { raw[i] = ref[i] * Math.exp(reward[i] / beta); z += raw[i]; }\n  for (i = 0; i < 5; i++) { p[i] = raw[i] / z; kl += p[i] * Math.log(p[i] / ref[i]); }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var bw = (w - 36) / 5, bh = h * 0.28;\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"referencia\", 8, 16);\n  ctx.fillText(\"política\", 8, h * 0.48);\n  for (i = 0; i < 5; i++) {\n    var x = 16 + i * bw;\n    ctx.fillStyle = \"#e4d6c4\";\n    ctx.fillRect(x, 24, bw - 10, bh);\n    ctx.fillStyle = \"#8a8175\";\n    ctx.fillRect(x, 24 + bh * (1 - ref[i] / 0.5), bw - 10, bh * ref[i] / 0.5);\n    ctx.fillStyle = \"#d9e3f5\";\n    ctx.fillRect(x, h * 0.5, bw - 10, bh);\n    ctx.fillStyle = i === 4 ? \"#c4512c\" : \"#1f4b99\";\n    ctx.fillRect(x, h * 0.5 + bh * (1 - Math.min(p[i], 0.95) / 0.95), bw - 10, bh * Math.min(p[i], 0.95) / 0.95);\n    ctx.fillStyle = i === 4 ? \"#c4512c\" : \"#1d1a16\";\n    ctx.fillText(i === 4 ? \"ja · premio\" : name[i], x, h - 8);\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.fillText(\"KL \" + Math.round(kl * 100) / 100, w - 78, 16);\n  ctx.font = \"13px sans-serif\";\n  ctx.fillStyle = kl > 1.5 ? \"#c4512c\" : \"#2e7d32\";\n  ctx.fillText(kl > 1.5 ? \"el premio se lo lleva\" : \"el KL todavía reparte\", w * 0.42, h * 0.48);\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, beta = state.beta;\n  var name = [\"si\", \"ok\", \"eh\", \"bueno\", \"ja\"];\n  var ref = [0.42, 0.28, 0.16, 0.1, 0.04];\n  var reward = [0.1, 0.3, 0.5, 0.6, 2.4];\n  var raw = [], z = 0, i, p = [], kl = 0, ja;\n  for (i = 0; i < 5; i++) { raw[i] = ref[i] * Math.exp(reward[i] / beta); z = z + raw[i]; }\n  for (i = 0; i < 5; i++) { p[i] = raw[i] / z; kl = kl + p[i] * Math.log(p[i] / ref[i]); }\n  ja = Math.round(p[4] * 100);\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  var bw = (w - 40) / 5, bh = h * 0.26;\n  ctx.font = \"12px sans-serif\";\n  ctx.fillStyle = \"#5c564c\";\n  ctx.fillText(\"referencia\", 12, 18);\n  ctx.fillText(\"política  π ∝ ref · exp(premio / β)\", 12, h * 0.46);\n  for (i = 0; i < 5; i++) {\n    var x = 18 + i * bw;\n    ctx.fillStyle = \"#e4d6c4\";\n    ctx.fillRect(x, 28, bw - 12, bh);\n    ctx.fillStyle = \"#8a8175\";\n    ctx.fillRect(x, 28 + bh * (1 - ref[i] / 0.5), bw - 12, bh * ref[i] / 0.5);\n    ctx.fillStyle = \"#d9e3f5\";\n    ctx.fillRect(x, h * 0.48, bw - 12, bh);\n    ctx.fillStyle = i === 4 ? \"#c4512c\" : \"#1f4b99\";\n    ctx.fillRect(x, h * 0.48 + bh * (1 - Math.min(p[i], 0.95) / 0.95), bw - 12, bh * Math.min(p[i], 0.95) / 0.95);\n    ctx.fillStyle = i === 4 ? \"#c4512c\" : \"#1d1a16\";\n    ctx.fillText(name[i], x, h * 0.48 + bh + 16);\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"14px sans-serif\";\n  ctx.fillText(\"KL \" + Math.round(kl * 100) / 100, w - 92, 18);\n  ctx.fillText(\"ja \" + ja + \"%\", w - 92, 38);\n  ctx.font = \"14px sans-serif\";\n  ctx.fillStyle = ja > 50 ? \"#c4512c\" : \"#1d1a16\";\n  var note = \"el KL todavía reparte\";\n  if (ja > 50) note = \"ja se queda el premio\";\n  else if (ja < 15) note = \"se parece a la referencia\";\n  ctx.fillText(note, w * 0.42, h * 0.46);\n}"
     }
   },
   {
@@ -546,24 +561,28 @@ export const ROUND = [
     }
   },
   {
-    "source": "catalog",
+    "source": "round",
     "widget": {
       "id": "pe-sincos",
       "topic": "positional_encoding",
-      "title": "Seno y coseno: lo cercano se parece",
-      "explain": "Cada par es un seno azul y un coseno coral. La base casi no toca la onda rápida de arriba y frena las de abajo. La curva es el parecido de la posición p con las demás; el pico cae en p.",
+      "title": "Lo cercano se parece: el pico cae en p",
+      "explain": "El encoding del Transformer (Vaswani et al., 1706.03762) es seno de pos/10000^(2i/d) y el coseno en la dimensión impar. El parecido es el promedio de cosenos de la diferencia, así que en p vale 1 y a 4 pasos sigue alto con la base 10000. La fila 0 no depende de la base. Bájala de 100 y las filas de abajo se aceleran: el pico se angosta. La base 10000 es la del paper; la curva es ese producto, no una medición.",
       "questions": [
         {
-          "q": "¿Por qué una base más grande hace más lentas las dimensiones altas?",
-          "why": "la base está en el exponente de la frecuencia"
+          "q": "Mueve la posición. ¿El pico de abajo la sigue?",
+          "why": "el parecido vale 1 en p y cae al alejarse"
         },
         {
-          "q": "¿Qué se confunde si todas las ondas van igual de rápido?",
-          "why": "la posición deja de separarse entre dimensiones"
+          "q": "Baja la base a 20. ¿Qué le pasa a las ondas de abajo y al pico?",
+          "why": "se aceleran y el parecido a 4 pasos se desploma"
         },
         {
-          "q": "¿Cómo cabe una frase larga en un seno y un coseno?",
-          "why": "las frecuencias bajas dan vueltas despacio"
+          "q": "¿La fila marcada 0 fija cambia cuando mueves la base?",
+          "why": "no: su frecuencia es 1 para cualquier base"
+        },
+        {
+          "q": "Con la base en 10000, ¿por qué a 4 pasos el parecido sigue en 0.75 si las ondas oscilan?",
+          "why": "el producto depende de la diferencia, no de la posición suelta"
         }
       ],
       "controls": [
@@ -579,12 +598,12 @@ export const ROUND = [
           "id": "pos",
           "label": "posición",
           "min": 0,
-          "max": 64,
+          "max": 60,
           "value": 18,
           "step": 1
         }
       ],
-      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, base = state.base, p = state.pos, d = 64, N = 64;\n  var rows = [0, 4, 10, 16], r, i, q, y0, y, f, rh;\n  function X(q) { return 26 + (q / N) * (w - 36); }\n  function freq(k) { return 1 / Math.pow(base, (2 * k) / d); }\n  function sim(a, b) {\n    var acc = 0, k, fr;\n    for (k = 0; k < d / 2; k++) {\n      fr = freq(k);\n      acc += Math.sin(a * fr) * Math.sin(b * fr) + Math.cos(a * fr) * Math.cos(b * fr);\n    }\n    return acc / (d / 2);\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillText(\"seno\", w - 92, 11);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillText(\"coseno\", w - 54, 11);\n  rh = (h * 0.56) / rows.length;\n  for (r = 0; r < rows.length; r++) {\n    y0 = 8 + r * rh + rh * 0.5;\n    f = freq(rows[r]);\n    ctx.font = \"10px sans-serif\";\n    ctx.fillStyle = \"#8a8175\";\n    ctx.fillText(\"\" + rows[r], 2, y0 + 3);\n    ctx.lineWidth = 1.5;\n    ctx.strokeStyle = \"#1f4b99\";\n    ctx.beginPath();\n    for (i = 0; i <= N; i++) {\n      q = i;\n      y = y0 - Math.sin(q * f) * rh * 0.34;\n      if (i === 0) ctx.moveTo(X(q), y); else ctx.lineTo(X(q), y);\n    }\n    ctx.stroke();\n    ctx.lineWidth = 1;\n    ctx.strokeStyle = \"#c4512c\";\n    ctx.beginPath();\n    for (i = 0; i <= N; i++) {\n      q = i;\n      y = y0 - Math.cos(q * f) * rh * 0.34;\n      if (i === 0) ctx.moveTo(X(q), y); else ctx.lineTo(X(q), y);\n    }\n    ctx.stroke();\n    ctx.fillStyle = \"#1f4b99\";\n    ctx.beginPath();\n    ctx.arc(X(p), y0 - Math.sin(p * f) * rh * 0.34, 2.6, 0, 6.2832);\n    ctx.fill();\n    ctx.fillStyle = \"#c4512c\";\n    ctx.beginPath();\n    ctx.arc(X(p), y0 - Math.cos(p * f) * rh * 0.34, 2.3, 0, 6.2832);\n    ctx.fill();\n  }\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(X(p), 4);\n  ctx.lineTo(X(p), h * 0.58);\n  ctx.stroke();\n  var sy = h * 0.66, sh = h * 0.26;\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"10px sans-serif\";\n  ctx.fillText(\"parecido · el pico es esta p\", 2, sy + 12);\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1.6;\n  ctx.beginPath();\n  for (i = 0; i <= N; i++) {\n    y = sy + sh - ((sim(p, i) + 0.2) / 1.35) * sh;\n    if (i === 0) ctx.moveTo(X(i), y); else ctx.lineTo(X(i), y);\n  }\n  ctx.stroke();\n}"
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, base = state.base, p = state.pos, d = 64, N = 64;\n  var rows = [0, 4, 10, 16], r, i, q, y0, y, f, rh, peak, near;\n  function X(q) { return 36 + (q / N) * (w - 52); }\n  function freq(k) { return 1 / Math.pow(base, (2 * k) / d); }\n  function sim(a, b) {\n    var acc = 0, k, fr;\n    for (k = 0; k < d / 2; k++) {\n      fr = freq(k);\n      acc = acc + Math.sin(a * fr) * Math.sin(b * fr) + Math.cos(a * fr) * Math.cos(b * fr);\n    }\n    return acc / (d / 2);\n  }\n  peak = sim(p, p);\n  near = sim(p, p + 4);\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.font = \"12px sans-serif\";\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillText(\"seno\", w - 110, 14);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillText(\"coseno\", w - 62, 14);\n  rh = (h * 0.52) / rows.length;\n  for (r = 0; r < rows.length; r++) {\n    y0 = 22 + r * rh + rh * 0.55;\n    f = freq(rows[r]);\n    ctx.font = \"11px sans-serif\";\n    ctx.fillStyle = \"#8a8175\";\n    ctx.fillText(rows[r] === 0 ? \"0 fija\" : \"\" + rows[r], 2, y0 + 3);\n    ctx.lineWidth = 1.5;\n    ctx.strokeStyle = \"#1f4b99\";\n    ctx.beginPath();\n    for (i = 0; i <= N; i++) {\n      y = y0 - Math.sin(i * f) * rh * 0.32;\n      if (i === 0) ctx.moveTo(X(i), y); else ctx.lineTo(X(i), y);\n    }\n    ctx.stroke();\n    ctx.lineWidth = 1;\n    ctx.strokeStyle = \"#c4512c\";\n    ctx.beginPath();\n    for (i = 0; i <= N; i++) {\n      y = y0 - Math.cos(i * f) * rh * 0.32;\n      if (i === 0) ctx.moveTo(X(i), y); else ctx.lineTo(X(i), y);\n    }\n    ctx.stroke();\n    ctx.fillStyle = \"#1f4b99\";\n    ctx.beginPath();\n    ctx.arc(X(p), y0 - Math.sin(p * f) * rh * 0.32, 3, 0, 6.2832);\n    ctx.fill();\n  }\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(X(p), 18);\n  ctx.lineTo(X(p), h * 0.56);\n  ctx.stroke();\n  var sy = h * 0.64, sh = h * 0.22;\n  ctx.fillStyle = \"#5c564c\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"parecido \" + Math.round(peak * 100) / 100 + \" en p,  \" + Math.round(near * 100) / 100 + \" a 4 pasos\", 8, sy - 2);\n  ctx.fillStyle = base < 100 ? \"#c4512c\" : \"#5c564c\";\n  ctx.fillText(base < 100 ? \"base chica: el pico se angosta\" : \"base 10000: pico ancho\", w * 0.55, sy - 2);\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1.6;\n  ctx.beginPath();\n  for (i = 0; i <= N; i++) {\n    y = sy + 8 + sh - ((sim(p, i) + 0.15) / 1.3) * sh;\n    if (i === 0) ctx.moveTo(X(i), y); else ctx.lineTo(X(i), y);\n  }\n  ctx.stroke();\n}"
     }
   },
   {
