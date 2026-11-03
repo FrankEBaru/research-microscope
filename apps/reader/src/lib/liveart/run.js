@@ -247,6 +247,10 @@ export function execute(ast, state, t, cap) {
       }
       if (Array.isArray(obj) && prop === "push") return obj.push(...args);
       if (Array.isArray(obj) && prop === "pop") return obj.pop();
+      if (typeof obj === "number" && prop === "toFixed") {
+        const digits = args.length ? Math.max(0, Math.min(6, args[0] | 0)) : 0;
+        return obj.toFixed(digits);
+      }
       throw new Error("call");
     }
     const fn = evalExpr(node.callee, envNow);

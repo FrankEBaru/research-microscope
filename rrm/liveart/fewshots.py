@@ -26,21 +26,47 @@ DRAWS = {
             """\
             function draw(ctx, state, t) {
               var w = state.w, h = state.h, base = state.base, i = state.dim;
-              var freq = 1 / Math.pow(base, (2 * i) / 64);
-              var x, pos, y;
+              var N = 48, p = (t * 8) % N, q, k, u, v, s, x, y, pos;
+              function freq(k) { return 1 / Math.pow(base, (2 * k) / 64); }
+              function pe(q, k) {
+                var f = freq(k);
+                return [Math.sin(q * f), Math.cos(q * f)];
+              }
+              function sim(a, b) {
+                s = 0;
+                for (k = 0; k < 8; k++) { u = pe(a, k); v = pe(b, k); s += u[0] * v[0] + u[1] * v[1]; }
+                return s / 8;
+              }
               ctx.clearRect(0, 0, w, h);
               ctx.fillStyle = "#f6f3ec";
               ctx.fillRect(0, 0, w, h);
-              ctx.beginPath();
-              ctx.lineWidth = 2;
               ctx.strokeStyle = "#1f4b99";
+              ctx.lineWidth = 2;
+              ctx.beginPath();
               for (x = 0; x < w; x++) {
-                pos = (x / (w - 1)) * 64;
-                y = h * 0.55 - Math.sin(pos * freq + t * 0.6) * (h * 0.32);
-                if (x === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
+                pos = (x / (w - 1)) * N;
+                y = h * 0.26 - Math.sin(pos * freq(i) + t * 0.6) * (h * 0.16);
+                if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
               }
               ctx.stroke();
+              ctx.strokeStyle = "#c4512c";
+              ctx.beginPath();
+              for (q = 0; q <= N; q++) {
+                x = (q / N) * (w - 1);
+                y = h * 0.92 - ((sim(p, q) + 1) / 2) * (h * 0.38);
+                if (q === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+              }
+              ctx.stroke();
+              x = (p / N) * (w - 1);
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(x, h * 0.48);
+              ctx.lineTo(x, h - 4);
+              ctx.stroke();
+              ctx.fillStyle = "#5c564c";
+              ctx.font = "12px sans-serif";
+              ctx.fillText("onda", 8, 14);
+              ctx.fillText("parecido", 8, h * 0.46);
             }
             """
         ),

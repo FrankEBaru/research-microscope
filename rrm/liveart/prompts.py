@@ -54,7 +54,7 @@ draw es una función `function draw(ctx, state, t)` y puede declarar funciones a
 state trae w, h y los controles, todos números. t es segundos. Úsalo solo si el fenómeno se mueve solo, como una onda.
 El draw tiene que leer cada control (state.base, state.temp, …). No basta con usar state.w y state.h.
 Un control que no mueve el dibujo, o un dibujo que no va sobre el enunciado, se rechaza.
-Un string solo expone .length. Nada de slice, indexOf u otros métodos. Un fillText que diga verified o from the paper se rechaza.
+Un string solo expone .length. Nada de slice, indexOf u otros métodos. Un número puede usar toFixed con hasta 6 decimales. Un fillText que diga verified o from the paper se rechaza.
 Prohibido: red, fetch, eval, Function, import, document, window, localStorage, postMessage,
 innerHTML, setTimeout, requestAnimationFrame, Math.random, Date, Worker, WebAssembly.
 Nada de http. Determinista: el mismo state y el mismo t dibujan lo mismo.

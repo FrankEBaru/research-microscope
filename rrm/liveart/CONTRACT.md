@@ -33,7 +33,7 @@ Canvas 2d: `clearRect`, `fillRect`, `strokeRect`, `beginPath`, `closePath`, `mov
 
 Math: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `log`, `sqrt`, `abs`, `hypot`, `sign`, `min`, `max`, `pow`, `floor`, `ceil`, `round`, `PI`, `E`.
 
-El lenguaje es un subconjunto: `var` o `const`, `if` / `else`, `for`, `while`, funciones anidadas, arreglos, `===` y `!==`. Un string solo expone `.length` (los arreglos también). Sin flechas, sin `new`, sin `import`, sin acceso `obj["constructor"]`, sin otros métodos de string.
+El lenguaje es un subconjunto: `var` o `const`, `if` / `else`, `for`, `while`, funciones anidadas, arreglos, `===` y `!==`. Un string solo expone `.length` (los arreglos también). Un número puede usar `toFixed` con hasta 6 decimales. Sin flechas, sin `new`, sin `import`, sin acceso `obj["constructor"]`, sin otros métodos de string.
 
 Prohibido en el fuente (la lista viva está en `contract.py`): red, `fetch`, `eval`, `Function`, `import`, `document`, `window`, almacenamiento, `postMessage`, `innerHTML`, `setTimeout`, `requestAnimationFrame`, `Math.random`, `Date`, `Worker`, `WebAssembly`, `http://` y `https://`.
 

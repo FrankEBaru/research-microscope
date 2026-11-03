@@ -148,6 +148,16 @@ test("a string length can size a token, and other string methods cannot", () => 
   assert.equal(sliced.accept, false);
 });
 
+test("a number may use toFixed, and only up to six digits", () => {
+  const draw = `function draw(ctx, state, t) {
+    var label = (state.a * 10).toFixed(2);
+    ctx.fillStyle = "#0b6782";
+    ctx.fillRect(12, 12, label.length * (8 + state.a * 20), 28);
+  }`;
+  const report = verifyWidget(widget(draw));
+  assert.equal(report.accept, true, report.reasons.join(","));
+});
+
 test("a verified seal painted on the canvas is slop", () => {
   const draw = `function draw(ctx, state, t) {
     ctx.fillStyle = "#0b6782";
