@@ -45,7 +45,10 @@ export const TOPICS = {
   spec_cost: { controls: ["cost"], mark: "costo" },
   gqa: { controls: ["kv"], mark: "grupo" },
   moe: { controls: ["k"], mark: "expertos" },
-  // No 0.2 id yet. The selector should stay static until one exists.
+  ssm_delta: { controls: ["delta"], mark: "selectivo" },
+  smoothquant: { controls: ["alpha"], mark: "activa" },
+  yarn_parts: { controls: ["scale"], mark: "parte" },
+  // No published id yet. Proposed to RRM-79; the selector should stay static until then.
   quant: { controls: ["mag"], mark: "error" },
 };
 

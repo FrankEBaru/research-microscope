@@ -16,6 +16,13 @@ Rama: `cursor/rrm-80-mockups-2121`. Contrato: `rrm-widget/0.3` (RRM-79, PR #59).
 - Galería en `apps/reader/src/app/live/`, bandera `NEXT_PUBLIC_RRM_LIVE_ARTIFACTS` en `1` / `true` / `yes` / `on`. Apagada, el lector no cambia.
 - Notas de coordinación: `compass_updates/RRM-80.md` y `compass_updates/equipo-artefactos/`.
 
+## Pase del 3 nov ~2:10
+
+- Catálogo 120. JSON regenerado, `rrm-widget/0.3`. `verifyWidget`: 120/120. Prueba local 4/4.
+- `denoise-strip` sigue la forma cerrada de Ho (2006.11239): T=1000, β lineal de 0.0001 a 0.02, √ᾱ x0 + √(1−ᾱ) ε. El ε es un seno fijo y el lienzo lo dice. El frame de demo es t=200.
+- Tres draws en `apps/reader/src/live/more.js`: `mamba-delta`, `smooth-seesaw`, `yarn-parts`. Temas `ssm_delta`, `smoothquant`, `yarn_parts`.
+- `quant` sigue siendo propuesta. El texto para RRM-79 está en compass, `equipo-artefactos/PROPUESTA-QUANT-RRM-79.md`.
+
 ## Pase del 3 nov ~1:45 (contrato 0.3)
 
 Franklin: no integrar al lector. El host es la galería estática, ahora a 640×360.

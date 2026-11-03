@@ -58,9 +58,9 @@ function draw(ctx, state, t) {
     var top = h * 0.46, bot = h * 0.84, lift = h * 0.28;
     ctx.font = "13px sans-serif";
     ctx.fillStyle = "#c4512c";
-    ctx.fillText("sin raíz", 16, h * 0.14);
+    ctx.fillText("sin raíz: se queda con una", 16, h * 0.14);
     ctx.fillStyle = "#1f4b99";
-    ctx.fillText("con raíz", 16, h * 0.54);
+    ctx.fillText("con raíz: se reparte", 16, h * 0.54);
     for (i = 0; i < 4; i++) {
       ctx.fillStyle = i === 2 ? "#c4512c" : "#e7a090";
       ctx.fillRect(colx(i), top - pr[i] * lift, bw, pr[i] * lift);
@@ -102,16 +102,24 @@ function draw(ctx, state, t) {
 
 const DENOISE = `
 function draw(ctx, state, t) {
-  var w = state.w, h = state.h, step = Math.round(state.step), beta = state.beta;
-  var T = 16;
-  function signal(remain) { return Math.exp(-beta * remain / 2); }
-  function grid(x, y, cellpx, remain, hot) {
-    var i, j, v, bit, sig = signal(remain), noi = Math.sqrt(Math.max(0, 1 - sig * sig)), noise;
+  var w = state.w, h = state.h, step = Math.round(state.step), bT = state.beta;
+  var T = 1000, b1 = 0.0001, s, acc = 1, bs, ab = [];
+  ab[0] = 1;
+  for (s = 1; s <= T; s++) {
+    bs = b1 + (bT - b1) * (s - 1) / (T - 1);
+    acc = acc * (1 - bs);
+    ab[s] = acc;
+  }
+  function grid(x, y, cellpx, tt, hot) {
+    var i, j, bit, eps, sig, noi, v, n;
+    sig = Math.sqrt(ab[tt]);
+    noi = Math.sqrt(Math.max(0, 1 - ab[tt]));
     for (i = 0; i < 8; i++) for (j = 0; j < 8; j++) {
       bit = (i === 3 || i === 4 || j === 3 || j === 4) ? 1 : 0;
-      noise = Math.sin(i * 12.9898 + j * 78.233 + 2.4);
-      v = sig * (bit ? 1 : -0.65) + noi * noise;
-      ctx.fillStyle = bit && v > 0 ? "#1f4b99" : (v > 0.45 ? "#e7a090" : "#efe6d8");
+      n = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453;
+      eps = (n - Math.floor(n)) * 2 - 1;
+      v = sig * bit + noi * eps;
+      ctx.fillStyle = v > 0.45 ? "#1f4b99" : (v > 0.12 ? "#e7a090" : "#efe6d8");
       ctx.fillRect(x + j * cellpx, y + i * cellpx, cellpx - 1, cellpx - 1);
     }
     if (hot) {
@@ -123,36 +131,38 @@ function draw(ctx, state, t) {
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#f6f3ec";
   ctx.fillRect(0, 0, w, h);
-  var remain = T - step;
-  var sig = signal(remain);
+  if (step < 0) step = 0;
+  if (step > T) step = T;
+  var sig = Math.sqrt(ab[step]);
   var cell = Math.floor(Math.min((h - 48) / 8, (w * 0.46) / 8));
   if (cell < 8) cell = 8;
-  grid(16, 24, cell, remain, 0);
+  grid(16, 24, cell, step, 0);
   var rx = 32 + cell * 8;
-  var marks = [16, 12, 8, 4, 0], f, fr, near = 0, dist = 99;
+  var marks = [0, 200, 400, 700, 1000], f, fr, near = 0, dist = 9999;
   var pitch = (w - rx - 16) / 5;
   var scell = Math.floor(Math.min(pitch / 8, 14));
   if (scell < 3) scell = 3;
-  for (f = 0; f < 5; f++) if (Math.abs(marks[f] - remain) < dist) { dist = Math.abs(marks[f] - remain); near = f; }
+  for (f = 0; f < 5; f++) if (Math.abs(marks[f] - step) < dist) { dist = Math.abs(marks[f] - step); near = f; }
   for (f = 0; f < 5; f++) {
     fr = marks[f];
     grid(rx + f * pitch, 28, scell, fr, f === near);
     ctx.fillStyle = "#5c564c";
     ctx.font = "11px sans-serif";
-    ctx.fillText("" + (T - fr), rx + f * pitch, 36 + scell * 8);
+    ctx.fillText("" + fr, rx + f * pitch, 36 + scell * 8);
   }
   ctx.fillStyle = "#1d1a16";
   ctx.font = "15px sans-serif";
-  ctx.fillText("limpieza " + step + " / 16", rx, h * 0.48);
-  ctx.fillText("señal " + Math.round(sig * 100) + "%", rx, h * 0.56);
+  ctx.fillText("t " + step + " / 1000", rx, h * 0.46);
+  ctx.fillText("señal " + Math.round(sig * 100) + "%", rx, h * 0.54);
   ctx.fillStyle = "#5c564c";
   ctx.font = "13px sans-serif";
-  ctx.fillText("azul: el dibujo", rx, h * 0.66);
-  ctx.fillText("coral: ruido", rx, h * 0.74);
+  ctx.fillText("Ho: señal x + ruido e", rx, h * 0.64);
+  ctx.fillText("e fijo, no es gaussiana", rx, h * 0.72);
+  ctx.fillText("beta de 0.0001 a " + Math.round(bT * 1000) / 1000, rx, h * 0.8);
   ctx.fillStyle = "#e4d6c4";
-  ctx.fillRect(rx, h * 0.8, w - rx - 20, 10);
+  ctx.fillRect(rx, h * 0.86, w - rx - 20, 10);
   ctx.fillStyle = "#1f4b99";
-  ctx.fillRect(rx, h * 0.8, Math.max(2, (w - rx - 20) * sig), 10);
+  ctx.fillRect(rx, h * 0.86, Math.max(2, (w - rx - 20) * sig), 10);
 }
 `;
 
@@ -206,7 +216,7 @@ function draw(ctx, state, t) {
   ctx.fillText("queda " + left + "% del token", tx, h * 0.22);
   ctx.fillStyle = "#5c564c";
   ctx.font = "13px sans-serif";
-  ctx.fillText("coral: el token", tx, h * 0.32);
+  ctx.fillText(skip > 0.85 ? "el atajo lo conserva" : "sin atajo se apaga", tx, h * 0.32);
   ctx.fillText("de la entrada", tx, h * 0.38);
   ctx.fillStyle = "#e4d6c4";
   ctx.fillRect(tx, h * 0.46, w - tx - 20, 14);
@@ -309,7 +319,7 @@ function draw(ctx, state, t) {
   }
   ctx.fillStyle = "#1d1a16";
   ctx.font = "15px sans-serif";
-  ctx.fillText(cells + " celdas de cache", 28, h * 0.78);
+  ctx.fillText(cells + (cells > budget ? " celdas · pasa el cupo" : " celdas · cabe"), 28, h * 0.78);
   ctx.fillStyle = "#e4d6c4";
   ctx.fillRect(28, h * 0.82, w - 48, 12);
   var mw = (w - 48) * cells / cap;
@@ -325,6 +335,8 @@ function draw(ctx, state, t) {
   ctx.fillStyle = "#5c564c";
   ctx.font = "13px sans-serif";
   ctx.fillText("K azul   V coral   la raya es el cupo", 28, h * 0.96);
+  ctx.fillStyle = "#1d1a16";
+  ctx.fillText("cupo", bx - 6, h * 0.9);
 }
 `;
 
@@ -392,8 +404,10 @@ function draw(ctx, state, t) {
     }
   }
   ctx.fillStyle = "#1d1a16";
-  ctx.font = "13px sans-serif";
-  ctx.fillText("paso " + Math.round(step * 1000) / 1000 + "    error " + Math.round(err * 100) / 100, 12, 16);
+  ctx.font = "15px sans-serif";
+  ctx.fillText("paso = máx/127 = " + Math.round(step * 1000) / 1000, 12, 22);
+  ctx.fillStyle = err > 0.05 ? "#c4512c" : "#2e7d32";
+  ctx.fillText(err > 0.05 ? "un valor se come el paso" : "el paso cabe en los chicos", w * 0.42, 22);
   ctx.fillStyle = "#5c564c";
   ctx.font = "11px sans-serif";
   ctx.fillText(keep === 1 ? "gris: valor   azul: cuantizado   verde: se quedó afuera" : "gris: valor   azul: cuantizado   coral: se movió", 12, h - 8);
@@ -410,11 +424,11 @@ const ATTN_COPY = {
 };
 
 const DENOISE_COPY = {
-  explain: "Cada paso del proceso directo mete ruido y la señal baja. La tira va de puro ruido a dibujo limpio; beta decide qué tan pronto se pierde. El cuadro grande es el paso de limpieza que eliges.",
+  explain: "Ho mezcla el dibujo con ruido: x_t = √ᾱ x0 + √(1−ᾱ) ε. ᾱ es el producto de (1−β), y β va en línea de 0.0001 al beta final, en 1000 pasos. El ε de cada celda es fijo y sale de un seno, no de la gaussiana del paper. El cuadro grande es el t que eliges.",
   questions: [
-    { q: "¿Por qué el dibujo vuelve si bajo hacia la limpieza?", why: "ese lado del horario todavía guarda señal" },
-    { q: "¿Qué cambia beta si el paso se queda quieto?", why: "un beta grande mete ruido más pronto" },
-    { q: "¿Qué marca la barra junto al texto?", why: "la fracción de señal que aún no es ruido" },
+    { q: "¿Por qué al llegar a t = 1000 el dibujo desaparece?", why: "ᾱ se va a cero y solo queda el ruido" },
+    { q: "¿Qué es el beta final de este horario?", why: "el ruido del último paso; el primero se queda en 0.0001" },
+    { q: "¿El seno de cada celda es el ε del paper?", why: "no: la mezcla sí es la de Ho, el ε es un sustituto fijo" },
   ],
 };
 
@@ -432,9 +446,9 @@ export const RICH = [
     knob("stage", "paso", 0, 3, 2, 1),
     knob("d", "d_k", 4, 128, 64, 4),
   ], ATTN, ATTN_COPY),
-  widget("noise_schedule", "denoise-strip", "El dibujo sale del ruido paso a paso", [
-    knob("step", "limpieza", 0, 16, 12, 1),
-    knob("beta", "beta", 0.08, 0.7, 0.32, 0.01),
+  widget("noise_schedule", "denoise-strip", "Ho disuelve el dibujo en mil pasos", [
+    knob("step", "paso t", 0, 1000, 200, 20),
+    knob("beta", "beta final", 0.005, 0.05, 0.02, 0.001),
   ], DENOISE, DENOISE_COPY),
   widget("residual", "resid-stream", "El atajo se lleva el token de capa en capa", [
     knob("depth", "capa", 0, 4, 4, 1),

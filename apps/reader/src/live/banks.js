@@ -213,6 +213,30 @@ export const BANKS = {
       ["¿El resultado por bloques es aproximado o exacto?", "al ver todos los bloques coincide con el softmax completo"],
     ]),
   },
+  ssm_delta: {
+    explain: "En un modelo selectivo, delta decide si el estado se queda o se reinicia. Delta grande en un pico lo graba. Delta chico en el resto no lo borra. Si el resto también tiene delta grande, el estado olvida el pico.",
+    questions: qs([
+      ["¿Por qué un delta grande en el pico deja una meseta?", "ese paso reemplaza el estado con el pico"],
+      ["¿Qué pasa si el delta del resto también sube?", "los ceros de en medio borran lo grabado"],
+      ["¿En qué se distingue esto de acordarse de todo?", "solo se queda lo que el delta elige"],
+    ]),
+  },
+  smoothquant: {
+    explain: "SmoothQuant pasa el outlier de las activaciones a los pesos. El canal se divide por s y la fila de pesos se multiplica por s, así que el producto no cambia. En alfa 0.5 las dos filas se encuentran.",
+    questions: qs([
+      ["¿Por qué el producto del canal no cambia?", "lo que se le quita a la activación se le pone al peso"],
+      ["¿Qué se pone difícil si alfa llega a 1?", "el outlier se fue entero a los pesos"],
+      ["¿Por qué 0.5 es el punto de la figura?", "ahí las dos filas quedan parejas"],
+    ]),
+  },
+  yarn_parts: {
+    explain: "YaRN por partes no estira todas las frecuencias. Si la longitud de onda ya cabe muchas veces en el contexto, esa parte se queda. Si es más larga que el contexto, se divide entre la escala. En medio, se mezcla. Alfa 1 y beta 32 son los de Llama.",
+    questions: qs([
+      ["¿Por qué no se estiran las frecuencias rápidas?", "ya dieron varias vueltas dentro del contexto"],
+      ["¿Qué parte sí se divide entre la escala?", "la cuya onda es más larga que el contexto"],
+      ["¿Qué marcan alfa 1 y beta 32?", "dónde empieza y dónde termina la mezcla"],
+    ]),
+  },
 };
 
 export function knob(id, label, min, max, value, step) {

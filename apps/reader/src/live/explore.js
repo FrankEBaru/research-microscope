@@ -69,7 +69,7 @@ function draw(ctx, state, t) {
   var sy = h * 0.66, sh = h * 0.26;
   ctx.fillStyle = "#5c564c";
   ctx.font = "10px sans-serif";
-  ctx.fillText("parecido", 2, sy + 4);
+  ctx.fillText("parecido · el pico es esta p", 2, sy + 12);
   ctx.strokeStyle = "#1d1a16";
   ctx.lineWidth = 1.6;
   ctx.beginPath();
@@ -102,7 +102,7 @@ function draw(ctx, state, t) {
   ctx.fillStyle = "#f6f3ec";
   ctx.fillRect(0, 0, w, h);
   for (i = 0; i < 3; i++) {
-    var cx = w * (0.16 + 0.26 * i), cy = h * 0.3;
+    var cx = w * (0.12 + 0.2 * i), cy = h * 0.32;
     var aq = qa[i] + m * th[i], ak = ka[i] + n * th[i];
     ctx.strokeStyle = "#e0d5c6";
     ctx.lineWidth = 1;
@@ -112,13 +112,17 @@ function draw(ctx, state, t) {
     arrow(cx, cy, aq, "#c4512c");
     arrow(cx, cy, ak, "#1f4b99");
     s += Math.cos(aq - ak);
+    ctx.fillStyle = "#8a8175";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(i === 0 ? "rápida" : (i === 1 ? "media" : "lenta"), cx - 18, cy + r + 18);
   }
   ctx.fillStyle = "#1d1a16";
+  ctx.font = "16px sans-serif";
+  ctx.fillText("q·k " + Math.round(s * 100) / 100, w * 0.74, h * 0.14);
   ctx.font = "13px sans-serif";
-  ctx.fillText("q·k " + Math.round(s * 100) / 100, w * 0.78, h * 0.16);
-  ctx.font = "11px sans-serif";
   ctx.fillStyle = "#5c564c";
-  ctx.fillText("m-n " + (state.m - state.n), w * 0.78, h * 0.16 + 16);
+  ctx.fillText("no cambia al desplazar", w * 0.74, h * 0.14 + 20);
+  ctx.fillText("q coral · k azul", w * 0.74, h * 0.14 + 38);
   var gx = 28, gy = h * 0.64, gw = w - 48, gh = h * 0.26, k, v;
   ctx.fillStyle = "#5c564c";
   ctx.font = "10px sans-serif";
@@ -198,11 +202,11 @@ function draw(ctx, state, t) {
   ctx.fillRect(x0 + pw + 8, 48, 10, 10);
   ctx.font = "11px sans-serif";
   ctx.fillStyle = "#1d1a16";
-  ctx.fillText("SGD", x0 + pw + 22, 37);
-  ctx.fillText("Adam", x0 + pw + 22, 57);
+  ctx.fillText("SGD rebota", x0 + pw + 22, 37);
+  ctx.fillText("Adam baja", x0 + pw + 22, 57);
   ctx.fillStyle = "#8a8175";
-  ctx.font = "10px sans-serif";
-  ctx.fillText("y empinado", x0, 12);
+  ctx.font = "12px sans-serif";
+  ctx.fillText("valle angosto en y", x0, 16);
   if (sgdOut) {
     ctx.fillStyle = "#c4512c";
     ctx.fillText("SGD se sale", x0 + pw + 8, 80);
@@ -241,14 +245,18 @@ function draw(ctx, state, t) {
   ctx.fillText("rango " + r, right, 22);
   paint(16, 3);
   paint(right, r);
-  var gy = 40 + n * cw;
-  ctx.fillStyle = "#c4512c";
-  ctx.fillRect(right, gy, 12 + r * cw * 0.7, 8);
   var d = 4096, lo = 2 * d * r, hi = d * d, times = Math.round(hi / lo);
+  var gy = 40 + n * cw;
+  ctx.fillStyle = "#e4d6c4";
+  ctx.fillRect(right, gy, w - right - 16, 12);
+  ctx.fillStyle = "#c4512c";
+  ctx.fillRect(right, gy, Math.max(8, (w - right - 16) * lo / hi), 12);
+  ctx.font = "22px sans-serif";
+  ctx.fillStyle = r === 3 ? "#2e7d32" : "#c4512c";
+  ctx.fillText(r === 3 ? "calza" : "1/" + times, 16, gy + 28);
   ctx.fillStyle = "#1d1a16";
   ctx.font = "14px sans-serif";
-  ctx.fillText(lo + " números, frente a " + hi, 16, gy + 28);
-  ctx.fillText(r === 3 ? "igual: ya está el patrón" : "este rango es 1/" + times + " de la capa", 16, gy + 48);
+  ctx.fillText(lo + " números, la capa tiene " + hi, 16, gy + 50);
 }
 `;
 
@@ -268,7 +276,7 @@ function draw(ctx, state, t) {
   ctx.font = "11px sans-serif";
   ctx.fillStyle = "#5c564c";
   ctx.fillText("referencia", 8, 16);
-  ctx.fillText("politica", 8, h * 0.48);
+  ctx.fillText("política", 8, h * 0.48);
   for (i = 0; i < 5; i++) {
     var x = 16 + i * bw;
     ctx.fillStyle = "#e4d6c4";
@@ -284,6 +292,9 @@ function draw(ctx, state, t) {
   }
   ctx.fillStyle = "#1d1a16";
   ctx.fillText("KL " + Math.round(kl * 100) / 100, w - 78, 16);
+  ctx.font = "13px sans-serif";
+  ctx.fillStyle = kl > 1.5 ? "#c4512c" : "#2e7d32";
+  ctx.fillText(kl > 1.5 ? "el premio se lo lleva" : "el KL todavía reparte", w * 0.42, h * 0.48);
 }
 `;
 
@@ -332,9 +343,9 @@ function draw(ctx, state, t) {
   ctx.strokeStyle = "#1d1a16";
   ctx.lineWidth = 1.5;
   ctx.strokeRect(10, h * 0.1, w * 0.42, width * h * 0.22 - 4);
-  ctx.font = "13px sans-serif";
+  ctx.font = "20px sans-serif";
   ctx.fillStyle = "#1d1a16";
-  ctx.fillText("devuelve: " + phrase, 16, h - 10);
+  ctx.fillText((width === 1 ? "codicioso: " : "el haz rescata: ") + phrase, 16, h - 16);
 }
 `;
 
@@ -418,7 +429,7 @@ function draw(ctx, state, t) {
   for (k = 7; k <= 12; k++) ctx.fillText("1e" + k, X(k) - 8, y0 + 12);
   ctx.fillStyle = "#1d1a16";
   ctx.font = "12px sans-serif";
-  ctx.fillText("N " + sci(N) + "   datos " + sci(D) + "   perdida " + Math.round(bl * 1000) / 1000, x0, 16);
+  ctx.fillText("reparto   N " + sci(N) + "   datos " + sci(D) + "   pérdida " + Math.round(bl * 1000) / 1000, x0, 16);
 }
 `;
 
@@ -448,7 +459,7 @@ function draw(ctx, state, t) {
   ctx.stroke();
   ctx.fillStyle = "#c4512c";
   ctx.font = "10px sans-serif";
-  ctx.fillText("1x", x0 + gw - 16, Y(1) - 4);
+  ctx.fillText("1× sin ahorro", x0 + gw - 78, Y(1) - 4);
   ctx.strokeStyle = "#1f4b99";
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -465,7 +476,7 @@ function draw(ctx, state, t) {
   for (g = 1; g <= 12; g += 1) if (g % 2 === 1) ctx.fillText("" + g, X(g) - 3, y0 + 12);
   ctx.fillStyle = "#1d1a16";
   ctx.font = "12px sans-serif";
-  ctx.fillText("mejor largo " + best + "   " + Math.round(f[best] * 10) / 10 + "x", x0, 16);
+  ctx.fillText("mejor " + best + "   " + Math.round(f[best] * 10) / 10 + "× más rápido", x0, 16);
 }
 `;
 
@@ -503,11 +514,10 @@ function draw(ctx, state, t) {
   }
   ctx.fillStyle = "#5c564c";
   ctx.font = "11px sans-serif";
-  ctx.fillText("verde: bloques vistos   contorno: lista completa", 12, 14);
-  if (B === 4) {
-    ctx.fillStyle = "#2e7d32";
-    ctx.fillText("diferencia " + Math.round(dmax * 10000) / 10000, 12, h - 4);
-  }
+  ctx.fillText(B === 4 ? "verde = contorno: es el mismo softmax" : "verde: lo visto   contorno: la lista completa", 12, 14);
+  ctx.fillStyle = B === 4 ? "#2e7d32" : "#c4512c";
+  ctx.font = "14px sans-serif";
+  ctx.fillText(B === 4 ? "diferencia " + Math.round(dmax * 10000) / 10000 : "todavía no es la lista", 12, h - 8);
 }
 `;
 

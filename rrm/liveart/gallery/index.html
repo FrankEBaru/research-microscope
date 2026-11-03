@@ -77,6 +77,7 @@ function group(title, ids) {
 }
 
 group("Para ver", HIGHLIGHTS);
+group("De Claude", ["mamba-delta", "smooth-seesaw", "yarn-parts"]);
 group("Los 14 de oro", WIDGETS.filter((item) => item.id === item.topic || [
   "positional-encoding", "softmax-temperature", "attention-scale", "stddev", "rope",
   "dpo-beta", "yarn-scale", "speculative", "noise-schedule", "guidance", "detr-match",
@@ -170,7 +171,7 @@ if (params.get("sheet") === "1") {
     ["int8-outlier", { keep: 1 }, "el outlier entra al paso → se queda afuera"],
     ["rope-shift", { shift: 32 }, "desplaza 0 → 32"],
     ["beam-trap", { width: 2 }, "ancho 1 → 2"],
-    ["denoise-strip", { step: 0 }, "limpieza 12 → 0"],
+    ["denoise-strip", { step: 0 }, "t 200 → 0, el dibujo todavía está"],
     ["kl-policy", { beta: 0.18 }, "beta 0.7 → 0.18"],
     ["moe-drop", { k: 2 }, "k 1 → 2"],
     ["online-softmax", { blocks: 4 }, "bloques 2 → 4"],
