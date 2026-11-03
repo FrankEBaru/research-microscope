@@ -29,7 +29,7 @@ function plainSent(nodes, xref) {
     else if (x.t === "ref") parts.push(refPlain(x, xref, parts.join("")));
     else if (x.v && x.t !== "cite" && x.t !== "note" && !Array.isArray(x.c)) parts.push(String(x.v));
   });
-  return parts.join("").replace(/\s+/g, " ").trim();
+  return parts.join("").replace(/~/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function clip(text) {
