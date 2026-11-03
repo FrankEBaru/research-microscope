@@ -40,6 +40,10 @@ def _tree(tmp_path):
         "id": 7, "status": "done", "pages": [0, 1], "crops": [{"page": 0, "file": "p0.png"}],
     }), encoding="utf-8")
     (root / "files" / "7" / "p0.png").write_bytes(b"png-bytes")
+    # The gate is on by default. This fixture paper is CC BY so /file and /crops stay as before.
+    (root / "licenses.json").write_text(json.dumps({
+        "0000.00007": {"license": "http://creativecommons.org/licenses/by/4.0/", "version": "v1", "corpusid": 7},
+    }), encoding="utf-8")
     return root
 
 

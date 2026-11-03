@@ -28,6 +28,7 @@ from rrm.features import core_mode, features_mode
 from rrm.panorama import docs_for, parse_request, run as run_panorama
 from rrm.search.qcache import CACHE_DIR, apply_status_cache, load_entry, save_entry, status_map
 from rrm.reader.files import resolve_figure, resolve_source_pdf
+from rrm.reader.rights import gate_ask, gate_file, gate_paper_response, gate_status_row, load_map, map_path
 
 import rrm.reader.fetch as _fetch
 from rrm.reader.fetch import ARXIV, arxiv_index_at, arxiv_pdf, arxiv_slot_start, reader_identity
@@ -996,7 +997,7 @@ def api():
         denied = gate(request, True)
         if denied:
             return denied
-        return _retry_os(read_paper, id, cites=bool(cites))
+        return gate_paper_response(_retry_os(read_paper, id, cites=bool(cites)), load_map(map_path()))
 
     @web.get("/warm")
     def route_warm(request: Request):
@@ -1011,9 +1012,16 @@ def api():
         if denied:
             return denied
         try:
-            return read_status(ids, question=q)
+            body = read_status(ids, question=q)
         except Exception:
             return {"papers": []}
+        rows = body.get("papers") if isinstance(body, dict) else None
+        if not isinstance(rows, list):
+            return body
+        m = load_map(map_path())
+        body = dict(body)
+        body["papers"] = [gate_status_row(row, m) if isinstance(row, dict) else row for row in rows]
+        return body
 
     @web.post("/ask")
     async def route_ask(request: Request):
@@ -1047,7 +1055,7 @@ def api():
             return JSONResponse(payload, status_code=code)
         if prep is not None:
             payload["phrase_prep"] = prep
-        return payload
+        return gate_ask(payload, load_map(map_path()))
 
     @web.post("/notes")
     async def route_notes(request: Request):
@@ -1120,6 +1128,8 @@ def api():
         denied = gate(request, True)
         if denied:
             return denied
+        if gate_file(id, load_map(map_path())):
+            return {"crops": []}
         return read_crops(id, pages)
 
     @web.get("/file")
@@ -1127,6 +1137,8 @@ def api():
         denied = gate(request, True)
         if denied:
             return denied
+        if gate_file(id, load_map(map_path())):
+            return Response(status_code=404)
         path = resolve_figure(PAPERS, id, name)
         if path is None and str(id).isdigit():
             try:
