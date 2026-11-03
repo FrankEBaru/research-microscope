@@ -17,6 +17,7 @@ import "@/styles/lectura.css";
 
 // Pop de oración con la maqueta «ejemplo simulado… no está conectado». Apagado en core; NEXT_PUBLIC_RRM_SENTENCE_MOCK=1 lo vuelve a mostrar.
 const SENTENCE_MOCK = process.env.NEXT_PUBLIC_RRM_SENTENCE_MOCK === "1";
+const FIG_PASSAGES = process.env.NEXT_PUBLIC_RRM_FIG_PASSAGES !== "0";
 import ReadMinimap from "./ReadMinimap";
 import { createTracker } from "@/lib/companion.js";
 import { analyze } from "@/lib/tablechart.js";
@@ -25,6 +26,8 @@ import { Ctx, plainOf } from "./paper/inline";
 import { GapView, ShapePill, artsAt, notesAt, repeatsBlock } from "./paper/GapNotes";
 import Popover, { PopState } from "./paper/Popover";
 import { Table } from "./paper/TableFig";
+import { Cited } from "./paper/Cited";
+import { citingIndex } from "@/lib/figrefs.js";
 import { CropStrip, FigImg, ZoneFig } from "./paper/Figures";
 import Margin, { MarginNote } from "./paper/Margin";
 import Rights from "./paper/Rights";
@@ -101,7 +104,7 @@ function One({ x, ctx, prev = "" }: { x: Inline; ctx: Ctx; prev?: string }) {
         text = text.replace(/^\S+\s+/, "");
       }
       const href = x.target ? `#blk-${x.target}` : `#${label}`;
-      return <a href={href} className="xref" data-xref={label}>{text}</a>;
+      return <a href={href} className="xref" data-xref={label} {...(x.target ? { "data-target": x.target } : {})}>{text}</a>;
     }
     default: return null;
   }
@@ -313,7 +316,12 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       }
       walk(b.inlines);
     }
-    return { syms, refIndex, byId, secOf, nums, notes, noteBase, toc, figN, tabN, xref, target, byLabel, figs };
+    const tag = (rows: { block: string; sent: number; text: string }[]) => rows.map((r) => ({ ...r, section: secOf[r.block] || "" }));
+    const passages: Record<string, { top: { block: string; sent: number; text: string; section: string }[]; rest: { block: string; sent: number; text: string; section: string }[] }> = {};
+    for (const [id, pack] of Object.entries(citingIndex(paper.blocks, xref))) {
+      passages[id] = { top: tag(pack.top), rest: tag(pack.rest) };
+    }
+    return { syms, refIndex, byId, secOf, nums, notes, noteBase, toc, figN, tabN, xref, target, byLabel, figs, passages };
   }, [paper, att]);
 
   const onOver = (e: React.MouseEvent | React.FocusEvent) => {
@@ -384,7 +392,14 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     }
     if (!core && sym && att) { const s = att.symbols.find((y: any) => y.id === sym.dataset.sym); if (s) goTo(s.def.anchor.blockId); return; }
     const xr = t.closest("[data-xref]") as HTMLElement | null;
-    if (xr) { e.preventDefault(); const el = document.getElementById(model.target[xr.dataset.xref!] || xr.dataset.xref!); el?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    if (xr) {
+      e.preventDefault();
+      const tid = xr.dataset.target || "";
+      const byTarget = tid ? (document.getElementById(`blk-${tid}`) || document.querySelector(`[data-tab="${CSS.escape(tid)}"]`)) : null;
+      const el = byTarget || document.getElementById(model.target[xr.dataset.xref!] || xr.dataset.xref!);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     const cite = t.closest("[data-pop]") as HTMLElement | null;
     if (core && cite?.dataset.pop?.startsWith("c|")) {
       setPop({ key: cite.dataset.pop, rect: cite.getBoundingClientRect() });
@@ -426,6 +441,28 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
   };
+  const pendingJump = useRef<{ block: string; sent: number } | null>(null);
+  const flashSent = (block: string, sent: number) => {
+    const el = document.getElementById("blk-" + block);
+    if (!el) return false;
+    el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+    const sentEl = el.querySelectorAll<HTMLElement>(".sent")[sent];
+    if (sentEl) {
+      sentEl.classList.remove("flash"); void sentEl.offsetWidth; sentEl.classList.add("flash");
+      sentEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else el.scrollIntoView({ behavior: "smooth", block: "center" });
+    return true;
+  };
+  const jumpPassage = (row: { block: string; sent: number }) => {
+    if (flashSent(row.block, row.sent)) return;
+    if (core && !reading && paper.full) { pendingJump.current = row; setReading(true); }
+  };
+  useEffect(() => {
+    const row = pendingJump.current;
+    if (!reading || !row) return;
+    pendingJump.current = null;
+    if (!flashSent(row.block, row.sent)) requestAnimationFrame(() => flashSent(row.block, row.sent));
+  }, [reading]);
   useEffect(() => { if (focus) setTimeout(() => goTo(focus), 250); }, [focus, paper.arxivId]);
   const blockCount = (paper.blocks || []).length;
   useEffect(() => {
@@ -644,10 +681,14 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             {imgs.length > 0 && <div className="fig-imgs">{imgs.map((src: string, i: number) => { const zs = i === 0 && b.label ? (content.zones?.figures || []).find((f: any) => f.paper === paper.arxivId && f.fig === b.label)?.zones : null;
               return zs ? <ZoneFig key={`${i}-${src}`} paper={paper} name={src} alt={plainOf(b.caption)} zones={zs} onGo={goTo} /> : <FigImg key={`${i}-${src}`} paper={paper} name={src} alt={plainOf(b.caption)} eager={i === 0} />; })}</div>}
             <figcaption><b>Figure {model.figN[b.id]}.</b> <Inlines inls={b.caption} ctx={ctx} /> <Prov kind="paper" text="original figure" /></figcaption>
+            {core && FIG_PASSAGES && model.passages[b.id] && <Cited rows={model.passages[b.id].top} rest={model.passages[b.id].rest} onJump={jumpPassage} />}
           </figure>
         );
       } else if (b.kind === "table") {
-        el = <Boundary name="table"><Table b={b} ctx={ctx} n={model.tabN[b.id]} predict={showInstrument} still={reading} /></Boundary>;
+        const cited = core && FIG_PASSAGES && model.passages[b.id]
+          ? <Cited rows={model.passages[b.id].top} rest={model.passages[b.id].rest} onJump={jumpPassage} />
+          : null;
+        el = <Boundary name="table"><Table b={b} ctx={ctx} n={model.tabN[b.id]} predict={showInstrument} still={reading} cited={cited} /></Boundary>;
       }
       const gaps = gapPieces(b);
       const symbolHere = !wide && pin && pinAt?.block === b.id;
