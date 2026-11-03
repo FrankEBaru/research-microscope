@@ -91,6 +91,31 @@ async function assertNotes(page, width) {
   if (!wantMargin && info.inline < info.markers) throw new Error(`${width}: las notas no están en línea (${info.inline}/${info.markers}, margen ${info.margin})`);
 }
 
+async function openPopoverQuote(page) {
+  const selectors = [
+    ".folio .abstract [data-pop^='m|']",
+    ".table-fig [data-pop^='t|']",
+    ".folio [data-pop^='m|']",
+  ];
+  await page.evaluate(() => {
+    const el = document.activeElement;
+    if (el && el !== document.body && el !== document.documentElement && typeof el.blur === "function") el.blur();
+  });
+  for (const sel of selectors) {
+    const el = page.locator(sel).first();
+    if (!(await el.count())) continue;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await el.evaluate((node) => node.scrollIntoView({ block: "center", inline: "nearest" }));
+      await el.hover({ timeout: 4000 }).catch(() => {});
+      await el.dispatchEvent("mouseover");
+      const quote = page.locator(".popover .pop-quote").first();
+      const ok = await quote.waitFor({ state: "visible", timeout: 2500 }).then(() => true).catch(() => false);
+      if (ok) return true;
+    }
+  }
+  return false;
+}
+
 async function tabFocus(page, name) {
   await page.evaluate(() => {
     document.body.setAttribute("tabindex", "-1");
@@ -164,34 +189,10 @@ export default async function (page, { width, base, fixtures }) {
     await take("meta", ".ah-meta");
     await take("link", ".colo a, .folio .ah-links a");
 
-    const math = page.locator(".folio .abstract [data-pop^='m|']").first();
-    if (await math.count()) {
-      await math.dispatchEvent("mouseover");
-      await page.locator(".popover .pop-quote").first().waitFor({ timeout: 4000 });
-      await take("pop-quote", ".popover .pop-quote");
-    }
-    const cell = page.locator(".table-fig [data-pop^='t|']").first();
-    if (await cell.count()) {
-      await cell.dispatchEvent("mouseover");
-      await page.locator(".popover").waitFor({ timeout: 4000 });
-      await take("pop-quote", ".popover .pop-quote");
-      await take("pop-line", ".popover .pop-line");
-    }
-    if (!found.some((row) => row.name === "pop-line") && (await page.locator(".popover").count())) {
-      await page.evaluate(() => {
-        const pop = document.querySelector(".popover");
-        if (!pop || pop.querySelector(".pop-line")) return;
-        const line = document.createElement("p");
-        line.className = "pop-line";
-        line.textContent = "Citation";
-        pop.appendChild(line);
-      });
-      await take("pop-line", ".popover .pop-line");
-    }
-    await page.mouse.move(2, 2);
-    if (!found.some((row) => row.name === "pop-quote") || !found.some((row) => row.name === "pop-line")) {
-      throw new Error("faltan .pop-quote o .pop-line en el contraste");
-    }
+    if (!(await openPopoverQuote(page))) throw new Error("no apareció .popover .pop-quote");
+    await take("pop-quote", ".popover .pop-quote");
+    if (await page.locator(".popover .pop-line").count()) await take("pop-line", ".popover .pop-line");
+    if (!found.some((row) => row.name === "pop-quote")) throw new Error("falta .pop-quote en el contraste");
 
     const read = page.getByRole("tab", { name: "Read", exact: true });
     if (await read.count()) await read.click();
