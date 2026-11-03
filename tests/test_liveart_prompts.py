@@ -112,7 +112,16 @@ def test_package_builds_messages_only_when_the_flag_is_on(monkeypatch):
         assert areas[area] >= 2
     for item in packed:
         got = select_claim(item["claim"])
-        assert got["merit"] == "widget" and got["topic"] == item["topic"], item["id"]
+        expect = item.get("merit", "widget")
+        assert got["merit"] == expect, (item["id"], got)
+        if expect == "widget":
+            assert got["topic"] == item["topic"], item["id"]
+    selector = selector_system()
+    assert '"topic":"giou"' in selector and '"topic":"double_descent"' in selector
+    assert '"topic":"grokking"' in selector and '"topic":"stddev"' in selector
+    code = codegen_system()
+    assert "syntax:tail" in code and 'fillText("--"' in code and "detail" in code
+    assert "id, topic, title, explain, questions, controls y draw" in verifier_system()
 
 
 def test_contract_doc_matches_the_version():
