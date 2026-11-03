@@ -52,6 +52,11 @@ _KEEP = [
     r"\blfootnote{Masked autoencoders reconstruct pixels from a small visible subset of image patches. The encoder sees only those tokens.}",
     r"\thanks{This footnote states the training setup and the data the model never sees during pretraining.}",
     r"\newcommand{\react}{Claim: the agent interleaves reasoning and actions before it searches. Thought: look up the tool.}",
+    r"\footnotetext{Appendix B details the visualization method.}",
+    r"\footnotetext{Определение выпуклого множества требует проверки отрезка между точками.}",
+    r"\begin{def}A convex set contains the segment between any two of its points.\end{def}",
+    r"\twocolumn[{\begin{center}\captionof{figure}{A foundation model for segmentation across many visual domains.}\end{center}}]",
+    r"We define the update with \def\loss{x} inside the training loop of the preference model.",
 ]
 
 _JUNK = [
@@ -84,6 +89,12 @@ _JUNK = [
     r"\authornote{Equal contribution.}",
     r"\institute{NAVER AI Lab}",
     r"\footnotetext{Meta}",
+    r"\title{Direct Preference Optimization}\thanks{Work done while the authors were visiting a long list of labs.}",
+    r"\begin{titlepage}A long title page naming the university department and the author.\end{titlepage}",
+    r"\titlenote{Equal contribution from the first two authors of this paper.}",
+    r"\authorcontributions{A.B. designed the study and wrote the paper with the other authors.}",
+    r"\def\convex{A convex set contains every segment between its points and nothing else.}",
+    r"\newtheorem{theorem}{Theorem}",
 ]
 
 

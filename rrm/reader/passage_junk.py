@@ -2,9 +2,10 @@
 
 Precisión sobre recall: un párrafo, una ecuación o una definición se quedan.
 Una fila se descarta solo si, fuera de esas macros, casi no queda prosa.
-`\\footnotetext`, `\\blfootnote`, `\\thanks` y `\\newcommand` se quedan cuando
-el cuerpo tiene al menos 6 palabras. `\\onecolumn`, `\\twocolumn`, `\\vskip`,
-`\\printAffiliationsAndNotice` y la portada (`titlerunning`, `affil`, …) no.
+`\\footnotetext`, `\\blfootnote` y `\\thanks` se quedan desde 5 palabras,
+también en cirílico. `\\newcommand` sigue en 6. Un `\\begin{def}` es una
+definición. Un `\\twocolumn` con `\\captionof` en prosa se queda. `\\titlepage`,
+`\\titlenote`, `\\authorcontributions`, `\\newtheorem` y un `\\def` de preámbulo no.
 `RRM_PASSAGES_FILTER_JUNK=0` (también `false`, `off`, `no`) lo apaga.
 Sin variable, o vacía, el filtro queda prendido.
 """
@@ -30,11 +31,13 @@ _EXACT = {
     "onecolumn", "twocolumn", "vskip",
     "printaffiliationsandnotice", "printaffiliations",
     "icmlcorrespondingauthor",
+    "titlepage", "titlenote", "authorcontributions", "newtheorem",
 }
 
-# El cuerpo es prosa, no la portada: se queda si tiene al menos _KEEP_WORDS.
-# \newcommand corto (una macro) sigue siendo preámbulo.
+# El cuerpo es prosa, no la portada. La nota al pie basta con 5 palabras;
+# \newcommand corto (una macro) sigue siendo preámbulo y pide 6.
 _BODY_KEEP = {"footnotetext", "blfootnote", "thanks", "newcommand"}
+_FOOTNOTE = {"footnotetext", "blfootnote", "thanks"}
 
 # Clases de conferencia: \icmlaffiliation, \icmlkeywords, \iclrfinalcopy, ...
 _PREFIXES = (
@@ -60,10 +63,13 @@ _MATH = re.compile(
 )
 
 _COMMENT = re.compile(r"(?<!\\)%[^\n]*")
-_WORDS = re.compile(r"[A-Za-z]{2,}")
+# Letras de cualquier alfabeto. El cirílico del libro 2106.01946 también cuenta.
+_WORDS = re.compile(r"[^\W\d_]{2,}")
+_TITLE_CMD = re.compile(r"\\[A-Za-z]*title\b", re.I)
 
 # Prosa fuera de las macros. Por debajo de esto, la fila es la portada.
 _KEEP_WORDS = 6
+_FOOTNOTE_WORDS = 5
 # Un abstract con menos palabras y sin matemática es un stub, no el resumen.
 _STUB_WORDS = 4
 
@@ -186,6 +192,73 @@ def _read_env(s, i):
     return next_i, env, s[end:body_end]
 
 
+def _optional_bracket(s, i):
+    """Texto dentro del `[...]` pegado al comando. None si no hay."""
+    i = _skip_ws(s, i)
+    if i < len(s) and s[i] == "*":
+        i += 1
+        i = _skip_ws(s, i)
+    if i >= len(s) or s[i] != "[":
+        return i, None
+    end = _consume_until(s, i, "[", "]")
+    return end, s[i + 1:end - 1]
+
+
+def _caption_words(chunk):
+    """Palabras del `\\caption` o `\\captionof{tipo}{...}`."""
+    found = []
+    i = 0
+    n = len(chunk or "")
+    while i < n:
+        if chunk[i] == "\\" and i + 1 < n and chunk[i + 1].isalpha():
+            j = i + 1
+            while j < n and (chunk[j].isalpha() or chunk[j] == "@"):
+                j += 1
+            name = chunk[i + 1:j].lower()
+            if name in {"caption", "captionof"}:
+                end, groups = _read_groups(chunk, j)
+                body = ""
+                if name == "captionof" and len(groups) >= 2:
+                    body = groups[-1]
+                elif groups:
+                    body = groups[0]
+                found.extend(_real_words(body))
+                i = end
+                continue
+            i = j
+            continue
+        i += 1
+    return found
+
+
+def _skip_tex_def(s, i):
+    """Después de `\\def`: el nombre, el texto de parámetros y el `{cuerpo}`."""
+    i = _skip_ws(s, i)
+    if i >= len(s) or s[i] != "\\":
+        return i
+    i += 1
+    if i < len(s) and (s[i].isalpha() or s[i] == "@"):
+        while i < len(s) and (s[i].isalpha() or s[i] == "@"):
+            i += 1
+    elif i < len(s):
+        i += 1
+    guard = 0
+    while i < len(s) and s[i] != "{" and guard < 40:
+        if s[i] == "\\":
+            return i
+        if s[i] in "\n\r":
+            nxt = _skip_ws(s, i)
+            if nxt < len(s) and s[nxt] == "{":
+                i = nxt
+                break
+            return i
+        i += 1
+        guard += 1
+    if i < len(s) and s[i] == "{":
+        i = _consume_until(s, i, "{", "}")
+    return i
+
+
 def _strip_front(text):
     """Quita macros de portada. Un abstract con prosa se deja; un stub no."""
     s = _COMMENT.sub(" ", text or "")
@@ -209,6 +282,12 @@ def _strip_front(text):
                         out.append(body)
                     i = nxt
                     continue
+                if env == "def":
+                    # Entorno de definición, no el \def del preámbulo.
+                    out.append(" ")
+                    out.append(body)
+                    i = nxt
+                    continue
                 if env in _KEYWORD_ENVS or _is_front(env):
                     hits += 1
                     i = nxt
@@ -224,10 +303,28 @@ def _strip_front(text):
                 out.append(s[i:j])
                 i = j
                 continue
+            if name == "twocolumn":
+                end, opt = _optional_bracket(s, j)
+                if opt is not None and len(_caption_words(opt)) >= _FOOTNOTE_WORDS:
+                    out.append(" ")
+                    out.append(opt)
+                else:
+                    hits += 1
+                i = end
+                continue
+            if name == "def":
+                hits += 1
+                i = _skip_tex_def(s, j)
+                continue
             if name in _BODY_KEEP:
                 i, groups = _read_groups(s, j)
                 body = "\n".join(groups)
-                if len(_real_words(body)) >= _KEEP_WORDS:
+                # \title + \thanks es la portada, aunque el thanks sea largo.
+                if name == "thanks" and _TITLE_CMD.search(s):
+                    hits += 1
+                    continue
+                need = _FOOTNOTE_WORDS if name in _FOOTNOTE else _KEEP_WORDS
+                if len(_real_words(body)) >= need:
                     out.append(" ")
                     out.append(body)
                 else:
