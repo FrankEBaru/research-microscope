@@ -16,6 +16,12 @@ Rama: `cursor/rrm-80-mockups-2121`. Contrato: `rrm-widget/0.3` (RRM-79, PR #59).
 - Galería en `apps/reader/src/app/live/`, bandera `NEXT_PUBLIC_RRM_LIVE_ARTIFACTS` en `1` / `true` / `yes` / `on`. Apagada, el lector no cambia.
 - Notas de coordinación: `compass_updates/RRM-80.md` y `compass_updates/equipo-artefactos/`.
 
+## Pase del 3 nov ~7:35
+
+- Misma rama, catálogo 134. `verifyWidget` 134/134. Prueba local 4/4.
+- Calidad sobre cinco del top 15, sin rehacer el frame que ya contaba la historia. `grok-delay` gana el control `datos` (el salto coral se corre; el azul no). `denoise-strip` dice que en t=500 la señal no es 50%. `moe-drop` usa el factor de capacidad de Switch y dibuja en el atajo lo que no cupo. `resid-stream` deja el atajo en 0 o 1. `kv-grow` nombra MHA, GQA y MQA sobre el mismo control.
+- La rúbrica y las capturas están en el repo compass, `equipo-artefactos/calidad/`. Todavía no es WOW: falta el lector novato.
+
 ## Pase del 3 nov ~2:40
 
 - Catálogo 134. JSON regenerado, `rrm-widget/0.3`. Few-shots 40, uno por tema. `verifyWidget`: 134/134. Prueba local 4/4.

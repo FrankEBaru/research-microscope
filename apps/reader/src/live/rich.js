@@ -134,6 +134,7 @@ function draw(ctx, state, t) {
   if (step < 0) step = 0;
   if (step > T) step = T;
   var sig = Math.sqrt(ab[step]);
+  var noi = Math.sqrt(Math.max(0, 1 - ab[step]));
   var cell = Math.floor(Math.min((h - 48) / 8, (w * 0.46) / 8));
   if (cell < 8) cell = 8;
   grid(16, 24, cell, step, 0);
@@ -150,19 +151,25 @@ function draw(ctx, state, t) {
     ctx.font = "11px sans-serif";
     ctx.fillText("" + fr, rx + f * pitch, 36 + scell * 8);
   }
+  var ps = Math.round(sig * 100), pn = Math.round(noi * 100), s2 = Math.round(sig * sig * 100);
+  ctx.fillStyle = "#5c564c";
+  ctx.font = "12px sans-serif";
+  ctx.fillText("azul alto   rosa medio   crema bajo", rx, h * 0.36);
   ctx.fillStyle = "#1d1a16";
   ctx.font = "15px sans-serif";
-  ctx.fillText("t " + step + " / 1000", rx, h * 0.46);
-  ctx.fillText("señal " + Math.round(sig * 100) + "%", rx, h * 0.54);
+  ctx.fillText("t " + step + " / 1000", rx, h * 0.44);
+  ctx.fillText("√a " + ps + "%    ruido " + pn + "%", rx, h * 0.52);
   ctx.fillStyle = "#5c564c";
   ctx.font = "13px sans-serif";
-  ctx.fillText("Ho: señal x + ruido e", rx, h * 0.64);
-  ctx.fillText("e fijo, no es gaussiana", rx, h * 0.72);
-  ctx.fillText("beta de 0.0001 a " + Math.round(bT * 1000) / 1000, rx, h * 0.8);
+  ctx.fillText("cuadrados " + s2 + "+" + (100 - s2) + "=100", rx, h * 0.60);
+  var mid = Math.round(Math.sqrt(ab[500]) * 100);
+  ctx.fillText("directo: ensucia, no limpia", rx, h * 0.68);
+  ctx.fillText("e fijo, no es gaussiana", rx, h * 0.76);
+  ctx.fillText("en t=500 queda " + mid + "%, no 50", rx, h * 0.84);
   ctx.fillStyle = "#e4d6c4";
-  ctx.fillRect(rx, h * 0.86, w - rx - 20, 10);
+  ctx.fillRect(rx, h * 0.90, w - rx - 20, 8);
   ctx.fillStyle = "#1f4b99";
-  ctx.fillRect(rx, h * 0.86, Math.max(2, (w - rx - 20) * sig), 10);
+  ctx.fillRect(rx, h * 0.90, Math.max(2, (w - rx - 20) * sig), 8);
 }
 `;
 
@@ -216,8 +223,11 @@ function draw(ctx, state, t) {
   ctx.fillText("queda " + left + "% del token", tx, h * 0.22);
   ctx.fillStyle = "#5c564c";
   ctx.font = "13px sans-serif";
-  ctx.fillText(skip > 0.85 ? "el atajo lo conserva" : "sin atajo se apaga", tx, h * 0.32);
-  ctx.fillText("de la entrada", tx, h * 0.38);
+  ctx.fillText(skip > 0.5 ? "y = x + cambio" : "red plana, sin suma", tx, h * 0.32);
+  ctx.fillText(skip > 0.5 ? "el atajo lo conserva" : "sin atajo se apaga", tx, h * 0.4);
+  ctx.fillText("contorno coral: entrada", tx, h * 0.66);
+  ctx.fillText("filas: dimensiones", tx, h * 0.74);
+  ctx.fillText("azul lleno = valor alto", tx, h * 0.82);
   ctx.fillStyle = "#e4d6c4";
   ctx.fillRect(tx, h * 0.46, w - tx - 20, 14);
   ctx.fillStyle = left > 40 ? "#2e7d32" : "#c4512c";
@@ -229,9 +239,11 @@ function draw(ctx, state, t) {
 
 const MOE = `
 function draw(ctx, state, t) {
-  var w = state.w, h = state.h, top = Math.round(state.k), cap = Math.round(state.cap);
+  var w = state.w, h = state.h, top = Math.round(state.k), factor = state.factor;
+  var cap = Math.round((8 / 4) * factor);
   var L = [2.2, 0.2, 0, -0.4, 1.8, 0.4, 0.1, -0.2, 1.6, 0.3, 0.5, 0, 0.2, 2, 0.1, 0.3, 1.4, 0.2, 0.6, -0.1, 0.1, 0.2, 1.8, 0.4, 1.1, 0.5, 0.2, 0.3, 0, 0.3, 0.2, 1.7];
-  var count = [0, 0, 0, 0], slot = [], ti, e, k, b1, b2, got, fall = "";
+  var count = [0, 0, 0, 0], slot = [], drop = [], ti, e, k, b1, b2, got, di, fans = "";
+  if (cap < 1) cap = 1;
   for (ti = 0; ti < 16; ti++) slot[ti] = -1;
   for (ti = 0; ti < 8; ti++) {
     b1 = 0; b2 = 1;
@@ -240,20 +252,21 @@ function draw(ctx, state, t) {
       if (L[ti * 4 + e] > L[ti * 4 + b1]) { b2 = b1; b1 = e; }
       else if (L[ti * 4 + e] > L[ti * 4 + b2]) b2 = e;
     }
+    if (b1 === 0) fans = fans + " t" + ti;
     got = 0;
     var pick = [b1, b2];
     for (k = 0; k < top; k++) {
       e = pick[k];
       if (count[e] < cap) { count[e] += 1; slot[ti * 2 + k] = e; got = 1; }
     }
-    if (!got) fall = fall + " t" + ti;
+    if (!got) drop.push(ti);
   }
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#f6f3ec";
   ctx.fillRect(0, 0, w, h);
   var used = [0, 0, 0, 0];
   var colw = (w - 28) / 4;
-  var boxH = h * 0.68;
+  var boxH = h * 0.58;
   ctx.font = "14px sans-serif";
   for (e = 0; e < 4; e++) {
     var x = 12 + e * colw;
@@ -280,13 +293,22 @@ function draw(ctx, state, t) {
       }
     }
   }
-  ctx.font = "15px sans-serif";
-  if (fall) {
+  ctx.font = "14px sans-serif";
+  ctx.fillStyle = "#1d1a16";
+  ctx.fillText("piden E0:" + fans, 12, h * 0.76);
+  ctx.fillText("cupo (8/4) x " + Math.round(factor * 100) / 100 + " = " + cap, 12, h * 0.84);
+  if (drop.length) {
     ctx.fillStyle = "#c4512c";
-    ctx.fillText("se caen" + fall, 12, h * 0.94);
+    ctx.fillText("atajo", 12, h * 0.93);
+    for (di = 0; di < drop.length; di++) {
+      ctx.fillStyle = "#c4512c";
+      ctx.fillRect(64 + di * 44, h * 0.875, 36, 20);
+      ctx.fillStyle = "#f6f3ec";
+      ctx.fillText("t" + drop[di], 70 + di * 44, h * 0.915);
+    }
   } else {
     ctx.fillStyle = "#2e7d32";
-    ctx.fillText("nadie se cae", 12, h * 0.94);
+    ctx.fillText("nadie al atajo; sobra hueco", 12, h * 0.93);
   }
 }
 `;
@@ -299,7 +321,7 @@ function draw(ctx, state, t) {
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#f6f3ec";
   ctx.fillRect(0, 0, w, h);
-  var rowH = h * 0.16;
+  var rowH = h * 0.135;
   ctx.font = "13px sans-serif";
   ctx.fillStyle = "#8a8175";
   for (layer = 0; layer < layers; layer++) ctx.fillText("L" + (layer + 1), 8, h * 0.1 + layer * rowH);
@@ -317,26 +339,29 @@ function draw(ctx, state, t) {
       ctx.fillRect(x, y + rowH * 0.7 - bh * 0.45, cw, bh * 0.45);
     }
   }
+  var regime = heads <= 1 ? "MQA" : (heads >= 8 ? "MHA" : "GQA");
   ctx.fillStyle = "#1d1a16";
   ctx.font = "15px sans-serif";
-  ctx.fillText(cells + (cells > budget ? " celdas · pasa el cupo" : " celdas · cabe"), 28, h * 0.78);
+  ctx.fillText("8 queries comparten " + heads + (heads === 1 ? " grupo KV" : " grupos KV"), 28, h * 0.62);
+  ctx.fillText(regime + "   4 x " + len + " x " + heads + " x 2 = " + cells, 28, h * 0.70);
   ctx.fillStyle = "#e4d6c4";
-  ctx.fillRect(28, h * 0.82, w - 48, 12);
+  ctx.fillRect(28, h * 0.76, w - 48, 12);
   var mw = (w - 48) * cells / cap;
   if (mw > w - 48) mw = w - 48;
   ctx.fillStyle = cells > budget ? "#c4512c" : "#2e7d32";
-  ctx.fillRect(28, h * 0.82, Math.max(2, mw), 12);
+  ctx.fillRect(28, h * 0.76, Math.max(2, mw), 12);
   var bx = 28 + (w - 48) * budget / cap;
   ctx.strokeStyle = "#1d1a16";
   ctx.beginPath();
-  ctx.moveTo(bx, h * 0.8);
-  ctx.lineTo(bx, h * 0.88);
+  ctx.moveTo(bx, h * 0.74);
+  ctx.lineTo(bx, h * 0.82);
   ctx.stroke();
+  ctx.fillStyle = "#1d1a16";
+  ctx.font = "12px sans-serif";
+  ctx.fillText("cupo", bx + 6, h * 0.90);
   ctx.fillStyle = "#5c564c";
   ctx.font = "13px sans-serif";
-  ctx.fillText("K azul   V coral   la raya es el cupo", 28, h * 0.96);
-  ctx.fillStyle = "#1d1a16";
-  ctx.fillText("cupo", bx - 6, h * 0.9);
+  ctx.fillText("K azul  V coral    MHA = 8 grupos    MQA = 1    cupo de juguete", 28, h * 0.96);
 }
 `;
 
@@ -424,20 +449,22 @@ const ATTN_COPY = {
 };
 
 const DENOISE_COPY = {
-  explain: "Ho mezcla el dibujo con ruido: x_t = √ᾱ x0 + √(1−ᾱ) ε. ᾱ es el producto de (1−β), y β va en línea de 0.0001 al beta final, en 1000 pasos. El ε de cada celda es fijo y sale de un seno, no de la gaussiana del paper. El cuadro grande es el t que eliges.",
+  explain: "Ho 2006.11239, proceso directo: cada paso mete ruido, no limpia. x_t = √ᾱ x0 + √(1−ᾱ) ε, ᾱ producto de (1−β), β lineal de 0.0001 al beta final, en 1000 pasos. El ε pintado es un seno fijo, no la gaussiana. En t=500 la señal no es 50%: mira el número y sube el beta final.",
   questions: [
-    { q: "¿Por qué al llegar a t = 1000 el dibujo desaparece?", why: "ᾱ se va a cero y solo queda el ruido" },
-    { q: "¿Qué es el beta final de este horario?", why: "el ruido del último paso; el primero se queda en 0.0001" },
-    { q: "¿El seno de cada celda es el ε del paper?", why: "no: la mezcla sí es la de Ho, el ε es un sustituto fijo" },
+    { q: "¿Por qué en t=200 el plus sigue y la señal marca 81%?", why: "recién va el producto de (1−β); todavía queda ᾱ" },
+    { q: "¿En t=500 queda la mitad de la señal?", why: "no: el número del lienzo no es 50" },
+    { q: "¿Subir el beta final borra antes, en el mismo t?", why: "el producto de (1−β) cae más rápido" },
+    { q: "¿Este dibujo es el modelo limpiando, o el proceso que ensucia?", why: "el directo, que ensucia; limpiar es el inverso" },
   ],
 };
 
 const RESID_COPY = {
-  explain: "Cada capa escribe un cambio y el atajo suma el vector anterior. Con el atajo en 1, el token de la entrada sigue en las dos primeras filas. Si baja, las capas de arriba lo tapan.",
+  explain: "He et al. 1512.03385: y = F(x) + x. El atajo copia la entrada y la capa escribe el cambio. En el paper «identity shortcuts are never closed»; en 0 ves la red plana, que entrena peor. El tablero y el % son un ejemplo, no el error de ImageNet. Contorno coral: la entrada.",
   questions: [
-    { q: "¿Por qué el token de entrada sigue ahí al final?", why: "el atajo lo copia de capa en capa" },
-    { q: "¿Qué se pierde si el atajo baja a cero?", why: "cada capa reemplaza el vector, no le suma" },
-    { q: "¿Qué escriben las capas nuevas?", why: "un cambio en otras filas, el delta" },
+    { q: "¿Por qué el contorno coral sigue en L4 si cada capa escribe algo?", why: "escribe el cambio; la entrada se suma, no se reemplaza" },
+    { q: "¿Qué se apaga si pones el atajo en 0?", why: "la red plana: las dos filas de la entrada" },
+    { q: "¿Las filas nuevas son la entrada o lo que escribió la capa?", why: "lo que escribió la capa; la entrada es el contorno" },
+    { q: "¿El 100% es el error del paper en ImageNet?", why: "no: es cuánto del token de este ejemplo sigue ahí" },
   ],
 };
 
@@ -452,16 +479,32 @@ export const RICH = [
   ], DENOISE, DENOISE_COPY),
   widget("residual", "resid-stream", "El atajo se lleva el token de capa en capa", [
     knob("depth", "capa", 0, 4, 4, 1),
-    knob("skip", "atajo", 0, 1, 1, 0.05),
+    knob("skip", "atajo", 0, 1, 1, 1),
   ], RESID, RESID_COPY),
   widget("moe", "moe-drop", "El experto lleno deja tokens afuera", [
     knob("k", "k", 1, 2, 1, 1),
-    knob("cap", "cupo", 1, 6, 2, 1),
-  ], MOE),
+    knob("factor", "factor", 0.5, 2.5, 1, 0.25),
+  ], MOE, {
+    explain: "Fedus et al. 2101.03961: cada token va al experto de mayor puntaje. Cupo = (tokens / expertos) × factor. Si se llena, «computation is skipped» y el token sigue por el atajo. Un factor grande deja hueco y gasta de más. Los puntajes son un ejemplo.",
+    questions: [
+      { q: "¿Por qué t2, t4 y t6 no entran a un experto con factor 1?", why: "E0 ya va 2/2; el cupo es (8/4) por 1" },
+      { q: "¿A dónde van los que no cupieron, se pierden?", why: "no: el lienzo los pone en el atajo, sin experto" },
+      { q: "¿k=2 devuelve a t2 y t4, o también deja a alguien nuevo en el atajo?", why: "vuelven t2 y t4; t7 cae porque el segundo puesto llenó E3" },
+      { q: "¿Por qué un factor de 2 deja casillas vacías?", why: "el cupo crece y sobra buffer, que también cuesta" },
+    ],
+  }),
   widget("gqa", "kv-grow", "El cache crece con el texto y con los grupos", [
     knob("len", "tokens", 1, 24, 12, 1),
-    knob("kv", "grupos", 1, 8, 8, 1),
-  ], KV),
+    knob("kv", "grupos KV", 1, 8, 8, 1),
+  ], KV, {
+    explain: "Ainslie et al. 2305.13245: GQA comparte K y V por grupo, «interpolating between multi-head and multi-query». MHA es 8 grupos y MQA es 1. Cache = capas × tokens × grupos × 2; las cabezas que preguntan no cuentan. El cupo y las 4 capas son de juguete, no una GPU.",
+    questions: [
+      { q: "¿Por qué 12 tokens y 8 grupos pasan el cupo?", why: "4 x 12 x 8 x 2 = 768, y la raya está en 256" },
+      { q: "¿Qué baja si pones 1 grupo: el texto o las copias de K y V?", why: "las copias; el texto sigue en 12 tokens" },
+      { q: "¿MQA y MHA son los extremos de este control?", why: "sí: 1 grupo es MQA y 8 es MHA" },
+      { q: "¿La raya del cupo es la memoria de una GPU?", why: "no: es un cupo de juguete para ver cuándo se pasa" },
+    ],
+  }),
   widget("quant", "int8-outlier", "Un valor grande se come el paso", [
     knob("mag", "magnitud", 1, 120, 90, 1),
     knob("keep", "dejar afuera", 0, 1, 0, 1),

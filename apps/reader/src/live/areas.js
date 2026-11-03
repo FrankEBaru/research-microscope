@@ -550,20 +550,33 @@ function draw(ctx, state, t) {
 
 const GROK = `
 function draw(ctx, state, t) {
-  var w = state.w, h = state.h, step = Math.round(state.step);
-  var N = 100, i, tr, va, L = 36, R = w * 0.78, T = 40, B = h * 0.78;
+  var w = state.w, h = state.h, step = Math.round(state.step), data = state.data;
+  var N = 100, i, tr, va, jump, msg, L = 36, R = w * 0.72, T = 48, B = h * 0.78;
+  if (data < 0.2) data = 0.2;
+  jump = 24 / data;
   function trainAt(s) { return 1 - Math.exp(-s / 8); }
   function valAt(s) {
-    if (s < 60) return 0.12;
-    return 0.12 + (1 - Math.exp(-(s - 60) / 6)) * 0.86;
+    if (s < jump) return 0.12;
+    return 0.12 + (1 - Math.exp(-(s - jump) / 6)) * 0.86;
   }
   function X(v) { return L + (v / N) * (R - L); }
   function Y(v) { return B - v * (B - T); }
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#f6f3ec";
   ctx.fillRect(0, 0, w, h);
+  if (jump <= N) {
+    ctx.strokeStyle = "#c4512c";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(X(jump), T);
+    ctx.lineTo(X(jump), B);
+    ctx.stroke();
+    ctx.fillStyle = "#c4512c";
+    ctx.font = "12px sans-serif";
+    ctx.fillText("salto", X(jump) - 14, T - 8);
+  }
   ctx.strokeStyle = "#1f4b99";
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2.5;
   ctx.beginPath();
   for (i = 0; i <= N; i++) {
     tr = trainAt(i);
@@ -580,20 +593,31 @@ function draw(ctx, state, t) {
   }
   ctx.stroke();
   ctx.strokeStyle = "#2e7d32";
+  ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(X(step), T);
   ctx.lineTo(X(step), B);
   ctx.stroke();
   tr = trainAt(step);
   va = valAt(step);
+  msg = "de pronto generaliza";
+  if (va < 0.3) msg = jump > N ? "con estos datos no alcanza" : "entrena ya, valida no";
   ctx.fillStyle = "#1d1a16";
   ctx.font = "16px sans-serif";
-  ctx.fillText(va < 0.3 ? "entrena ya, valida no" : "de pronto generaliza", 16, 24);
+  ctx.fillText(msg, 16, 24);
+  ctx.fillStyle = "#8a8175";
+  ctx.font = "11px sans-serif";
+  ctx.fillText("exactitud", 8, T - 6);
+  ctx.fillText("paso, lineal", R - 78, B + 16);
+  ctx.font = "12px sans-serif";
+  ctx.fillText("eje ilustrativo", R + 16, h * 0.28);
+  ctx.fillText("paper: valida ~1000x", R + 16, h * 0.36);
+  ctx.fillText(jump > N ? "salto fuera del eje" : "salto en " + Math.round(jump), R + 16, h * 0.48);
   ctx.fillStyle = "#5c564c";
   ctx.font = "13px sans-serif";
   ctx.fillText("azul entrena  " + Math.round(tr * 100) + "%", 16, h * 0.92);
   ctx.fillStyle = "#c4512c";
-  ctx.fillText("coral valida  " + Math.round(va * 100) + "%", w * 0.48, h * 0.92);
+  ctx.fillText("coral valida  " + Math.round(va * 100) + "%", w * 0.42, h * 0.92);
 }
 `;
 
@@ -701,7 +725,16 @@ export const AREAS = [
   ], DESCENT),
   widget("grok", "grok-delay", "La validación generaliza mucho después", [
     knob("step", "paso", 0, 100, 42, 1),
-  ], GROK),
+    knob("data", "datos", 0.2, 1, 0.4, 0.05),
+  ], GROK, {
+    explain: "Power et al. 2201.02177: entrena casi perfecto y la validación sigue en el azar; generaliza «1000 times more» pasos después, y con menos datos todavía más tarde. Mueve datos: el salto coral se corre y el azul no. El eje y la forma son ilustrativos. El weight decay del paper baja cuántos datos hacen falta; aquí no es un control.",
+    questions: [
+      { q: "¿En el paso 42, por qué el entrenamiento ya está alto y la validación no?", why: "memoriza pronto; generalizar va mucho después" },
+      { q: "¿Qué le pasa al salto coral si bajas datos de 0.4 a 0.2?", why: "se sale del eje: con pocos datos no alcanza" },
+      { q: "¿La curva azul también se corre cuando hay menos datos?", why: "no: el entrenamiento sigue igual de rápido" },
+      { q: "¿Este eje es la medición de 1000 veces más pasos?", why: "no: el 1000x es del paper; el eje es ilustrativo" },
+    ],
+  }),
   widget("lottery", "lottery-ticket", "El boleto aguanta y el azar no", [
     knob("keep", "quedan", 0.05, 1, 0.22, 0.01),
   ], TICKET),
