@@ -5,7 +5,7 @@ No hay llamada a Meta aquí. RRM-79 arma los mensajes cuando la bandera esté pr
 
 import json
 
-from rrm.liveart.contract import CANVAS_METHODS, CANVAS_PROPS, HOST, LIMITS, MATH_NAMES, VERSION
+from rrm.liveart.contract import CANVAS_METHODS, CANVAS_PROPS, HOST, LIMITS, MATH_NAMES, VERSION, v04_on
 from rrm.liveart.offline import (
     TOPICS,
     emulated_widget,
@@ -207,8 +207,21 @@ def explain_system() -> str:
     return with_guard(_EXPLAIN + "Ejemplo de largo y de tono: " + sample + "\n" + _limits())
 
 
+_V04 = """
+Contrato 0.4 (solo si la bandera está prendida; esto pisa «ninguna llave más»):
+version es rrm-widget/0.4. Llaves opcionales: hook, aspect, predict, areas, readouts, marks, legend, takeaway, y anchor como objeto {latex, vars, quote, passage_id, arxiv}.
+function draw(ctx, state, t, ui). Draw only geometry with ctx inside ui.area(id): curves, dials, grids, bars, contours. Never write text with ctx.
+Text goes in fields, not in the canvas: hook (the misconception, ≤ 60, ends with "?"), readouts (ui.readout(id, v)), takeaway variants (ui.say(id); {readout} placeholders), legend, anchor (LaTeX of the paper's equation + a literal quote).
+In the canvas you may call ui.axes(id), ui.mark(id, v), and at most 3 ui.label(text, x, y) of ≤ 18 chars.
+Colors: ui.c.c1, ui.c.c2, ui.c.ref. Widths: ui.lw.hair, ui.lw.line, ui.lw.bold.
+Controls stay numeric (min, max, step, value). slider by default; kind select, toggle, or stepper only when that shape is the claim; drag is ui.handle on a numeric control.
+The gate runs every select option, the first and last step, and three drag positions.
+"""
+
+
 def codegen_system() -> str:
-    return with_guard(_CODEGEN + _surface() + _limits())
+    extra = _V04 if v04_on() else ""
+    return with_guard(_CODEGEN + _surface() + _limits() + extra)
 
 
 def verifier_system() -> str:
@@ -299,6 +312,7 @@ def repair_messages(claim, explain, questions, widget, reasons, shots=None, spec
         "No uses la palabra window ni document, ni en un string.\n"
         "Un string solo expone .length: nada de slice, charAt ni indexOf. Un número puede usar toFixed con hasta 6 decimales.\n"
         + _limits()
+        + (_V04 if v04_on() else "")
     )
     body = _claim_text(claim) + "\nexplain fijo:\n" + str(explain or "")
     if spec:
@@ -330,6 +344,40 @@ def _obj(properties, required):
         "properties": properties,
         "required": required,
     }
+
+
+def _with_v04(widget, question, control):
+    """Optional 0.4 keys. The 0.3 keys stay required."""
+    question = {
+        **question,
+        "properties": {**question["properties"], "set": {"type": "object"}},
+    }
+    control = {
+        **control,
+        "properties": {
+            **control["properties"],
+            "kind": {"type": "string"},
+            "type": {"type": "string"},
+            "options": {"type": "array", "items": {"type": "string"}},
+            "tex": {"type": "string"},
+            "color": {"type": "string"},
+            "hidden": {"type": "boolean"},
+        },
+    }
+    props = dict(widget["properties"])
+    props["questions"] = {"type": "array", "items": question}
+    props["controls"] = {"type": "array", "items": control}
+    props["version"] = {"type": "string"}
+    props["hook"] = {"type": "string"}
+    props["aspect"] = {"type": "number"}
+    props["predict"] = {"type": "object"}
+    props["areas"] = {"type": "array"}
+    props["readouts"] = {"type": "array"}
+    props["marks"] = {"type": "array"}
+    props["legend"] = {"type": "array"}
+    props["takeaway"] = {"type": "object"}
+    props["anchor"] = {"type": "object"}
+    return {**widget, "properties": props}
 
 
 def schemas():
@@ -423,7 +471,7 @@ def schemas():
                 "constraints", "regime", "scale", "questions", "explain",
             ],
         ),
-        "codegen": widget,
+        "codegen": _with_v04(widget, question, control) if v04_on() else widget,
         "verifier": _obj(
             {
                 "accept": {"type": "boolean"},

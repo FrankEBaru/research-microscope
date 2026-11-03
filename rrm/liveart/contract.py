@@ -137,7 +137,19 @@ _NETWORK = re.compile(r"https?://|\bwss?://|\bfetch\s*\(|\beval\s*\(", re.I)
 
 def live_on() -> bool:
     """Apagado por defecto. Cualquiera de las dos variables enciende el camino vivo."""
-    for key in ("RRM_LIVE_ARTIFACTS", "NEXT_PUBLIC_RRM_LIVE_ARTIFACTS"):
+    return _flag("RRM_LIVE_ARTIFACTS", "NEXT_PUBLIC_RRM_LIVE_ARTIFACTS")
+
+
+VERSION_04 = "rrm-widget/0.4"
+
+
+def v04_on() -> bool:
+    """0.4 apagado por defecto. Los widgets 0.3 no leen esta bandera."""
+    return _flag("RRM_LIVEART_V04", "NEXT_PUBLIC_RRM_LIVEART_V04")
+
+
+def _flag(*keys: str) -> bool:
+    for key in keys:
         raw = os.environ.get(key, "").strip().lower()
         if raw in {"1", "true", "yes", "on"}:
             return True

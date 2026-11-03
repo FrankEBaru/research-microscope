@@ -1,4 +1,6 @@
 // Subset parser for `function draw(ctx, state, t)`. No eval.
+// With RRM_LIVEART_V04, the draw may also take `ui`.
+import { v04On } from "./spec.js";
 
 const BANNED_NAMES = new Set([
   "fetch", "eval", "Function", "import", "require", "document", "window", "globalThis",
@@ -283,6 +285,8 @@ export function parseDraw(src) {
   const fn = parseFunction();
   if (!at("eof")) throw new Error("syntax:tail");
   if (fn.name !== "draw") throw new Error("syntax:name");
-  if (fn.params.join(",") !== "ctx,state,t") throw new Error("syntax:params");
+  const params = fn.params.join(",");
+  const four = v04On() && params === "ctx,state,t,ui";
+  if (params !== "ctx,state,t" && !four) throw new Error("syntax:params");
   return fn;
 }

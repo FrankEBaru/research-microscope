@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import katex from "katex";
 import { fallbackText } from "@/lib/liveart/fallback.js";
 import { mountSandbox } from "@/lib/liveart/mount.js";
 import { GOLD } from "@/lib/liveart/gold.js";
 import { ROUND } from "@/lib/liveart/round.js";
 import { SHOWCASE } from "@/lib/liveart/showcase.js";
-import { VERSION, liveOn } from "@/lib/liveart/spec.js";
+import { VERSION, VERSION_04, liveOn } from "@/lib/liveart/spec.js";
 import { Tex } from "@/lib/math";
 import "@/styles/liveart.css";
 
@@ -23,7 +24,40 @@ type Knob = {
   answer?: number;
 };
 
-type Noted = { equation?: string; anchor?: string; cite?: string };
+type AnchorObj = {
+  latex?: string;
+  quote?: string;
+  arxiv?: string;
+  section?: string;
+  eq?: string;
+  vars?: { tex: string; control?: string }[];
+};
+
+type Noted = {
+  equation?: string;
+  anchor?: string | AnchorObj;
+  cite?: string;
+  version?: string;
+  hook?: string;
+};
+
+function safeTex(latex: string, vars: { tex: string; control?: string }[]) {
+  let tex = latex;
+  const ordered = [...vars].sort((a, b) => b.tex.length - a.tex.length);
+  for (const item of ordered) {
+    if (!item.tex) continue;
+    tex = tex.split(item.tex).join(`{\\htmlData{v=${item.control || "v"}}{${item.tex}}}`);
+  }
+  try {
+    return katex.renderToString(tex, {
+      throwOnError: true,
+      trust: (context: { command: string }) => context.command === "\\htmlData",
+      strict: "ignore",
+    });
+  } catch {
+    return "";
+  }
+}
 
 // RRM-90: the quality round (#59/#64) plus #57's figures and contract examples.
 const CATALOG = [
@@ -223,12 +257,17 @@ function Controls({ controls, vals, set }: { controls: Knob[]; set: (id: string,
 }
 
 function Anchor({ widget }: { widget: Noted }) {
-  if (!widget.equation && !widget.anchor) return null;
+  const obj = widget.anchor && typeof widget.anchor === "object" ? widget.anchor : null;
+  const quote = obj ? obj.quote || "" : typeof widget.anchor === "string" ? widget.anchor : "";
+  const cite = obj ? [obj.arxiv, obj.section, obj.eq].filter(Boolean).join(" ") : widget.cite || "";
+  const html = obj && obj.latex ? safeTex(obj.latex, obj.vars || []) : "";
+  if (!widget.equation && !quote && !cite && !html) return null;
   return (
     <div className="liveart-anchor">
-      {widget.equation ? <Tex tex={widget.equation} display /> : null}
-      {widget.anchor ? <p>“{widget.anchor}”</p> : null}
-      {widget.cite ? <p className="liveart-cite">{widget.cite}</p> : null}
+      {html ? <div className="liveart-v04-eq" dangerouslySetInnerHTML={{ __html: html }} /> : null}
+      {!html && widget.equation ? <Tex tex={widget.equation} display /> : null}
+      {quote ? <p>“{quote}”</p> : null}
+      {cite ? <p className="liveart-cite">{cite}</p> : null}
     </div>
   );
 }
@@ -237,8 +276,10 @@ function Stage({ entry }: { entry: (typeof CATALOG)[number] }) {
   const box = useRef<HTMLDivElement | null>(null);
   const api = useRef<ReturnType<typeof mountSandbox> | null>(null);
   const { widget } = entry;
+  const noted = widget as typeof widget & Noted;
   const [vals, setVals] = useState<Record<string, number>>(() => Object.fromEntries(widget.controls.map((control) => [control.id, control.value])));
   const [down, setDown] = useState<string[] | null>(null);
+  const [readouts, setReadouts] = useState<Record<string, number> | null>(null);
 
   useEffect(() => {
     if (down) return;
@@ -248,6 +289,9 @@ function Stage({ entry }: { entry: (typeof CATALOG)[number] }) {
     const handle = mountSandbox(host, widget, {
       onStatus(next) {
         if (live && !next.ok) setDown(next.reasons);
+      },
+      onFrame(frame: { readouts?: Record<string, number> }) {
+        if (live && frame && frame.readouts) setReadouts(frame.readouts);
       },
     });
     api.current = handle;
@@ -261,6 +305,7 @@ function Stage({ entry }: { entry: (typeof CATALOG)[number] }) {
     <article className="liveart-card" data-widget={widget.id} data-down={down ? "1" : "0"}>
       <p className="liveart-kicker">{kicker(entry.source)} · illustrative</p>
       <h2>{widget.title}</h2>
+      {noted.version === VERSION_04 && noted.hook ? <p className="liveart-hook">{noted.hook}</p> : null}
       <div className={down ? "liveart-stage is-static" : "liveart-stage"}>
         {down ? (
           <div key="static" className="liveart-static" data-reasons={down.join(" ")} role="note">
@@ -285,7 +330,14 @@ function Stage({ entry }: { entry: (typeof CATALOG)[number] }) {
           }}
         />
       )}
-      {down ? null : <Anchor widget={widget as Noted} />}
+      {down || !readouts ? null : (
+        <p className="liveart-readouts" aria-live="polite">
+          {Object.entries(readouts).map(([id, value]) => (
+            <span key={id}>{id} {Number(value).toFixed(2)}</span>
+          ))}
+        </p>
+      )}
+      {down ? null : <Anchor widget={noted} />}
       {down ? null : <p className="liveart-explain">{widget.explain}</p>}
       {down ? null : (
         <ul>

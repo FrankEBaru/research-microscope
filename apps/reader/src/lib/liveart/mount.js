@@ -1,5 +1,5 @@
 import { fallbackText } from "./fallback.js";
-import { HOST, SANDBOX } from "./spec.js";
+import { HOST, SANDBOX, VERSION_04, v04On } from "./spec.js";
 import { srcdoc } from "./sandbox.js";
 import { verifyWidget } from "./verify.js";
 
@@ -28,7 +28,8 @@ export function mountSandbox(el, widget, opts = {}) {
   iframe.title = widget.title || "Live widget";
   iframe.setAttribute("sandbox", SANDBOX);
   iframe.referrerPolicy = "no-referrer";
-  iframe.srcdoc = srcdoc(widget.draw);
+  iframe.srcdoc = srcdoc(widget.draw, widget);
+  if (widget.version === VERSION_04 && v04On()) iframe.style.pointerEvents = "none";
   el.replaceChildren(iframe);
 
   const state = { w: HOST.canvas_w, h: HOST.canvas_h };
@@ -76,6 +77,7 @@ export function mountSandbox(el, widget, opts = {}) {
     window.clearTimeout(timer);
     inflight = false;
     if (!data.ok) return fail(data.reason || "throw");
+    if (data.frame && opts.onFrame) opts.onFrame(data.frame);
     if (dead) return;
     if (report.usesT) {
       const play = (widget.controls || []).find((control) => control.kind === "play");

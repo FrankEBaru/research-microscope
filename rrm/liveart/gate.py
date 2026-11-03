@@ -11,7 +11,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from rrm.liveart.contract import CANVAS_METHODS, CANVAS_PROPS, HOST
+from rrm.liveart.contract import CANVAS_METHODS, CANVAS_PROPS, HOST, v04_on
 
 _PREDICT = re.compile(r"^\s*(predice|predict)\b", re.I)
 _SET = re.compile(r"\b(?:set|pon|mueve)\b", re.I)
@@ -254,8 +254,11 @@ def quality_gate(widget, claim, spec=None):
     draw = widget.get("draw") or ""
     explain = widget.get("explain") or ""
     controls = widget.get("controls") or []
+    v04 = v04_on() and widget.get("version") == "rrm-widget/0.4"
     reasons = []
-    rendered = _render(draw, [_state(controls)])
+    if v04 and widget.get("marks") and "ui.mark" not in draw:
+        reasons.append("mark")
+    rendered = _render(draw, [_state(controls)], widget)
     base = rendered[0] if rendered else {"error": "render"}
     texts = base.get("texts") or []
     if _leaked(explain) or _leaked(_question_blob(widget)) or _leaked(draw) or any(_leaked(t) for t in texts):
@@ -295,14 +298,17 @@ def quality_gate(widget, claim, spec=None):
         reasons.append("language")
     if spec is not None and _scale_problem(spec, texts):
         reasons.append("scale")
-    if spec is not None and _regime_problem(draw, controls, spec.get("regime"), base, spec):
+    if spec is not None and not v04 and _regime_problem(draw, controls, spec.get("regime"), base, spec):
         reasons.append("regime")
     if spec is not None and _margin_problem(controls, spec.get("regime")):
         reasons.append("margin")
     if _default_hides(controls, widget.get("questions")):
         reasons.append("default")
-    if _readability(base.get("glyphs") or [], spec.get("scale") if spec is not None else None):
-        reasons.append("readability")
+    glyphs = base.get("glyphs") or []
+    scale = None if v04 else (spec.get("scale") if spec is not None else None)
+    if glyphs or not v04:
+        if _readability(glyphs, scale):
+            reasons.append("readability")
     if _unexplained_shapes(base):
         reasons.append("shapes")
     if _dead_label(draw, controls):
@@ -383,9 +389,17 @@ def _one_regime_question(texts, controls, regime):
 
 
 def _few_stops(controls):
-    """A slider with fewer than 4 reachable values is a collapsed range."""
+    """A slider with fewer than 4 reachable values is a collapsed range.
+
+    Select, toggle, drag, and the other non-slider kinds are sampled by the
+    engine (every option, or three drag positions), so a short range is the point.
+    """
+    discrete = {"toggle", "select", "button", "stepper", "play", "pick", "predict", "drag"}
     for control in controls or []:
         if not isinstance(control, dict):
+            continue
+        kind = control.get("kind") or control.get("type") or "slider"
+        if kind in discrete:
             continue
         try:
             lo = float(control["min"])
@@ -908,13 +922,16 @@ def _state(controls, overrides=None):
     return state
 
 
-def _render(draw, states):
+def _render(draw, states, widget=None):
     if not draw or not states:
         return [{"error": "empty", "texts": []} for _ in states]
+    payload = {"draw": draw, "states": states, "cap": _CAP}
+    if isinstance(widget, dict) and widget.get("version") == "rrm-widget/0.4":
+        payload["widget"] = widget
     try:
         proc = subprocess.run(
             ["node", str(_RENDER)],
-            input=json.dumps({"draw": draw, "states": states, "cap": _CAP}),
+            input=json.dumps(payload),
             text=True,
             capture_output=True,
             timeout=30,

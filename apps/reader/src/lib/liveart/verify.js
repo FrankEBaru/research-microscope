@@ -1,8 +1,9 @@
 // Static shape, allowlist, and a structural slop check.
 // Semantic "does this teach the equation" stays with the model verifier.
-import { HOST, LIMITS, bannedIn, networkIn } from "./spec.js";
+import { HOST, LIMITS, VERSION_04, bannedIn, codeSurface, networkIn } from "./spec.js";
 import { parseDraw } from "./parse.js";
 import { execute, geometryChanged, painted } from "./run.js";
+import { v04Shape } from "./v04.js";
 
 const ID_RE = /^[a-z][a-z0-9_]{0,15}$/;
 const TOPIC_RE = /^[a-z][a-z0-9_]{0,31}$/;
@@ -58,7 +59,7 @@ function sampleControl(control) {
   const kind = control.kind || "slider";
   const steps = Math.round((control.max - control.min) / control.step);
   const aligned = Math.abs((control.max - control.min) / control.step - steps) < 1e-6;
-  if (DISCRETE.has(kind) && aligned && steps >= 1 && steps <= 8) {
+  if ((DISCRETE.has(kind) || kind === "stepper") && aligned && steps >= 1 && steps <= 8) {
     const values = [];
     for (let i = 0; i <= steps; i += 1) values.push(control.min + i * control.step);
     return values;
@@ -216,8 +217,15 @@ function noted(err) {
 export function verifyWidget(widget, opts = {}) {
   const reasons = [];
   const detail = [];
-  const shape = shapeErrors(widget);
-  reasons.push(...shape);
+  const notes = [];
+  const v04 = Boolean(widget && widget.version === VERSION_04);
+  if (v04) {
+    const shaped = v04Shape(widget);
+    reasons.push(...shaped.errors);
+    notes.push(...shaped.notes);
+  } else {
+    reasons.push(...shapeErrors(widget));
+  }
   let encoded = "";
   try { encoded = JSON.stringify(widget); } catch { reasons.push("size"); }
   if (encoded.length > HOST.json_chars) reasons.push("size");
@@ -229,15 +237,16 @@ export function verifyWidget(widget, opts = {}) {
   }
   if (sealIn(draw)) reasons.push("slop_seal");
   if (injectionIn(opts.claim) || injectionIn(copyText(widget))) reasons.push("injection");
-  if (reasons.length) return finish(reasons, false, detail);
+  if (reasons.length) return finish(reasons, false, detail, notes);
+  if (v04 && /\bfillText\s*\(/.test(codeSurface(draw))) notes.push("free_text");
 
   let ast;
   try { ast = parseDraw(draw); }
-  catch (err) { return finish([reasonOf(err)], false, [noted(err)]); }
+  catch (err) { return finish([reasonOf(err)], false, [noted(err)], notes); }
 
   let base;
-  try { base = execute(ast, baseState(widget), 0, HOST.step_cap); }
-  catch (err) { return finish([reasonOf(err)], false, [noted(err)]); }
+  try { base = execute(ast, baseState(widget), 0, HOST.step_cap, widget); }
+  catch (err) { return finish([reasonOf(err)], false, [noted(err)], notes); }
   if (!painted(base.calls)) reasons.push("blank");
 
   const controls = widget.controls || [];
@@ -253,7 +262,7 @@ export function verifyWidget(widget, opts = {}) {
       let prev = null;
       for (const value of sampleControl(control)) {
         try {
-          const run = execute(ast, baseState(widget, { [control.id]: value }), 0, HOST.step_cap);
+          const run = execute(ast, baseState(widget, { [control.id]: value }), 0, HOST.step_cap, widget);
           if (!painted(run.calls)) reasons.push("blank");
           if (prev && !geometryChanged(prev, run.calls, HOST.pixel_floor)) reasons.push("slop_inert:" + control.id);
           prev = run.calls;
@@ -266,13 +275,29 @@ export function verifyWidget(widget, opts = {}) {
     }
   }
   if (!claimLinked(widget, opts.claim || "")) reasons.push("slop_unrelated");
-  return finish(reasons, base.usesT, detail);
+  const check = v04 && widget.predict && widget.predict.check;
+  if (check && base.report) {
+    let revealed;
+    try {
+      revealed = execute(ast, baseState(widget, widget.predict.reveal || {}), 0, HOST.step_cap, widget);
+    } catch (err) {
+      reasons.push(reasonOf(err));
+      detail.push(noted(err));
+    }
+    const before = base.report.readouts[check.readout];
+    const after = revealed && revealed.report ? revealed.report.readouts[check.readout] : undefined;
+    const moved = check.expect === "down" ? after < before : check.expect === "up" ? after > before : after === before;
+    if (typeof before !== "number" || typeof after !== "number" || !moved) reasons.push("predict");
+  }
+  return finish(reasons, base.usesT, detail, notes);
 }
 
-function finish(reasons, usesT, detail) {
+function finish(reasons, usesT, detail, notes) {
   const unique = [];
   for (const reason of reasons) if (!unique.includes(reason)) unique.push(reason);
-  const notes = [];
-  for (const item of detail || []) if (item && !notes.includes(item)) notes.push(item);
-  return { accept: unique.length === 0, reasons: unique, usesT: Boolean(usesT), detail: notes };
+  const seen = [];
+  for (const item of detail || []) if (item && !seen.includes(item)) seen.push(item);
+  const extra = [];
+  for (const item of notes || []) if (item && !extra.includes(item)) extra.push(item);
+  return { accept: unique.length === 0, reasons: unique, usesT: Boolean(usesT), detail: seen, notes: extra };
 }

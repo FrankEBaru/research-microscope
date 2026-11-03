@@ -94,3 +94,13 @@ La sonda 1 (RRM-83, 19/29 widgets) falló en el prompt, no en el motor. Para la 
 - El verificador de modelo no reemplaza al motor: un `accept` suyo no monta un draw que el sandbox rechaza.
 ## Qué no entra en 0.3
 Integrar el widget en `GapNotes`. La bandera apagada deja el lector como está. No se llama a Meta hasta que Franklin pida la pasada.
+
+## 0.4, detrás de `RRM_LIVEART_V04`
+
+Apagado por defecto. `RRM_LIVEART_V04` o `NEXT_PUBLIC_RRM_LIVEART_V04` en `1` / `true` / `yes` / `on` aceptan `version: "rrm-widget/0.4"`. Sin la bandera, ese JSON se rechaza con `v04_off`. Un widget sin `version`, o con `rrm-widget/0.3`, sigue el camino de arriba.
+
+Llaves nuevas, todas opcionales: `hook`, `aspect`, `predict`, `areas`, `readouts`, `marks`, `legend`, `takeaway`. `anchor` puede seguir siendo texto o volverse objeto `{latex, vars, quote, passage_id, arxiv, section, eq, abstract_quote}`. El `draw` puede ser `function draw(ctx, state, t, ui)`.
+
+`ui` lo pone el motor: `area`, `axes`, `label` (a lo más 3), `mark`, `readout`, `say`, `fmt`, `handle` (a lo más 2), `pick`, `tip`, `c`, `lw`. Un `fillText` dentro del draw de 0.4 no tumba el widget: queda como nota `free_text`. El gate recorre cada opción de un select, el primer y el último paso, y tres posiciones de un drag.
+
+El prompt de Spark y el de reparación agregan el bloque 0.4 solo con la bandera prendida. El esquema de codegen deja esas llaves como opcionales; las de 0.3 siguen siendo las requeridas.

@@ -8,7 +8,8 @@ const cap = job.cap || 200000;
 const out = [];
 for (const state of job.states || []) {
   try {
-    const result = runDraw(job.draw || "", state, 0, cap);
+    const widget = job.widget && job.widget.version === "rrm-widget/0.4" ? job.widget : null;
+    const result = runDraw(job.draw || "", state, 0, cap, widget);
     const texts = [];
     const glyphs = [];
     const rects = [];

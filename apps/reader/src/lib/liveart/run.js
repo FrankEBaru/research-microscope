@@ -1,6 +1,7 @@
 // Interpreter for the draw subset. The parent page never evals widget source.
-import { CANVAS_METHODS, CANVAS_PROPS, MATH_NAMES } from "./spec.js";
+import { CANVAS_METHODS, CANVAS_PROPS, MATH_NAMES, VERSION_04, v04On } from "./spec.js";
 import { parseDraw } from "./parse.js";
+import { makeUi } from "./ui.js";
 
 const MATH_SET = new Set(MATH_NAMES);
 const METHOD_SET = new Set(CANVAS_METHODS);
@@ -103,17 +104,19 @@ export function painted(calls) {
   return calls.some((call) => PAINT.has(call.m));
 }
 
-export function execute(ast, state, t, cap) {
+export function execute(ast, state, t, cap, widget) {
   const reads = new Set();
   const stage = makeStage();
   const clock = { n: 0, usesT: false };
   const math = { __kind: "math" };
   const ctx = { __kind: "ctx", api: stage.api };
+  const built = widget && widget.version === VERSION_04 && v04On() ? makeUi(widget, state, stage.api) : null;
   const env = new Env(null);
   env.def("ctx", ctx);
   env.def("state", state);
   env.def("t", t);
   env.def("Math", math);
+  if (built) env.def("ui", built.ui);
 
   function step() {
     clock.n += 1;
@@ -225,6 +228,11 @@ export function execute(ast, state, t, cap) {
       reads.add(String(prop));
       return state[prop];
     }
+    if (obj && (obj.__kind === "ui" || obj.__kind === "box")) {
+      if (typeof prop === "string" && prop.startsWith("_")) throw new Error("banned:member");
+      if (!Object.prototype.hasOwnProperty.call(obj, prop)) throw new Error("member");
+      return obj[prop];
+    }
     if (obj && obj.__kind === "fn") throw new Error("banned:member");
     throw new Error("member");
   }
@@ -247,6 +255,11 @@ export function execute(ast, state, t, cap) {
         if (!METHOD_SET.has(prop)) throw new Error("ctx:" + prop);
         return obj.api[prop](...args);
       }
+      if (obj && (obj.__kind === "ui" || obj.__kind === "box")) {
+        const fn = obj[prop];
+        if (fn && fn.__kind === "host") return fn.call(args);
+        throw new Error("call");
+      }
       if (Array.isArray(obj) && prop === "push") return obj.push(...args);
       if (Array.isArray(obj) && prop === "pop") return obj.pop();
       if (typeof obj === "number" && prop === "toFixed") {
@@ -258,6 +271,7 @@ export function execute(ast, state, t, cap) {
     const fn = evalExpr(node.callee, envNow);
     const args = node.args.map((arg) => evalExpr(arg, envNow));
     if (fn && fn.__kind === "fn") return callUser(fn, args);
+    if (fn && fn.__kind === "host") return fn.call(args);
     if (fn && fn.__kind === "array-method") {
       if (fn.prop === "push") return fn.obj.push(...args);
       return fn.obj.pop();
@@ -350,14 +364,15 @@ export function execute(ast, state, t, cap) {
     }
   }
 
-  try { callUser({ __kind: "fn", params: ast.params, body: ast.body, closure: env }, [ctx, state, t]); }
+  const args = built ? [ctx, state, t, built.ui] : [ctx, state, t];
+  try { callUser({ __kind: "fn", params: ast.params, body: ast.body, closure: env }, args); }
   catch (err) {
-    if (err instanceof Ret) return { calls: stage.calls, reads, usesT: clock.usesT, steps: clock.n };
+    if (err instanceof Ret) return { calls: stage.calls, reads, usesT: clock.usesT, steps: clock.n, report: built && built.report };
     throw err;
   }
-  return { calls: stage.calls, reads, usesT: clock.usesT, steps: clock.n };
+  return { calls: stage.calls, reads, usesT: clock.usesT, steps: clock.n, report: built && built.report };
 }
 
-export function runDraw(source, state, t, cap) {
-  return execute(parseDraw(source), state, Number(t) || 0, cap);
+export function runDraw(source, state, t, cap, widget) {
+  return execute(parseDraw(source), state, Number(t) || 0, cap, widget);
 }

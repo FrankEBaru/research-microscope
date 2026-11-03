@@ -99,6 +99,14 @@ export function liveOn(env) {
   return flagOn(process.env.RRM_LIVE_ARTIFACTS) || flagOn(process.env.NEXT_PUBLIC_RRM_LIVE_ARTIFACTS);
 }
 
+// 0.4 stays off until Franklin turns it on. 0.3 widgets do not read this flag.
+export const VERSION_04 = "rrm-widget/0.4";
+
+export function v04On(env) {
+  if (env) return flagOn(env.RRM_LIVEART_V04) || flagOn(env.NEXT_PUBLIC_RRM_LIVEART_V04);
+  return flagOn(process.env.RRM_LIVEART_V04) || flagOn(process.env.NEXT_PUBLIC_RRM_LIVEART_V04);
+}
+
 // Identifiers are banned in code. Words inside a string, a comment, or a text field are not code.
 export function codeSurface(src) {
   const text = src || "";

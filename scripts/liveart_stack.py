@@ -5,6 +5,9 @@ No Meta. The code step is the fixed bank (gold, else the first emulated widget o
 
   python3 scripts/liveart_stack.py --n 16 --sandbox --out /tmp/liveart-stack.json
 
+  RRM_LIVEART_V04=1 python3 scripts/liveart_stack.py --live --config spark --max-usd 3 --ids kl,adam
+  The same flag with --config wonder or --config hybrid. It does not call Meta unless --live is set.
+
 The first 16 ids are the probe RRM-78 reserved for muse-spark-1.3-contributor.
 """
 
