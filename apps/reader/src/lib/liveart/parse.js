@@ -142,6 +142,7 @@ export function parseDraw(src) {
     if (at("while")) return parseWhile();
     if (at("return")) { eat("return"); const value = at(";") ? null : parseAssign(); eat(";"); return { t: "ret", value }; }
     if (at("break")) { eat("break"); eat(";"); return { t: "break" }; }
+    if (at("continue")) { eat("continue"); eat(";"); return { t: "continue" }; }
     if (at("{")) return parseBlock();
     if (at(";")) { eat(";"); return { t: "empty" }; }
     const value = parseAssign();

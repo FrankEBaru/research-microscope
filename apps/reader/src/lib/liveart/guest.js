@@ -1,5 +1,5 @@
-// Three figures from RRM-82, copied into the sandbox gallery.
-// Provenance stays out of the widget. Illustrative layout, paper's rule.
+// Gallery figures outside the four gold draws. Provenance stays out of the widget.
+// Illustrative layout, paper's rule. The last three fill bank topics the probe had no draw for.
 function q(question, why) {
   return { q: question, why };
 }
@@ -138,6 +138,140 @@ export const GUEST = [
         knob("alpha", "migration α", 0, 1, 0.5, 0.05),
       ],
       draw: "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, a = state.alpha, n = 8, j, k;\n  var xm = [1.2, 0.8, 40, 1.0, 0.6, 25, 1.4, 0.9], wm = [0.5, 0.7, 0.4, 0.6, 0.8, 0.5, 0.3, 0.6];\n  function fx(v) { return \"\" + Math.round(v * 1000) / 1000; }\n  function q(v, m) { var st = m / 127; return Math.abs(v - Math.round(v / st) * st) / v; }\n  function run(al, sx, sw) {\n    var mx = 0, mw = 0, ex = 0, ew = 0;\n    for (j = 0; j < n; j++) { var s = Math.pow(xm[j], al) / Math.pow(wm[j], 1 - al); sx[j] = xm[j] / s; sw[j] = wm[j] * s; mx = Math.max(mx, sx[j]); mw = Math.max(mw, sw[j]); }\n    for (j = 0; j < n; j++) { ex = Math.max(ex, q(sx[j] * 0.37, mx)); ew = Math.max(ew, q(sw[j] * 0.37, mw)); }\n    return [ex, ew, mx, mw];\n  }\n  var SX = [], SW = [], r = run(a, SX, SW), prod = 0, prod0 = 0;\n  for (j = 0; j < n; j++) { prod += SX[j] * SW[j]; prod0 += xm[j] * wm[j]; }\n  ctx.fillStyle = \"#f7f5f0\"; ctx.fillRect(0, 0, w, h);\n  function panel(x0, vals, m, col, label, e) {\n    var pw = w * 0.28, ph = h * 0.42, y0 = 34 + ph, bw = pw / n;\n    ctx.fillStyle = \"#333\"; ctx.font = \"13px sans-serif\"; ctx.fillText(label, x0, 20);\n    for (j = 0; j < n; j++) { ctx.fillStyle = col; ctx.fillRect(x0 + j * bw + 2, y0 - ph * vals[j] / m, bw - 4, ph * vals[j] / m); }\n    ctx.fillStyle = e > 0.05 ? \"#c0392b\" : \"#2e7d32\"; ctx.font = \"12px sans-serif\";\n    ctx.fillText(\"worst 8-bit error: \" + Math.round(e * 1000) / 10 + \"%\", x0, y0 + 18);\n  }\n  panel(16, SX, r[2], \"#1f4b99\", \"activations X / s\", r[0]);\n  panel(w * 0.34, SW, r[3], \"#8e44ad\", \"weights s · W\", r[1]);\n  var gx = w * 0.68, gy = 30, gw = w * 0.29, gh = h * 0.42, e, top = 0.2;\n  ctx.fillStyle = \"#333\"; ctx.font = \"13px sans-serif\"; ctx.fillText(\"error vs α\", gx, 20);\n  ctx.strokeStyle = \"#bbb\"; ctx.lineWidth = 1; ctx.strokeRect(gx, gy, gw, gh);\n  for (var c = 0; c < 3; c++) {\n    ctx.strokeStyle = c === 0 ? \"#1f4b99\" : (c === 1 ? \"#8e44ad\" : \"#222\"); ctx.lineWidth = c === 2 ? 2.5 : 1.5; ctx.beginPath();\n    for (k = 0; k <= 40; k++) { e = run(k / 40, [], []); var v = c === 2 ? Math.max(e[0], e[1]) : e[c];\n      var py = gy + gh * (1 - Math.min(v, top) / top); if (k === 0) ctx.moveTo(gx + gw * k / 40, py); else ctx.lineTo(gx + gw * k / 40, py); }\n    ctx.stroke();\n  }\n  ctx.fillStyle = \"#c0392b\"; ctx.beginPath(); ctx.arc(gx + gw * a, gy + gh * (1 - Math.min(Math.max(r[0], r[1]), top) / top), 5, 0, 2 * Math.PI); ctx.fill();\n  ctx.font = \"11px sans-serif\"; ctx.fillStyle = \"#555\"; ctx.fillText(\"0\", gx, gy + gh + 12); ctx.fillText(\"1\", gx + gw - 6, gy + gh + 12);\n  ctx.fillText(\"black = worse of the two\", gx, gy + gh + 26);\n  ctx.fillStyle = \"#333\"; ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"Σ_j X_j·W_j before = \" + fx(prod0) + \"   after = \" + fx(prod) + \"   (the layer output does not change)\", 16, h - 10);\n}",
+    },
+  },
+  {
+    claim: "Adam steps by the bias-corrected first moment divided by the square root of the second moment. On a narrow valley, SGD zigzags and Adam does not.",
+    widget: {
+      "id": "adam-valley",
+      "topic": "adam",
+      "title": "En el valle, el segundo momento frena el rebote",
+      "explain": "Adam guarda dos momentos: hacia dónde empuja el gradiente y qué tan brusco es cada eje. En un valle angosto el segundo momento crece en la pared y achica ese paso. SGD, con el mismo lr, zigzaguea; si subes lr, se sale.",
+      "questions": [
+        {
+          "q": "¿Por qué SGD rebota en un valle angosto y Adam no?",
+          "why": "el segundo momento achica el eje empinado"
+        },
+        {
+          "q": "¿Qué se está promediando: la dirección o el tamaño del paso?",
+          "why": "los dos momentos, uno para cada cosa"
+        },
+        {
+          "q": "¿Qué pasa si subo el lr y el valle sigue igual de angosto?",
+          "why": "SGD se sale y Adam aguanta más"
+        }
+      ],
+      "controls": [
+        {
+          "id": "lr",
+          "label": "paso lr",
+          "min": 0.01,
+          "max": 0.1,
+          "value": 0.04,
+          "step": 0.005
+        },
+        {
+          "id": "beta2",
+          "label": "beta2",
+          "min": 0.8,
+          "max": 0.999,
+          "value": 0.99,
+          "step": 0.001
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, lr = state.lr, b2 = state.beta2, b1 = 0.9, eps = 1e-8;\n  var x0 = 28, y0 = 14, pw = w * 0.68, ph = h - 28;\n  function X(x) { return x0 + (x + 1.5) / 3 * pw; }\n  function Y(y) { return y0 + (1.15 - y) / 2.3 * ph; }\n  var levels = [0.5, 1.5, 3, 6, 9], li, a, c, ct, st;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.strokeStyle = \"#e4d6c4\";\n  ctx.lineWidth = 1;\n  for (li = 0; li < levels.length; li++) {\n    c = levels[li];\n    ctx.beginPath();\n    for (a = 0; a <= 48; a++) {\n      ct = Math.cos(a / 48 * 6.2832);\n      st = Math.sin(a / 48 * 6.2832);\n      var px = Math.sqrt(2 * c) * ct, py = Math.sqrt(c / 20) * st;\n      if (a === 0) ctx.moveTo(X(px), Y(py)); else ctx.lineTo(X(px), Y(py));\n    }\n    ctx.stroke();\n  }\n  function path(kind) {\n    var x = -1.15, y = 0.55, mx = 0, my = 0, vx = 0, vy = 0, step, gx, gy, out = 0;\n    ctx.beginPath();\n    ctx.moveTo(X(x), Y(y));\n    for (step = 1; step <= 26; step++) {\n      gx = x; gy = 40 * y;\n      if (kind === 0) { x -= lr * gx; y -= lr * gy; }\n      else {\n        mx = b1 * mx + (1 - b1) * gx; my = b1 * my + (1 - b1) * gy;\n        vx = b2 * vx + (1 - b2) * gx * gx; vy = b2 * vy + (1 - b2) * gy * gy;\n        var mhx = mx / (1 - Math.pow(b1, step)), mhy = my / (1 - Math.pow(b1, step));\n        var vhx = vx / (1 - Math.pow(b2, step)), vhy = vy / (1 - Math.pow(b2, step));\n        x -= lr * mhx / (Math.sqrt(vhx) + eps);\n        y -= lr * mhy / (Math.sqrt(vhy) + eps);\n      }\n      if (x > 1.45 || x < -1.45 || y > 1.1 || y < -1.1) { out = 1; break; }\n      ctx.lineTo(X(x), Y(y));\n    }\n    ctx.stroke();\n    return out;\n  }\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.lineWidth = 2;\n  var sgdOut = path(0);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  path(1);\n  ctx.fillStyle = \"#c4512c\";\n  ctx.fillRect(x0 + pw + 8, 28, 10, 10);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(x0 + pw + 8, 48, 10, 10);\n  ctx.font = \"11px sans-serif\";\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.fillText(\"SGD\", x0 + pw + 22, 37);\n  ctx.fillText(\"Adam\", x0 + pw + 22, 57);\n  if (sgdOut) {\n    ctx.fillStyle = \"#c4512c\";\n    ctx.fillText(\"SGD se sale\", x0 + pw + 8, 80);\n  }\n}"
+    },
+  },
+  {
+    claim: "Batch normalization recenters each activation by the batch mean and rescales it by the batch standard deviation, then applies gamma and beta.",
+    widget: {
+      "id": "bn-stable",
+      "topic": "batchnorm",
+      "title": "La escala de la entrada no cruza el lote",
+      "explain": "BatchNorm resta la media del lote y divide entre su desviación. Mueve la escala o el corrimiento de la entrada: la fila de arriba cambia y la del medio no. Gamma y beta, aprendidos, vuelven a estirar y a mover la salida.",
+      "questions": [
+        {
+          "q": "¿Por qué la fila de en medio no se entera de la escala?",
+          "why": "restar la media y dividir cancela ese cambio"
+        },
+        {
+          "q": "¿Para qué están gamma y beta si ya normalicé?",
+          "why": "la red todavía puede pedir otra escala"
+        },
+        {
+          "q": "¿Qué se mueve cuando corro la entrada y qué se queda?",
+          "why": "solo la fila cruda; las otras usan el lote normalizado"
+        }
+      ],
+      "controls": [
+        {
+          "id": "scale",
+          "label": "escala",
+          "min": 0.4,
+          "max": 3,
+          "value": 2.2,
+          "step": 0.1
+        },
+        {
+          "id": "shift",
+          "label": "corrimiento",
+          "min": -1.5,
+          "max": 1.5,
+          "value": 0.8,
+          "step": 0.1
+        },
+        {
+          "id": "gamma",
+          "label": "gamma",
+          "min": 0.3,
+          "max": 2.2,
+          "value": 1.8,
+          "step": 0.1
+        },
+        {
+          "id": "bias",
+          "label": "beta",
+          "min": -1,
+          "max": 1,
+          "value": 0.35,
+          "step": 0.05
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, z = [-1.5, -0.8, -0.2, 0.35, 0.9, 1.45];\n  var n = 6, i, mean = 0, v = 0, raw = [], hat = [], out = [];\n  for (i = 0; i < n; i++) { raw[i] = state.shift + state.scale * z[i]; mean += raw[i]; }\n  mean /= n;\n  for (i = 0; i < n; i++) v += (raw[i] - mean) * (raw[i] - mean);\n  v = Math.sqrt(v / n) + 1e-6;\n  for (i = 0; i < n; i++) { hat[i] = (raw[i] - mean) / v; out[i] = state.gamma * hat[i] + state.bias; }\n  function row(vals, y, col, label) {\n    ctx.strokeStyle = \"#e4d6c4\";\n    ctx.beginPath();\n    ctx.moveTo(20, y);\n    ctx.lineTo(w - 16, y);\n    ctx.stroke();\n    ctx.fillStyle = col;\n    for (i = 0; i < n; i++) {\n      var x = w * 0.5 + vals[i] * 28;\n      if (x < 16) x = 16;\n      if (x > w - 16) x = w - 16;\n      ctx.beginPath();\n      ctx.arc(x, y, 5, 0, 6.2832);\n      ctx.fill();\n    }\n    ctx.fillStyle = \"#5c564c\";\n    ctx.font = \"11px sans-serif\";\n    ctx.fillText(label, 8, y - 10);\n  }\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.lineWidth = 1;\n  row(raw, 48, \"#c4512c\", \"entrada\");\n  row(hat, 108, \"#1f4b99\", \"tras el lote\");\n  row(out, 168, \"#2e7d32\", \"gamma y beta\");\n}"
+    },
+  },
+  {
+    claim: "Knowledge distillation raises the softmax temperature so the teacher's small probabilities, the dark knowledge, become visible to the student.",
+    widget: {
+      "id": "distill-temp",
+      "topic": "distill_temp",
+      "title": "La temperatura del maestro saca las chicas",
+      "explain": "Subir la temperatura del maestro saca las probabilidades chicas, las que el argmax esconde. El alumno aprende de ese orden, no solo de la clase ganadora.",
+      "questions": [
+        {
+          "q": "¿Por qué entrenar con las probabilidades del maestro?",
+          "why": "el orden entre las clases perdedoras también informa"
+        },
+        {
+          "q": "¿Qué aparece cuando sube la temperatura?",
+          "why": "las probabilidades chicas se vuelven legibles"
+        },
+        {
+          "q": "¿Qué se aplasta si la temperatura vuelve a uno?",
+          "why": "otra vez solo se ve la clase ganadora"
+        }
+      ],
+      "controls": [
+        {
+          "id": "temp",
+          "label": "temperatura",
+          "min": 1,
+          "max": 8,
+          "value": 1,
+          "step": 0.5
+        }
+      ],
+      "draw": "function draw(ctx, state, t) {\n  var w = state.w, h = state.h, temp = state.temp;\n  if (temp < 0.05) temp = 0.05;\n  var logits = [2.2, 1.1, 0.4, -0.2];\n  var hard = [1, 0, 0, 0];\n  var i, m = logits[0], s = 0, p = [];\n  for (i = 1; i < 4; i++) if (logits[i] > m) m = logits[i];\n  for (i = 0; i < 4; i++) { p[i] = Math.exp((logits[i] - m) / temp); s += p[i]; }\n  for (i = 0; i < 4; i++) p[i] = p[i] / s;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  function bars(vals, x0, label) {\n    var base = h * 0.74, bw = 36, gap = 14, maxH = h * 0.48, k, bh;\n    ctx.fillStyle = \"#5c564c\";\n    ctx.font = \"13px sans-serif\";\n    ctx.fillText(label, x0, 32);\n    for (k = 0; k < 4; k++) {\n      bh = vals[k] * maxH;\n      if (bh < 1) bh = 1;\n      ctx.fillStyle = k === 0 ? \"#1f4b99\" : \"#c4512c\";\n      ctx.fillRect(x0 + k * (bw + gap), base - bh, bw, bh);\n    }\n    ctx.strokeStyle = \"#e4d6c4\";\n    ctx.lineWidth = 1;\n    ctx.beginPath();\n    ctx.moveTo(x0, base);\n    ctx.lineTo(x0 + 4 * bw + 3 * gap, base);\n    ctx.stroke();\n  }\n  bars(hard, 28, \"lo que ve el argmax\");\n  bars(p, w * 0.52, \"lo que entrega el maestro\");\n  var hidden = Math.round((1 - p[0]) * 100);\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"14px sans-serif\";\n  ctx.fillText(\"temperatura \" + temp, w * 0.52, 54);\n  ctx.fillText(\"masa fuera del ganador \" + hidden + \"%\", 28, h - 18);\n}\n"
     },
   },
 ];

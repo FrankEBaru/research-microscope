@@ -62,27 +62,86 @@ function fold(text) {
   return String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
+// English cue in the claim, Spanish mark in the copy. Topic-gated so a reef claim still fails.
+const LINKS = {
+  positional_encoding: [["positional", "sinusoid", "10000", "cosine"], ["base", "onda"]],
+  noise_schedule: [["noise", "gaussian", "beta"], ["ruido", "beta"]],
+  guidance: [["guidance", "classifier-free", "unconditional"], ["guia"]],
+  detr_match: [["hungarian", "bipartite", "matching"], ["emparej"]],
+  residual: [["residual", "identity"], ["atajo"]],
+  nucleus: [["nucleus", "top-p", "cumulative"], ["masa"]],
+  gqa: [["grouped", "gqa"], ["grupo"]],
+  label_smoothing: [["smoothing", "label"], ["suavizado"]],
+  warmup: [["warmup", "learning rate"], ["calentamiento"]],
+  alibi: [["alibi", "slope"], ["pendiente"]],
+  adam: [["adam", "moment", "valley"], ["momento", "valle"]],
+  batchnorm: [["batch", "normalization"], ["lote"]],
+  distill_temp: [["distillation", "teacher", "temperature"], ["maestro", "temperatura"]],
+};
+
+function linkedPair(topic, claimFold, copy) {
+  const pair = LINKS[topic];
+  if (!pair) return false;
+  const claimHit = pair[0].some((stem) => claimFold.includes(fold(stem)));
+  const copyHit = pair[1].some((stem) => copy.includes(fold(stem)));
+  return claimHit && copyHit;
+}
+
+function hasWord(hay, word) {
+  if (!word || word.length < 3) return false;
+  let from = 0;
+  while (from <= hay.length - word.length) {
+    const at = hay.indexOf(word, from);
+    if (at < 0) return false;
+    const before = at === 0 || !/[a-z0-9]/.test(hay[at - 1]);
+    const after = at + word.length === hay.length || !/[a-z0-9]/.test(hay[at + word.length]);
+    if (before && after) return true;
+    from = at + 1;
+  }
+  return false;
+}
+
 export function claimLinked(widget, claim) {
   const raw = String(claim || "").trim();
   if (!raw) return true;
   const claimFold = fold(raw);
-  const topicWords = String(widget.topic || "").split("_").filter((word) => word.length >= 4);
+  const parts = String(widget.topic || "").split("_");
+  const topicWords = parts.filter((word) => word.length >= 4);
+  const shortTopic = parts.filter((word) => word.length === 3);
   const copy = fold([
     widget.title,
     widget.explain,
     ...(widget.questions || []).map((item) => `${item.q || ""} ${item.why || ""}`),
   ].join(" "));
-  const topicInClaim = topicWords.some((word) => claimFold.includes(fold(word)));
-  const topicInCopy = topicWords.some((word) => copy.includes(fold(word)));
-  const tokens = claimFold.split(/[^a-z0-9]+/).filter((token) => token.length >= 5 && !STOP.has(token));
+  const topicInClaim = topicWords.some((word) => claimFold.includes(fold(word)))
+    || shortTopic.some((word) => hasWord(claimFold, fold(word)));
+  const topicInCopy = topicWords.some((word) => copy.includes(fold(word)))
+    || shortTopic.some((word) => hasWord(copy, fold(word)));
+  // Keep underscores so p_drop is one token in both languages.
+  const tokens = claimFold.split(/[^a-z0-9_]+/).filter((token) => token.length >= 5 && !STOP.has(token));
   const tokenHit = tokens.some((token) => copy.includes(token));
   const nums = raw.match(/\d{3,}/g) || [];
   const hay = `${widget.title || ""}\n${widget.explain || ""}\n${widget.draw || ""}`;
   const numberHit = nums.some((n) => hay.includes(n));
-  return (topicInClaim && topicInCopy) || tokenHit || numberHit;
+  return (topicInClaim && topicInCopy) || tokenHit || numberHit || linkedPair(widget.topic, claimFold, copy);
 }
 
 const SEAL_RE = /verified|from the paper|✓|✔/i;
+
+// Same instruction shapes as the prompt verifier. A linked formula does not excuse them.
+const INJECT_RE = /ignore (?:all |any |the )?(?:previous|prior|above) instructions|olvida (?:las |tus )?instrucciones|ignora (?:las |tus )?instrucciones|system prompt|leak (?:the |your )?prompt|print (?:your |the )?(?:system )?prompt|you are now|<<<\s*system|\[system\]|verdict must be|responde(?:r)?\s+['"]?coincide|answer(?: with)?\s+['"]?coincide|fake system|merit must be|m[eé]rito debe ser|emit(?:e|ir)?\s+fetch|call fetch|<\s*script|javascript:|disregard (?:all |any |the )?(?:above|previous)|new instructions\s*:/i;
+
+function injectionIn(text) {
+  return INJECT_RE.test(String(text || ""));
+}
+
+function copyText(widget) {
+  const parts = [widget && widget.title, widget && widget.explain, widget && widget.draw];
+  for (const item of (widget && widget.questions) || []) {
+    if (item && typeof item === "object") parts.push(item.q, item.why);
+  }
+  return parts.filter((part) => typeof part === "string").join("\n");
+}
 
 function sealIn(draw) {
   const re = /fillText\s*\(\s*(["'])([\s\S]*?)\1/g;
@@ -117,6 +176,7 @@ export function verifyWidget(widget, opts = {}) {
   const draw = widget && typeof widget.draw === "string" ? widget.draw : "";
   if (bannedIn(draw).length || networkIn(widget)) reasons.push("banned");
   if (sealIn(draw)) reasons.push("slop_seal");
+  if (injectionIn(opts.claim) || injectionIn(copyText(widget))) reasons.push("injection");
   if (reasons.length) return finish(reasons, false);
 
   let ast;

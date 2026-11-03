@@ -1,4 +1,4 @@
-"""Four figures from RRM-82 that the bank did not draw.
+"""Figures the gold set and the emulated catalog do not draw.
 
 The gallery reads the same widgets from apps/reader/src/lib/liveart/guest.js.
 """

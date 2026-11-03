@@ -33,7 +33,7 @@ Canvas 2d: `clearRect`, `fillRect`, `strokeRect`, `beginPath`, `closePath`, `mov
 
 Math: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `log`, `sqrt`, `abs`, `hypot`, `sign`, `min`, `max`, `pow`, `floor`, `ceil`, `round`, `PI`, `E`.
 
-El lenguaje es un subconjunto: `var` o `const`, `if` / `else`, `for`, `while`, funciones anidadas, arreglos, `===` y `!==`. Un string solo expone `.length` (los arreglos también). Un número puede usar `toFixed` con hasta 6 decimales. Sin flechas, sin `new`, sin `import`, sin acceso `obj["constructor"]`, sin otros métodos de string.
+El lenguaje es un subconjunto: `var` o `const`, `if` / `else`, `for`, `while`, `break`, `continue`, funciones anidadas, arreglos, `===` y `!==`. `undefined` es un valor y no hace falta declararlo. Un string solo expone `.length` (los arreglos también). Un número puede usar `toFixed` con hasta 6 decimales. Sin flechas, sin `new`, sin `import`, sin acceso `obj["constructor"]`, sin otros métodos de string. `setLineDash` no está: una línea punteada son segmentos cortos. El tope de 200000 pasos se queda; un NeRF con seis bucles anidados no monta aunque el verificador de modelo lo acepte.
 
 Prohibido en el fuente (la lista viva está en `contract.py`): red, `fetch`, `eval`, `Function`, `import`, `document`, `window`, almacenamiento, `postMessage`, `innerHTML`, `setTimeout`, `requestAnimationFrame`, `Math.random`, `Date`, `Worker`, `WebAssembly`, `http://` y `https://`.
 
@@ -51,8 +51,9 @@ Antes de montar, el verificador del motor rechaza:
 
 - `dead_control`: ningún control se lee.
 - `slop_inert:<id>`: ese control no mueve ninguna primitiva de dibujo en al menos 2 px entre su mínimo y su máximo. El texto solo no cuenta, y tampoco un cambio que solo recolorea la misma figura.
-- `slop_unrelated`: el enunciado no comparte un tema ni una palabra de contenido con el título, la explicación o las preguntas.
+- `slop_unrelated`: el enunciado no comparte un tema ni una palabra de contenido con el título, la explicación o las preguntas. El enlace es bilingüe: un tema corto escrito igual en los dos lados (GQA), un token con guion bajo (`p_drop`), o una marca conocida del tema (ruido, guía, atajo, masa, lote, maestro, y las demás de esa lista) cuando el enunciado trae la pista inglesa de ese mismo tema.
 - `slop_seal`: un `fillText` pinta «verified», «from the paper» o una palomita.
+- `injection`: el enunciado o la copia piden ignorar reglas, filtrar el prompt o llamar a `fetch`. Un enlace de tema no los perdona.
 - `blank`, `step_cap`, `banned`, `syntax`.
 
 Eso no decide si la figura enseña la ecuación. `intuitive` y `on_claim` siguen siendo del verificador de modelo. El motor agarra el control muerto y el texto que no toca el enunciado.
