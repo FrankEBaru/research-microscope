@@ -225,8 +225,292 @@ def _vit(blob):
     return 1 if re.search(r"patch size", blob, re.I) else 0
 
 
+def _online_softmax(blob):
+    if re.search(r"flashattention|online softmax|running max", blob, re.I):
+        return 2
+    return _both(blob, re.compile(r"softmax", re.I), re.compile(r"block by block|por bloques", re.I))
+
+
+def _chinchilla(blob):
+    if re.search(r"chinchilla", blob, re.I):
+        return 2
+    return _both(
+        blob,
+        re.compile(r"compute budget|6\s*ND|iso-flop", re.I),
+        re.compile(r"model size|N\^0\.34|tokens", re.I),
+    )
+
+
+def _adam(blob):
+    if re.search(r"\badam\b", blob, re.I):
+        return 2
+    return _both(blob, re.compile(r"first moment", re.I), re.compile(r"second moment", re.I))
+
+
+def _spec_cost(blob):
+    if not re.search(r"speculative decoding|draft (?:model|token|length)", blob, re.I):
+        return 0
+    if re.search(r"speedup|draft length|\bgamma\b", blob, re.I):
+        return 2
+    return 0
+
+
+def _yarn_parts(blob):
+    if re.search(r"ntk-by-parts|by-parts|by parts", blob, re.I):
+        return 3
+    return _both(
+        blob,
+        re.compile(r"\byarn\b|\brope\b", re.I),
+        re.compile(r"wavelength|high-frequency|untouched", re.I),
+    )
+
+
+def _batchnorm(blob):
+    return 2 if re.search(r"batch\s*norm", blob, re.I) else 0
+
+
+def _distill(blob):
+    if re.search(r"distill|dark knowledge", blob, re.I):
+        return 2
+    return _both(blob, re.compile(r"teacher", re.I), re.compile(r"temperature|softmax", re.I))
+
+
+def _lora(blob):
+    if re.search(r"\blora\b|low-rank adaptation", blob, re.I):
+        return 2
+    return _both(blob, re.compile(r"low-rank", re.I), re.compile(r"matri(?:x|ces)|update", re.I))
+
+
+def _kl_rlhf(blob):
+    if re.search(r"\bdpo\b|direct preference", blob, re.I):
+        return 0
+    return _both(
+        blob,
+        re.compile(r"\brlhf\b|reference policy", re.I),
+        re.compile(r"\bbeta\b|reward", re.I),
+    )
+
+
+def _beam(blob):
+    return 2 if re.search(r"beam search|beam width", blob, re.I) else 0
+
+
+def _bpe(blob):
+    if re.search(r"byte-pair|\bbpe\b", blob, re.I):
+        return 2
+    return 1 if re.search(r"most frequent adjacent pair", blob, re.I) else 0
+
+
+def _smoothquant(blob):
+    if re.search(r"smoothquant", blob, re.I):
+        return 2
+    return _both(blob, re.compile(r"outlier", re.I), re.compile(r"activation", re.I))
+
+
+def _ssm(blob):
+    if re.search(r"\bmamba\b|selective state space", blob, re.I):
+        return 2
+    return _both(blob, re.compile(r"\bdelta\b", re.I), re.compile(r"hidden state|resets", re.I))
+
+
 # Orden = desempate. El más específico va primero.
 TOPICS = (
+    {
+        "name": "online_softmax",
+        "score": _online_softmax,
+        "controls": ("blocks",),
+        "mark": "bloque",
+        "explain": (
+            "El softmax se arma por bloques. Cada bloque trae su máximo y su suma, "
+            "y la suma vieja se reescala si el máximo sube. En el último bloque las barras "
+            "coinciden con el softmax de toda la lista."
+        ),
+        "questions": (
+            ("¿El softmax por bloques es una aproximación?", "en el último bloque la diferencia con la lista completa es cero"),
+            ("¿Por qué reescalar la suma cuando sube el máximo?", "los bloques viejos se contaron con otro máximo"),
+            ("¿Qué se ahorra si no se guardan todos los puntajes?", "basta el máximo y la suma, no la matriz"),
+        ),
+    },
+    {
+        "name": "chinchilla",
+        "score": _chinchilla,
+        "controls": ("budget",),
+        "mark": "valle",
+        "explain": (
+            "Con un cómputo fijo, agrandar el modelo obliga a ver menos datos. "
+            "La pérdida hace un valle: hay un tamaño mejor, y el fondo se corre si el presupuesto crece."
+        ),
+        "questions": (
+            ("¿Por qué no poner todo el cómputo en un modelo más grande?", "los datos se achican y la pérdida vuelve a subir"),
+            ("¿Qué se mueve cuando sube el presupuesto?", "el fondo del valle se corre hacia un modelo mayor"),
+            ("¿Qué se está eligiendo, el tamaño o los tokens?", "los dos, sobre la curva de cómputo fijo"),
+        ),
+    },
+    {
+        "name": "adam",
+        "score": _adam,
+        "controls": ("lr",),
+        "mark": "momento",
+        "explain": (
+            "Adam divide el paso entre la raíz del segundo momento, así que una dirección ruidosa se achica. "
+            "En un valle angosto, SGD rebota en la pared y Adam baja por el centro."
+        ),
+        "questions": (
+            ("¿Por qué SGD zigzaguea y Adam no, con el mismo paso?", "Adam achica la dirección que más varía"),
+            ("¿Qué pasa si el paso es demasiado grande?", "SGD se sale del valle y Adam aguanta más"),
+            ("¿Qué se está normalizando, el gradiente o los datos?", "el paso se divide entre la raíz del segundo momento"),
+        ),
+    },
+    {
+        "name": "spec_cost",
+        "score": _spec_cost,
+        "controls": ("agree", "cost"),
+        "mark": "largo",
+        "explain": (
+            "Alargar el borrador solo conviene mientras lo aceptan. Cada token de más cuesta una fracción "
+            "del modelo grande, así que el ahorro sube y después cae: hay un largo mejor."
+        ),
+        "questions": (
+            ("¿Por qué no dejar que el borrador proponga cincuenta tokens?", "los rechazados se pagan y el ahorro cae"),
+            ("¿Qué mueve el largo mejor, el acuerdo o el costo?", "los dos: si el acuerdo baja, el mejor se acorta"),
+            ("¿Cuándo el borrador sale más lento que generar directo?", "cuando la cola de la curva baja de uno"),
+        ),
+    },
+    {
+        "name": "yarn_parts",
+        "score": _yarn_parts,
+        "controls": ("scale",),
+        "mark": "lenta",
+        "explain": (
+            "YaRN no estira todas las frecuencias. Las rápidas ya dan varias vueltas dentro del contexto y se quedan. "
+            "Las lentas, cuya onda es más larga que el contexto, sí se interpolan."
+        ),
+        "questions": (
+            ("¿Por qué no dividir todas las posiciones entre la escala?", "las frecuencias altas ya cabían y estirarlas las deforma"),
+            ("¿Qué dimensión se toca cuando el contexto crece?", "la que todavía no dio una vuelta dentro del contexto"),
+            ("¿Qué queda igual en las frecuencias altas?", "su ángulo no se divide"),
+        ),
+    },
+    {
+        "name": "batchnorm",
+        "score": _batchnorm,
+        "controls": ("scale",),
+        "mark": "lote",
+        "explain": (
+            "BatchNorm resta la media del lote y divide entre su desviación. "
+            "La fila de adelante deja de ver la escala de la entrada; gamma y beta la vuelven a estirar después."
+        ),
+        "questions": (
+            ("¿Por qué la capa siguiente no ve la escala de la entrada?", "el lote ya quedó en media cero y ancho uno"),
+            ("¿Qué vuelve a estirar la fila de abajo?", "gamma y beta, después de normalizar"),
+            ("¿Qué se está centrando, un dato o el lote?", "la media y la desviación son del lote"),
+        ),
+    },
+    {
+        "name": "distill_temp",
+        "score": _distill,
+        "controls": ("temp",),
+        "mark": "maestro",
+        "explain": (
+            "Subir la temperatura del maestro saca las probabilidades chicas, las que el argmax esconde. "
+            "El alumno aprende de ese orden, no solo de la clase ganadora."
+        ),
+        "questions": (
+            ("¿Por qué entrenar con las probabilidades del maestro?", "el orden entre las clases perdedoras también informa"),
+            ("¿Qué aparece cuando sube la temperatura?", "las probabilidades chicas se vuelven legibles"),
+            ("¿Qué se aplasta si la temperatura vuelve a uno?", "otra vez solo se ve la clase ganadora"),
+        ),
+    },
+    {
+        "name": "lora",
+        "score": _lora,
+        "controls": ("rank",),
+        "mark": "rango",
+        "explain": (
+            "LoRA escribe el cambio de peso como el producto de dos matrices flacas. "
+            "Subir el rango suma un patrón, y los parámetros crecen como 2 por d por rango, no como d al cuadrado."
+        ),
+        "questions": (
+            ("¿Cómo un rango chico cambia una matriz enorme?", "cada rango suma un patrón de rango uno"),
+            ("¿Qué crece más rápido, el rango o el costo?", "el costo es lineal en el rango, cuadrático si se entrena todo"),
+            ("¿Qué se está entrenando, la matriz completa o el factor?", "solo las dos matrices flacas"),
+        ),
+    },
+    {
+        "name": "kl_rlhf",
+        "score": _kl_rlhf,
+        "controls": ("beta",),
+        "mark": "referencia",
+        "explain": (
+            "La política óptima mezcla el premio con la referencia: crece como exp(premio / beta) sobre la referencia. "
+            "Beta chico, y el token premiado se queda con toda la masa."
+        ),
+        "questions": (
+            ("¿Por qué no elegir siempre el token de más premio?", "beta chico sí lo hace; beta grande lo frena la referencia"),
+            ("¿Qué crece cuando beta baja?", "la distancia a la política de referencia"),
+            ("¿Qué frena beta, el premio o la referencia?", "qué tanto se puede alejar de la referencia"),
+        ),
+    },
+    {
+        "name": "beam",
+        "score": _beam,
+        "controls": ("width",),
+        "mark": "ancho",
+        "explain": (
+            "El haz guarda las continuaciones mejores hasta ahora. "
+            "Ancho uno es el codicioso y puede perder: un primer token peor a veces termina en una frase mejor."
+        ),
+        "questions": (
+            ("¿Por qué no elegir siempre la palabra más probable?", "un arranque peor puede terminar mejor"),
+            ("¿Qué cambia cuando el ancho pasa de uno a dos?", "entra la rama que el codicioso había tirado"),
+            ("¿Qué se está guardando, la frase final o el camino?", "el haz guarda los mejores caminos a medio hacer"),
+        ),
+    },
+    {
+        "name": "bpe_merge",
+        "score": _bpe,
+        "controls": ("merges",),
+        "mark": "par",
+        "explain": (
+            "BPE pega, una y otra vez, el par de símbolos que más se repite. "
+            "Las palabras frecuentes se vuelven un token; una palabra nueva se parte con esas fusiones."
+        ),
+        "questions": (
+            ("¿Por qué fusionar el par más frecuente y no la palabra entera?", "el par sirve en varias palabras"),
+            ("¿Cómo se parte una palabra que no estaba en el vocabulario?", "con las fusiones ya hechas, de a caracteres"),
+            ("¿Qué se ve al avanzar el número de fusiones?", "los cuadros vecinos se juntan en uno"),
+        ),
+    },
+    {
+        "name": "smoothquant",
+        "score": _smoothquant,
+        "controls": ("alpha",),
+        "mark": "outlier",
+        "explain": (
+            "SmoothQuant pasa el outlier de la activación al peso, con una escala alpha. "
+            "El error tiene un valle: alpha de más lo deja en el peso, alpha de menos lo deja en la activación."
+        ),
+        "questions": (
+            ("¿Por qué no cuantizar la activación tal cual?", "un outlier se come el rango y el resto se aplasta"),
+            ("¿Qué pasa si alpha se va a un extremo?", "el error sube; el fondo está entre los dos"),
+            ("¿Quién se queda con el outlier?", "alpha lo reparte entre la activación y el peso"),
+        ),
+    },
+    {
+        "name": "ssm_delta",
+        "score": _ssm,
+        "controls": ("delta",),
+        "mark": "paso",
+        "explain": (
+            "En el modelo selectivo, delta es el tamaño del paso. Grande, y el estado se olvida y se queda con la entrada de ahora. "
+            "Chico, y el estado sigue y la entrada casi no entra."
+        ),
+        "questions": (
+            ("¿Qué hace un delta grande con la memoria?", "la borra y la reemplaza con la entrada actual"),
+            ("¿Qué se ignora cuando delta es chico?", "la entrada de este token"),
+            ("¿Por qué no alcanza con una compuerta fija?", "delta cambia con el token: a veces recuerda y a veces resetea"),
+        ),
+    },
     {
         "name": "giou",
         "score": _giou,

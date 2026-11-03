@@ -695,6 +695,81 @@ CATALOG = [
         "  ctx.font = \"12px sans-serif\";\n"
         "  ctx.fillText((n / p) * (n / p) + \" tokens\", x0 + n * cell + 12, y0 + 14);\n",
     ),
+    _row(
+        "online-softmax", "online_softmax", "Al último bloque queda igual",
+        "FlashAttention softmax is exact: the running max and the rescaled running sum, updated block by block, match the full softmax.",
+        "2205.14135",
+        [_knob("blocks", "bloques", 1, 4, 2, 1)],
+        "  var S = [1.2, 0.2, 2.4, -0.5, 0.1, 1.8, -1, 3.1, 0.4, 0, 1.1, -0.2, 2, 0.6, -0.8, 1.5];\n"
+        "  var blocks = state.blocks, n = 16, seen = blocks * 4;\n"
+        "  var m = -1e9, l = 0, i, b, mb, m2, acc, Fm, Fl, diff, bw, x, p, pf;\n"
+        "  Fm = -1e9; Fl = 0;\n"
+        "  for (i = 0; i < n; i++) if (S[i] > Fm) Fm = S[i];\n"
+        "  for (i = 0; i < n; i++) Fl += Math.exp(S[i] - Fm);\n"
+        "  for (b = 0; b < blocks; b++) {\n"
+        "    mb = -1e9;\n"
+        "    for (i = b * 4; i < b * 4 + 4; i++) if (S[i] > mb) mb = S[i];\n"
+        "    m2 = m > mb ? m : mb;\n"
+        "    acc = 0;\n"
+        "    for (i = b * 4; i < b * 4 + 4; i++) acc += Math.exp(S[i] - m2);\n"
+        "    l = l * Math.exp(m - m2) + acc;\n"
+        "    m = m2;\n"
+        "  }\n"
+        "  diff = 0;\n"
+        "  bw = (w - 24) / n;\n"
+        "  for (i = 0; i < n; i++) {\n"
+        "    pf = Math.exp(S[i] - Fm) / Fl;\n"
+        "    p = i < seen ? Math.exp(S[i] - m) / l : 0;\n"
+        "    if (i < seen && Math.abs(p - pf) > diff) diff = Math.abs(p - pf);\n"
+        "    x = 12 + i * bw;\n"
+        "    ctx.fillStyle = \"#d9d3c7\";\n"
+        "    ctx.fillRect(x, h * 0.78 - pf * h * 0.5, bw - 2, pf * h * 0.5);\n"
+        "    if (p > 0) {\n"
+        "      ctx.fillStyle = \"#1f4b99\";\n"
+        "      ctx.fillRect(x, h * 0.78 - p * h * 0.5, bw - 2, Math.max(1, p * h * 0.5));\n"
+        "    }\n"
+        "  }\n"
+        "  ctx.fillStyle = \"#5c564c\";\n"
+        "  ctx.font = \"13px sans-serif\";\n"
+        "  ctx.fillText(diff < 0.001 ? \"igual\" : \"aún no\", 8, 16);\n",
+    ),
+    _row(
+        "chinchilla-valley", "chinchilla", "El cómputo fijo hace un valle",
+        "For a fixed compute budget C approximately 6ND, the Chinchilla loss is a valley: there is a best model size.",
+        "2203.15556",
+        [_knob("budget", "presupuesto", 18, 24, 22, 0.5)],
+        "  var C = Math.pow(10, state.budget);\n"
+        "  var i, logn, N, D, L, best = 1e9, bestI = 0, lo = 1e9, hi = 0, x, y;\n"
+        "  var pts = [];\n"
+        "  for (i = 0; i <= 48; i++) {\n"
+        "    logn = 7 + (i / 48) * 5;\n"
+        "    N = Math.pow(10, logn);\n"
+        "    D = C / (6 * N);\n"
+        "    L = 1.69 + 406.4 * Math.pow(N, -0.34) + 410.7 * Math.pow(D, -0.28);\n"
+        "    pts.push(L);\n"
+        "    if (L < best) { best = L; bestI = i; }\n"
+        "    if (L < lo) lo = L;\n"
+        "    if (L > hi) hi = L;\n"
+        "  }\n"
+        "  ctx.strokeStyle = \"#1f4b99\";\n"
+        "  ctx.lineWidth = 2;\n"
+        "  ctx.beginPath();\n"
+        "  for (i = 0; i <= 48; i++) {\n"
+        "    x = 16 + (i / 48) * (w - 32);\n"
+        "    y = h * 0.82 - ((pts[i] - lo) / (hi - lo)) * (h * 0.56);\n"
+        "    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);\n"
+        "  }\n"
+        "  ctx.stroke();\n"
+        "  x = 16 + (bestI / 48) * (w - 32);\n"
+        "  ctx.strokeStyle = \"#c4512c\";\n"
+        "  ctx.beginPath();\n"
+        "  ctx.moveTo(x, h * 0.22);\n"
+        "  ctx.lineTo(x, h * 0.84);\n"
+        "  ctx.stroke();\n"
+        "  ctx.fillStyle = \"#5c564c\";\n"
+        "  ctx.font = \"13px sans-serif\";\n"
+        "  ctx.fillText(best.toFixed(2), 8, 16);\n",
+    ),
 ]
 
 

@@ -37,13 +37,13 @@ Prohibido en el fuente (la lista viva está en `contract.py`): red, `fetch`, `ev
 
 ## Temas que el selector ya reconoce
 
-La lista viva está en `offline.py` (`TOPICS`): encoding posicional, temperatura, raíz de d_k, sigma, RoPE, DPO, YaRN, borrador, ruido, guía, DETR, atajo, top-p, contraste, GIoU, recorte de PPO, frecuencias de NeRF, parche de ViT, y también RMSNorm, SwiGLU, GQA, multi-head, ALiBi, GELU, suavizado de etiquetas, dropout, calentamiento, MoE, top-k y focal loss.
+La lista viva está en `offline.py` (`TOPICS`): encoding posicional, temperatura, raíz de d_k, sigma, RoPE, DPO, YaRN, borrador, ruido, guía, DETR, atajo, top-p, contraste, GIoU, recorte de PPO, frecuencias de NeRF, parche de ViT, y también RMSNorm, SwiGLU, GQA, multi-head, ALiBi, GELU, suavizado de etiquetas, dropout, calentamiento, MoE, top-k y focal loss. Los de varios pasos, agregados sin subir la versión: softmax por bloques, valle de Chinchilla, Adam, largo óptimo del borrador, YaRN por partes, BatchNorm, temperatura de destilación, LoRA, KL del RLHF, haz, fusiones BPE, SmoothQuant y delta de un modelo selectivo.
 
 Un resultado (BLEU, “N× smaller”, “8x deeper”, outperforms) es `skip`. Una fórmula que no es de esos temas es `static`. Texto absurdo o una inyección es `skip`.
 
 Un adorno es `skip` con razón `slop`: confeti, arcoíris, rebote, o un slider que solo cambia color o la velocidad de una animación. Un mecanismo con su parámetro no es slop. El verificador también devuelve `slop` si el draw lee el control solo para pintar (`fillStyle`, `strokeStyle`, `globalAlpha`), si el id es de adorno (`hue`, `speed`, `bounce`), o si el draw trae un sello (`verified`, `from the paper`, ✓). El esquema del verificador incluye `not_slop`.
 
-Dos controles enlazados caben en el máximo de 4 cuando cada uno es un parámetro del enunciado y el dibujo muestra cómo se cruzan. `t` solo si el fenómeno se mueve solo.
+Dos controles enlazados caben en el máximo de 4 cuando cada uno es un parámetro del enunciado y el dibujo muestra cómo se cruzan. Un control también puede recorrer un paso (bloques, fusiones, el presupuesto). `t` solo si el fenómeno se mueve solo.
 
 ## Host
 

@@ -9,6 +9,8 @@ from rrm.liveart.offline import gold_widget
 FRONT = (
     "positional-encoding",
     "rope-shift",
+    "online-softmax",
+    "chinchilla-valley",
     "giou-gap",
     "ppo-clip",
     "nerf-freq",

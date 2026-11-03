@@ -11,6 +11,7 @@ Contrato **`rrm-widget/0.2`**. Límites iguales (draw 3500, 1–4 controles). Ca
 - Razón `slop` en el selector y en el verificador (`not_slop` en el esquema). Adorno, o un control que solo pinta.
 - Temas nuevos, con arXiv chequeado: `giou` (1902.09630), `ppo_clip` (1707.06347), `nerf_freq` (2003.08934), `vit_patch` (2010.11929).
 - `rope-shift` reemplaza el giro de un solo vector: distancia y corrimiento. El parecido es el producto de los dos giros. No entra al prompt.
+- Temas del banco, misma versión 0.2, sin mover límites: softmax por bloques, Chinchilla, Adam, costo del borrador, YaRN por partes, BatchNorm, destilación, LoRA, KL, haz, BPE, SmoothQuant, delta selectivo. El delta para RRM-79 está en compass `CONTRACT.md`. `rope_relative` es `rope`. `scaling` es `chinchilla`.
 - El few-shot de posición ahora muestra la onda y el parecido entre posiciones. Siguen siendo 4 few-shots. El prompt de código mide 10161 caracteres.
 - Galería de prueba, fuera del lector: `liveart/host/gallery.html`. Lienzo 360×200, iframe `sandbox=allow-scripts`, sin `allow-same-origin`, sin `eval` (el CSP no lo deja).
 
