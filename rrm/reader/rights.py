@@ -24,6 +24,15 @@ def gate_on():
     return os.environ.get("RRM_LICENSE_GATE", "1") != "0"
 
 
+def fixture_render(row):
+    """Full text for one offline fixture row. Live does not set RRM_LICENSE_FIXTURE.
+
+    The license class stays whatever the URL says. This only skips the body
+    strip, and only for a row that itself says fixture_open.
+    """
+    return bool(row and row.get("fixture_open")) and os.environ.get("RRM_LICENSE_FIXTURE") == "1"
+
+
 def license_class(url):
     """open o closed. Vacío, desconocido, ND, NC y la default de arXiv son closed."""
     raw = (url or "").strip().lower()
@@ -126,6 +135,8 @@ def _index(data):
             "version": _norm_ver(val.get("version")),
             "corpusid": val.get("corpusid"),
             "arxiv": base,
+            # Ignored unless RRM_LICENSE_FIXTURE=1. Live never sets that env.
+            "fixture_open": val.get("fixture_open") is True,
         }
         if base:
             by_arxiv[base] = row
@@ -207,6 +218,7 @@ def rights_for(paper_or_ids, m):
     version = (row or {}).get("version") or _norm_ver(in_id)
     ax = (row or {}).get("arxiv") or base
     cls = license_class(url) if row is not None else "closed"
+    fixture = fixture_render(row)
     return {
         "license": url,
         "url": url,
@@ -215,7 +227,8 @@ def rights_for(paper_or_ids, m):
         "sa": bool(url) and share_alike(url),
         "version": version,
         "arxiv": ax,
-        "gated": cls == "closed" and gate_on(),
+        "fixture": fixture,
+        "gated": cls == "closed" and gate_on() and not fixture,
     }
 
 
