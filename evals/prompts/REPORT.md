@@ -1,7 +1,7 @@
 # Prompt eval
 
 - Fecha: 2026-11-03
-- Commit: `1dff6d808dfc4fe81402ae08fba9575503b8d249`
+- Commit: `ec399e5fed88ff671f8ebbd744ffb6338cb700d4`
 - Modelo: recorded-mock (en vivo sería muse-spark-1.3-contributor; no se llamó a Meta en esta corrida).
 - Resultado: 54 passed, 0 failed, 54 total
 - Costo estimado de un pase en vivo: $0.0057 (96 llamadas, ~41413 in / ~7680 out).
