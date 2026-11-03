@@ -3,6 +3,7 @@
 import pytest
 
 from rrm.passages.rows import extract_rows
+from rrm.reader.passage_junk import is_junk_passage
 
 
 def _text(value):
@@ -72,6 +73,28 @@ def test_extract_rows_keeps_footnote_prose_and_drops_layout(monkeypatch):
     assert "printAffiliations" not in blob
     assert "titlerunning" not in blob
     assert any(row["kind"] == "eq" and row["latex"] == r"\sqrt{d_k}" for row in rows)
+
+
+def test_round3_keeps_notes_definitions_and_teasers():
+    kept = [
+        r"\footnotetext{Appendix B details the visualization method.}",
+        r"\footnotetext{Определение выпуклого множества требует проверки отрезка между точками.}",
+        r"\begin{def}A convex set contains the segment between any two of its points.\end{def}",
+        r"\twocolumn[{\captionof{figure}{A foundation model for segmentation across many visual domains.}}]",
+    ]
+    junk = [
+        r"\title{Direct Preference Optimization}\thanks{Work done while the authors were visiting a long list of labs.}",
+        r"\begin{titlepage}A long title page naming the university and the author.\end{titlepage}",
+        r"\titlenote{Equal contribution from the first two authors of this paper.}",
+        r"\authorcontributions{A.B. designed the study and wrote the paper with the other authors.}",
+        r"\def\convex{A convex set contains every segment between its points and nothing else.}",
+        r"\newtheorem{theorem}{Theorem}",
+        r"\twocolumn[\icmltitle{Direct Preference Optimization: Your Language Model is Secretly a Reward Model}]",
+    ]
+    for text in kept:
+        assert not is_junk_passage(text), text
+    for text in junk:
+        assert is_junk_passage(text), text
 
 
 def test_extract_rows_keeps_preamble_when_flag_off(monkeypatch):
