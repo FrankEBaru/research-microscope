@@ -18,6 +18,7 @@ from rrm.liveart.prompts import (
     schemas,
     selector_messages,
     selector_system,
+    verifier_messages,
     verifier_system,
 )
 
@@ -119,9 +120,48 @@ def test_package_builds_messages_only_when_the_flag_is_on(monkeypatch):
     selector = selector_system()
     assert '"topic":"giou"' in selector and '"topic":"double_descent"' in selector
     assert '"topic":"grokking"' in selector and '"topic":"stddev"' in selector
+    assert '"topic":"quant"' in selector and '"topic":"erf"' in selector and '"topic":"gcn"' in selector
+    assert select_claim({"text": "8 bits"})["merit"] == "skip"
     code = codegen_system()
-    assert "syntax:tail" in code and 'fillText("--"' in code and "detail" in code
-    assert "id, topic, title, explain, questions, controls y draw" in verifier_system()
+    assert "syntax:tail" in code and 'fillText("--"' in code and 'fillText("+"' in code and "detail" in code
+    verifier = verifier_system()
+    assert "id, topic, title, explain, questions, controls y draw" in verifier
+    assert "slop_inert" in verifier and "dead_control" in verifier
+    _sys, pedido = verifier_messages({"text": "IA3"}, {"draw": "function draw(ctx, state, t) {}"}, ["slop_inert:key"])
+    assert "slop_inert:key" in pedido
+
+
+def test_probe_retries_once_on_504_or_timeout(monkeypatch):
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import scripts_live
+
+    assert scripts_live._infra("muse http 504: request timed out")
+    assert scripts_live._infra("The read operation timed out")
+    assert not scripts_live._infra("syntax:primary")
+    assert not scripts_live._infra("muse http 500: no")
+    seen = []
+
+    def fake(body, timeout=22):
+        seen.append(timeout)
+        if len(seen) == 1:
+            raise RuntimeError("muse http 504: request timed out")
+        return {"status": "completed", "output": [], "usage": {}}
+
+    monkeypatch.setattr("rrm.reader.metacall.post_responses", fake)
+    got = scripts_live._call("selector", "s", "u", {"type": "object"}, 10, "minimal")
+    assert len(seen) == 2 and got["error"] == ""
+    seen.clear()
+
+    def once(body, timeout=22):
+        seen.append(1)
+        raise RuntimeError("muse http 500: no")
+
+    monkeypatch.setattr("rrm.reader.metacall.post_responses", once)
+    got = scripts_live._call("selector", "s", "u", {"type": "object"}, 10, "minimal")
+    assert len(seen) == 1 and "500" in got["error"]
 
 
 def test_contract_doc_matches_the_version():

@@ -1,7 +1,9 @@
 """--live mode for liveart_stack.py: the five RRM-78 prompts against the real model.
 
-One pass, no retries. Local 0.3 verifier + sandbox grade the code. Spend per call from
-usage x contributor rate (rrm.reader.metacall). The key is only read by metacall.post_responses.
+One pass. A 504 or a read timeout is retried once; that retry is not a model retry.
+Any other error is not retried. Local 0.3 verifier + sandbox grade the code. Spend per
+call from usage x contributor rate (rrm.reader.metacall). The key is only read by
+metacall.post_responses.
 """
 
 from __future__ import annotations
@@ -11,6 +13,12 @@ import os
 import subprocess
 import time
 from pathlib import Path
+
+
+def _infra(err):
+    """A gateway 504 or a client read timeout. Nothing else is retried."""
+    text = (err or "").lower()
+    return "504" in text or "timed out" in text
 
 
 def _call(stage, system, user, schema, tokens, effort):
@@ -25,11 +33,17 @@ def _call(stage, system, user, schema, tokens, effort):
         "text": {"format": {"type": "json_schema", "name": stage, "strict": True, "schema": schema}},
     }
     t0 = time.time()
-    try:
-        payload = post_responses(body, timeout=180 if stage == "codegen" else 120)
-        err = ""
-    except Exception as exc:  # one pass, no retries
-        payload, err = {}, str(exc)[:200]
+    payload, err = {}, ""
+    for attempt in (0, 1):
+        try:
+            payload = post_responses(body, timeout=180 if stage == "codegen" else 120)
+            err = ""
+            break
+        except Exception as exc:
+            payload, err = {}, str(exc)[:200]
+            if attempt == 0 and _infra(err):
+                continue
+            break
     text = response_text(payload)
     return {
         "stage": stage,
@@ -102,7 +116,7 @@ def run_live(args, cases, node, root):
             else:
                 g = _grade(node, root, case["id"], claim.get("text", ""), w, args.sandbox)
                 row.update(verify=g.get("verify"), sandbox=g.get("sandbox"), reasons=g.get("reasons") or [])
-                mv = go("verifier", P.verifier_messages(claim, w), 900, "minimal")
+                mv = go("verifier", P.verifier_messages(claim, w, g.get("reasons") or []), 900, "minimal")
                 row["model_verifier"] = "accept" if mv.get("accept") else ("reject:" + ";".join(mv.get("reasons") or [])[:80])
             ok = row["verify"] == "pass" and (not args.sandbox or row["sandbox"] == "pass")
             row["outcome"] = "show" if ok else "fallback"
