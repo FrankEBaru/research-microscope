@@ -189,7 +189,7 @@ def test_gold_draws_change_when_the_slider_or_time_changes():
 
     node = shutil.which("node")
     assert node, "node is required to execute the gold draws"
-    assert len(CATALOG) == 103
+    assert len(CATALOG) == 107
     payload = []
     for name, raw in DRAWS.items():
         left, right = _ends(raw["controls"])

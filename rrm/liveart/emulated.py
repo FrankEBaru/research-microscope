@@ -5,6 +5,7 @@ Estos pasan por el mismo verificador. RRM-80 puede reemplazar un draw; la forma 
 """
 
 from rrm.liveart.offline import _by_name
+from rrm.liveart.quality import rows as quality_rows
 from rrm.liveart.wave2 import SPECS
 
 
@@ -62,82 +63,7 @@ _ROPE_GAP = _draw(
     "  ctx.stroke();\n"
 )
 
-CATALOG = [
-    _row(
-        "rope-shift", "rope", "Correr ambos no mueve el parecido",
-        "RoPE encodes each absolute position as a rotation, so the attention score depends only on the relative distance.",
-        "2104.09864",
-        [
-            _knob("theta", "distancia", 0, 4, 2, 1),
-            _knob("shift", "corrimiento", 0, 8, 3, 1),
-        ],
-        "  var gap = state.theta, shift = state.shift, om = Math.PI / 8;\n"
-        "  var aq = shift * om, ak = (shift + gap) * om;\n"
-        "  var qx = Math.cos(aq), qy = Math.sin(aq), kx = Math.cos(ak), ky = Math.sin(ak);\n"
-        "  var dot = qx * kx + qy * ky;\n"
-        "  var cx = w * 0.34, cy = h * 0.54, r = Math.min(w * 0.30, h * 0.40);\n"
-        "  var p, a, x, y;\n"
-        "  ctx.strokeStyle = \"#e4dccb\";\n"
-        "  ctx.lineWidth = 1;\n"
-        "  ctx.beginPath();\n"
-        "  ctx.arc(cx, cy, r, 0, Math.PI * 2);\n"
-        "  ctx.stroke();\n"
-        "  if (gap > 0) {\n"
-        "    ctx.fillStyle = \"#efe6cf\";\n"
-        "    ctx.beginPath();\n"
-        "    ctx.moveTo(cx, cy);\n"
-        "    ctx.arc(cx, cy, r * 0.78, -ak, -aq, false);\n"
-        "    ctx.closePath();\n"
-        "    ctx.fill();\n"
-        "  }\n"
-        "  ctx.fillStyle = \"#cfc6b6\";\n"
-        "  for (p = 0; p <= 12; p++) {\n"
-        "    a = p * om;\n"
-        "    ctx.beginPath();\n"
-        "    ctx.arc(cx + Math.cos(a) * r, cy - Math.sin(a) * r, 2.2, 0, Math.PI * 2);\n"
-        "    ctx.fill();\n"
-        "  }\n"
-        "  function arm(ang, color) {\n"
-        "    x = cx + Math.cos(ang) * r * 0.92;\n"
-        "    y = cy - Math.sin(ang) * r * 0.92;\n"
-        "    ctx.strokeStyle = color;\n"
-        "    ctx.lineWidth = 2.5;\n"
-        "    ctx.beginPath();\n"
-        "    ctx.moveTo(cx, cy);\n"
-        "    ctx.lineTo(x, y);\n"
-        "    ctx.stroke();\n"
-        "    ctx.fillStyle = color;\n"
-        "    ctx.beginPath();\n"
-        "    ctx.arc(x, y, 3.2, 0, Math.PI * 2);\n"
-        "    ctx.fill();\n"
-        "  }\n"
-        "  arm(aq, \"#1f4b99\");\n"
-        "  arm(ak, \"#c4512c\");\n"
-        "  ctx.font = \"13px sans-serif\";\n"
-        "  ctx.fillStyle = \"#1f4b99\";\n"
-        "  ctx.fillText(\"q\", cx + qx * r * 0.58 - 4, cy - qy * r * 0.58 + 4);\n"
-        "  ctx.fillStyle = \"#c4512c\";\n"
-        "  ctx.fillText(\"k\", cx + kx * r * 0.58 - 4, cy - ky * r * 0.58 + 4);\n"
-        "  x = w * 0.74;\n"
-        "  y = h * 0.50 - dot * h * 0.28;\n"
-        "  ctx.strokeStyle = \"#d9d3c7\";\n"
-        "  ctx.lineWidth = 1;\n"
-        "  ctx.beginPath();\n"
-        "  ctx.moveTo(x, h * 0.22);\n"
-        "  ctx.lineTo(x, h * 0.78);\n"
-        "  ctx.moveTo(x - 7, h * 0.50);\n"
-        "  ctx.lineTo(x + 7, h * 0.50);\n"
-        "  ctx.stroke();\n"
-        "  ctx.fillStyle = \"#1c1915\";\n"
-        "  ctx.beginPath();\n"
-        "  ctx.arc(x, y, 4, 0, Math.PI * 2);\n"
-        "  ctx.fill();\n"
-        "  ctx.font = \"22px sans-serif\";\n"
-        "  ctx.fillText(\"\" + Math.round(dot * 100) / 100, w * 0.80, h * 0.46);\n"
-        "  ctx.fillStyle = \"#5c564c\";\n"
-        "  ctx.font = \"12px sans-serif\";\n"
-        "  ctx.fillText(\"q·k\", w * 0.80, h * 0.26);\n",
-    ),
+CATALOG = quality_rows() + [
     {
         "id": "rope-gap",
         "claim": _claim("Rotary embeddings rotate pairs of coordinates so two tokens compare by their angle gap.", "2302.13971"),

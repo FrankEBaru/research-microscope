@@ -7,11 +7,15 @@ from rrm.liveart.emulated import CATALOG
 from rrm.liveart.offline import gold_widget
 
 FRONT = (
+    "adam-valley",
+    "rope-shift",
+    "beam-trap",
+    "kl-policy",
+    "pe-sincos",
     "positional-encoding",
     "ddim-eta",
     "cutmix-area",
     "double-descent",
-    "rope-shift",
     "online-softmax",
     "chinchilla-valley",
     "giou-gap",
