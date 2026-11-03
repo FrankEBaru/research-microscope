@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RRM-80 · galería de artefactos</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f3efe6; color: #1d1a16; font: 16px/1.45 "Iowan Old Style", Palatino, Georgia, serif; }
+  header { padding: 22px 28px 0; }
+  header p { margin: 0; letter-spacing: .08em; text-transform: uppercase; font: 12px/1.4 ui-sans-serif, system-ui, sans-serif; color: #8a8175; }
+  h1 { margin: 4px 0 8px; font-weight: 560; font-size: 28px; }
+  .layout { display: grid; grid-template-columns: 240px 1fr; gap: 8px; padding: 8px 20px 40px; }
+  nav { max-height: calc(100vh - 120px); overflow: auto; padding-right: 8px; }
+  nav h2 { margin: 14px 0 6px; font: 600 11px/1.3 ui-sans-serif, system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #8a8175; }
+  nav button { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 6px 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: inherit; font: 13px/1.3 ui-sans-serif, system-ui, sans-serif; cursor: pointer; }
+  nav button.on { background: #fff; border-color: #e0d5c6; }
+  nav button small { display: block; color: #8a8175; }
+  main { background: #fffdf8; border: 1px solid #e0d5c6; border-radius: 16px; padding: 18px 20px 28px; }
+  .meta { margin: 0 0 6px; color: #8a8175; font: 13px/1.3 ui-sans-serif, system-ui, sans-serif; }
+  h2.title { margin: 0 0 8px; font-size: 22px; font-weight: 560; }
+  .explain { margin: 0 0 14px; max-width: 68ch; }
+  .stage { display: grid; grid-template-columns: minmax(0, 740px) 220px; gap: 16px; align-items: start; }
+  canvas { width: 100%; height: auto; background: #f6f3ec; border-radius: 10px; }
+  label.ctrl { display: flex; flex-direction: column; gap: 4px; margin: 0 0 12px; font: 13px/1.3 ui-sans-serif, system-ui, sans-serif; }
+  label.ctrl input { width: 100%; accent-color: #1f4b99; }
+  ul { margin: 14px 0 0; padding-left: 18px; color: #3c3832; }
+  li { margin: 0 0 4px; }
+  @media (max-width: 860px) {
+    .layout, .stage { grid-template-columns: 1fr; }
+    nav { max-height: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <p id="kicker">rrm-widget · ilustrativo</p>
+  <h1>Artefactos para entender una idea</h1>
+</header>
+<div class="layout">
+  <nav id="nav"></nav>
+  <main>
+    <p class="meta" id="meta"></p>
+    <h2 class="title" id="title"></h2>
+    <p class="explain" id="explain"></p>
+    <div class="stage">
+      <div id="host"></div>
+      <div id="ctrls"></div>
+    </div>
+    <ul id="qs"></ul>
+  </main>
+</div>
+<script type="module">
+import { HIGHLIGHTS, WIDGETS } from "../../../apps/reader/src/live/catalog.js";
+import { CONTRACT_VERSION } from "../../../apps/reader/src/live/contract.js";
+import { createSession } from "../../../apps/reader/src/live/run.js";
+
+const byId = new Map(WIDGETS.map((item) => [item.id, item]));
+const params = new URLSearchParams(location.search);
+const nav = document.getElementById("nav");
+document.getElementById("kicker").textContent = CONTRACT_VERSION + " · ilustrativo, no es una medición";
+
+function group(title, ids) {
+  const h = document.createElement("h2");
+  h.textContent = title;
+  nav.appendChild(h);
+  for (const id of ids) {
+    const item = byId.get(id);
+    if (!item) continue;
+    const b = document.createElement("button");
+    b.dataset.id = id;
+    b.innerHTML = item.title + "<small>" + item.id + "</small>";
+    b.addEventListener("click", () => show(id));
+    nav.appendChild(b);
+  }
+}
+
+group("Para ver", HIGHLIGHTS);
+group("Los 14 de oro", WIDGETS.filter((item) => item.id === item.topic || [
+  "positional-encoding", "softmax-temperature", "attention-scale", "stddev", "rope",
+  "dpo-beta", "yarn-scale", "speculative", "noise-schedule", "guidance", "detr-match",
+  "residual", "nucleus", "contrastive-temp",
+].includes(item.id)).map((item) => item.id));
+
+let raf = 0;
+let session = null;
+
+function show(id) {
+  const widget = byId.get(id) || WIDGETS[0];
+  cancelAnimationFrame(raf);
+  const host = document.getElementById("host");
+  host.replaceChildren();
+  const canvas = document.createElement("canvas");
+  canvas.width = 360;
+  canvas.height = 200;
+  host.appendChild(canvas);
+  session = createSession(widget, () => canvas.getContext("2d"));
+  for (const spec of session.specs) {
+    if (params.has(spec.id) && params.get("id") === widget.id) session.set(spec.id, Number(params.get(spec.id)));
+  }
+  document.getElementById("meta").textContent = widget.topic + " · " + widget.id;
+  document.getElementById("title").textContent = widget.title;
+  document.getElementById("explain").textContent = widget.explain;
+  const qs = document.getElementById("qs");
+  qs.replaceChildren();
+  for (const item of widget.questions) {
+    const li = document.createElement("li");
+    li.textContent = item.q;
+    qs.appendChild(li);
+  }
+  const box = document.getElementById("ctrls");
+  box.replaceChildren();
+  for (const spec of session.specs) {
+    const label = document.createElement("label");
+    label.className = "ctrl";
+    const value = params.get("id") === widget.id && params.has(spec.id) ? Number(params.get(spec.id)) : spec.value;
+    const text = document.createElement("span");
+    const input = document.createElement("input");
+    input.type = "range";
+    input.min = String(spec.min);
+    input.max = String(spec.max);
+    input.step = String(spec.step);
+    input.value = String(value);
+    const paint = () => {
+      const n = Number(input.value);
+      text.textContent = spec.label + ": " + String(Math.round(n * 1000) / 1000);
+    };
+    input.addEventListener("input", () => {
+      session.set(spec.id, Number(input.value));
+      paint();
+    });
+    paint();
+    label.append(text, input);
+    box.appendChild(label);
+  }
+  for (const button of nav.querySelectorAll("button")) button.classList.toggle("on", button.dataset.id === widget.id);
+  const t0 = performance.now();
+  const tick = (now) => {
+    session.frame((now - t0) / 1000);
+    raf = requestAnimationFrame(tick);
+  };
+  tick(t0);
+  if (params.get("shot") !== "1") history.replaceState(null, "", "?id=" + widget.id);
+}
+
+function paint(widget, overrides) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 360;
+  canvas.height = 200;
+  canvas.style.width = "520px";
+  canvas.style.height = "auto";
+  canvas.style.background = "#f6f3ec";
+  canvas.style.borderRadius = "8px";
+  const session = createSession(widget, () => canvas.getContext("2d"));
+  if (overrides) for (const key of Object.keys(overrides)) session.set(key, overrides[key]);
+  session.frame(0);
+  return canvas;
+}
+
+if (params.get("sheet") === "1") {
+  document.body.replaceChildren();
+  document.body.style.margin = "0";
+  document.body.style.background = "#f3efe6";
+  const root = document.createElement("div");
+  root.style.cssText = "padding:16px 20px 32px;font:15px/1.4 Georgia,serif;color:#1d1a16";
+  const pairs = [
+    ["pe-sincos", { base: 300 }, "base 10000 → 300"],
+    ["rope-shift", { shift: 32 }, "desplaza 0 → 32"],
+    ["adam-valley", { lr: 0.09 }, "lr 0.04 → 0.09"],
+    ["lora-rank", { rank: 3 }, "rango 2 → 3"],
+    ["kl-policy", { beta: 0.18 }, "beta 0.7 → 0.18"],
+    ["beam-trap", { width: 2 }, "ancho 1 → 2"],
+    ["bn-stable", { scale: 0.5 }, "escala 2.2 → 0.5"],
+    ["chinchilla", { logc: 25 }, "log10 FLOPs 22 → 25"],
+    ["spec-best", { agree: 0.45 }, "acuerdo 0.8 → 0.45"],
+    ["online-softmax", { blocks: 4 }, "bloques 2 → 4"],
+    ["tau-near", { tau: 1.1 }, "tau 0.2 → 1.1"],
+  ];
+  for (const [id, alt, note] of pairs) {
+    const widget = byId.get(id);
+    const sec = document.createElement("section");
+    sec.style.cssText = "background:#fffdf8;border:1px solid #e0d5c6;border-radius:12px;padding:12px 14px;margin:0 0 14px";
+    const h = document.createElement("h2");
+    h.textContent = widget.title;
+    h.style.cssText = "margin:0 0 4px;font-size:18px";
+    const p = document.createElement("p");
+    p.textContent = note + "  ·  " + widget.explain;
+    p.style.cssText = "margin:0 0 8px;font-size:13px;max-width:110ch";
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;gap:12px;align-items:flex-start";
+    row.append(paint(widget, null), paint(widget, alt));
+    sec.append(h, p, row);
+    root.appendChild(sec);
+  }
+  document.body.appendChild(root);
+  document.title = "sheet-ready";
+} else if (params.get("shot") === "1") {
+  show(params.get("id") || "pe-sincos");
+  cancelAnimationFrame(raf);
+} else {
+  show(params.get("id") || "pe-sincos");
+}
+</script>
+</body>
+</html>

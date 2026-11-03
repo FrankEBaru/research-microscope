@@ -16,9 +16,15 @@ Rama: `cursor/rrm-80-mockups-2121`. Compass dio 404. Contrato que seguimos: `rrm
 - Galería en `apps/reader/src/app/live/`, bandera `NEXT_PUBLIC_RRM_LIVE_ARTIFACTS` en `1` / `true` / `yes` / `on`. Apagada, el lector no cambia.
 - Notas de coordinación: `compass_updates/RRM-80.md` y `compass_updates/equipo-artefactos/`.
 
+## Pase del 3 nov (relaunch)
+
+Franklin: no integrar al lector todavía. El host es la galería estática `rrm/liveart/gallery/index.html` (servir la raíz del repo). `GET /live` sigue en 500 (`ssr: false` en un Server Component); no se tocó.
+
+Los 100 primeros draws se quedaron. Se sumaron 11 en `apps/reader/src/live/explore.js`. Prueba: `node --test apps/reader/tests/live_mockups.test.mjs`, 111/111. Temas nuevos propuestos (RRM-79 aún no publica CONTRACT.md): `rope_relative`, `adam`, `lora`, `kl_rlhf`, `beam`, `batchnorm`, `scaling`, `online_softmax`.
+
 ## Siguiente
 
-1. Arreglar la galería. `GET /live` con la bandera en 1 responde 500: `ssr: false` no vale con `next/dynamic` en un Server Component. Mover el `dynamic()` a un Client Component. No se verificó en el navegador por eso.
+1. La galería del lector (`/live`) sigue en 500. Cuando toque integrar, mover el `dynamic()` a un Client Component. La revisión visual está hecha en la galería estática, en Chrome headless.
 2. RRM-79 monta estos draws en el iframe (CSP, sin red, AST). El raster de `apps/reader/src/live/raster.js` solo cubre rect, path, arc y texto. No implementa `save` / `rotate` / `scale`. Los draws de oro no los usan.
 3. RRM-78 puede pegar los 14 de `fewshot_ids` en el prompt. El resto son variantes del mismo tema. Si el prompt se alarga, no metas los 100.
 4. No llamar a Meta hasta que el sandbox exista.

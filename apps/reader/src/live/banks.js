@@ -117,20 +117,84 @@ export const BANKS = {
       ["¿Qué se está escalando: las similitudes o las etiquetas?", "solo las similitudes entran al softmax"],
     ]),
   },
+  rope_relative: {
+    explain: "RoPE gira q y k con la posición absoluta. Desplaza los dos el mismo tramo: las flechas avanzan juntas y el producto no se mueve, la curva queda plana. Cambia la distancia m−n y el producto sí cambia. El giro es absoluto; el puntaje es relativo.",
+    questions: qs([
+      ["¿Por qué un giro absoluto termina comparando distancias?", "los dos giros se restan en el producto"],
+      ["¿Qué pasa con el puntaje si corro la frase entera?", "el desplazamiento mueve las flechas y no el producto"],
+      ["¿Para qué sirven varias velocidades de giro?", "cada par mira otra escala de distancia"],
+    ]),
+  },
+  adam: {
+    explain: "Adam guarda dos momentos: hacia dónde empuja el gradiente y qué tan brusco es cada eje. En un valle angosto el segundo momento crece en la pared y achica ese paso. SGD, con el mismo lr, zigzaguea; si subes lr, se sale.",
+    questions: qs([
+      ["¿Por qué SGD rebota en un valle angosto y Adam no?", "el segundo momento achica el eje empinado"],
+      ["¿Qué se está promediando: la dirección o el tamaño del paso?", "los dos momentos, uno para cada cosa"],
+      ["¿Qué pasa si subo el lr y el valle sigue igual de angosto?", "SGD se sale y Adam aguanta más"],
+    ]),
+  },
+  lora: {
+    explain: "LoRA escribe el cambio de pesos como una suma de productos externos, uno por cada rango. Cada rango agrega un patrón. El tablero es un ejemplo chico; el conteo es el de una capa 4096×4096: 2dr parámetros, no d al cuadrado.",
+    questions: qs([
+      ["¿Por qué un rango chico puede cambiar una matriz enorme?", "cada rango es un solo patrón, un producto externo"],
+      ["¿Qué se agrega cuando el rango pasa de 2 a 3?", "aparece el patrón que faltaba y el error baja"],
+      ["¿Cuántos números nuevos son, frente a reentrenar la capa?", "2dr contra d al cuadrado"],
+    ]),
+  },
+  kl_rlhf: {
+    explain: "RLHF maximiza el premio menos beta por el KL contra la referencia. La política óptima es la referencia por e elevado al premio sobre beta. Con beta chico el KL ya no frena y toda la masa cae en el token de más premio.",
+    questions: qs([
+      ["¿Por qué no quedarse siempre con el token de más premio?", "el KL lo cobra si se aleja de la referencia"],
+      ["¿Qué le pasa a la política si beta se acerca a cero?", "se concentra en un solo token"],
+      ["¿Qué se está viendo: el premio, la referencia, o las dos?", "la política mezcla las dos"],
+    ]),
+  },
+  beam: {
+    explain: "La búsqueda por haz guarda varios prefijos, no solo el primero. Con ancho 1 es codiciosa y cae en «el día», que empezó bien y termina mal. Con un haz de 2 sobrevive «un gato», peor al inicio y mejor al final.",
+    questions: qs([
+      ["¿Por qué no elegir siempre la palabra más probable?", "un prefijo alto puede no tener buena continuación"],
+      ["¿Qué cambia cuando el ancho del haz pasa de 1 a 2?", "entra el prefijo que parecía peor"],
+      ["¿Qué se está comparando: el primer token o la frase completa?", "el haz se queda con el mejor total de los que guardó"],
+    ]),
+  },
+  batchnorm: {
+    explain: "BatchNorm resta la media del lote y divide entre su desviación. Mueve la escala o el corrimiento de la entrada: la fila de arriba cambia y la del medio no. Gamma y beta, aprendidos, vuelven a estirar y a mover la salida.",
+    questions: qs([
+      ["¿Por qué la fila de en medio no se entera de la escala?", "restar la media y dividir cancela ese cambio"],
+      ["¿Para qué están gamma y beta si ya normalicé?", "la red todavía puede pedir otra escala"],
+      ["¿Qué se mueve cuando corro la entrada y qué se queda?", "solo la fila cruda; las otras usan el lote normalizado"],
+    ]),
+  },
+  scaling: {
+    explain: "Con un cómputo fijo, un modelo más grande deja menos datos. La curva es el ajuste de Chinchilla en ese trueque; el punto marca el fondo. Si crece el presupuesto, el valle se corre y conviene subir datos junto con el modelo.",
+    questions: qs([
+      ["¿Con más cómputo, crezco el modelo o los datos?", "los dos, el valle no se va a un extremo"],
+      ["¿Por qué hay un tamaño mejor para un presupuesto fijo?", "pasar de ese tamaño quita datos que hacían falta"],
+      ["¿De dónde sale la forma de la curva?", "del ajuste publicado, no de una corrida de este demo"],
+    ]),
+  },
+  online_softmax: {
+    explain: "El softmax puede llegar por bloques. De cada bloque quedan el máximo y la suma; si el máximo sube, la suma vieja se reescala. Con los 4 bloques el resultado es exacto: cae sobre el softmax de la lista completa.",
+    questions: qs([
+      ["¿Cómo se calcula el softmax sin ver todos los puntajes?", "con el máximo y la suma, que se corrigen al llegar más"],
+      ["¿Por qué se multiplica la suma vieja cuando aparece un máximo mayor?", "los exponenciales de antes quedaron en otra escala"],
+      ["¿El resultado por bloques es aproximado o exacto?", "al ver todos los bloques coincide con el softmax completo"],
+    ]),
+  },
 };
 
 export function knob(id, label, min, max, value, step) {
   return { id, label, min, max, value, step };
 }
 
-export function widget(topic, id, title, controls, draw) {
+export function widget(topic, id, title, controls, draw, copy) {
   const bank = BANKS[topic];
   return {
     id,
     topic,
     title,
-    explain: bank.explain,
-    questions: bank.questions,
+    explain: copy && copy.explain ? copy.explain : bank.explain,
+    questions: copy && copy.questions ? copy.questions : bank.questions,
     controls,
     draw: draw.trim(),
   };

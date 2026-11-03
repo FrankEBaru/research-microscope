@@ -33,6 +33,15 @@ export const TOPICS = {
   detr_match: { controls: ["class_w"], mark: "emparej" },
   residual: { controls: ["skip"], mark: "atajo" },
   nucleus: { controls: ["p"], mark: "masa" },
+  // Proposals from the mockup pass (2026-11-03). RRM-79 publishes the contract.
+  rope_relative: { controls: ["shift"], mark: "relativo" },
+  adam: { controls: ["lr"], mark: "momento" },
+  lora: { controls: ["rank"], mark: "rango" },
+  kl_rlhf: { controls: ["beta"], mark: "kl" },
+  beam: { controls: ["width"], mark: "haz" },
+  batchnorm: { controls: ["scale"], mark: "lote" },
+  scaling: { controls: ["logc"], mark: "datos" },
+  online_softmax: { controls: ["blocks"], mark: "exacto" },
 };
 
 const BANNED = [
