@@ -1,0 +1,118 @@
+{
+ "id": "rmsnorm-eps",
+ "claim_text": "RMSNorm divides each coordinate by the root mean square of the vector, so a larger epsilon stops that division from shri",
+ "spec": {
+  "archetype": "curve",
+  "constraints": [],
+  "controls": [
+   {
+    "id": "r",
+    "label": "activation magnitude r",
+    "max": 2.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 1.0
+   },
+   {
+    "id": "eps",
+    "label": "epsilon",
+    "max": 4.0,
+    "min": 0.01,
+    "step": 0.01,
+    "value": 0.5
+   }
+  ],
+  "derived": [
+   {
+    "formula": "r / sqrt(r * r + eps)",
+    "name": "gain"
+   }
+  ],
+  "direction": [
+   {
+    "control": "r",
+    "effect": "up",
+    "readout": "gain"
+   }
+  ],
+  "explain": "Toy curve of RMSNorm gain from 1910.07467: watch the gain number, the RMS-rescaled size that big values keep after division.",
+  "questions": [
+   {
+    "q": "Set r to 0.1: what happens to the gain? Do you expect a large activation to lose more gain than a small one?",
+    "why": "Tests the misconception that epsilon shrinks big values more."
+   },
+   {
+    "q": "Set eps to 1: what happens to the gain?",
+    "why": "Reads the regime point where eps equals r squared."
+   },
+   {
+    "q": "Set r to 2: what happens to the gain?",
+    "why": "Reads saturation at large activation."
+   },
+   {
+    "q": "Set eps to 0.01: what happens to the gain?",
+    "why": "Reads near-unity gain when epsilon is tiny."
+   }
+  ],
+  "regime": [
+   {
+    "control": "eps",
+    "formula": "r*r",
+    "label": "balanced"
+   }
+  ],
+  "scale": true,
+  "threshold_formula": "r*r"
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "r",
+    "label": "activation magnitude r",
+    "max": 2.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 1.0
+   },
+   {
+    "id": "eps",
+    "label": "epsilon",
+    "max": 4.0,
+    "min": 0.01,
+    "step": 0.01,
+    "value": 0.5
+   }
+  ],
+  "draw": "function draw(ctx, state, t) {\nfunction fmt(v) { return Math.round(v * 100) / 100; }\nfunction X(v) { return x0 + (v - 0.01) / 3.99 * (x1 - x0); }\nfunction Y(v) { return y1 - v / 1.1 * (y1 - y0); }\n  var w = state.w; var h = state.h; var r = state.r; var eps = state.eps; var x0 = 60; var x1 = 600; var y0 = 30; var y1 = 280; var i = 0; var e = 0; var g = 0; ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h);   ctx.strokeStyle = \"#1d1a16\"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); ctx.lineTo(x1, y1); ctx.stroke(); ctx.strokeStyle = \"#1f4b99\"; ctx.lineWidth = 2.5; ctx.beginPath(); for (i = 0; i <= 60; i++) { e = 0.01 + i / 60 * 3.99; g = r / Math.sqrt(r * r + e); if (i === 0) { ctx.moveTo(X(e), Y(g)); } else { ctx.lineTo(X(e), Y(g)); } } ctx.stroke(); var e0 = r * r; var g0 = r / Math.sqrt(r * r + e0); var xb = X(e0); if (xb < x0) { xb = x0; } if (xb > x1) { xb = x1; } ctx.strokeStyle = \"#c4512c\"; ctx.lineWidth = 1.5; ctx.beginPath(); var sy = y1; while (sy > Y(g0)) { ctx.moveTo(xb, sy); ctx.lineTo(xb, sy - 6); sy = sy - 12; } ctx.stroke(); ctx.beginPath(); ctx.moveTo(xb, y1); ctx.lineTo(xb, y1 + 8); ctx.stroke(); ctx.fillStyle = \"#c4512c\"; ctx.font = \"13px sans-serif\"; ctx.textAlign = \"center\"; ctx.fillText(\"balanced = \" + fmt(e0), xb, y1 + 24); ctx.strokeStyle = \"#1f4b99\"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(X(eps), y1); ctx.lineTo(X(eps), Y(r / Math.sqrt(r * r + eps))); ctx.stroke(); var gc = r / Math.sqrt(r * r + eps); ctx.fillStyle = \"#1f4b99\"; ctx.beginPath(); ctx.arc(X(eps), Y(gc), 7, 0, 6.2832); ctx.fill(); ctx.fillStyle = \"#ffffff\"; ctx.beginPath(); ctx.arc(X(eps), Y(gc), 2.5, 0, 6.2832); ctx.fill(); ctx.fillStyle = \"#1d1a16\"; ctx.textAlign = \"left\"; ctx.font = \"14px sans-serif\"; ctx.fillText(\"gain = \" + fmt(gc), 70, 52); ctx.font = \"13px sans-serif\"; ctx.fillText(\"r = \" + fmt(state.r), 70, 72); ctx.fillText(\"eps = \" + fmt(state.eps), 70, 90); ctx.fillStyle = \"#8a8175\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"eps axis\", 300, 340); ctx.fillText(\"gain axis\", 8, 150); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"curve gain vs eps\", 400, 52); }",
+  "explain": "Toy curve of RMSNorm gain from 1910.07467: watch the gain number, the RMS-rescaled size that big values keep after division.",
+  "id": "rmsnorm-gain-curve",
+  "questions": [
+   {
+    "q": "Set r to 0.1: what happens to the gain? Do you expect a large activation to lose more gain than a small one?",
+    "why": "Tests the misconception that epsilon shrinks big values more."
+   },
+   {
+    "q": "Set eps to 1: what happens to the gain?",
+    "why": "Reads the regime point where eps equals r squared."
+   },
+   {
+    "q": "Set r to 2: what happens to the gain?",
+    "why": "Reads saturation at large activation."
+   },
+   {
+    "q": "Set eps to 0.01: what happens to the gain?",
+    "why": "Reads near-unity gain when epsilon is tiny."
+   }
+  ],
+  "title": "RMSNorm gain falls as epsilon grows",
+  "topic": "rmsnorm"
+ },
+ "row": {
+  "id": "rmsnorm-eps",
+  "verify": "pass",
+  "gate": [
+   "regime"
+  ],
+  "outcome": "fallback"
+ }
+}

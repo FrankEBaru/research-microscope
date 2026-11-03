@@ -11,7 +11,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from rrm.liveart.contract import CANVAS_METHODS, CANVAS_PROPS
+from rrm.liveart.contract import CANVAS_METHODS, CANVAS_PROPS, HOST
 
 _PREDICT = re.compile(r"^\s*(predice|predict)\b", re.I)
 _SET = re.compile(r"\b(?:set|pon|mueve)\b", re.I)
@@ -46,6 +46,11 @@ _THR_WORD = re.compile(r"threshold|umbral", re.I)
 _THR_VALUE = re.compile(r"(?:threshold|umbral)\s+(-?\d+(?:\.\d+)?)", re.I)
 _THR_VAR = re.compile(r"\bvar\s+thr\s*=\s*(-?\d+(?:\.\d+)?)\s*;")
 _THR_FMT = re.compile(r"(?:threshold|umbral)[^\n;]{0,80}fmt\(\s*(-?\d+(?:\.\d+)?)\s*\)", re.I)
+_KINDS = {"sign", "level", "cross2", "knee", "endpoint"}
+_CHAR_W = 7
+_ASCENT = 12
+_DESCENT = 3
+_PURE_NUM = re.compile(r"-?\d+(?:\.\d+)?")
 _MENTION = re.compile(
     r"\b(?:dragging|moving|raising|lowering|setting)\s+(?:the\s+)?"
     r"([A-Za-z][\w.-]*(?:\s+[A-Za-z][\w.-]*){0,2})",
@@ -286,12 +291,18 @@ def quality_gate(widget, claim, spec=None):
         reasons.append("divides")
     if _few_stops(controls):
         reasons.append("steps")
-    if _mixed_language(widget, claim):
+    if _mixed_language(widget, claim, texts):
         reasons.append("language")
     if spec is not None and _scale_problem(spec, texts):
         reasons.append("scale")
     if spec is not None and _regime_problem(draw, controls, spec.get("regime"), base, spec):
         reasons.append("regime")
+    if spec is not None and _margin_problem(controls, spec.get("regime")):
+        reasons.append("margin")
+    if _default_hides(controls, widget.get("questions")):
+        reasons.append("default")
+    if _readability(base.get("glyphs") or [], spec.get("scale") if spec is not None else None):
+        reasons.append("readability")
     if _unexplained_shapes(base):
         reasons.append("shapes")
     if _dead_label(draw, controls):
@@ -341,23 +352,34 @@ def _filler(explain):
 
 
 def _one_regime_question(texts, controls, regime):
-    values = []
+    """At least one question lands on a regime value, or the nearest stop."""
+    targets = []
     state = _state(controls)
     for item in regime or []:
         if not isinstance(item, dict):
             continue
         try:
-            values.append(float(_expr_value(str(item.get("formula") or ""), state)))
+            value = float(_expr_value(str(item.get("formula") or ""), state))
         except (ValueError, KeyError, ZeroDivisionError, TypeError):
             continue
-    if not values:
+        tol = 0.06
+        cid = item.get("control")
+        for control in controls or []:
+            if isinstance(control, dict) and control.get("id") == cid:
+                try:
+                    tol = max(0.06, float(control.get("step") or 0) / 2)
+                except (TypeError, ValueError):
+                    tol = 0.06
+                break
+        targets.append((value, tol))
+    if not targets:
         return True
     hits = 0
     for text in texts:
         signed = [float(n) for n in _SIGNED.findall(text or "")]
-        if any(abs(num - value) <= 0.06 for num in signed for value in values):
+        if any(abs(num - value) <= tol for num in signed for value, tol in targets):
             hits += 1
-    return hits == 1
+    return hits >= 1
 
 
 def _few_stops(controls):
@@ -378,8 +400,8 @@ def _few_stops(controls):
     return False
 
 
-def _mixed_language(widget, claim):
-    """Title, labels, questions and explain stay in the claim's language."""
+def _mixed_language(widget, claim, texts=None):
+    """Title, labels, questions, explain and canvas text stay in the claim's language."""
     parts = [
         widget.get("title") or "",
         widget.get("explain") or "",
@@ -388,6 +410,7 @@ def _mixed_language(widget, claim):
         if isinstance(control, dict):
             parts.append(control.get("label") or "")
     parts.append(_question_blob(widget))
+    parts.extend(texts or [])
     blob = "\n".join(parts)
     claim_text = (claim or {}).get("text") or ""
     if _ES.search(claim_text):
@@ -410,7 +433,10 @@ def _scale_problem(spec, texts):
 
 
 def regime_out_of_range(spec):
-    """True when a regime formula falls outside its control. Missing regime is not this."""
+    """True when a formula falls outside its slider, or a non-endpoint sits under 2 steps from an end.
+
+    Missing or empty regime is not this: codegen still runs.
+    """
     if not isinstance(spec, dict):
         return False
     regime = spec.get("regime")
@@ -434,13 +460,29 @@ def regime_out_of_range(spec):
             hi = float(control["max"])
         except (KeyError, TypeError, ValueError):
             return False
-        if value < lo - 1e-6 or value > hi + 1e-6:
+        if value < lo - 1e-6 or value > hi + 1e-6 or _short_margin(item, control, value):
             return True
     return False
 
 
+def _short_margin(item, control, value):
+    """A non-endpoint needs two steps of slider on each side. An endpoint is the end."""
+    if str((item or {}).get("kind") or "") == "endpoint":
+        return False
+    try:
+        step = float(control.get("step") or 0)
+        lo = float(control["min"])
+        hi = float(control["max"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if step <= 0:
+        return False
+    return (value - lo) < 2 * step - 1e-6 or (hi - value) < 2 * step - 1e-6
+
+
 def _regime_problem(draw, controls, regime, rendered, spec):
-    """The mark's label shows the formula, and the readout crosses there."""
+    """The mark is labeled. sign, level, cross2 and knee use that item's readout. endpoint is the mark only."""
+    del spec
     if not isinstance(regime, list) or not regime:
         return True
     state = _state(controls)
@@ -468,58 +510,228 @@ def _regime_problem(draw, controls, regime, rendered, spec):
             return True
         if not _label_on_mark(glyphs, rendered, label, value):
             return True
-        if not _regime_crosses(draw, controls, spec, item, value, lo, hi, step):
+        if not _regime_kind_ok(draw, controls, item, value, lo, hi, step, glyphs):
             return True
     return False
 
 
-def _readout_name(spec, cid):
-    spec = spec or {}
-    for item in spec.get("direction") or []:
-        if isinstance(item, dict) and item.get("control") == cid and item.get("readout"):
-            return str(item["readout"])
-    for item in spec.get("direction") or []:
-        if isinstance(item, dict) and item.get("readout"):
-            return str(item["readout"])
-    for item in spec.get("derived") or []:
-        if isinstance(item, dict) and item.get("name"):
-            return str(item["name"])
-    return ""
-
-
-def _regime_crosses(draw, controls, spec, item, value, lo, hi, step):
-    """Render one step either side. The readout must change sign, cross a label number, or turn."""
-    cid = str(item.get("control") or "")
-    name = _readout_name(spec, cid)
-    if not name:
+def _regime_kind_ok(draw, controls, item, value, lo, hi, step, glyphs):
+    kind = str(item.get("kind") or "")
+    if kind == "endpoint":
+        return True
+    if kind not in _KINDS:
         return False
-    left = max(lo, value - step)
-    right = min(hi, value + step)
+    names = [part.strip() for part in str(item.get("readout") or "").split(",") if part.strip()]
+    if not names or (kind == "cross2" and len(names) < 2):
+        return False
+    if kind == "knee":
+        return _knee_ok(draw, controls, names[0], str(item.get("control") or ""), value, lo, hi, step)
+    left = min(max(lo, value - step), hi)
+    right = max(min(hi, value + step), lo)
     if right - left < step * 0.5:
         return False
+    samples = _samples(draw, controls, str(item.get("control") or ""), [left, value, right], names)
+    if samples is None:
+        return False
+    if kind == "sign":
+        return _sign_ok(samples[0])
+    if kind == "level":
+        return _level_ok(item, glyphs, value, samples[0])
+    if kind == "cross2":
+        return _cross2_ok(samples[0], samples[1])
+    return False
+
+
+def _samples(draw, controls, cid, points, names):
     states = []
-    for point in (left, right, value):
+    for point in points:
         state = _state(controls)
         state[cid] = point
         states.append(state)
     rendered = _render(draw, states)
-    if len(rendered) != 3 or any(row.get("error") for row in rendered):
+    if len(rendered) != len(points) or any(row.get("error") for row in rendered):
+        return None
+    return [[_readout(row.get("texts"), name) for row in rendered] for name in names]
+
+
+def _sign_ok(samples):
+    vals = [v for v in samples if v is not None]
+    if len(vals) < 2:
         return False
-    a = _readout(rendered[0].get("texts"), name)
-    b = _readout(rendered[1].get("texts"), name)
-    mid = _readout(rendered[2].get("texts"), name)
-    if a is None or b is None or abs(a - b) <= 1e-9:
-        return False
-    if a * b < 0 or a == 0 or b == 0:
+    if any(a * b < 0 for i, a in enumerate(vals) for b in vals[i + 1 :]):
         return True
-    for num in (float(n) for n in _SIGNED.findall(str(item.get("label") or ""))):
-        if abs(num - value) <= 0.05:
+    return any(v == 0 for v in vals) and any(v != 0 for v in vals)
+
+
+def _level_ok(item, glyphs, value, samples):
+    """The readout crosses a number in the label, or meets it when the mark is the end of the slider."""
+    label = str(item.get("label") or "")
+    nums = [float(n) for n in _SIGNED.findall(label)]
+    low = label.lower()
+    for glyph in glyphs or []:
+        text = str(glyph.get("t") or "")
+        if low and low in text.lower():
+            nums.extend(float(n) for n in _SIGNED.findall(text))
+    if not nums or any(v is None for v in samples):
+        return False
+    others = [n for n in nums if abs(n - value) > 0.05]
+    level = others[0] if others else nums[0]
+    vals = list(samples)
+    if any((a - level) * (b - level) < 0 for i, a in enumerate(vals) for b in vals[i + 1 :]):
+        return True
+    near = any(abs(v - level) <= 0.05 for v in vals)
+    far = any(abs(v - level) > 0.05 for v in vals)
+    return near and far
+
+
+def _cross2_ok(left, right):
+    diffs = []
+    for a, b in zip(left, right):
+        if a is None or b is None:
+            return False
+        diffs.append(a - b)
+    for i, d1 in enumerate(diffs):
+        for d2 in diffs[i + 1 :]:
+            if d1 * d2 < 0 or (abs(d1) <= 1e-9) != (abs(d2) <= 1e-9):
+                return True
+    return False
+
+
+def _knee_ok(draw, controls, name, cid, value, lo, hi, step):
+    """Slopes on the two sides differ. Widen until fmt (2 decimals) can show it."""
+    delta = step if step > 0 else max(hi - lo, 1e-6) / 8
+    best = None
+    for _ in range(6):
+        left = max(lo, value - delta)
+        right = min(hi, value + delta)
+        samples = _samples(draw, controls, cid, [left, value, right], [name])
+        if samples is None or any(v is None for v in samples[0]):
+            return False
+        best = (left, value, right, samples[0])
+        vals = samples[0]
+        if len({round(v, 2) for v in vals}) > 1 and right - left > step * 0.5:
+            break
+        nxt = delta * 4
+        if left <= lo + 1e-9 and right >= hi - 1e-9:
+            break
+        delta = nxt
+    left, mid, right, (a, m, b) = best
+    dx1, dx2 = mid - left, right - mid
+    if dx1 <= 1e-9 or dx2 <= 1e-9:
+        return False
+    s1, s2 = (m - a) / dx1, (b - m) / dx2
+    if s1 * s2 < 0:
+        return True
+    big, small = max(abs(s1), abs(s2)), min(abs(s1), abs(s2))
+    if small <= 1e-12:
+        return big > 1e-12
+    return big / small >= 1.25
+
+
+def _margin_problem(controls, regime):
+    if not isinstance(regime, list) or not regime:
+        return False
+    state = _state(controls)
+    by_id = {c.get("id"): c for c in controls or [] if isinstance(c, dict)}
+    for item in regime:
+        if not isinstance(item, dict):
             continue
-        if (a - num) * (b - num) < 0:
+        control = by_id.get(item.get("control"))
+        if control is None:
+            continue
+        try:
+            value = float(_expr_value(str(item.get("formula") or ""), state))
+        except (ValueError, KeyError, ZeroDivisionError, TypeError):
+            continue
+        if _short_margin(item, control, value):
             return True
-    if mid is not None and (mid - a) * (mid - b) > 0:
+    return False
+
+
+def _default_hides(controls, questions):
+    """The misconception is already on screen: that question's number is the control's value."""
+    texts = []
+    for item in questions or []:
+        texts.append((item or {}).get("q") or "" if isinstance(item, dict) else "")
+    mis = [q for q in texts if _MISREAD.search(q)]
+    if len(mis) != 1:
+        return False
+    nums = [float(n) for n in _SIGNED.findall(mis[0])]
+    named = False
+    for control in controls or []:
+        if not isinstance(control, dict) or not _names(mis[0], control):
+            continue
+        named = True
+        try:
+            value = float(control.get("value"))
+            step = float(control.get("step") or 0)
+        except (TypeError, ValueError):
+            return True
+        if any(abs(n - value) <= max(0.06, step / 2) for n in nums):
+            return False
+    return named
+
+
+def _readability(glyphs, scale):
+    """No text outside the canvas, no overlapping boxes, and two tick numbers on each data axis."""
+    if _text_off(glyphs) or _text_overlap(glyphs):
+        return True
+    if scale is True and not _two_axis_numbers(glyphs):
         return True
     return False
+
+
+def _glyph_box(glyph):
+    text = str(glyph.get("t") or "")
+    x = float(glyph.get("x") or 0)
+    y = float(glyph.get("y") or 0)
+    return x, y - _ASCENT, x + max(len(text), 1) * _CHAR_W, y + _DESCENT
+
+
+def _text_off(glyphs):
+    width, height = HOST["canvas_w"], HOST["canvas_h"]
+    for glyph in glyphs or []:
+        if not str(glyph.get("t") or ""):
+            continue
+        left, top, right, bottom = _glyph_box(glyph)
+        if left < -1 or top < -1 or right > width + 1 or bottom > height + 1:
+            return True
+    return False
+
+
+def _text_overlap(glyphs):
+    boxes = [_glyph_box(g) for g in glyphs or [] if str(g.get("t") or "")]
+    for i, a in enumerate(boxes):
+        for b in boxes[i + 1 :]:
+            iw = min(a[2], b[2]) - max(a[0], b[0])
+            ih = min(a[3], b[3]) - max(a[1], b[1])
+            if iw > 4 and ih > 4:
+                return True
+    return False
+
+
+def _two_axis_numbers(glyphs):
+    pts = []
+    for glyph in glyphs or []:
+        if _PURE_NUM.fullmatch(str(glyph.get("t") or "").strip()):
+            pts.append((float(glyph.get("x") or 0), float(glyph.get("y") or 0)))
+
+    def axis(index, other):
+        groups = []
+        for point in pts:
+            for group in groups:
+                if abs(point[index] - group[0][index]) <= 10:
+                    group.append(point)
+                    break
+            else:
+                groups.append([point])
+        for group in groups:
+            coords = [point[other] for point in group]
+            if len(group) >= 2 and max(coords) - min(coords) > 24:
+                return True
+        return False
+
+    return axis(1, 0) and axis(0, 1)
 
 
 def _engine_reasons(widget, claim):

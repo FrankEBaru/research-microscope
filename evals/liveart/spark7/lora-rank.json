@@ -1,0 +1,125 @@
+{
+ "id": "lora-rank",
+ "claim_text": "LoRA writes a weight update as the product of two low-rank matrices, so the number of trained parameters grows with the ",
+ "spec": {
+  "archetype": "blocks",
+  "constraints": [
+   "r <= d"
+  ],
+  "controls": [
+   {
+    "id": "d",
+    "label": "ancho d",
+    "max": 32,
+    "min": 8,
+    "step": 8,
+    "value": 16
+   },
+   {
+    "id": "r",
+    "label": "rango r",
+    "max": 8,
+    "min": 1,
+    "step": 1,
+    "value": 4
+   }
+  ],
+  "derived": [
+   {
+    "formula": "2*d*r",
+    "name": "lora_params"
+   },
+   {
+    "formula": "d*d",
+    "name": "full_params"
+   }
+  ],
+  "direction": [
+   {
+    "control": "r",
+    "effect": "up",
+    "readout": "lora_params"
+   }
+  ],
+  "explain": "Ilustrativo juguete de LoRA de arXiv 2106.09685: compara los bloques B y A con W. Mira el número lora_params frente a full_params para ver que crece con r y no con d al cuadrado.",
+  "questions": [
+   {
+    "q": "Pon r en 4: qué pasa con los factores? Do you expect a small rank to change only a few entries of W?",
+    "why": "corrige el malentendido de rango bajo"
+   },
+   {
+    "q": "Pon r en 8: qué pasa con lora_params si d es 16?",
+    "why": "lee el valor del regime r = d/2"
+   },
+   {
+    "q": "Pon d en 32: qué pasa con full_params?",
+    "why": "lee el coste cuadrático"
+   },
+   {
+    "q": "Pon r en 2: qué pasa con lora_params si d es 32?",
+    "why": "lee el ahorro con rango minimo"
+   }
+  ],
+  "regime": [
+   {
+    "control": "r",
+    "formula": "d/2",
+    "label": "r mitad de d"
+   }
+  ],
+  "scale": false,
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "d",
+    "label": "ancho d",
+    "max": 32,
+    "min": 8,
+    "step": 8,
+    "value": 16
+   },
+   {
+    "id": "r",
+    "label": "rango r",
+    "max": 8,
+    "min": 1,
+    "step": 1,
+    "value": 4
+   }
+  ],
+  "draw": "function draw(ctx, state, t) {\nfunction fmt(v) { return Math.round(v * 100) / 100; }\n\n\nvar w = state.w;\nvar h = state.h;\nvar d = state.d;\nvar r = state.r;\nvar lora = 2 * d * r;\nvar full = d * d;\nvar reg = d / 2;\nctx.clearRect(0, 0, w, h);\nctx.fillStyle = \"#f6f3ec\";\nctx.fillRect(0, 0, w, h);\nvar bw = r * 6;\nvar bh = 40 + d * 3;\nvar aw = 40 + d * 3;\nvar ah = r * 6;\nvar ww = 40 + d * 3;\nvar wh = 40 + d * 3;\nctx.fillStyle = \"#1f4b99\";\nctx.fillRect(40, 70, bw, bh);\nctx.fillStyle = \"#c4512c\";\nctx.fillRect(150, 70, aw, ah);\nctx.fillStyle = \"#2a7a3b\";\nctx.fillRect(380, 70, ww, wh);\nctx.strokeStyle = \"#111111\";\nctx.lineWidth = 1;\nctx.strokeRect(40, 70, bw, bh);\nctx.strokeRect(150, 70, aw, ah);\nctx.strokeRect(380, 70, ww, wh);\nctx.fillStyle = \"#111111\";\nctx.font = \"12px sans-serif\";\nctx.textAlign = \"left\";\nctx.fillText(\"not to scale\", 40, 28);\nctx.fillText(\"B bloque\", 40, 58);\nctx.fillText(\"A bloque\", 150, 58);\nctx.fillText(\"W completa\", 380, 58);\nctx.fillText(\"d = \" + fmt(d), 40, 250);\nctx.fillText(\"r = \" + fmt(r), 130, 250);\nvar yL = 250 - r * 6;\nctx.fillText(\"lora_params = \" + fmt(lora), 220, yL);\nctx.fillText(\"full_params = \" + fmt(full), 380, 250);\nvar x0 = 40;\nvar x1 = 600;\nvar yR = 320;\nvar regX = x0 + reg / 16 * (x1 - x0);\nvar rX = x0 + r / 16 * (x1 - x0);\nctx.strokeStyle = \"#111111\";\nctx.lineWidth = 2;\nctx.beginPath();\nctx.moveTo(x0, yR);\nctx.lineTo(x1, yR);\nctx.stroke();\nctx.beginPath();\nctx.moveTo(regX, yR - 10);\nctx.lineTo(regX, yR + 10);\nctx.stroke();\nctx.fillStyle = \"#1f4b99\";\nctx.fillRect(rX - 3, yR - 3, 6, 6);\nctx.fillStyle = \"#111111\";\nctx.fillText(\"r mitad de d = \" + fmt(reg), regX + 8, yR + 4);\nctx.fillText(\"r actual\", rX - 20, yR + 26);\n}",
+  "explain": "Ilustrativo juguete de LoRA de arXiv 2106.09685: compara los bloques B y A con W. Mira el número lora_params frente a full_params para ver que crece con r y no con d al cuadrado.",
+  "id": "lora-blocks",
+  "questions": [
+   {
+    "q": "Pon r en 4: qué pasa con los factores? Do you expect a small rank to change only a few entries of W?",
+    "why": "corrige el malentendido de rango bajo"
+   },
+   {
+    "q": "Pon r en 8: qué pasa con lora_params si d es 16?",
+    "why": "lee el valor del regime r = d/2"
+   },
+   {
+    "q": "Pon d en 32: qué pasa con full_params?",
+    "why": "lee el coste cuadrático"
+   },
+   {
+    "q": "Pon r en 2: qué pasa con lora_params si d es 32?",
+    "why": "lee el ahorro con rango minimo"
+   }
+  ],
+  "title": "LoRA: bloques B y A frente a W",
+  "topic": "lora"
+ },
+ "row": {
+  "id": "lora-rank",
+  "verify": "pass",
+  "gate": [
+   "language",
+   "regime"
+  ],
+  "outcome": "fallback"
+ }
+}

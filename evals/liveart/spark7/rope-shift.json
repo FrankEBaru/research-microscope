@@ -1,0 +1,139 @@
+{
+ "id": "rope-shift",
+ "claim_text": "RoPE rotates each absolute position, and the attention score depends only on the relative distance between the tokens.",
+ "spec": {
+  "archetype": "dial",
+  "constraints": [],
+  "controls": [
+   {
+    "id": "m",
+    "label": "Position m",
+    "max": 20.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 5.0
+   },
+   {
+    "id": "n",
+    "label": "Position n",
+    "max": 20.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 2.0
+   },
+   {
+    "id": "th",
+    "label": "Frequency theta",
+    "max": 1.5,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 0.5
+   }
+  ],
+  "derived": [
+   {
+    "formula": "m - n",
+    "name": "rel_dist"
+   },
+   {
+    "formula": "cos((m-n)*th)",
+    "name": "score"
+   }
+  ],
+  "direction": [
+   {
+    "control": "m",
+    "effect": "up",
+    "readout": "rel_dist"
+   }
+  ],
+  "explain": "Toy dial illustration for arXiv 2104.09864: two rotating RoPE hands whose angle gap sets attention. Watch the score number: it depends only on relative distance, going to zero at the flip.",
+  "questions": [
+   {
+    "q": "Set m to 10: what happens to the score? Do you expect shifting m and n together to change it?",
+    "why": "misconception about absolute versus relative position"
+   },
+   {
+    "q": "Set m to 5: what happens to the score?",
+    "why": "reads the regime sign-flip value"
+   },
+   {
+    "q": "Set n to 12: what happens to rel_dist?",
+    "why": "reads relative distance from positions"
+   },
+   {
+    "q": "Set th to 1.2: what happens to the score?",
+    "why": "reads frequency effect on rotation"
+   }
+  ],
+  "regime": [
+   {
+    "control": "m",
+    "formula": "n + pi/(2*th)",
+    "label": "sign flip"
+   }
+  ],
+  "scale": false,
+  "threshold_formula": "n + pi/(2*th)"
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "m",
+    "label": "Position m",
+    "max": 20.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 5.0
+   },
+   {
+    "id": "n",
+    "label": "Position n",
+    "max": 20.0,
+    "min": 0.0,
+    "step": 0.1,
+    "value": 2.0
+   },
+   {
+    "id": "th",
+    "label": "Frequency theta",
+    "max": 1.5,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 0.5
+   }
+  ],
+  "draw": "function draw(ctx, state, t) {\nfunction fmt(v) { return Math.round(v * 100) / 100; }\n ; var w = state.w; var h = state.h; var m = state.m; var n = state.n; var th = state.th; var rel_dist = m - n; var score = Math.cos(rel_dist * th); var flip = n + Math.PI / (2 * th); ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); var cx1 = w * 0.22; var cx2 = w * 0.55; var cy = h * 0.42; var r = h * 0.28; ctx.lineWidth = 2; ctx.strokeStyle = \"#1f4b99\"; ctx.beginPath(); ctx.arc(cx1, cy, r, 0, 2 * Math.PI); ctx.stroke(); ctx.beginPath(); ctx.arc(cx2, cy, r, 0, 2 * Math.PI); ctx.stroke(); var a1 = m * th; var a2 = n * th; ctx.strokeStyle = \"#b33a3a\"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx1, cy); ctx.lineTo(cx1 + Math.cos(a1) * r, cy - Math.sin(a1) * r); ctx.stroke(); ctx.strokeStyle = \"#1f7a3a\"; ctx.beginPath(); ctx.moveTo(cx2, cy); ctx.lineTo(cx2 + Math.cos(a2) * r, cy - Math.sin(a2) * r); ctx.stroke(); ctx.fillStyle = \"#222222\"; ctx.font = \"12px sans-serif\"; ctx.textAlign = \"left\"; ctx.fillText(\"m hand\", cx1 - 24, cy + r + 16); ctx.fillText(\"n hand\", cx2 - 24, cy + r + 16); ctx.fillText(\"gap sets score\", cx1 - 24, cy - r - 10); var x0 = 40; var x1 = w - 40; var ya = h * 0.86; ctx.strokeStyle = \"#222222\"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x0, ya); ctx.lineTo(x1, ya); ctx.stroke(); var xm = x0 + (m / 20) * (x1 - x0); ctx.fillStyle = \"#b33a3a\"; ctx.beginPath(); ctx.arc(xm, ya, 6, 0, 2 * Math.PI); ctx.fill(); ctx.fillStyle = \"#222222\"; ctx.fillText(\"m = \" + fmt(m), xm - 20, ya - 14); var clipped = false; var xf = x0; if (flip > 20) { xf = x1; clipped = true; } else { if (flip < 0) { xf = x0; clipped = true; } else { xf = x0 + (flip / 20) * (x1 - x0); } }; ctx.strokeStyle = \"#1f4b99\"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xf, ya - 12); ctx.lineTo(xf, ya + 12); ctx.stroke(); ctx.fillStyle = \"#1f4b99\"; ctx.fillText(\"sign flip = \" + fmt(flip), xf - 90, ya + 28); if (clipped) { ctx.fillStyle = \"#222222\"; ctx.fillText(\"clipped\", x1 - 52, ya - 16); }; ctx.fillStyle = \"#222222\"; ctx.fillText(\"rel_dist = \" + fmt(rel_dist), 400, 60); ctx.fillText(\"score = \" + fmt(score), 400, 80); ctx.fillText(\"n = \" + fmt(n), 400, 100); ctx.fillText(\"th = \" + fmt(th), 400, 120); ctx.fillText(\"not to scale\", 40, 30); }",
+  "explain": "Toy dial illustration for arXiv 2104.09864: two rotating RoPE hands whose angle gap sets attention. Watch the score number: it depends only on relative distance, going to zero at the flip.",
+  "id": "rope-dial-flip",
+  "questions": [
+   {
+    "q": "Set m to 10: what happens to the score? Do you expect shifting m and n together to change it?",
+    "why": "misconception about absolute versus relative position"
+   },
+   {
+    "q": "Set m to 5: what happens to the score?",
+    "why": "reads the regime sign-flip value"
+   },
+   {
+    "q": "Set n to 12: what happens to rel_dist?",
+    "why": "reads relative distance from positions"
+   },
+   {
+    "q": "Set th to 1.2: what happens to the score?",
+    "why": "reads frequency effect on rotation"
+   }
+  ],
+  "title": "RoPE dials: relative gap sets attention",
+  "topic": "rope"
+ },
+ "row": {
+  "id": "rope-shift",
+  "verify": "pass",
+  "gate": [
+   "generic_questions",
+   "regime"
+  ],
+  "outcome": "fallback"
+ }
+}

@@ -223,7 +223,7 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
         {"q": "Set lr to 0.1: what happens to the step?", "why": "a reading"},
         {"q": "Set lr to 0.4: what happens to the step?", "why": "another reading"},
     ]
-    controls = [{"id": "lr", "label": "lr", "min": 0, "max": 1, "value": 0.2, "step": 0.1}]
+    controls = [{"id": "lr", "label": "lr", "min": 0, "max": 1, "value": 0.8, "step": 0.1}]
     draw = (
         "function draw(ctx, state, t) {\n"
         "  var y = (state.lr - 0.5) * 80;\n"
@@ -255,7 +255,7 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
         "derived": [{"name": "step", "formula": "lr * 80"}],
         "questions": questions,
         "explain": stage,
-        "regime": [{"label": "break", "control": "lr", "formula": "0.5"}],
+        "regime": [{"label": "break", "control": "lr", "formula": "0.5", "readout": "step", "kind": "sign"}],
     }
     rewritten = {"explain": "Adam steps by m-hat.", "questions": questions[:3], "draw": "function draw(ctx, state, t) { ctx.fillText(state.lr, 10, 10); }"}
     sealed = seal_widget(rewritten, stage, questions)
@@ -345,6 +345,7 @@ def test_seal_keeps_the_citation_and_the_gate_rejects(tmp_path):
     assert "ten times larger" in spec_text
     assert "keep falling like ReLU" in spec_text
     assert "2 * pi" in spec_text
+    assert "endpoint" in spec_text and "cross2" in spec_text
     assert "periodo baja" not in spec_text
     assert "function fmt" in codegen_system() and "clipped" in codegen_system()
     assert "accept es false" in verifier_system()
@@ -427,13 +428,13 @@ def _replay(folder):
 def test_round3_replay_direction_clears_six():
     got = _replay("spark3")
     assert got == {
-        "adam-valley": ["generic_questions", "regime"],
+        "adam-valley": ["generic_questions", "regime", "default"],
         "gelu-tail": ["generic_questions", "regime"],
-        "gqa-share": ["generic_questions", "divides", "regime", "dead_label"],
+        "gqa-share": ["generic_questions", "divides", "regime", "default", "readability", "dead_label"],
         "kl-policy": ["generic_questions", "regime"],
         "lora-rank": ["generic_questions", "direction", "regime"],
         "pe-sincos": ["generic_questions", "direction", "regime", "dead_label"],
-        "rmsnorm-eps": ["generic_questions", "regime", "dead_label"],
+        "rmsnorm-eps": ["generic_questions", "regime", "readability", "dead_label"],
         "rope-shift": ["generic_questions", "regime"],
     }
     clear = [name for name, reasons in got.items() if "direction" not in reasons]
@@ -445,14 +446,14 @@ def test_round3_replay_direction_clears_six():
 def test_round4_replay_requires_regime_and_set_watch():
     got = _replay("spark4")
     assert got == {
-        "adam-valley": ["filler", "generic_questions", "regime"],
+        "adam-valley": ["filler", "generic_questions", "regime", "readability"],
         "gelu-tail": ["filler", "generic_questions", "regime"],
         "gqa-share": ["generic_questions", "divides", "regime"],
         "kl-policy": ["generic_questions", "regime"],
         "lora-rank": ["generic_questions", "regime"],
         "pe-sincos": ["generic_questions", "regime", "slop_inert:d"],
         "rmsnorm-eps": ["generic_questions", "regime", "questions"],
-        "rope-shift": ["filler", "generic_questions", "regime", "dead_label"],
+        "rope-shift": ["filler", "generic_questions", "regime", "default", "dead_label"],
     }
     for name in ("kl-policy", "gelu-tail"):
         assert "generic_questions" in got[name]
@@ -484,6 +485,14 @@ def test_sanitize_mounts_and_regime_range_stops_codegen():
     assert regime_out_of_range({
         "controls": [{"id": "m", "min": -0.5, "max": 0.5, "value": 0, "step": 0.1}],
         "regime": [{"label": "adam", "control": "m", "formula": "1"}],
+    })
+    assert regime_out_of_range({
+        "controls": [{"id": "m", "min": 0, "max": 1, "value": 1, "step": 0.25}],
+        "regime": [{"label": "unit", "control": "m", "formula": "1", "readout": "step", "kind": "level"}],
+    })
+    assert not regime_out_of_range({
+        "controls": [{"id": "kv", "min": 1, "max": 8, "value": 1, "step": 1}],
+        "regime": [{"label": "MQA", "control": "kv", "formula": "1", "readout": "q", "kind": "endpoint"}],
     })
     assert not regime_out_of_range({"controls": [], "regime": []})
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -527,24 +536,29 @@ def test_round6_replay_mounts_after_sanitize():
         "rope-shift": ["question"],
     }
     assert after == {name: [] for name in raw}
-    assert gates["kl-policy"] == []
-    assert gates["adam-valley"] == ["regime"]
-    assert outside == ["adam-valley"]
-    assert "generic_questions" in gates["gqa-share"] and "generic_questions" in gates["lora-rank"]
-    assert "regime" in gates["pe-sincos"] and "shapes" in gates["pe-sincos"]
+    assert gates == {
+        "adam-valley": ["regime", "margin", "readability"],
+        "gqa-share": ["scale", "regime", "margin", "default"],
+        "kl-policy": ["regime", "default", "readability"],
+        "lora-rank": ["regime", "margin", "readability"],
+        "pe-sincos": ["regime", "readability", "shapes"],
+        "rope-shift": ["regime", "default"],
+    }
+    assert outside == ["adam-valley", "gqa-share", "lora-rank"]
+    assert "shapes" in gates["pe-sincos"]
 
 
 def test_round5_replay_stalls_without_a_marked_regime():
     got = _replay("spark5")
     assert got == {
-        "adam-valley": ["generic_questions", "regime"],
-        "gelu-tail": ["generic_questions", "regime"],
-        "gqa-share": ["generic_questions", "steps", "language", "regime"],
-        "kl-policy": ["generic_questions", "regime"],
-        "lora-rank": ["generic_questions", "regime", "shapes"],
-        "pe-sincos": ["generic_questions", "regime"],
-        "rmsnorm-eps": ["generic_questions", "scale", "regime"],
-        "rope-shift": ["generic_questions", "regime"],
+        "adam-valley": ["generic_questions", "regime", "default", "readability"],
+        "gelu-tail": ["generic_questions", "regime", "default"],
+        "gqa-share": ["generic_questions", "steps", "language", "regime", "default"],
+        "kl-policy": ["generic_questions", "regime", "default", "readability"],
+        "lora-rank": ["generic_questions", "regime", "default", "readability", "shapes"],
+        "pe-sincos": ["generic_questions", "regime", "default", "readability"],
+        "rmsnorm-eps": ["generic_questions", "scale", "regime", "default"],
+        "rope-shift": ["generic_questions", "regime", "default"],
     }
     assert all(reasons for reasons in got.values())
     for name in ("kl-policy", "gelu-tail"):
@@ -691,6 +705,61 @@ def _ends(controls):
     knob = controls[0]
     other[knob["id"]] = knob["min"] if knob["value"] != knob["min"] else knob["max"]
     return base, other
+
+
+def test_round8_replay_uses_the_regime_kind():
+    """Spark7 specs have no kind. The replay annotates the kind the drawing actually has.
+
+    Missing kind stays a regime failure. kl and pe stay regime: the label is off the canvas.
+    """
+    import json
+    from pathlib import Path
+
+    from evals.liveart.probe_claims import rrm85
+    from rrm.liveart.gate import quality_gate, regime_out_of_range
+
+    kinds = {
+        "adam-valley": [("step", "level")],
+        "rope-shift": [("score", "sign")],
+        "kl-policy": [("p_top", "level")],
+        "pe-sincos": [("wavelength,seq", "cross2")],
+        "lora-rank": [("lora_params,full_params", "cross2")],
+        "gqa-share": [("q_heads", "endpoint"), ("q_heads", "endpoint")],
+        "rmsnorm-eps": [("gain", "knee")],
+        "gelu-tail": [("gelu", "knee")],
+    }
+    claims = {row["id"]: row["claim"] for row in rrm85()}
+    root = Path(__file__).resolve().parents[1] / "evals" / "liveart" / "spark7"
+    got, raw, outside = {}, {}, []
+    for path in sorted(root.glob("*.json")):
+        row = json.loads(path.read_text(encoding="utf-8"))
+        spec = json.loads(json.dumps(row["spec"]))
+        regime = spec.get("regime") or []
+        assert len(regime) == len(kinds[path.stem])
+        for item, (readout, kind) in zip(regime, kinds[path.stem]):
+            item["readout"] = readout
+            item["kind"] = kind
+        got[path.stem] = quality_gate(row["widget"], claims[path.stem], spec)
+        raw[path.stem] = quality_gate(row["widget"], claims[path.stem], row["spec"])
+        if regime_out_of_range(spec):
+            outside.append(path.stem)
+    assert got == {
+        "adam-valley": ["margin", "readability"],
+        "gelu-tail": ["default", "readability"],
+        "gqa-share": ["default"],
+        "kl-policy": ["regime", "margin", "readability"],
+        "lora-rank": ["language", "margin"],
+        "pe-sincos": ["regime", "default", "readability"],
+        "rmsnorm-eps": ["default", "readability"],
+        "rope-shift": ["default", "readability"],
+    }
+    left = [name for name, reasons in got.items() if "regime" not in reasons]
+    assert left == ["adam-valley", "gelu-tail", "gqa-share", "lora-rank", "rmsnorm-eps", "rope-shift"]
+    assert "regime" in got["kl-policy"] and "regime" in got["pe-sincos"]
+    assert "language" in got["lora-rank"]
+    assert outside == ["adam-valley", "kl-policy", "lora-rank"]
+    for name in ("adam-valley", "rope-shift", "lora-rank", "gqa-share", "rmsnorm-eps"):
+        assert "regime" in raw[name]
 
 
 def test_gold_draws_change_when_the_slider_or_time_changes():
