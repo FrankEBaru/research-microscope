@@ -26,7 +26,7 @@ def _call(stage, system, user, schema, tokens, effort):
     }
     t0 = time.time()
     try:
-        payload = post_responses(body, timeout=120)
+        payload = post_responses(body, timeout=180 if stage == "codegen" else 120)
         err = ""
     except Exception as exc:  # one pass, no retries
         payload, err = {}, str(exc)[:200]
