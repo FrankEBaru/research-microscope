@@ -1,6 +1,14 @@
 # HANDOFF RRM-79 (engine)
 
 Branch: `cursor/rrm-79-live-engine-c8e7`
+Contract: **`rrm-widget/0.3`** (`rrm/liveart/contract.py`). JSON shape is still 0.2. Budgets and the canvas/Math lists moved. A string exposes `.length` only. `fillText` of "verified" / "from the paper" is `slop_seal`.
+Sandbox: `apps/reader/src/lib/liveart/` (`spec.js`, `parse.js`, `run.js`, `verify.js`, `sandbox.js`, `mount.js`, `showcase.js`, `guest.js`). Gallery: `/liveart`, flag off by default. Not wired into GapNotes (Franklin: later).
+Timeout: [V] Chrome 156 headless, iframe `sandbox="allow-scripts"`, draw body `while(true)`. Parent `setTimeout` 800 ms still set the status to `parent-alive`. No Worker. CSP stays without `worker-src`.
+Tests: `apps/reader/tests/liveart_sandbox.test.mjs` (13). Not READY FOR META.
+
+# HANDOFF RRM-79 (engine) — previous stop
+
+Branch: `cursor/rrm-79-live-engine-c8e7`
 Stop point: 2026-11-03. Compass was 404 in this environment. Relaunch has compass. Do not start a second contract.
 
 ## What’s done

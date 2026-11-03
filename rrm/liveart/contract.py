@@ -1,27 +1,94 @@
-"""Contrato rrm-widget/0.1 que el prompt de código le exige al modelo.
+"""Contrato rrm-widget/0.3 que el prompt de código le exige al modelo.
 
-RRM-79 implementa el iframe y el AST. Aquí están los límites y la lista
-de rechazos que el verificador offline ya aplica, para que el prompt y
-el renderer no se separen.
+La forma JSON sigue siendo la de 0.2. RRM-79 sube los presupuestos del
+host (lienzo, tiempo, tamaño del draw, controles) para figuras más ricas
+y publica la lista de canvas y de Math que el sandbox acepta.
 """
 
 import os
 import re
 
-VERSION = "rrm-widget/0.1"
+VERSION = "rrm-widget/0.3"
 
 LIMITS = {
-    "draw": 3500,
+    "draw": 8000,
     "title": 80,
-    "explain": 360,
-    "question": 160,
-    "why": 140,
-    "label": 24,
+    "explain": 420,
+    "question": 180,
+    "why": 160,
+    "label": 28,
     "questions_min": 2,
     "questions_max": 4,
     "controls_min": 1,
-    "controls_max": 4,
+    "controls_max": 6,
 }
+
+# Presupuesto del host. No son llaves del JSON.
+HOST = {
+    "canvas_w": 640,
+    "canvas_h": 360,
+    "frame_ms": 1000,
+    "step_cap": 200000,
+    "json_chars": 20000,
+    "pixel_floor": 2,
+}
+
+CANVAS_METHODS = (
+    "clearRect",
+    "fillRect",
+    "strokeRect",
+    "beginPath",
+    "closePath",
+    "moveTo",
+    "lineTo",
+    "arc",
+    "ellipse",
+    "rect",
+    "fill",
+    "stroke",
+    "fillText",
+    "save",
+    "restore",
+    "translate",
+    "rotate",
+    "scale",
+)
+
+CANVAS_PROPS = (
+    "fillStyle",
+    "strokeStyle",
+    "lineWidth",
+    "font",
+    "globalAlpha",
+    "lineCap",
+    "lineJoin",
+    "textAlign",
+    "textBaseline",
+)
+
+MATH_NAMES = (
+    "sin",
+    "cos",
+    "tan",
+    "asin",
+    "acos",
+    "atan",
+    "atan2",
+    "exp",
+    "log",
+    "sqrt",
+    "abs",
+    "hypot",
+    "sign",
+    "min",
+    "max",
+    "pow",
+    "floor",
+    "ceil",
+    "round",
+    "PI",
+    "E",
+)
 
 # El host inyecta estos nombres. El modelo no los declara como controles.
 RESERVED_IDS = frozenset({"w", "h", "t"})
