@@ -6,6 +6,7 @@ import re
 from rrm.reader.gaps import find_gaps, normalize_math, tokens_of
 from rrm.reader.metacall import meta_status, parse_json, post_responses, response_text
 from rrm.reader.passage_lookup import lookup, scrub_passage
+from rrm.reader.promptguard import injection, with_guard, wrap_user
 
 CONTRIBUTOR = "muse-spark-1.3-contributor"
 STANDARD = "muse-spark-1.3"
@@ -23,6 +24,10 @@ _SYSTEM = (
     "Si ninguna fila contiene el símbolo del hueco, no hagas esa nota.\n"
     "Si el hueco trae instrucción, síguela. El dibujo de una pista ya se muestra; show false solo veta, y solo con una razón."
 )
+
+
+def _system():
+    return with_guard(_SYSTEM)
 _ASKS = re.compile(r"\bfalt\w*\b.{0,60}\b(fórmulas?|formulas?|ecuaci\w*|expresi\w*)\b", re.I)
 _BAD_VETO = re.compile(r"fórmula|formula|ecuaci|expresi", re.I)
 
@@ -292,8 +297,8 @@ def compose(paper_id, gaps, passages):
         "reasoning": {"effort": "minimal"},
         "max_output_tokens": 1200,  # 1200, no 500: el reasoning se comía el JSON.
         "input": [
-            {"role": "developer", "content": _SYSTEM},
-            {"role": "user", "content": "\n".join(lines)},
+            {"role": "developer", "content": _system()},
+            {"role": "user", "content": wrap_user("PAPER", "\n".join(lines))},
         ],
         "text": {"format": {"type": "json_schema", "name": "notas", "strict": True, "schema": _schema([row["id"] for row in fuentes] or ["-"], art_ids)}},
     }
@@ -316,7 +321,7 @@ def apply(raw, gaps, passages, paper_text):
                 continue
             eq = equations.get(bid) or {}
             note = _clip_note(item.get("note") or "")
-            if not note or _asks_formula(note, eq.get("tex")):
+            if not note or _asks_formula(note, eq.get("tex")) or injection(note):
                 continue
             tex = eq.get("tex") or ""
             para = eq.get("para") or ""

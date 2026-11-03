@@ -2,6 +2,7 @@
 
 from rrm.reader.metacall import add_usage, meta_status, note_for, parse_json, post_responses, response_text, usage_cost
 from rrm.reader.metacall import MODEL
+from rrm.reader.promptguard import equivalent_claim, guard_on, injection, qty_on, with_guard, wrap_user
 from rrm.textcase import cap_first
 
 PARTS = ("coincide", "contradice", "sin_respaldo", "te_falto")
@@ -44,6 +45,57 @@ _CHECK = (
     "Si la parte es te_falto, true cuando la cita aporta un hecho que el texto no dijo. "
     "No uses false solo porque la cita no contiene la palabra no."
 )
+
+
+def known_caja(data):
+    """El JSON del juez tiene el esquema nuevo o el de cuatro partes. Otra forma no pasa."""
+    if not isinstance(data, dict):
+        return False
+    if "afirmaciones" in data or "te_falto" in data:
+        claims = data.get("afirmaciones", [])
+        missed = data.get("te_falto", [])
+        return isinstance(claims, list) and isinstance(missed, list)
+    return any(isinstance(data.get(part), list) for part in PARTS)
+
+
+def _dev(prompt, quantity=False):
+    return with_guard(prompt, quantity=quantity)
+
+
+def _pack(explanation, phrases):
+    block = f"Explicación:\n{explanation}\n\nFrases:\n{phrases}"
+    if not guard_on():
+        return block
+    return wrap_user("EXPLICACION", f"Explicación:\n{explanation}") + "\n\n" + wrap_user("FRASES", f"Frases:\n{phrases}")
+
+
+def soften_quantities(parts, explanation):
+    """Contradice pasa a coincide si la única diferencia es la misma magnitud."""
+    if not qty_on():
+        return parts
+    kept, moved = [], []
+    for item in parts.get("contradice") or []:
+        cite = item.get("cite") or ""
+        text = item.get("text") or ""
+        if equivalent_claim(text, cite) or equivalent_claim(explanation, cite):
+            moved.append(item)
+        else:
+            kept.append(item)
+    out = {part: list(parts.get(part) or []) for part in PARTS}
+    out["contradice"] = kept
+    out["coincide"] = list(out["coincide"]) + moved
+    return out
+
+
+def refuse_injection(parts, explanation):
+    """Un pedido de veredicto o de filtrar el prompt no se clasifica como respaldo."""
+    if not guard_on() or not injection(explanation):
+        return parts
+    text = cap_first(" ".join((explanation or "").split()))[:240]
+    out = {part: [] for part in PARTS}
+    if text:
+        out["sin_respaldo"].append({"text": text})
+    return out
 
 
 def _claims_on():
@@ -214,20 +266,21 @@ def review(explanation, citations, complete=None):
     if not (explanation or "").strip() or not citations:
         return empty, "", usage_cost(None)
     call = complete or post_responses
+    phrases = _phrases(citations)
     if _claims_on():
         said = "\n".join(f"{i}. {line}" for i, line in enumerate(_sentences(explanation), 1))
-        user, prompt = f"Explicación:\n{said}\n\nFrases:\n{_phrases(citations)}", _PROMPT_CLAIMS
+        user, prompt = _pack(said, phrases), _dev(_PROMPT_CLAIMS, quantity=True)
     else:  # RRM_CLAIMS=0: RRM-43, una sola afirmación
-        user, prompt = f"Explicación:\n{explanation.strip()}\n\nFrases:\n{_phrases(citations)}", _PROMPT
+        user, prompt = _pack(explanation.strip(), phrases), _dev(_PROMPT, quantity=True)
     try:
         first = call(_body(user, "caja", _point_schema(), 1600, prompt))
     except Exception:
         return empty, note_for("red"), usage_cost(None)
     cost = usage_cost(first.get("usage") if isinstance(first, dict) else None)
     data = parse_json(response_text(first))
-    if data is None:
+    if not known_caja(data):
         return empty, note_for("parse"), cost
-    passed = layer1(data, citations)
+    passed = refuse_injection(soften_quantities(layer1(data, citations), explanation), explanation)
     rows = _flatten(passed)
     if not rows:
         return passed, "", cost
@@ -241,7 +294,8 @@ def review(explanation, citations, complete=None):
         for i, (part, item) in enumerate(rows)
     )
     try:
-        second = call(_body(f"Frases:\n{_phrases(citations)}\n\nPuntos:\n{listed}", "chequeo", check, 800, _CHECK))
+        check_user = wrap_user("CHEQUEO", f"Frases:\n{phrases}\n\nPuntos:\n{listed}") if guard_on() else f"Frases:\n{phrases}\n\nPuntos:\n{listed}"
+        second = call(_body(check_user, "chequeo", check, 800, _dev(_CHECK, quantity=True)))
     except Exception:
         return passed, "", cost
     cost = add_usage(cost, usage_cost(second.get("usage") if isinstance(second, dict) else None))

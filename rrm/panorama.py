@@ -32,6 +32,8 @@ import re
 import time
 import unicodedata
 
+from rrm.reader.promptguard import fence, guard_on, with_guard
+
 MODES = ("sim", "meta")
 MAX_IDS = 20
 MAX_QUESTION = 500
@@ -285,20 +287,24 @@ _DEV = (
 
 
 def _prompt(question: str, candidates: list[dict]) -> str:
+    room = len(fence("PANORAMA", "")) + 1 if guard_on() else 0
+    limit = MAX_PROMPT_CHARS - room
     lines = [f"Question: {_squash(question)}", "", "Sentences:"]
     for i, cand in enumerate(candidates):
         lines.append(f"{i}\t{cand['paper']}\t{cand['quote'].replace(chr(9), ' ')}")
     text = "\n".join(lines)
-    if len(text) <= MAX_PROMPT_CHARS:
-        return text
-    kept = ["Question: " + _squash(question), "", "Sentences:"]
-    for i, cand in enumerate(candidates):
-        line = f"{i}\t{cand['paper']}\t{cand['quote'].replace(chr(9), ' ')}"
-        trial = "\n".join(kept + [line])
-        if len(trial) > MAX_PROMPT_CHARS and len(kept) > 3:
-            break
-        kept.append(line)
-    return "\n".join(kept)
+    if len(text) > limit:
+        kept = ["Question: " + _squash(question), "", "Sentences:"]
+        for i, cand in enumerate(candidates):
+            line = f"{i}\t{cand['paper']}\t{cand['quote'].replace(chr(9), ' ')}"
+            trial = "\n".join(kept + [line])
+            if len(trial) > limit and len(kept) > 3:
+                break
+            kept.append(line)
+        text = "\n".join(kept)
+    if guard_on():
+        text = fence("PANORAMA", text)
+    return text
 
 
 def _timeout_s() -> float:
@@ -459,7 +465,7 @@ def _muse(prompt: str, timeout: float):
         {
             "model": MODEL,
             "messages": [
-                {"role": "developer", "content": _DEV},
+                {"role": "developer", "content": with_guard(_DEV, english=True)},
                 {"role": "user", "content": prompt},
             ],
             "reasoning_effort": "low",

@@ -1,0 +1,15 @@
+{
+  "id": "llama-t2",
+  "arxiv": "2302.13971",
+  "fixture": "offline-fixtures-v3",
+  "repo": "FrankEBaru/research-microscope-compass",
+  "path": "datos/offline/",
+  "fixture_access": "GitHub 404 for both the cloud token and the available user token. The recorded prompt/response file was not on disk.",
+  "reported_model_verdict": "Contradice",
+  "expected": "Coincide",
+  "paper_intro": "For instance, LLaMA-13B outperforms GPT-3 on most benchmarks, despite being 10× smaller.",
+  "paper_conclusion": "Most notably, LLaMA-13B outperforms GPT-3 while being more than 10× smaller, and LLaMA-65B is competitive with Chinchilla-70B and PaLM-540B.",
+  "user_answer": "LLaMA-13B outperforms GPT-3 on most benchmarks, despite being more than ten times smaller.",
+  "hypothesis": "The judge treated 10× smaller and more than ten times smaller as a conflict.",
+  "source_checked": "arXiv e-print 2302.13971, acl2023.tex lines 140 and 718. Both wordings are in the paper."
+}
