@@ -79,7 +79,7 @@ export function LiveCoverage({ ids, states }: { ids: string[]; states: Record<st
   return (
     <section className="pano live-cov" aria-label="Panorama coverage">
       <div className="chips"><ProvChip kind="calculo" text="counted from the engine state" /></div>
-      <p className="pano-lead">Panorama for this burst: <b>{c.n} of {c.total} papers read</b>. Convergence counts only papers that were read; failed or queued papers stay out of the denominator and do not count as “the paper does not say it”.</p>
+      <p className="pano-lead">Panorama for this map: <b>{c.n} of {c.total} papers read</b>. Convergence counts only papers that were read; failed or queued papers stay out of the denominator and do not count as “the paper does not say it”.</p>
       <ul className="cov-rows">{rows.map(([k, v]) => <li key={k} data-k={k}><b>{v}</b> {k}</li>)}</ul>
       {c.abstract > 0 && <p className="muted small">“Abstract only”: sentences will come from the abstract and be labeled that way.</p>}
       <p className="small">Statements and verbatim sentences need the Muse Spark step on the backend; the UI checks each sentence against its paper before showing it.</p>

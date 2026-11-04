@@ -53,7 +53,7 @@ export default function MapScreen({
   if (!core) {
     return (
       <section className={`lvl ${core ? "lvl-map" : ""}`} data-screen="map">
-        <button type="button" className="link" onClick={backToCurated}>Back to the curated burst</button>
+        <button type="button" className="link" onClick={backToCurated}>Back to the curated map</button>
         <h1 className="question">{shownQ}</h1>
         {topics && <p className="sub" data-subtopics>{topics.length ? <>Subtemas: {topics.join(" · ")}</> : "Esta pregunta no separó subtemas."}</p>}
         {!liveResult && <p className="warm" role="status">{say(phase || (engine === "preparando" ? "wake" : "search"))}</p>}
@@ -61,7 +61,7 @@ export default function MapScreen({
         {liveErr && <Notice kind="fault" code={liveCode} />}
         {liveErr && debug && <p className="fail-reason">{liveErr}</p>}
         {liveResult && <LiveCoverage ids={liveIds} states={rowState} />}
-        {liveResult && liveIds.length === 0 && <p className="muted" role="status">The burst found no papers for this question. Try other words.</p>}
+        {liveResult && liveIds.length === 0 && <p className="muted" role="status">The map found no papers for this question. Try other words.</p>}
         {liveResult && liveIds.length > 0 && !liveIds.every((id: string) => settled(rowState[id]?.status)) && impatient && !forced && (
           <p className="muted small" role="status">Some papers are still queued or being read. <button type="button" className="link" onClick={() => setForced(true)}>Build the Panorama with the papers already read</button> (the rest do not count as “the paper does not say it”).</p>
         )}
@@ -118,7 +118,7 @@ export default function MapScreen({
       {papers.length > 0 && (refining || pending) && <Pulse mode="loading" compact detail="Arranging the atlas…" />}
       {empty && (
         <div data-screen="vacio">
-          <Notice kind="absence">The burst found no papers for this question.</Notice>
+          <Notice kind="absence">The map found no papers for this question.</Notice>
         </div>
       )}
       {papers.length > 0 && (

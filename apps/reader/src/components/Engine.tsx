@@ -652,7 +652,7 @@ export default function Engine() {
     onWant: wantThis,
   };
   const onLayout = (next: any) => { setLiveResult((prev) => (prev ? { ...prev, layout: next } : prev)); if (!next?.pending_vectors?.length) setPhase((cur) => (cur === "layout" ? "" : cur)); };
-  const back = !core ? <button type="button" className="link" onClick={backToCurated}>Back to the curated burst</button> : null;
+  const back = !core ? <button type="button" className="link" onClick={backToCurated}>Back to the curated map</button> : null;
   const backBtn = core && liveId
     ? <button type="button" className="top-back press" aria-label="Back" onClick={() => (camino.length > 1 ? volver() : go(atlasRoute()))}>←</button>
     : null;

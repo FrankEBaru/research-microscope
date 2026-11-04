@@ -82,14 +82,14 @@ export default function SimPanorama({ question, ids, states, getDoc, nameOf, ope
         <label className="chk"><input type="checkbox" checked={predictOn} onChange={(e) => setPredictOn(e.target.checked)} /> predict before you look <ProvChip kind="hipotesis" text="hypothesis" /></label>
         <label className="chk"><input type="checkbox" checked={faults} onChange={(e) => setFaults(e.target.checked)} /> simulate model failures (to see the gate)</label>
       </div>
-      {asked === null && <p className="muted">This burst has {ids.length} papers ({readable.length} readable{notRead ? `, ${notRead} could not be read or are still queued` : ""}). Ask anything: each paper contributes verbatim sentences and the matrix fills as they are read.</p>}
+      {asked === null && <p className="muted">This map has {ids.length} papers ({readable.length} readable{notRead ? `, ${notRead} could not be read or are still queued` : ""}). Ask anything: each paper contributes verbatim sentences and the matrix fills as they are read.</p>}
       {asked !== null && (
         <>
           <div className="sim-progress" role="status" aria-live="polite">
             <div className="coverage-bar"><div style={{ width: `${readable.length ? (100 * done) / readable.length : 100}%` }} /></div>
             <span>{finished ? `${nRead} of ${ids.length} papers read` : `reading… ${done} of ${readable.length}`}{notRead ? ` · ${notRead} unread (they do not count as “the paper does not say it”)` : ""}</span>
           </div>
-          {finished && nRead === 0 && <p className="muted" role="alert">No paper in this burst could be read: there is nothing to count yet.</p>}
+          {finished && nRead === 0 && <p className="muted" role="alert">No paper in this map could be read: there is nothing to count yet.</p>}
           {finished && predictOn && nRead > 0 && built.claims.some((c: any) => pred[c.id] === undefined) && (
             <div className="predict-banner" role="note"><b>Before you look, predict.</b> For each theme, choose how many of the {nRead} papers read you think contain a sentence. Then it is revealed and compared. <ProvChip kind="hipotesis" text="hypothesis: no evidence yet that it helps" />
               <button className="link" onClick={() => setPred(Object.fromEntries(built.claims.map((c: any) => [c.id, "skip"])))}>show all without predicting</button></div>

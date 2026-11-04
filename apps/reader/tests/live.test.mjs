@@ -67,14 +67,14 @@ test("en vivo: llegada progresiva; el Panorama espera a que todos terminen y los
 test("en vivo: si ningún paper se pudo leer, lo dice y no inventa conteos", async () => {
   const p = await live({ statuses: [[[1, "failed", "x"], [2, "failed", "x"], [3, "failed", "x"], [4, "failed", "x"]]] });
   await p.waitForSelector(".sim [role=alert]", { timeout: 10000 });
-  assert.match(await p.$eval(".sim [role=alert]", (e) => e.textContent), /No paper in this burst could be read/);
+  assert.match(await p.$eval(".sim [role=alert]", (e) => e.textContent), /No paper in this map could be read/);
   assert.equal(await p.$(".predict"), null, "no pide predecir sobre 0 papers"); assert.deepEqual(p.errs, []); await p.close();
 });
 
 test("en vivo: si la ráfaga falla muestra el error y se puede volver", async () => {
   const p = await live({ statuses: [[]], burstStatus: 500 });
   await p.waitForSelector(".fail-reason", { timeout: 8000 }); assert.equal(await p.$(".sim"), null);
-  await p.click("text=Back to the curated burst"); await p.waitForSelector(".platina"); await p.close();
+  await p.click("text=Back to the curated map"); await p.waitForSelector(".platina"); await p.close();
 });
 
 const DONE4 = [[1, "done"], [2, "done"], [3, "abstract_only"], [4, "failed", "sin pdf ni e-print"]];
