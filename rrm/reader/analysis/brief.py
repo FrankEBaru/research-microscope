@@ -79,12 +79,14 @@ _ROLES = (
     ("results", ("result", "experiment", "evaluation", "ablation", "analysis", "benchmark")),
     ("method", ("method", "approach", "model", "architecture", "algorithm", "training", "theor", "derivation", "objective", "framework")),
     ("appendix", ("appendix", "supplement", "proof")),
-    ("refs", ("reference", "acknowledg", "bibliograph")),
 )
+_REFS = re.compile(r"^\s*(references?|bibliography|acknowledg\w*)\b", re.I)
 
 
 def _role(title, appendix):
     low = (title or "").lower()
+    if _REFS.search(low):
+        return "refs"
     if appendix:
         return "appendix"
     for role, keys in _ROLES:
@@ -252,10 +254,17 @@ def build_brief(paper, base_cids=None):
             low = title.lower()
             if "appendix" in low or (block.get("level") == 1 and re.match(r"^[A-Z]\b", str(block.get("number") or ""))):
                 appendix = True
+            level = int(block.get("level") or 1)
+            role = _role(title, appendix)
+            if level > 1 and role not in ("refs", "appendix"):
+                # Una subsección hereda el papel de su sección (5.1 de «Theoretical Analysis» es método).
+                parent = next((sec for sec in reversed(sections) if sec["level"] < level), None)
+                if parent and parent["role"] not in ("other", "abstract"):
+                    role = parent["role"]
             sec_idx = len(sections)
             sections.append({
-                "i": sec_idx, "id": bid, "title": title, "level": int(block.get("level") or 1),
-                "number": str(block.get("number") or ""), "role": _role(title, appendix), "blocks": [],
+                "i": sec_idx, "id": bid, "title": title, "level": level,
+                "number": str(block.get("number") or ""), "role": role, "blocks": [],
             })
             continue
         sections[sec_idx]["blocks"].append(bid)
