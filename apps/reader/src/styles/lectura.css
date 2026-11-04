@@ -398,6 +398,10 @@
   .folio .fig, .folio .fig img, .folio .table-fig, .folio .ins, .folio img { max-width: 100%; }
   .folio .cited, .folio .cited-row, .folio .cited-q { overflow-wrap: anywhere; }
   .folio .table-wrap { overflow-x: auto; max-width: 100%; }
+  /* RRM-103: a long inline formula (DPO, FlashAttention: 444–815 px) or an unbroken word made the whole page pan
+     sideways at 390 px. The formula scrolls inside its own box; long words break. */
+  .folio .blk p { overflow-wrap: anywhere; }
+  .folio .blk .sent .katex { display: inline-block; max-width: 100%; overflow-x: auto; overflow-y: hidden; vertical-align: middle; }
   .folio .popover {
     position: fixed; left: 12px; right: 12px; bottom: 12px; top: auto; width: auto;
     max-height: 46vh; overflow: auto;

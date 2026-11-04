@@ -154,7 +154,10 @@ html.lv96-open body { overflow: hidden; }
   .lv96-anchor { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
-  .lv96-ovl { padding: 0; place-items: end stretch; }
+  /* RRM-103: the grid track took the min-content of a wide display equation (DPO 444 px, Chinchilla 559 px at 390):
+     the sheet ran off the right edge and hid its close button. One shrinkable column instead. */
+  .lv96-ovl { padding: 0; place-items: end stretch; grid-template-columns: minmax(0, 1fr); }
+  .lv96-panel { min-width: 0; max-width: 100vw; }
   .lv96-panel { max-height: calc(100vh - 8px); height: calc(100vh - 8px); border-radius: 16px 16px 0 0; padding: 0 16px 20px; }
   .lv96-grab { display: block; width: 36px; height: 4px; margin: 8px auto 4px; border-radius: 2px; background: var(--rule-2); }
   .lv96-h h2 { font-size: 22px; }

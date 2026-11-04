@@ -19,6 +19,10 @@ export function briefRef(raw) {
 function authorCut(s) {
   const year = /\((?:19|20)\d{2}[a-z]?\)\s*\.?\s*/.exec(s);
   if (year && year.index < 400) return year.index + year[0].length;
+  // RRM-103: ACL style, "Andrew M Dai and Quoc V Le. 2015. Semi-supervised sequence learning. In …" (BERT's refs)
+  // gave "(learning et al.)". The bare year between two periods ends the authors.
+  const acl = /\.\s+(?:19|20)\d{2}[a-z]?\.\s+/.exec(s);
+  if (acl && acl.index < 400) return acl.index + acl[0].length;
   const sentence = /[a-z]\)?\.\s+(?=[A-Z“"'])/.exec(s);
   if (sentence) return sentence.index + sentence[0].length;
   return 0;
@@ -38,9 +42,10 @@ function looksLikeAuthors(s) {
 }
 
 function etAl(head) {
-  const s = head.replace(/[.,\s]+$/, "").replace(/\((?:19|20)\d{2}[a-z]?\)/, "").trim();
+  const s = head.replace(/[.,\s]+$/, "").replace(/\((?:19|20)\d{2}[a-z]?\)/, "").replace(/[.\s]+(?:19|20)\d{2}[a-z]?$/, "").trim();
   if (!s) return "";
-  const commaParts = s.split(",").map((part) => part.trim()).filter(Boolean);
+  // RRM-103: "Andrew M Dai and Quoc V Le" has no comma: the first author ends at "and".
+  const commaParts = s.split(/,|\s+(?:and|&)\s+/).map((part) => part.trim()).filter(Boolean);
   const many = commaParts.length > 2 || /\b(?:and|&)\b/i.test(s) || /\bet al\.?/i.test(s);
   const first = (commaParts[0] || s).replace(/\bet al\.?$/i, "").trim();
   const words = first.split(/\s+/).filter((word) => !/^[A-Z]\.?$/.test(word));
