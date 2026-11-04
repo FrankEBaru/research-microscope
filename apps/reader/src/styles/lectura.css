@@ -415,3 +415,4 @@
 .folio .gap-card .gl blockquote footer { margin-top: 3px; font: 500 12px/1.35 var(--font-ui); font-style: normal; color: var(--ink-3); }
 .folio .gap-card .gl blockquote footer a { color: var(--ink-3); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--rule-2); }
 .folio .gap-card .gl--others blockquote { border-left-color: var(--accent-line); }
+.folio .h-recovered { margin: 28px 0 10px; font: 600 22px/1.25 var(--font-read); color: var(--ink); }

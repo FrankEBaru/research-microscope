@@ -13,6 +13,7 @@ import { hasConclusion, scanIds } from "@/lib/scan.js";
 import { citeName } from "@/lib/layout.js";
 import { UNDEFINED, symbolHover } from "@/lib/hover.js";
 import { autoSyms, symKey } from "@/lib/symcolor.js";
+import { isTexJunk, junkTitle } from "@/lib/texclean.js";
 import AskBox from "./AskBox";
 import DkInstrument, { dkAnchor } from "./paper/DkInstrument";
 import { marginExtras, marginTakes, useMarginExtrasVersion } from "@/lib/marginExtras";
@@ -470,6 +471,26 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     }, 280);
   };
   useEffect(() => {
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      citePin.current = "";
+      setPop(null);
+      setSymPin("");
+      setSymHot("");
+    };
+    // A popover is placed from a rect taken once; on scroll it would float over the text. Close it.
+    let y0 = window.scrollY;
+    const scrolled = () => {
+      if (Math.abs(window.scrollY - y0) < 40) return;
+      y0 = window.scrollY;
+      citePin.current = "";
+      setPop(null);
+    };
+    window.addEventListener("keydown", esc);
+    window.addEventListener("scroll", scrolled, { passive: true });
+    return () => { window.removeEventListener("keydown", esc); window.removeEventListener("scroll", scrolled); };
+  }, []);
+  useEffect(() => {
     const away = (e: TouchEvent) => { const t = e.target as HTMLElement; if (!t.closest?.("[data-pop],[data-sym],.popover")) setPop(null); };
     document.addEventListener("touchstart", away, { passive: true });
     return () => { document.removeEventListener("touchstart", away); clearTimeout(closeTimer.current); clearTimeout(timer.current); };
@@ -764,6 +785,15 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     };
     paper.blocks.forEach((b, bi) => {
       if (scan && !scan.has(b.id)) return;
+      // Integration: paragraphs that are only LaTeX layout machinery (\@setfontsize, \iftoggle…) are not shown.
+      if (b.kind === "p") {
+        const raw = (b.inlines || []).map((x: any) => (x && x.t === "text" ? x.v : "")).join("");
+        if (isTexJunk(raw)) {
+          const title = junkTitle(raw);
+          if (title) rows.push(<h3 key={`jt-${b.id}`} className="h-recovered">{title}</h3>);
+          return;
+        }
+      }
       if (core && reading && b.kind === "h" && b.level <= 2) {
         closeUntil(b.level);
         stack.push({ id: b.id, level: b.level, title: plainOf(b.inlines) });

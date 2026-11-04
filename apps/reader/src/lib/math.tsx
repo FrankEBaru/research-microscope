@@ -6,39 +6,8 @@ import { reportFault } from "@/lib/faults.js";
 
 export interface Sym { id: string; latex: string; name: string; color: string; cls?: string }
 
-const SKIP_BRACE = ["\\mathrm", "\\text", "\\textbf", "\\mathbf", "\\operatorname", "\\mathit"];
-
-/** Envuelve símbolos conocidos con color constante y un data-sym para el hover. */
-export function colorize(tex: string, syms: Sym[]): string {
-  if (!syms.length) return tex;
-  const multi = syms.filter((s) => s.latex.length > 1).sort((a, b) => b.latex.length - a.latex.length);
-  const single = Object.fromEntries(syms.filter((s) => s.latex.length === 1).map((s) => [s.latex, s]));
-  // Automatic symbols (RRM-95) carry a CSS class instead of a color and no data-sym, so the core hover keeps keying on data-tex.
-  const wrap = (s: Sym) => (s.cls ? `\\htmlClass{${s.cls}}{${s.latex}}` : `\\htmlData{sym=${s.id}}{\\textcolor{${s.color}}{${s.latex}}}`);
-  let out = "";
-  let i = 0;
-  while (i < tex.length) {
-    const rest = tex.slice(i);
-    const skip = SKIP_BRACE.find((c) => rest.startsWith(c + "{"));
-    if (skip) {
-      let depth = 0, j = i + skip.length;
-      do { if (tex[j] === "{") depth++; else if (tex[j] === "}") depth--; j++; } while (depth > 0 && j < tex.length);
-      out += tex.slice(i, j); i = j; continue;
-    }
-    if (tex[i] === "\\") {
-      const m = /^\\([A-Za-z]+|.)/.exec(rest);
-      out += m[0]; i += m[0].length; continue;
-    }
-    const prev = i > 0 ? tex[i - 1] : "";
-    const ms = multi.find((s) => rest.startsWith(s.latex) && !/[A-Za-z]/.test(prev));
-    if (ms) { out += wrap(ms); i += ms.latex.length; continue; }
-    const ss = single[tex[i]];
-    if (ss && prev !== "^" && prev !== "_" && !/[A-Za-z]/.test(tex[i + 1] || "") ) { out += wrap(ss); i++; continue; }
-    if (ss && prev !== "^" && prev !== "_") { out += wrap(ss); i++; continue; }
-    out += tex[i]; i++;
-  }
-  return out;
-}
+export { colorize, TEX_MACROS } from "@/lib/texcolor.js";
+import { colorize, TEX_MACROS, texFix } from "@/lib/texcolor.js";
 
 /** Display math goes through displayTex (alignment, split, tag). Inline stays a single run. */
 function katexInput(tex: string, display: boolean) {
@@ -75,7 +44,14 @@ export function plainTex(tex: string): string {
 }
 
 function renderTex(tex: string, display: boolean, syms: Sym[]) {
-  return katex.renderToString(colorize(katexInput(tex, display), syms), { displayMode: display, throwOnError: true, trust: true, strict: "ignore" });
+  const src = texFix(katexInput(tex, display));
+  const opts = { displayMode: display, throwOnError: true, trust: true, strict: "ignore" as const };
+  try {
+    return katex.renderToString(colorize(src, syms), { ...opts, macros: { ...TEX_MACROS } });
+  } catch {
+    // Symbol color must never cost an equation: same TeX, no color.
+    return katex.renderToString(src, { ...opts, macros: { ...TEX_MACROS } });
+  }
 }
 
 /** `plain`: if the TeX does not compile even with balanced braces, show clean text, never raw TeX (notes, titles, quotes). */

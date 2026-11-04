@@ -1,4 +1,5 @@
 "use client";
+import { messyQuote } from "@/lib/texclean.js";
 import { useState } from "react";
 import { Tex, Rich } from "@/lib/math";
 import { compareOf, matrixOf } from "@/lib/artifacts.js";
@@ -182,8 +183,8 @@ export function GapView({ note, art, self, host = "", titleOf, onOpen }: { note?
   const v2 = note?.v2;
   if (v2 && (v2.ai?.text || v2.paper?.quotes?.length || v2.others?.passages?.length)) {
     const ai = cleanNote(v2.ai?.text || "");
-    const quotes = (v2.paper?.quotes || []).filter((q: any) => q?.text && !samePhrase(cleanNote(q.text), host)).slice(0, 2);
-    const others = (v2.others?.passages || []).filter((x: any) => x?.text).slice(0, 2);
+    const quotes = (v2.paper?.quotes || []).filter((q: any) => q?.text && !messyQuote(q.text) && !samePhrase(cleanNote(q.text), host)).slice(0, 2);
+    const others = (v2.others?.passages || []).filter((x: any) => x?.text && !messyQuote(x.text)).slice(0, 2);
     return (
       <aside className="gap-card is-ai is-v2">
         {ai && (

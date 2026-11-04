@@ -48,7 +48,9 @@ function openGroup(result: any, id: string) {
   if (!found) return null;
   const n = ((Number(point.cluster) % 6) + 6) % 6 + 1;
   const name = String(found.name || "").trim();
-  return { id: String(found.id), n, name: name || "Group" };
+  // A single-group map has no lane name (B.1); the crumb then skips the group instead of saying "Group".
+  if (!name) return null;
+  return { id: String(found.id), n, name };
 }
 
 export default function Engine() {
@@ -601,10 +603,12 @@ export default function Engine() {
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // B.1 (core): Esc closes what is open inside the paper; leaving the paper is the Back button's job.
+      if (core) return;
       if (level === 3) go({ q: q?.id, c: route.c }); else if (level === 2) go({ q: q?.id });
     };
     window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
-  }, [level, q, route.c, go]);
+  }, [level, q, route.c, go, core]);
 
   const curatedReady = Boolean(content) && Object.keys(papers).length > 0;
   if (err && !(live && core)) return <main className="center-msg"><p>{err}</p></main>;

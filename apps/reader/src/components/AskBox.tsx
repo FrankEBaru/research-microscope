@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { messyQuote } from "@/lib/texclean.js";
 import { Rich } from "@/lib/math";
 import { ask, explain, preparePhrases } from "@/lib/backend.js";
 import { cleanExtract, markMidStart, storeLine } from "@/lib/extract.js";
@@ -401,7 +402,8 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
         {!result?.empty && PARTS.map(([id, label]) => (parts[id] || []).length && (!only || only === id) ? (
           <section key={id} className="vd-sec" data-v={id}>
             {(parts[id] || []).map((item: any, index: number) => {
-              const cites: any[] = item.cites?.length ? item.cites : (item.cite ? [{ text: item.cite, paper_id: item.paper_id, section: item.section }] : []);
+              const cites: any[] = (item.cites?.length ? item.cites : (item.cite ? [{ text: item.cite, paper_id: item.paper_id, section: item.section }] : []))
+                .filter((c: any) => !messyQuote(c?.text));
               const missed = id === "te_falto";
               return (
               <div className="claim" key={index}>
@@ -424,7 +426,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
                     </footer>
                   </blockquote>
                 ))}
-                {(item.others || []).map((o: any, oi: number) => (
+                {(item.others || []).filter((o: any) => !messyQuote(o?.text)).map((o: any, oi: number) => (
                   <blockquote key={`o${oi}`} className="ex ex-other">
                     <p className="ex-other-h">Another paper{o.title ? <>: <em>{o.title}</em></> : null}{o.why ? <> — <Rich text={shortWhy(o.why, 140)} /></> : null}</p>
                     <p><Rich text={o.text} /></p>

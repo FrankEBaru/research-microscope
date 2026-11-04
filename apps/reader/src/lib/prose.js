@@ -1,3 +1,4 @@
+import { cleanLeftover, cleanTexText } from "./texclean.js";
 // Render-time cleanup of LaTeX that the parser left inside text nodes.
 // The stored paper is not rewritten. Idempotent: running twice changes nothing.
 
@@ -606,7 +607,7 @@ export function presentInlines(inls) {
   let buf = [];
   const flush = () => {
     if (!buf.length) return;
-    out.push(...parseProse(buf.map((x) => x.v).join("")));
+    out.push(...parseProse(cleanTexText(buf.map((x) => x.v).join(""))).map((n) => (n && n.t === "text" ? { ...n, v: cleanLeftover(n.v) } : n)));
     buf = [];
   };
   for (const x of stripSplitDefs(inls)) {
