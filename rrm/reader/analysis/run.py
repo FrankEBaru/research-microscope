@@ -115,6 +115,18 @@ def analyze_paper(paper, retr=None, cfg=None, cand=None, write_cache=True):
         out = json.loads(path.read_text(encoding="utf-8"))
         out.setdefault("analysis", {})["cached"] = True
         return out
+    # Integration (RRM-95): the same paper re-parsed can change its hash (stage, figures). A slightly stale
+    # analysis of the same corpusid beats falling back to notes.py with zero notes; anchors are re-checked by the UI.
+    try:
+        older = sorted(path.parent.glob(f"{cid}-*.json"), key=lambda q: q.stat().st_mtime, reverse=True)
+    except Exception:
+        older = []
+    if older:
+        out = json.loads(older[0].read_text(encoding="utf-8"))
+        info = out.setdefault("analysis", {})
+        info["cached"] = True
+        info["stale_hash"] = True
+        return out
     retr = retr or local_retr()
     res = CANDIDATES[cand or WINNER](paper, brief, retr, cfg)
     res["items"], _rec = v1(BriefIndex(brief), res["items"], _cfg(cfg))
@@ -144,6 +156,18 @@ def cached_or_kick(paper, commit=None):
     if path.is_file():
         out = json.loads(path.read_text(encoding="utf-8"))
         out.setdefault("analysis", {})["cached"] = True
+        return out
+    # Integration (RRM-95): the same paper re-parsed can change its hash (stage, figures). A slightly stale
+    # analysis of the same corpusid beats falling back to notes.py with zero notes; anchors are re-checked by the UI.
+    try:
+        older = sorted(path.parent.glob(f"{cid}-*.json"), key=lambda q: q.stat().st_mtime, reverse=True)
+    except Exception:
+        older = []
+    if older:
+        out = json.loads(older[0].read_text(encoding="utf-8"))
+        info = out.setdefault("analysis", {})
+        info["cached"] = True
+        info["stale_hash"] = True
         return out
     if os.environ.get("RRM_ANALYSIS_SYNC", "").strip() == "1":
         out = analyze_paper(paper)

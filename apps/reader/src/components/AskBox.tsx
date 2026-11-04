@@ -18,6 +18,16 @@ const PARTS = [
   ["te_falto", "You missed"],
 ] as const;
 // RRM-95: one glyph per verdict, so the strip reads without color too.
+/** A "why" is one or two short sentences. The model rarely loops into word salad after that, so keep the
+ * first sentence, cap it at a word boundary and drop stray trailing punctuation. */
+export function shortWhy(raw: string, max = 190) {
+  let t = String(raw || "").replace(/\s+/g, " ").trim().replace(/['’"]*[,;]\s*$/, "").trim();
+  const first = /^(.{40,}?[.!?])(\s|$)/.exec(t);
+  if (first) t = first[1];
+  if (t.length > max) t = t.slice(0, max).replace(/\s+\S*$/, "").replace(/[,;:]$/, "") + "…";
+  return t;
+}
+
 const GLYPH: Record<string, string> = { coincide: "≈", diverge: "≃", contradice: "≠", sin_respaldo: "∅", te_falto: "+" };
 
 const NO_SUPPORT = "I didn't find this in the selected extracts from the paper.";
@@ -283,7 +293,11 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
       }
       if (ranked?.empty) return;
       setProgress("Checking each quote…");
-      const body = await ask(ids || [], text, "revisar", focusId, sectionId);
+      // The first review of a section can wait for its answer key (~30 s cold). Say so instead of giving up.
+      const later = window.setTimeout(() => setProgress("Building the answer key for this section (first time only)…"), 12000);
+      let body: any;
+      try { body = await ask(ids || [], text, "revisar", focusId, sectionId); }
+      finally { window.clearTimeout(later); }
       if (body?.empty) setResult(body);
       else { setResult(body); keepStore(body); setShown((n) => n + 1); }
     } catch (caught: any) {
@@ -394,7 +408,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
                 <p className="claim-h"><span className="vd-tag" data-v={id}><b aria-hidden="true">{GLYPH[id]}</b><span>{label}</span></span></p>
                 <p className={missed ? "claim-you claim-point" : "claim-you"}><Rich text={item.text} /></p>
                 {item.why && item.why !== item.text && (
-                  <p className="claim-why"><Prov kind="simulado" text="Why" title="Muse's explanation, checked against the quotes below" /><span><Rich text={item.why} /></span></p>
+                  <p className="claim-why"><Prov kind="simulado" text="Why" title="Muse's explanation, checked against the quotes below" /><span><Rich text={shortWhy(item.why)} /></span></p>
                 )}
                 {cites.map((cite: any, ci: number) => (
                   <blockquote key={ci} className={linked(cite.paper_id || item.paper_id) ? "ex is-linked" : "ex"}>
@@ -412,7 +426,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
                 ))}
                 {(item.others || []).map((o: any, oi: number) => (
                   <blockquote key={`o${oi}`} className="ex ex-other">
-                    <p className="ex-other-h">Another paper{o.title ? <>: <em>{o.title}</em></> : null}{o.why ? <> — <Rich text={o.why} /></> : null}</p>
+                    <p className="ex-other-h">Another paper{o.title ? <>: <em>{o.title}</em></> : null}{o.why ? <> — <Rich text={shortWhy(o.why, 140)} /></> : null}</p>
                     <p><Rich text={o.text} /></p>
                     <footer>
                       <Prov kind="paper" text={o.section || "paper"} />
