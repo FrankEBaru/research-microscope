@@ -192,6 +192,18 @@ def main():
         from concurrent.futures import ThreadPoolExecutor
 
         def one(job):
+            try:
+                return one_(job)
+            except Exception as err:  # una llamada caída no tumba la ronda: queda como error, sin reintento
+                key, ai, ans, text, sents, ctx, sheet, pdir, cand, run = job
+                print(f"{cand} r{run} {key} {ans['kind']:8s} ERROR {type(err).__name__}", file=sys.stderr, flush=True)
+                claims = [{"n": n, "gold": gc["verdict"], "ok": gc["ok"], "pred": "error", "right": False, "strict": False, "cite_hit": None}
+                          for n, gc in enumerate(ans["claims"], 1)]
+                return {"cand": cand, "run": run, "section": key, "kind": ans["kind"], "answer": ai, "claims": claims,
+                        "missed": (0, 0, 0, len(ans.get("missed") or []), 0), "others": 0, "wall_s": 0.0, "llm_s": None,
+                        "cached": None, "cost": 0.0, "tool_calls": None, "parts": {}, "grades": [], "error": type(err).__name__}, llm.add(None, None), None
+
+        def one_(job):
             key, ai, ans, text, sents, ctx, sheet, pdir, cand, run = job
             salt = f"run{run}" if run else ""
             t0 = time.perf_counter()
@@ -274,7 +286,7 @@ def summarize(records, sheets):
             stab = round(sum(same) / max(1, len(same)), 3)
         walls = sorted(r["llm_s"] if r["llm_s"] is not None else r["wall_s"] for r in rows)
         out[cand] = {
-            "claims": len(claims),
+            "claims": len(claims), "errors": sum(1 for r in rows if r.get("error")),
             "acc": round(sum(c["right"] for c in claims) / max(1, len(claims)), 3),
             "acc_strict": round(sum(c["strict"] for c in claims) / max(1, len(claims)), 3),
             "acc_by_gold": {g: round(sum(c["right"] for c in claims if c["gold"] == g) / max(1, sum(1 for c in claims if c["gold"] == g)), 3)
