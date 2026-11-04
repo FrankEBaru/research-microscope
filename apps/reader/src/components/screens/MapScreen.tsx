@@ -9,6 +9,7 @@ import { Boundary, Notice } from "../faults";
 import MapBody from "./MapBody";
 import CoreList from "./CoreList";
 import BootPanel from "./BootPanel";
+import { Pulse, Skeleton } from "../ui/Pulse";
 import type { AtlasCtx } from "./types";
 
 function isFull(paper: any, state: any) {
@@ -102,8 +103,17 @@ export default function MapScreen({
       {jump}
       {labelNote && <Notice kind="absence">{labelNote}</Notice>}
       {liveResult?.topic_note && <Notice kind="absence">{liveResult.topic_note}</Notice>}
-      {waiting && <BootPanel engine={engine} phase={phase} pending={pending} compact />}
+      {waiting && (
+        <>
+          <Skeleton lines={5} />
+          <Pulse mode="loading" detail={say(phase || "search")} />
+          <BootPanel engine={engine} phase={phase} pending={pending} compact />
+        </>
+      )}
+      {liveErr && <Pulse mode="error" detail={liveErr} />}
       {liveErr && <Notice kind="fault" code={liveCode} />}
+      {papers.length > 0 && (refining || pending) && <Pulse mode="loading" compact detail="Armando el mapa…" />}
+      {papers.length > 0 && !refining && !pending && !liveErr && <Pulse mode="ready" compact />}
       {empty && (
         <div data-screen="vacio">
           <Notice kind="absence">The burst found no papers for this question.</Notice>

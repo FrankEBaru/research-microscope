@@ -7,11 +7,12 @@ import PaperView, { plainOf } from "./Paper";
 import MapView from "./MapView";
 import Panorama from "./Panorama";
 import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
-import { burst, curatedContent, curatedPaper, explain, groupNames, keepOpened, labels as fetchLabels, liveEnabled, paperKey, paper as fetchPaper, prepare, settled, status as fetchStatus, subtopics as fetchSubtopics, warm } from "@/lib/backend.js";
+import { burst, curatedContent, curatedPaper, explain, groupNames, keepOpened, labels as fetchLabels, liveEnabled, paperKey, paper as fetchPaper, prepare, recordedQueries, settled, status as fetchStatus, subtopics as fetchSubtopics, warm } from "@/lib/backend.js";
 import { classify, storageFault } from "@/lib/faults.js";
 import { coreMode } from "@/lib/features.js";
 import { applyGroupNames, groupPacks, mapPapers, pinPoint } from "@/lib/layout.js";
 import { alignVisit, mergeLabels, popVisit, pushVisit } from "@/lib/path.js";
+import { pathOf } from "./atlas/Card";
 import { EXPLORE_KEY, pickExplore, readExploreFor, recordVisit, whyLabel } from "@/lib/explore.js";
 import { normalizeQuestion, phaseOf, readOverflow, readQuestions, recallQuestion, rememberQuestion, writeOverflow } from "@/lib/qcache.js";
 import { bindDevLog, createDevLog } from "@/lib/devlog.js";
@@ -45,7 +46,7 @@ function openGroup(result: any, id: string) {
   if (!found) return null;
   const n = ((Number(point.cluster) % 6) + 6) % 6 + 1;
   const name = String(found.name || "").trim();
-  return { n, name: name || "Group" };
+  return { id: String(found.id), n, name: name || "Group" };
 }
 
 export default function Engine() {
@@ -57,6 +58,7 @@ export default function Engine() {
   const live = liveEnabled();
   const core = coreMode();
   const [draft, setDraft] = useState("");
+  const [recorded, setRecorded] = useState<string[]>([]);
   const [liveQ, setLiveQ] = useState("");
   const [topics, setTopics] = useState<string[] | null>(null);
   const [liveOn, setLiveOn] = useState(false);
@@ -72,6 +74,7 @@ export default function Engine() {
   const [opened, setOpened] = useState<any>(null);
   const [asList, setAsList] = useState(false);
   const [camino, setCamino] = useState<{ id: string; porQue: string; padre: string | null }[]>([]);
+  const [laneId, setLaneId] = useState("");
   const caminoRef = useRef(camino);
   caminoRef.current = camino;
   const [explore, setExplore] = useState<{ q: string; nodes: any[]; edges: any[] }>({ q: "", nodes: [], edges: [] });
@@ -107,6 +110,13 @@ export default function Engine() {
       finish: (id: number, state: string, detail?: string) => { dev.finish(id, state, detail); setDevTick((n) => n + 1); },
     });
   }, [dev]);
+
+  useEffect(() => {
+    if (!live || process.env.NEXT_PUBLIC_RRM_OFFLINE !== "1") return;
+    let stop = false;
+    recordedQueries().then((rows: string[]) => { if (!stop) setRecorded(rows); });
+    return () => { stop = true; };
+  }, [live]);
 
   useEffect(() => {
     const db = typeof indexedDB === "undefined" ? null : indexedDB;
@@ -152,6 +162,8 @@ export default function Engine() {
   }, []);
 
   useEffect(() => {
+    // B1 en vivo no usa los papers curados (el Release viejo). Atlas, lector y caja salen del backend.
+    if (live && core) return;
     (async () => {
       try {
         const c = await curatedContent();
@@ -164,7 +176,7 @@ export default function Engine() {
         setErr("No se encontraron los datos. Ejecuta `npm run data` (descarga los papers de arXiv; no se commitean).");
       }
     })();
-  }, []);
+  }, [live, core]);
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -216,6 +228,19 @@ export default function Engine() {
     setCamino(next);
     if (next.length) go({ p: next[next.length - 1].id });
     else go({});
+  };
+  const irPaso = (id: string) => {
+    const key = String(id || "");
+    if (!key) return;
+    const prev = caminoRef.current || [];
+    const idx = prev.map((step) => String(step.id)).lastIndexOf(key);
+    if (idx >= 0) {
+      setCamino(prev.slice(0, idx + 1));
+      if (key !== liveId) go({ p: key });
+      else window.scrollTo({ top: 0 });
+      return;
+    }
+    abrir(key, "from the path");
   };
   const home = () => {
     setLiveOn(false);
@@ -471,6 +496,8 @@ export default function Engine() {
     if (!q || pending) return;
     const gen = ++searchGen.current;
     setLiveQ(q); setLiveOn(true); setLiveErr(""); setLiveCode(""); setImpatient(false); setForced(false); setTopics(null); setAsList(false); setLabelNote("");
+    setLiveResult(null); setRowState({}); setOpened(null); setCamino([]); setExplore({ q, nodes: [], edges: [] }); setLaneId("");
+    go({});
     setPending(true);
     let cached: any = null;
     try { cached = recallQuestion(localStorage, q); } catch (e) { storageFault(e, "localStorage"); cached = null; }
@@ -567,6 +594,7 @@ export default function Engine() {
     query: shownQ,
     explore,
     openId: liveId,
+    laneId,
     onOpen: abrir,
     onWant: wantThis,
   };
@@ -580,11 +608,19 @@ export default function Engine() {
     const why = top?.padre ? whyLabel(top.porQue) : "";
     return why ? <p className="jump-why">Jump: {why}</p> : null;
   })();
+  const groupNow = liveId ? openGroup(liveResult, liveId) : null;
   const crumb = core && (liveOn || liveId) ? {
     question: shownQ,
-    onAtlas: () => go({}),
-    group: liveId ? openGroup(liveResult, liveId) : null,
+    onAtlas: () => { setLaneId(""); go({}); },
+    onGroup: groupNow ? () => { setLaneId(groupNow.id); go({}); } : undefined,
+    group: groupNow,
     paper: liveId ? titleFor(liveId) : "",
+    paperId: liveId,
+    steps: pathOf(explore).map((step) => {
+      const known = step.title && !/^\d+$/.test(step.title) ? step.title : titleFor(step.id);
+      return { ...step, title: known && !/^\d+$/.test(known) ? known : "Paper" };
+    }),
+    onStep: irPaso,
   } : null;
   const frame = {
     back, openLine, liveErr, liveCode, debug,
@@ -596,13 +632,13 @@ export default function Engine() {
 
   return (
     <>
-      <TopBar core={core} live={live} liveOn={liveOn} liveId={liveId} steps={steps} level={level} draft={draft} setDraft={setDraft} onSearch={onSearch} companion={companion} setCompanion={setCompanion} onHome={home} crumb={crumb} back={backBtn} />
+      <TopBar core={core} live={live} liveOn={liveOn} liveId={liveId} steps={steps} level={level} draft={draft} setDraft={setDraft} onSearch={onSearch} companion={companion} setCompanion={setCompanion} onHome={home} crumb={crumb} back={backBtn} recorded={recorded} />
 
       <main key={`${level}-${route.c}-${route.p}`} className="zoom-in">
         {live && (liveOn || liveId) && liveId && opened && <Boundary name="reader"><ReaderFrame {...frame} opened={opened} /></Boundary>}
         {live && (liveOn || liveId) && liveId && !opened && <Boundary name="reader"><ReaderFrame {...frame} opened={null} /></Boundary>}
         {live && core && !liveOn && !liveId && (
-          <Boundary name="start"><StartScreen draft={draft} setDraft={setDraft} onSearch={onSearch} pending={pending} engine={engine} phase={phase} /></Boundary>
+          <Boundary name="start"><StartScreen draft={draft} setDraft={setDraft} onSearch={onSearch} pending={pending} engine={engine} phase={phase} recorded={recorded} /></Boundary>
         )}
         {live && liveOn && !liveId && (
           <Boundary name="map"><MapScreen core={core} shownQ={shownQ} topics={topics} liveResult={liveResult} phase={phase} engine={engine} say={say} liveErr={liveErr} liveCode={liveCode} debug={debug} pending={pending} asList={asList} setAsList={setAsList} labelNote={labelNote} liveIds={liveIds} impatient={impatient} forced={forced} setForced={setForced} liveQ={liveQ} liveName={liveName} go={go} backToCurated={backToCurated} atlasCtx={atlasCtx} onLayout={onLayout} jump={jump} /></Boundary>

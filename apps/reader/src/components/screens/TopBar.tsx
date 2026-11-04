@@ -2,17 +2,22 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import "@/styles/inicio.css";
 import { Cap, Icon } from "../ui";
+import { Rich } from "@/lib/math";
 
 type Step = { n: number; label: string; sub?: string; on?: () => void };
 
 export type Crumb = {
   question: string;
   onAtlas: () => void;
-  group?: { n: number; name: string } | null;
+  onGroup?: () => void;
+  group?: { id?: string; n: number; name: string } | null;
   paper?: string;
+  paperId?: string;
+  steps?: { id: string; title: string }[];
+  onStep?: (id: string) => void;
 };
 
-export default function TopBar({ core, live, liveOn, liveId, steps, level, draft, setDraft, onSearch, companion, setCompanion, onHome, crumb, back }: {
+export default function TopBar({ core, live, liveOn, liveId, steps, level, draft, setDraft, onSearch, companion, setCompanion, onHome, crumb, back, recorded = [] }: {
   core: boolean;
   live: boolean;
   liveOn: boolean;
@@ -27,6 +32,7 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
   onHome?: () => void;
   crumb?: Crumb | null;
   back?: ReactNode;
+  recorded?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [shortcut, setShortcut] = useState("Ctrl+K");
@@ -79,12 +85,17 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
         )}
         {live && !(core && !liveOn && !liveId) && (
           <form className="live-search" onSubmit={onSearch}>
-            <input aria-label="Question" title={draft || undefined} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Question" />
+            <input aria-label="Question" title={draft || undefined} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Question" list={recorded.length ? "rrm-recorded" : undefined} />
             <button type="submit">Search</button>
           </form>
         )}
         {!core && <button className="companion-toggle" aria-pressed={companion} onClick={() => setCompanion((v) => !v)} title="Optional reading companion: offers help, never interrupts, stores nothing (C key)">Companion {companion ? "on" : "off"}</button>}
         {!(live && process.env.NEXT_PUBLIC_RRM_OFFLINE !== "1") && <span className="proto">prototype · local data</span>}
+        {recorded.length > 0 && (
+          <datalist id="rrm-recorded">
+            {recorded.map((q) => <option key={q} value={q} />)}
+          </datalist>
+        )}
       </header>
     );
   }
@@ -107,22 +118,28 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
       <nav className="crumbs" aria-label="Breadcrumb">
         {crumb?.question && (
           <>
-            {crumb.paper
+            {crumb.paper || (crumb.steps && crumb.steps.length)
               ? <button type="button" onClick={crumb.onAtlas}>{crumb.question}</button>
               : <span className="cur" aria-current="page">{crumb.question}</span>}
             {crumb.group && crumb.paper && (
               <>
                 <span className="sep" aria-hidden="true">/</span>
-                <span className="cur">
+                <button type="button" onClick={crumb.onGroup || crumb.onAtlas}>
                   <i className="dot" style={{ ["--c" as string]: `var(--grp-${crumb.group.n})` }} aria-hidden="true" />
-                  {crumb.group.name}
-                </span>
+                  <Rich text={crumb.group.name} />
+                </button>
               </>
             )}
+            {(crumb.steps || []).filter((step) => step.id !== crumb.paperId).map((step) => (
+              <span key={step.id} className="crumb-step">
+                <span className="sep" aria-hidden="true">/</span>
+                <button type="button" onClick={() => crumb.onStep?.(step.id)}><Rich text={step.title || step.id} /></button>
+              </span>
+            ))}
             {crumb.paper && (
               <>
                 <span className="sep" aria-hidden="true">/</span>
-                <span className="cur" aria-current="page">{crumb.paper}</span>
+                <span className="cur" aria-current="page"><Rich text={crumb.paper} /></span>
               </>
             )}
           </>
@@ -145,6 +162,7 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="Search"
+                list={recorded.length ? "rrm-recorded" : undefined}
                 onBlur={(e) => {
                   if (e.currentTarget.form?.contains(e.relatedTarget as Node)) return;
                   if (!draft.trim()) setOpen(false);
@@ -160,6 +178,11 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
           </button>
         )}
       </div>
+      {recorded.length > 0 && (
+        <datalist id="rrm-recorded">
+          {recorded.map((q) => <option key={q} value={q} />)}
+        </datalist>
+      )}
     </header>
   );
 }

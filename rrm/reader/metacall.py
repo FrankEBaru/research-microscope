@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import threading
 import urllib.error
 import urllib.request
 
@@ -11,6 +12,51 @@ API_URL = "https://api.meta.ai/v1/responses"
 _IN = 0.10 / 1_000_000
 _CACHE = 0.002 / 1_000_000
 _OUT = 0.20 / 1_000_000
+_raw_local = threading.local()
+
+
+def raw_dump_on():
+    """RRM_RAW_DUMP no vacío guarda el prompt y la salida. Apagado, no cambia nada."""
+    return bool(os.environ.get("RRM_RAW_DUMP", "").strip())
+
+
+def _scrub(text):
+    raw = text if isinstance(text, str) else json.dumps(text, ensure_ascii=False)
+    for name in ("MODEL_API_KEY", "S2_API_KEY", "MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET", "RRM_DEMO_TOKEN"):
+        secret = os.environ.get(name) or ""
+        if secret:
+            raw = raw.replace(secret, "")
+    raw = re.sub(r"Bearer\s+\S+", "Bearer", raw)
+    return raw
+
+
+def _remember(body, payload):
+    if not raw_dump_on():
+        return
+    try:
+        record = json.loads(_scrub({
+            "model": (body or {}).get("model") if isinstance(body, dict) else "",
+            "request": body if isinstance(body, dict) else {},
+            "output_text": response_text(payload) if isinstance(payload, dict) else "",
+            "usage": (payload or {}).get("usage") if isinstance(payload, dict) else None,
+            "cost": usage_cost((payload or {}).get("usage") if isinstance(payload, dict) else None),
+        }))
+    except Exception:
+        return
+    buf = getattr(_raw_local, "buf", None)
+    if buf is None:
+        buf = []
+        _raw_local.buf = buf
+    buf.append(record)
+
+
+def take_raw():
+    """Saca y vacía lo guardado en este hilo. Lista vacía si el flag está apagado."""
+    if not raw_dump_on():
+        return []
+    buf = getattr(_raw_local, "buf", None) or []
+    _raw_local.buf = []
+    return buf
 
 
 def meta_status():
@@ -90,7 +136,9 @@ def post_responses(body, timeout=22):
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode())
+            payload = json.loads(resp.read().decode())
+        _remember(body, payload)
+        return payload
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:180]
         raise RuntimeError(f"muse http {exc.code}: {detail}") from None

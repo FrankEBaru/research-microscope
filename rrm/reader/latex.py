@@ -27,6 +27,7 @@ Display math is macro-expanded (`\\\\newcommand`, `\\\\def`, `\\\\DeclareMathOpe
 including local `.sty`). `\\\\input` / `\\\\include` are inlined. `figure*` is a figure.
 """
 
+import os
 import re
 from pathlib import Path
 
@@ -45,6 +46,8 @@ _MATRIX = {
     "cases", "aligned", "split", "gathered", "array", "subarray",
 }
 _UNNUMBERED_MATH = {"displaymath"}
+# Multi-row displays. Each row is its own number unless the row says \nonumber/\notag.
+_ROW_NUMBERED = {"align", "alignat", "eqnarray", "gather"}
 _PROSE = {
     "theorem", "lemma", "proof", "definition", "proposition", "corollary", "remark",
     "example", "assumption", "conjecture", "claim", "observation", "fact", "hypothesis",
@@ -163,6 +166,13 @@ def parse_inlines(s: str, macros: dict) -> list:
                 i = j
                 continue
         if s[i] == "\\":
+            if s.startswith("\\(", i):
+                end = s.find("\\)", i + 2)
+                if end >= 0:
+                    flush()
+                    out.append({"t": "math", "v": expand_math(s[i + 2:end], macros).strip(), "display": False})
+                    i = end + 2
+                    continue
             name, j = read_name(s, i)
             if name in ("rule", "cmidrule", "cline", "specialrule", "cellcolor", "color", "rowcolor", "definecolor", "hdashline"):
                 j = _skip_ws(s, j)
@@ -320,17 +330,115 @@ def _raw_block(tex: str):
     return {"kind": "p", "raw": True, "inlines": text_tokens(tex.strip())}
 
 
-def _fig_block(inner: str, macros: dict):
-    images = re.findall(r"\\includegraphics(?:\s*\[[^\]]*\])?\s*\{([^}]+)\}", inner)
-    images += re.findall(r"\\epsfig\s*\{[^}]*file\s*=\s*([^,}\s]+)", inner)
+def _width_frac(opt: str):
+    m = re.search(r"(?:width\s*=\s*)?([0-9.]+)\s*\\(?:linewidth|textwidth|columnwidth|hsize)", opt or "")
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
+def _graphic_specs(text: str) -> list:
+    specs = []
+    for m in re.finditer(r"\\includegraphics\s*(\[[^\]]*\])?\s*\{([^}]+)\}", text):
+        specs.append({"src": m.group(2), "w": _width_frac(m.group(1) or "")})
+    for m in re.finditer(r"\\epsfig\s*\{[^}]*file\s*=\s*([^,}\s]+)", text):
+        specs.append({"src": m.group(1), "w": None})
+    return specs
+
+
+def _graphic_paths(text: str) -> list:
+    return [spec["src"] for spec in _graphic_specs(text)]
+
+
+def _caption_at(text: str) -> str:
+    m = re.search(r"\\(?:caption|subcaption)\s*\*?\s*(\[[^\]]*\])?\s*\{", text)
+    if not m:
+        return ""
+    cap, _ = read_braced(text, m.end() - 1)
+    return cap
+
+
+def _without_caption(text: str) -> str:
+    m = re.search(r"\\(?:caption|subcaption)\s*\*?\s*(\[[^\]]*\])?\s*\{", text)
+    if not m:
+        return text
+    _, end = read_braced(text, m.end() - 1)
+    return text[:m.start()] + text[end:]
+
+
+def _loose_notes(text: str, macros: dict) -> list:
+    notes = []
+    i = 0
+    while True:
+        j = text.find("\\footnote", i)
+        if j < 0:
+            break
+        k = _skip_ws(text, j + len("\\footnote"))
+        if k < len(text) and text[k] == "{":
+            inner, k = read_braced(text, k)
+            notes.append({"t": "note", "blocks": [{"kind": "p", "inlines": parse_inlines(inner, macros)}]})
+        i = max(k, j + 1)
+    return notes
+
+
+def _read_subfloat(text: str, i: int):
+    j = _skip_ws(text, i + len("\\subfloat"))
     cap = ""
-    m = re.search(r"\\caption\s*(\[[^\]]*\])?\s*\{", inner)
-    if m:
-        cap, _ = read_braced(inner, m.end() - 1)
+    if j < len(text) and text[j] == "[":
+        cap, j = read_bracket(text, j)
+        j = _skip_ws(text, j)
+    body = ""
+    if j < len(text) and text[j] == "{":
+        body, j = read_braced(text, j)
+    return cap, body, j
+
+
+def _fig_block(inner: str, macros: dict):
+    panels = []
+    rest = inner
+    guard = 0
+    while guard < 40:
+        guard += 1
+        m_env = re.search(r"\\begin\{(?:subfigure\*?|minipage)\}", rest)
+        m_sub = re.search(r"\\subfloat\b", rest)
+        use_sub = bool(m_sub and (not m_env or m_sub.start() < m_env.start()))
+        name = ""
+        env_w = None
+        if use_sub:
+            cap, sub, end = _read_subfloat(rest, m_sub.start())
+            if end <= m_sub.start():
+                break
+        elif m_env:
+            name, sub, end = read_env(rest, m_env.start())
+            if not name:
+                break
+            cap = _caption_at(sub)
+            env_w = _width_frac(rest[m_env.start():m_env.start() + 80])
+        else:
+            break
+        specs = _graphic_specs(sub)
+        if name == "minipage" and not specs:
+            rest = rest[:m_env.start()] + rest[m_env.start() + 1:]
+            continue
+        cap_inlines = parse_inlines(cap, macros) if cap else []
+        for spec in specs:
+            panels.append({"src": spec["src"], "caption": cap_inlines, "w": spec["w"] if spec["w"] is not None else env_w})
+        rest = rest[: (m_sub.start() if use_sub else m_env.start())] + rest[end:]
+    loose = _graphic_specs(rest)
+    images = [p["src"] for p in panels] + [spec["src"] for spec in loose]
+    for spec in loose:
+        panels.append({"src": spec["src"], "caption": [], "w": spec["w"]})
+    cap = _caption_at(rest)
     labs = re.findall(r"\\label\{([^}]+)\}", inner)
     if not images and not cap.strip():
         return _raw_block("\\begin{figure}" + inner + "\\end{figure}")
-    block = {"kind": "fig", "images": images, "caption": parse_inlines(cap, macros), "raw_paths": images}
+    caption = parse_inlines(cap, macros) + _loose_notes(_without_caption(rest), macros)
+    block = {"kind": "fig", "images": images, "caption": caption, "raw_paths": images}
+    if panels:
+        block["panels"] = panels
     if labs:
         block["label"] = labs[0]
     return block
@@ -501,11 +609,54 @@ def _prose_names(tex: str) -> set:
     return names
 
 
-def parse_body(body: str, macros: dict, prose: set | None = None) -> list:
+def _row_numbers_on() -> bool:
+    raw = os.environ.get("RRM_EQ_ROW_NUMBERS", "1").strip().lower()
+    return raw not in {"0", "off", "false", "no"}
+
+
+def _split_math_rows(inner: str) -> list[str]:
+    """Split a display on \\\\ that is not inside braces. A trailing empty row is dropped later."""
+    rows, buf = [], []
+    i, n = 0, len(inner)
+    depth = 0
+    while i < n:
+        if inner[i] == "\\":
+            if depth == 0 and inner.startswith("\\\\", i):
+                rows.append("".join(buf))
+                buf = []
+                i += 2
+                continue
+            step = 2 if i + 1 < n else 1
+            buf.append(inner[i:i + step])
+            i += step
+            continue
+        if inner[i] == "{":
+            depth += 1
+        elif inner[i] == "}":
+            depth = max(0, depth - 1)
+        buf.append(inner[i])
+        i += 1
+    rows.append("".join(buf))
+    return [row for row in rows if row.strip()]
+
+
+def _drop_alignat_count(inner: str) -> str:
+    """alignat's mandatory column count is not math. Leaving it typesets as a leading digit."""
+    s = inner.lstrip()
+    if not s.startswith("{"):
+        return inner
+    body, end = read_braced(s, 0)
+    if body.strip().isdigit():
+        return s[end:]
+    return inner
+
+
+def parse_body(body: str, macros: dict, prose: set | None = None, appendix: bool = False) -> list:
     body = _drop_noise(body)
     blocks = []
     counters = [0, 0, 0, 0]
-    appendix = False
+    appendix = appendix
+    stamp_from = 0 if appendix else None
     eq_n = 0
     i, n = 0, len(body)
     stop_display = "[" not in macros
@@ -524,12 +675,26 @@ def parse_body(body: str, macros: dict, prose: set | None = None) -> list:
             star = name.endswith("*")
             i = i2
             if base in _MATH or base in _MATRIX:
+                if base == "alignat":
+                    inner = _drop_alignat_count(inner)
                 numbered = base in _MATH and (not star) and base not in _UNNUMBERED_MATH
-                number = None
-                if numbered:
-                    eq_n += 1
-                    number = eq_n
-                blocks.append(_eq_block(inner, base, macros, numbered, number))
+                rows = _split_math_rows(inner) if numbered and base in _ROW_NUMBERED and _row_numbers_on() else []
+                if len(rows) > 1:
+                    for row in rows:
+                        # \nonumber / \notag keep the row in the display but do not take a number.
+                        takes = re.search(r"\\(?:nonumber|notag)\b", row) is None
+                        number = None
+                        if takes:
+                            eq_n += 1
+                            number = eq_n
+                        cleaned = re.sub(r"\\(?:nonumber|notag)\b", "", row)
+                        blocks.append(_eq_block(cleaned, base, macros, takes, number))
+                else:
+                    number = None
+                    if numbered:
+                        eq_n += 1
+                        number = eq_n
+                    blocks.append(_eq_block(inner, base, macros, numbered, number))
             elif base in ("figure", "wrapfigure"):
                 blocks.append(_fig_block(inner, macros))
             elif base in ("table",):
@@ -548,6 +713,8 @@ def parse_body(body: str, macros: dict, prose: set | None = None) -> list:
                 blocks.append(_table_block(inner, macros))
             elif base in ("verbatim", "lstlisting", "minted", "algorithm", "algorithmic"):
                 blocks.append(_raw_block("\\begin{" + name + "}" + inner + "\\end{" + name + "}"))
+            elif base in ("appendix", "appendices"):
+                blocks.extend(parse_body(inner, macros, prose, True))
             else:
                 blocks.append(_raw_block("\\begin{" + name + "}" + inner + "\\end{" + name + "}"))
             continue
@@ -582,9 +749,13 @@ def parse_body(body: str, macros: dict, prose: set | None = None) -> list:
                         counters[level - 1] += 1
                         for k in range(level, 4):
                             counters[k] = 0
-                        number = ".".join(str(c) for c in counters[:level] if not (appendix and False))
-                        if appendix and level > 1 and counters[0]:
+                        # article secnumdepth is 3: \paragraph is a heading, not "3.1.0.1".
+                        if level >= 4:
+                            number = None
+                        elif appendix and counters[0]:
                             number = chr(ord("A") + counters[0] - 1) + "." + ".".join(str(c) for c in counters[1:level])
+                        else:
+                            number = ".".join(str(c) for c in counters[:level])
                 lab, i = _read_following_label(body, i)
                 block = {
                     "kind": "h",
@@ -599,6 +770,8 @@ def parse_body(body: str, macros: dict, prose: set | None = None) -> list:
                 continue
             if name == "appendix":
                 appendix = True
+                if stamp_from is None:
+                    stamp_from = len(blocks)
                 counters[:] = [0, 0, 0, 0]
                 i = j
                 continue
@@ -620,6 +793,9 @@ def parse_body(body: str, macros: dict, prose: set | None = None) -> list:
             ins = parse_inlines(para, macros)
             if ins and plain(ins):
                 blocks.append({"kind": "p", "inlines": ins})
+    if stamp_from is not None:
+        for block in blocks[stamp_from:]:
+            block["appendix"] = True
     return blocks
 
 

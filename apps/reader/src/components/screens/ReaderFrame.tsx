@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import "@/styles/inicio.css";
 import PaperView from "../Paper";
 import { Notice } from "../faults";
+import { Pulse, Skeleton } from "../ui/Pulse";
 import type { AtlasCtx } from "./types";
 
 /** El paper en vivo: abierto, o la espera mientras llega. */
@@ -30,11 +31,9 @@ export default function ReaderFrame({
   onPromote: () => void;
   atlasCtx: AtlasCtx;
 }) {
-  const wait = (
-    liveErr
-      ? <Notice kind="fault" code={liveCode} />
-      : <p className="open-line" role="status"><span className="spin" aria-hidden="true" />{openLine || "Opening the paper…"}</p>
-  );
+  const wait = liveErr
+    ? <><Pulse mode="error" detail={liveErr} /><Notice kind="fault" code={liveCode} /></>
+    : <><Skeleton lines={6} /><Pulse mode="loading" detail={openLine || "Cargando el paper…"} /></>;
   if (opened) {
     return (
       <div className="lvl" data-screen="paper">

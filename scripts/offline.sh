@@ -7,9 +7,11 @@
 #                               FrankEBaru/research-microscope-compass.
 #                               Rama default claude/rrm-50-plan-b1. Default v2.
 #   RRM_OFFLINE_BRANCH=<rama>   otra rama del mismo repo. No crea Releases.
+#   RRM_OFFLINE_COMPASS=<checkout>   lee datos/offline/ de esa copia, sin gh.
 #   RRM_OFFLINE_NO_UI=1   solo arranca la API.
-# Si no hay carpeta local ni sintéticos, baja esos archivos con gh api.
-# Si gh no está autenticado, se detiene y lo dice.
+# Si no hay carpeta local ni sintéticos, usa un checkout de compass que ya
+# tenga la rama (al lado de este repo, o ~/projects/hackaton/...). Si no, baja
+# los archivos con gh api. Si tampoco hay gh, se detiene y lo dice.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
@@ -30,6 +32,11 @@ resolve_fixtures "$ROOT" || exit 1
 
 export RRM_FEATURES="${RRM_FEATURES:-core}"
 export NEXT_PUBLIC_RRM_FEATURES="${NEXT_PUBLIC_RRM_FEATURES:-$RRM_FEATURES}"
+# La compuerta sigue en el servidor. El demo la apaga; on/1 la vuelve a prender.
+export RRM_LICENSE_GATE="${RRM_LICENSE_GATE:-off}"
+# Offline no llama a Meta aunque la llave esté en el entorno.
+export RRM_META=off
+unset RRM_OFFLINE_PANORAMA
 export NEXT_PUBLIC_BURST_URL="http://127.0.0.1:${PORT}"
 export NEXT_PUBLIC_READER_URL="http://127.0.0.1:${PORT}"
 export NEXT_PUBLIC_RRM_DEMO_TOKEN="${NEXT_PUBLIC_RRM_DEMO_TOKEN:-local}"
@@ -59,6 +66,7 @@ if [[ "${RRM_OFFLINE_NO_UI:-}" == "1" ]]; then
 fi
 
 echo ""
+echo "Licencias: ${RRM_LICENSE_GATE} (off muestra el texto completo; on vuelve a la compuerta)."
 echo "Ábrelo en el navegador de Windows: http://localhost:3000"
 echo "API local: http://127.0.0.1:${PORT}"
 echo "Ctrl+C apaga la UI y el servidor."
@@ -66,4 +74,6 @@ cd "$ROOT/apps/reader"
 if [[ ! -d node_modules ]]; then
   npm ci
 fi
+# Misma razón que live.sh: no reutilizar un bundle armado con otro token.
+rm -rf .next
 exec npm run dev

@@ -21,9 +21,10 @@ import subprocess
 import sys
 import tarfile
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 ROOT_PREFIX = "datos/offline"
+LOCAL_ROOT: Path | None = None
 _HEX = re.compile(r"\b([a-fA-F0-9]{64})\b")
 _PART = re.compile(r"\.part[-_.]?[a-z0-9]+$", re.I)
 
@@ -38,7 +39,39 @@ def _endpoint(repo: str, branch: str, path: str) -> str:
     return f"repos/{repo}/contents/{safe}?ref={quote(branch, safe='')}"
 
 
+def _endpoint_rel(endpoint: str) -> str:
+    pathpart = endpoint.split("?", 1)[0]
+    idx = pathpart.find("contents/")
+    if idx < 0:
+        _die(f"ruta local inesperada: {endpoint}")
+    return unquote(pathpart[idx + len("contents/"):])
+
+
+def _local_target(endpoint: str) -> Path:
+    if LOCAL_ROOT is None:
+        _die("falta el directorio local")
+    return LOCAL_ROOT / _endpoint_rel(endpoint)
+
+
+def _local_item(path: Path, rel: str) -> dict:
+    return {
+        "type": "dir" if path.is_dir() else "file",
+        "name": path.name,
+        "path": rel,
+        "size": path.stat().st_size if path.is_file() else 0,
+        "sha": "local",
+    }
+
+
 def _gh_json(endpoint: str):
+    if LOCAL_ROOT is not None:
+        target = _local_target(endpoint)
+        rel = _endpoint_rel(endpoint)
+        if not target.exists():
+            _die(f"No está {rel} en {LOCAL_ROOT}")
+        if target.is_file():
+            return _local_item(target, rel)
+        return [_local_item(child, str(Path(rel) / child.name)) for child in sorted(target.iterdir())]
     proc = subprocess.run(
         ["gh", "api", endpoint],
         check=False,
@@ -54,6 +87,11 @@ def _gh_json(endpoint: str):
 
 
 def _gh_raw(endpoint: str) -> bytes:
+    if LOCAL_ROOT is not None:
+        target = _local_target(endpoint)
+        if not target.is_file():
+            _die(f"No está {_endpoint_rel(endpoint)} en {LOCAL_ROOT}")
+        return target.read_bytes()
     proc = subprocess.run(
         ["gh", "api", "-H", "Accept: application/vnd.github.raw", endpoint],
         check=False,
@@ -372,15 +410,23 @@ def _install_licenses(repo: str, branch: str, version: str, dest: Path, by_rel: 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Baja fixtures offline desde una rama de compass.")
-    parser.add_argument("--repo", required=True)
+    parser.add_argument("--repo", default="local")
     parser.add_argument("--branch", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--dest", type=Path, required=True)
     parser.add_argument("--cache", type=Path, required=True)
+    parser.add_argument("--from-dir", type=Path, default=None)
     args = parser.parse_args(argv)
     version = args.version.strip().lower()
     if not re.fullmatch(r"v[0-9]+", version):
         _die("La versión tiene que ser v2 o v3.")
+    global LOCAL_ROOT
+    if args.from_dir is not None:
+        LOCAL_ROOT = args.from_dir.resolve()
+        if not (LOCAL_ROOT / ROOT_PREFIX).is_dir():
+            _die(f"{LOCAL_ROOT} no tiene {ROOT_PREFIX}/")
+    elif not args.repo or args.repo == "local":
+        _die("Hace falta --repo o --from-dir.")
     os.environ.setdefault("GH_PROMPT_DISABLED", "1")
     fetch(args.repo, args.branch, version, args.dest, args.cache)
     return 0

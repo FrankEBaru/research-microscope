@@ -3,23 +3,23 @@
 #   source ~/projects/hackaton/activate.sh
 # y no se imprimen ni se escriben en el repo.
 #
-#   RRM_LIVE=off|modal|meta|full bash scripts/live.sh
+#   RRM_LIVE=off|on|modal|meta|full bash scripts/live.sh
+#   RRM_MODE=offline|online bash scripts/run.sh
 #
-# off   — scripts/offline.sh (sin Modal ni Meta). RRM_FEATURES=core.
-#        Fixtures: archivos de datos/offline/ en FrankEBaru/research-microscope-compass,
-#        rama claude/rrm-50-plan-b1 (RRM_OFFLINE_BRANCH la cambia). Default v2;
-#        v3 con RRM_OFFLINE_VERSION=v3. O RRM_OFFLINE_DIR / RRM_OFFLINE_TAR / RRM_OFFLINE_SYNTH=1.
-# modal — deploy de ráfaga y lector, panorama sim, SAM apagado. RRM_FEATURES=core.
-# meta  — datos grabados; POST /panorama llama a Muse. Sin deploy. RRM_FEATURES=all.
-# full  — deploy con panorama meta y SAM. RRM_FEATURES=all.
+# off / offline — scripts/offline.sh. UI B1. Fixtures de compass. Cero Modal y cero Meta.
+# on / online   — la misma UI B1, en vivo: modal deploy de rrm-burst y rrm-reader.
+#                 Meta entra en las notas al margen y en la caja Explain (/ask).
+#                 Cualquier pregunta. No usa el Release de papers curados ni npm run data.
+# modal         — igual que on, pero exige RRM_DEMO_TOKEN y no revisa las llaves de Meta ni de Semantic Scholar.
+# meta, full    — se quedan. Con el default (core) son B1: no prenden Panorama ni SAM.
+#                 La superficie vieja solo si se exporta RRM_FEATURES=all.
 #
-# RRM_FEATURES=core (default de off y modal) apaga Panorama, subtemas Muse y SAM.
-# meta y full ponen all si la variable no viene puesta, para conservar ese comportamiento.
-# core no llama a Meta aunque el modo pida panorama meta.
+# RRM_FEATURES default es core en todos los modos. all hay que pedirlo explícito.
+# core apaga Panorama, subtemas Muse, SAM y el instrumento. Las notas y Explain sí llaman a Meta en on.
 #
-# Al salir (Ctrl+C, error o RRM_MAX_MINUTES, default 30) para rrm-burst y
-# rrm-reader y muestra modal app list. off no llega a ese trap: lo apaga
-# scripts/offline.sh. Este script no pone RRM_DEMO_KEEP_WARM.
+# Al salir (Ctrl+C, error o RRM_MAX_MINUTES, default 30) los modos con deploy
+# paran rrm-burst y rrm-reader y muestran modal app list. off no llega a ese trap.
+# Este script no pone RRM_DEMO_KEEP_WARM. No imprime llaves.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
@@ -28,11 +28,12 @@ MAX_MIN="${RRM_MAX_MINUTES:-30}"
 PORT=8787
 FIX_DIR="${RRM_OFFLINE_DIR:-$ROOT/offline-fixtures}"
 
+# on es el alias de online. Ningún modo pone all por su cuenta.
+if [[ "$MODE" == "online" ]]; then
+  MODE=on
+fi
 if [[ -z "${RRM_FEATURES:-}" ]]; then
-  case "$MODE" in
-    meta|full) RRM_FEATURES=all ;;
-    *) RRM_FEATURES=core ;;
-  esac
+  RRM_FEATURES=core
 fi
 if [[ "$RRM_FEATURES" != "core" && "$RRM_FEATURES" != "all" ]]; then
   echo "RRM_FEATURES debe ser core o all." >&2
@@ -40,6 +41,8 @@ if [[ "$RRM_FEATURES" != "core" && "$RRM_FEATURES" != "all" ]]; then
 fi
 export RRM_FEATURES
 export NEXT_PUBLIC_RRM_FEATURES="$RRM_FEATURES"
+# Demo personal: la compuerta de licencia queda, pero apagada. on/1 la prende.
+export RRM_LICENSE_GATE="${RRM_LICENSE_GATE:-off}"
 
 if [[ "$MODE" == "off" ]]; then
   echo "Modo: off. Features: ${RRM_FEATURES}. Igual que scripts/offline.sh. Sin Modal ni Meta."
@@ -47,9 +50,9 @@ if [[ "$MODE" == "off" ]]; then
 fi
 
 case "$MODE" in
-  modal|meta|full) ;;
+  on|modal|meta|full) ;;
   *)
-    echo "RRM_LIVE debe ser off, modal, meta o full." >&2
+    echo "RRM_LIVE debe ser off, on, modal, meta o full." >&2
     exit 2
     ;;
 esac
@@ -81,20 +84,32 @@ WATCH_PID=""
 _cleaned=0
 
 case "$MODE" in
-  modal)
+  on|modal)
     export RRM_PANORAMA_MODE=sim
     export RRM_SAM=off
-    REMINDER="Pudo gastar dinero: Modal (el deploy y los contenedores de rrm-burst y rrm-reader, incluido OCR en GPU si se abrió un paper sin LaTeX). Panorama en sim y SAM apagado: esas rutas no llaman a Meta. No se midió un importe."
+    REMINDER="Pudo gastar: Modal (deploy y contenedores de rrm-burst y rrm-reader; OCR en GPU si el paper no trae LaTeX). En on, Meta entra en las notas al margen y en Explain (/ask). Panorama, subtemas Muse y SAM no se llaman. No se midió un importe en este script."
     ;;
   meta)
-    export RRM_OFFLINE_PANORAMA=meta
-    export RRM_PANORAMA_MODE=meta
-    REMINDER="Pudo gastar dinero: Meta, si el navegador llamó a /panorama (Muse). No hubo deploy. /crops sigue grabado y no llama a SAM. El trap igual ejecutó modal app stop. No se midió un importe."
+    if [[ "$RRM_FEATURES" == "all" ]]; then
+      export RRM_OFFLINE_PANORAMA=meta
+      export RRM_PANORAMA_MODE=meta
+      REMINDER="Pudo gastar: Meta, si el navegador llamó a /panorama (Muse). Superficie vieja (RRM_FEATURES=all). No hubo deploy. No se midió un importe en este script."
+    else
+      export RRM_PANORAMA_MODE=sim
+      export RRM_SAM=off
+      REMINDER="Modo meta con UI B1 (core): datos grabados, sin Panorama Muse ni SAM. No se midió un importe en este script."
+    fi
     ;;
   full)
-    export RRM_PANORAMA_MODE=meta
-    export RRM_SAM=on
-    REMINDER="Pudo gastar dinero: Modal (deploy, contenedores y OCR en GPU) y Meta (panorama Muse y SAM en /crops). No se midió un importe."
+    if [[ "$RRM_FEATURES" == "all" ]]; then
+      export RRM_PANORAMA_MODE=meta
+      export RRM_SAM=on
+      REMINDER="Pudo gastar: Modal (deploy, contenedores y OCR en GPU) y Meta (panorama Muse y SAM en /crops). Superficie vieja porque RRM_FEATURES=all. No se midió un importe en este script."
+    else
+      export RRM_PANORAMA_MODE=sim
+      export RRM_SAM=off
+      REMINDER="Pudo gastar: Modal (deploy y contenedores; OCR en GPU si el paper no trae LaTeX) y Meta (notas al margen y Explain). UI B1. Panorama y SAM quedan apagados. No se midió un importe en este script."
+    fi
     ;;
 esac
 
@@ -160,7 +175,7 @@ trap cleanup EXIT INT TERM
 ) >/dev/null 2>&1 &
 WATCH_PID=$!
 
-echo "Modo: ${MODE}. Tope: ${MAX_MIN} min. Features: ${RRM_FEATURES}."
+echo "Modo: ${MODE}. Tope: ${MAX_MIN} min. Features: ${RRM_FEATURES}. Licencias: ${RRM_LICENSE_GATE}."
 echo "Panorama: ${RRM_PANORAMA_MODE}. SAM: ${RRM_SAM:-grabado}."
 
 ensure_fixtures() {
@@ -199,9 +214,17 @@ deploy_one() {
   fi
 }
 
+ensure_node() {
+  if [[ ! -d "$ROOT/apps/reader/node_modules" ]]; then
+    (cd "$ROOT/apps/reader" && npm ci)
+  fi
+}
+
 start_ui() {
   cd "$ROOT/apps/reader"
-  npm ci
+  # La caché de Next conserva el token de la sesión anterior y el servidor
+  # responde 401. Se borra aquí, después de exportar NEXT_PUBLIC_*.
+  rm -rf .next
   echo ""
   echo "Ábrelo en el navegador de Windows: http://localhost:3000"
   echo "Ctrl+C apaga la UI y corre modal app stop."
@@ -214,11 +237,27 @@ start_ui() {
   exit "$status"
 }
 
-if [[ "$MODE" == "modal" || "$MODE" == "full" ]]; then
+if [[ "$MODE" == "on" || "$MODE" == "modal" || "$MODE" == "full" ]]; then
+  if [[ "$MODE" == "on" ]]; then
+    if [[ -z "${MODEL_API_KEY:-}" ]]; then
+      echo "Falta MODEL_API_KEY. En Frank: source ~/projects/hackaton/activate.sh" >&2
+      exit 1
+    fi
+    if [[ -z "${S2_API_KEY:-}" ]]; then
+      echo "Falta la llave de Semantic Scholar (S2_API_KEY)." >&2
+      exit 1
+    fi
+    if [[ -z "${RRM_DEMO_TOKEN:-}" ]]; then
+      # Sesión nueva. No se imprime.
+      RRM_DEMO_TOKEN="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+      export RRM_DEMO_TOKEN
+    fi
+  fi
   if [[ -z "${RRM_DEMO_TOKEN:-}" ]]; then
     echo "Falta RRM_DEMO_TOKEN. En Frank: source ~/projects/hackaton/activate.sh" >&2
     exit 1
   fi
+  ensure_node
   export NEXT_PUBLIC_RRM_DEMO_TOKEN="$RRM_DEMO_TOKEN"
   unset NEXT_PUBLIC_RRM_OFFLINE
   deploy_one rrm/search/serve.py

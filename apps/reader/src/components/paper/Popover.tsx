@@ -3,16 +3,17 @@ import { Block, Inline, Paper } from "@/lib/types";
 import { Tex, Rich, Sym } from "@/lib/math";
 import { ProvChip } from "../Bits";
 import { Cap, Prov } from "@/components/ui";
-import { equationHover, symbolHover, tableHover } from "@/lib/hover.js";
+import { UNDEFINED, equationHover, symbolHover, tableHover } from "@/lib/hover.js";
+import { briefRef } from "@/lib/cite.js";
 import { resolveCite } from "@/lib/path.js";
 import { Inlines } from "../Paper";
 import { Ctx, plainOf } from "./inline";
-import { GapView } from "./GapNotes";
+import { GapView, repeatsBlock } from "./GapNotes";
 import { FigImg } from "./Figures";
 
 export type PopState = { key: string; rect: DOMRect } | null;
 
-export default function Popover({ pop, paper, model, content, core, pack, onOpen }: { pop: NonNullable<PopState>; paper: Paper; model: any; content: any; core?: boolean; pack?: any; onOpen?: (id: string, why: string) => void }) {
+export default function Popover({ pop, paper, model, content, core, pack, titleOf, onOpen }: { pop: NonNullable<PopState>; paper: Paper; model: any; content: any; core?: boolean; pack?: any; titleOf?: (id: string) => string; onOpen?: (id: string, why: string) => void }) {
   const [kind, ...r] = pop.key.split("|");
   const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, counter: { n: 0 } };
   let body: any = null;
@@ -22,12 +23,13 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
     body = (
       <>
         {keys.map((k) => {
-          const n = paper.refLabels?.[k] ?? model.refIndex[k] ?? "?";
+          const brief = briefRef(paper.refs[k] || "");
+          const n = paper.refLabels?.[k] ?? model.refIndex[k] ?? k;
           return (
-            <div key={k}>
-              <Cap>{`Reference ${n}`}</Cap>
-              <p className="pop-ref">{paper.refs[k] || "reference not found in the paper"}</p>
-            </div>
+            <p key={k} className="pop-ref">
+              {brief.who ? <b className="pop-who">{brief.who}</b> : <b className="pop-who">{`Reference ${n}`}</b>}
+              {brief.title ? <span>{brief.title}</span> : <span>title not found in the reference</span>}
+            </p>
           );
         })}
         <div className="pop-f">
@@ -40,19 +42,23 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
     let tex = r[2] || "";
     try { tex = decodeURIComponent(tex); } catch { /* el LaTeX se muestra igual */ }
     const hit = symbolHover(paper.blocks, tex, { block: r[0], index: Number(r[1]) });
-    body = <><p className="pop-quote">{hit.text}</p><div className="pop-meta"><Prov kind="paper" text="author’s sentence" /></div></>;
+    if (!hit.here && hit.text !== UNDEFINED) {
+      body = <><p className="pop-quote"><Rich text={hit.shown || hit.text} /></p><div className="pop-meta"><Prov kind="paper" text="author’s sentence" /></div></>;
+    }
   } else if (kind === "e" && core) {
     const card = (pack?.notes || []).find((n: any) => n.block_id === r[0]);
     const art = (pack?.artifacts || []).find((n: any) => n.block_id === r[0]);
     if (card || art) {
-      body = <GapView note={card} art={art} self={String(paper.corpusid ?? "")} onOpen={onOpen} />;
+      body = <GapView note={card} art={art} host={plainOf((paper.blocks || []).find((b) => b.id === r[0])?.inlines || [])} self={String(paper.corpusid ?? "")} titleOf={titleOf} onOpen={onOpen} />;
     } else {
     const hit = equationHover(paper.blocks, r[0]);
-    body = <><p className="pop-title">Where it comes from</p>{hit.texts.map((text: string, i: number) => <p key={i} className="pop-quote">{text}</p>)}{!hit.texts.length && <p className="pop-quote">the paper does not define it</p>}<div className="pop-meta"><ProvChip kind="paper" text="author’s sentence" /></div></>;
+    const lines = hit.shown?.length ? hit.shown : hit.texts;
+    body = <><p className="pop-title">Where it comes from</p>{lines.map((text: string, i: number) => <p key={i} className="pop-quote"><Rich text={text} /></p>)}{!lines.length && <p className="pop-quote">the paper does not define it</p>}<div className="pop-meta"><ProvChip kind="paper" text="author’s sentence" /></div></>;
     }
   } else if (kind === "s" && core && pack) {
-    const card = (pack.notes || []).find((n: any) => n.block_id === r[0] && n.sent_index === +r[1]);
-    if (card) body = <GapView note={card} self={String(paper.corpusid ?? "")} onOpen={onOpen} />;
+    const host = (paper.blocks || []).find((b) => b.id === r[0]);
+    const card = (pack.notes || []).find((n: any) => n.block_id === r[0] && n.sent_index === +r[1] && !(host && repeatsBlock(n, host)));
+    if (card) body = <GapView note={card} host={plainOf((paper.blocks || []).find((b) => b.id === r[0])?.inlines || [])} self={String(paper.corpusid ?? "")} titleOf={titleOf} onOpen={onOpen} />;
   } else if (kind === "y") {
     const s = content.attention.symbols.find((s: any) => s.id === r[0]);
     body = (
@@ -96,8 +102,8 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
     body = core ? (
       <>
         <p className="pop-title">{tableNo ? `Table ${tableNo}` : "Table"}</p>
-        {told.caption && <p className="pop-quote">{told.caption}</p>}
-        {told.sentence ? <p className="pop-quote">{told.sentence}</p> : <p className="pop-line">The paper does not discuss it in a sentence.</p>}
+        {(told.captionShown || told.caption) && <p className="pop-quote"><Rich text={told.captionShown || told.caption} /></p>}
+        {told.sentenceShown || told.sentence ? <p className="pop-quote"><Rich text={told.sentenceShown || told.sentence} /></p> : <p className="pop-line">The paper does not discuss it in a sentence.</p>}
         <div className="pop-meta"><Prov kind="paper" text="caption and author’s sentence" /></div>
       </>
     ) : (
@@ -108,6 +114,7 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
       </>
     );
   }
+  if (!body) return null;
   const narrow = typeof window !== "undefined" && window.innerWidth <= 760;
   let style: any;
   if (narrow) {

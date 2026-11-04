@@ -265,7 +265,7 @@ def test_modo_desconocido(tmp_path):
     text = log.read_text(encoding="utf-8") if log.is_file() else ""
     assert code == 2
     assert "modal " not in text
-    assert "off, modal, meta o full" in out
+    assert "off, on, modal, meta o full" in out
 
 
 def test_modal_despliega_sim_sin_sam_y_ctrl_c_para(tmp_path):
@@ -323,7 +323,8 @@ def test_fallo_de_deploy_igual_para_las_apps(tmp_path):
     assert code != 0
     assert "modal deploy rrm/search/serve.py" in text
     assert "modal deploy rrm/reader/serve.py" in text
-    assert "PANORAMA=meta SAM=on" in text
+    assert "PANORAMA=sim SAM=off" in text
+    assert "FEATURES=core" in text
     assert "npm run dev" not in text
     _stops(text)
     assert "[redacted]" in out
@@ -363,10 +364,11 @@ def test_meta_no_despliega_y_panorama_queda_en_vivo(tmp_path):
     assert "modal deploy" not in text
     assert "curl " not in text
     assert "python3 -m rrm.offline" in text
-    assert "OFFLINE_PAN=meta" in text
-    assert "PAN_MODE=meta" in text
-    assert "FEATURES=all" in text
-    assert "features=all" in text
+    assert "OFFLINE_PAN=" in text
+    assert "OFFLINE_PAN=meta" not in text
+    assert "PAN_MODE=sim" in text
+    assert "FEATURES=core" in text
+    assert "features=core" in text
     assert "burst=http://127.0.0.1:8787" in text
     assert "reader=http://127.0.0.1:8787" in text
     assert "offline=1" in text
@@ -388,8 +390,8 @@ def test_full_pasa_meta_y_sam(tmp_path):
             os.killpg(proc.pid, signal.SIGKILL)
             proc.wait(timeout=5)
     text = log.read_text(encoding="utf-8")
-    assert "PANORAMA=meta SAM=on" in text
-    assert "FEATURES=all" in text
+    assert "PANORAMA=sim SAM=off" in text
+    assert "FEATURES=core" in text
     assert "modal deploy rrm/search/serve.py" in text
     assert "modal deploy rrm/reader/serve.py" in text
     assert f"token_len={len(TOKEN)}" in text
@@ -500,3 +502,92 @@ def test_minutos_invalidos(tmp_path):
     assert code == 2
     assert "RRM_MAX_MINUTES" in out
     assert "modal " not in text
+
+
+def test_on_sin_llave_no_despliega(tmp_path):
+    bindir, log = _fakes(tmp_path)
+    code, out = _run(_env(bindir, log, RRM_LIVE="on", S2_API_KEY="s2-test-key-should-not-print"))
+    text = log.read_text(encoding="utf-8") if log.is_file() else ""
+    assert code == 1
+    assert "Falta MODEL_API_KEY" in out
+    assert "modal deploy" not in text
+    assert "s2-test-key-should-not-print" not in out
+    _stops(text)
+
+
+def test_on_sin_s2_no_despliega(tmp_path):
+    bindir, log = _fakes(tmp_path)
+    code, out = _run(_env(bindir, log, RRM_LIVE="on", MODEL_API_KEY="mk-test-key-should-not-print"))
+    text = log.read_text(encoding="utf-8") if log.is_file() else ""
+    assert code == 1
+    assert "S2_API_KEY" in out
+    assert "modal deploy" not in text
+    assert "mk-test-key-should-not-print" not in out
+    _stops(text)
+
+
+def test_on_despliega_b1_y_no_imprime_llaves(tmp_path):
+    bindir, log = _fakes(tmp_path)
+    proc = _start(_env(
+        bindir, log,
+        RRM_LIVE="on",
+        MODEL_API_KEY="mk-test-key-should-not-print",
+        S2_API_KEY="s2-test-key-should-not-print",
+    ))
+    try:
+        _wait_log(log, "token_len=")
+        code, out = _stop(proc, signal.SIGINT)
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait(timeout=5)
+    text = log.read_text(encoding="utf-8")
+    assert "PANORAMA=sim SAM=off" in text
+    assert "FEATURES=core" in text
+    assert "features=core" in text
+    assert "modal deploy rrm/search/serve.py" in text
+    assert "modal deploy rrm/reader/serve.py" in text
+    assert "offline=1" not in text
+    assert "token_len=48" in text
+    assert "mk-test-key-should-not-print" not in out
+    assert "mk-test-key-should-not-print" not in text
+    assert "s2-test-key-should-not-print" not in out
+    assert "s2-test-key-should-not-print" not in text
+    _stops(text)
+    assert code is not None
+
+
+def test_full_con_all_sigue_la_superficie_vieja(tmp_path):
+    bindir, log = _fakes(tmp_path)
+    proc = _start(_env(bindir, log, RRM_LIVE="full", RRM_FEATURES="all", RRM_DEMO_TOKEN=TOKEN))
+    try:
+        _wait_log(log, "token_len=")
+        _stop(proc, signal.SIGTERM)
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait(timeout=5)
+    text = log.read_text(encoding="utf-8")
+    assert "PANORAMA=meta SAM=on" in text
+    assert "FEATURES=all" in text
+    assert TOKEN not in text
+
+
+def test_run_online_es_el_modo_on(tmp_path):
+    bindir, log = _fakes(tmp_path)
+    env = _env(bindir, log, RRM_MODE="online", S2_API_KEY="s2-test-key-should-not-print")
+    proc = subprocess.run(
+        ["/bin/bash", str(ROOT / "scripts" / "run.sh")],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=8,
+        check=False,
+    )
+    text = log.read_text(encoding="utf-8") if log.is_file() else ""
+    assert proc.returncode == 1
+    assert "Falta MODEL_API_KEY" in proc.stdout
+    assert "modal deploy" not in text
+    assert "s2-test-key-should-not-print" not in proc.stdout

@@ -20,7 +20,7 @@ if len(_HERE.parents) > 2:  # local checkout; inside Modal, rrm is already impor
 
 import modal
 
-from rrm.demo_guard import add_error_json, check, cors_kwargs
+from rrm.demo_guard import add_error_json, check, cors_kwargs, failure
 from rrm.demo_warm import burst_scaledown
 from rrm.features import core_mode, features_mode
 from rrm.search.burst import burst_query
@@ -63,6 +63,7 @@ vol = modal.Volume.from_name("rrm-data", create_if_missing=True)
 if modal.is_local():
     model_secret = modal.Secret.from_dict({
         "MODEL_API_KEY": os.environ.get("MODEL_API_KEY", ""),
+        "S2_API_KEY": os.environ.get("S2_API_KEY", ""),
         "RRM_DEMO_TOKEN": os.environ.get("RRM_DEMO_TOKEN", ""),
         "RRM_FEATURES": os.environ.get("RRM_FEATURES", "core"),
         "RRM_GROUP_NAMES": os.environ.get("RRM_GROUP_NAMES", ""),
@@ -531,7 +532,7 @@ class BurstSearch:
     def api(self):
         from fastapi import FastAPI, Request
         from fastapi.middleware.cors import CORSMiddleware
-        from fastapi.responses import Response
+        from fastapi.responses import JSONResponse, Response
 
         web = FastAPI()
         add_error_json(web)
@@ -539,11 +540,12 @@ class BurstSearch:
 
         def gate(request: Request):
             # `k` lets a GET stay a CORS simple request (no OPTIONS) while the container is cold.
-            code = check(
-                request.headers.get("x-rrm-demo"),
-                request.query_params.get("k"),
-                request.headers.get("origin"),
-            )
+            header = request.headers.get("x-rrm-demo")
+            query = request.query_params.get("k")
+            origin = request.headers.get("origin")
+            code = check(header, query, origin)
+            if code == 401:
+                return JSONResponse({"error": failure(header, query) or "mismatch"}, status_code=401)
             if code:
                 return Response(status_code=code)
             return None

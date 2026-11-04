@@ -211,6 +211,8 @@ const OUTER_ALIGN = /^\s*\\begin\{(aligned|align\*?|eqnarray\*?|gather\*?|flalig
 /** Display math KaTeX can parse. `&` outside an alignment environment is wrapped. */
 export function displayTex(tex) {
   let s = katexSource(tex);
+  // alignat's column count ({2}) used to stay in front of the formula ("2PE").
+  s = s.replace(/^\{\d+\}\s*\n/, "");
   const tag = s.match(/\\tag\{[^{}]*\}\s*$/);
   let suffix = "";
   if (tag && tag.index > 0) {
@@ -250,7 +252,12 @@ export function explain(err) {
   const msg = String(err?.message || "");
   if (msg.includes("consulta no grabada")) return "This question is not in the local data.";
   const k = err?.kind;
-  if (k === "auth") return "The server rejected the demo token (401). Check NEXT_PUBLIC_RRM_DEMO_TOKEN.";
+  if (k === "auth") {
+    const why = String(err?.message || "");
+    if (why === "missing") return "The server has no demo token (401). Start the app again with bash scripts/run.sh.";
+    if (why === "empty" || why === "mismatch") return "This page and the server do not share a demo token (401). Stop the app and start it again with bash scripts/run.sh.";
+    return "The server rejected the demo token (401). Stop the app and start it again with bash scripts/run.sh.";
+  }
   if (k === "origin") return "The server does not accept this origin (403). Add it to the allowed origins.";
   if (k === "rate") return "The server is getting too many requests (429). Wait a few seconds and try again.";
   if (k === "server") {
@@ -276,8 +283,8 @@ function panoramaTimeout() {
 export const PANORAMA_TIMEOUT_MS = panoramaTimeout();
 
 // Tiempos de espera por ruta (ms). /burst puede tardar 100–131 s si el contenedor estaba dormido.
-const TIMEOUT = { warm: 150000, burst: 150000, status: 20000, paper: 40000, panorama: PANORAMA_TIMEOUT_MS, crops: 20000, subtopics: 20000, prepare: 20000, labels: 8000, ask: 50000, names: 30000, notes: 22000 };
-const RETRIES = { warm: 0, burst: 0, status: 2, paper: 1, panorama: 0, crops: 1, subtopics: 0, prepare: 0, labels: 0, ask: 0, names: 0, notes: 0 };
+const TIMEOUT = { warm: 150000, burst: 150000, status: 20000, paper: 40000, panorama: PANORAMA_TIMEOUT_MS, crops: 20000, subtopics: 20000, prepare: 20000, labels: 8000, ask: 50000, names: 30000, notes: 90000, recorded: 8000 };
+const RETRIES = { warm: 0, burst: 0, status: 2, paper: 1, panorama: 0, crops: 1, subtopics: 0, prepare: 0, labels: 0, ask: 0, names: 0, notes: 0, recorded: 0 };
 const RETRYABLE = new Set(["timeout", "network", "rate", "server"]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const override = () => (typeof globalThis.__RRM_TIMEOUT_MS === "number" ? globalThis.__RRM_TIMEOUT_MS : null);
@@ -357,6 +364,25 @@ export function curatedPaper(id) {
 export function warm(which = "burst") {
   const base = which === "reader" ? READER : BURST;
   return request("warm", `${base}/warm`);
+}
+
+/** Preguntas grabadas que el servidor offline acepta. Cualquier otra responde «consulta no grabada». */
+export function parseRecorded(body) {
+  const rows = body && Array.isArray(body.queries) ? body.queries : [];
+  const seen = new Set();
+  const out = [];
+  for (const row of rows) {
+    const q = String(row || "").trim();
+    if (!q || seen.has(q)) continue;
+    seen.add(q);
+    out.push(q);
+  }
+  return out;
+}
+
+export function recordedQueries() {
+  if (process.env.NEXT_PUBLIC_RRM_OFFLINE !== "1" || !BURST) return Promise.resolve([]);
+  return request("recorded", `${BURST}/`).then(parseRecorded, () => []);
 }
 
 export function burst(q) {

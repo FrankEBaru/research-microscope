@@ -223,8 +223,17 @@ def test_status_file_crops_and_ask(tmp_path, monkeypatch):
         httpd.shutdown()
 
 
-def test_gate_off_keeps_today(tmp_path, monkeypatch):
+def test_gate_flag_words(monkeypatch):
     monkeypatch.setenv("RRM_LICENSE_GATE", "0")
+    assert gate_on() is False
+    monkeypatch.setenv("RRM_LICENSE_GATE", "on")
+    assert gate_on() is True
+    monkeypatch.setenv("RRM_LICENSE_GATE", "OFF")
+    assert gate_on() is False
+
+
+def test_gate_off_keeps_today(tmp_path, monkeypatch):
+    monkeypatch.setenv("RRM_LICENSE_GATE", "off")
     m = _map(tmp_path)
     src = _paper(4, "1706.03762")
     out = gate_paper_response(src, m)
@@ -287,6 +296,38 @@ def test_build_license_map_from_tiny_parquet(tmp_path):
     con.close()
     from_db = mod.build(str(snap), str(ids), str(tmp_path / "from-db.json"), str(db))
     assert from_db["1706.03762"]["corpusid"] == 44 and from_db["2302.13971"]["corpusid"] == 11
+
+
+def test_fixture_open_does_not_weaken_the_live_gate(tmp_path, monkeypatch):
+    monkeypatch.delenv("RRM_LICENSE_GATE", raising=False)
+    monkeypatch.delenv("RRM_LICENSE_FIXTURE", raising=False)
+    body = {
+        "_source": "unit test",
+        "1706.03762": {"license": ATTN, "version": "v7", "corpusid": 4, "fixture_open": True},
+        "2302.13971": {"license": LLAMA, "version": "v1", "corpusid": 1},
+    }
+    path = tmp_path / "licenses.json"
+    path.write_text(json.dumps(body), encoding="utf-8")
+    m = load_map(path)
+    closed = rights_for({"paper": {"arxivId": "1706.03762", "corpusid": 4}}, m)
+    assert closed["cls"] == "closed" and closed["label"] == "arXiv license"
+    assert closed["fixture"] is False and closed["gated"] is True
+    stripped = gate_paper_response(_paper(4, "1706.03762v7"), m)
+    assert stripped["paper"]["full"] is False
+    assert BODY not in json.dumps(stripped)
+    monkeypatch.setenv("RRM_LICENSE_FIXTURE", "true")
+    still = rights_for({"paper": {"arxivId": "1706.03762", "corpusid": 4}}, m)
+    assert still["gated"] is True and still["fixture"] is False
+    monkeypatch.setenv("RRM_LICENSE_FIXTURE", "1")
+    opened = rights_for({"paper": {"arxivId": "1706.03762", "corpusid": 4}}, m)
+    assert opened["cls"] == "closed" and opened["label"] == "arXiv license"
+    assert opened["fixture"] is True and opened["gated"] is False
+    full = gate_paper_response(_paper(4, "1706.03762v7"), m)
+    assert full["paper"]["full"] is True and BODY in json.dumps(full)
+    neighbor = rights_for({"paper": {"arxivId": "2302.13971", "corpusid": 1}}, m)
+    assert neighbor["fixture"] is False and neighbor["gated"] is False and neighbor["cls"] == "open"
+    missing = rights_for({"paper": {"arxivId": "1999.00001", "corpusid": 99}}, m)
+    assert missing["fixture"] is False and missing["gated"] is True
 
 
 def test_warn_map_when_empty(capsys):

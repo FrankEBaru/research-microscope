@@ -7,11 +7,16 @@ export default function Rights({ rights }: { rights: any }) {
   const id = rights.arxiv ? `arXiv:${rights.arxiv}${rights.version || ""}` : "";
   const abs = arxivAbs(rights);
   const label = rights.label || "License unknown";
+  const note = rights.fixture
+    ? "Local fixture: full text for offline testing. Live still treats this license as closed."
+    : open
+      ? "Annotated by Research Reading Microscope (modified)"
+      : "Abstract and our explanations only";
   return (
     <p className="rights">
       {rights.url ? <a href={rights.url} target="_blank" rel="noreferrer">{label}</a> : <span>{label}</span>}
       {id ? <> · <a href={abs} target="_blank" rel="noreferrer">{id}</a></> : null}
-      {open ? " · Annotated by Research Reading Microscope (modified)" : " · Abstract and our explanations only"}
+      {" · "}{note}
       {open && rights.sa ? " · Our annotations: CC BY-SA 4.0" : null}
     </p>
   );

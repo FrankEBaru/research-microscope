@@ -6,8 +6,9 @@ function ink(color: string, delay?: string): CSSProperties {
   if (delay) style.animationDelay = delay;
   return style;
 }
-import { ATLAS_H, ATLAS_W, nearest, related } from "@/lib/atlas.js";
+import { ATLAS_H, ATLAS_W, nearest, readingOrder, related } from "@/lib/atlas.js";
 import { nodeLabel } from "@/lib/layout.js";
+import { Rich } from "@/lib/math";
 
 const FULL_H = ATLAS_H + 40;
 
@@ -35,6 +36,8 @@ function metaLine(point: any) {
 export function Legend() {
   return (
     <div className="lg">
+      <span className="lg-item"><i className="lg-n" aria-hidden="true">1</i>Read first</span>
+      <span className="lg-item"><i className="lg-ring" aria-hidden="true" />Top of the ranking</span>
       <span className="lg-item"><i className="lg-dot lg-dot--full" aria-hidden="true" />Full text</span>
       <span className="lg-item"><i className="lg-dot lg-dot--abs" aria-hidden="true" />Abstract only</span>
       <span className="lg-item"><i className="lg-t" aria-hidden="true" />Your path</span>
@@ -44,7 +47,7 @@ export function Legend() {
 }
 
 export default function Atlas({
-  model, mode = "full", hereId = "", suggestId = "", selected = "", drawSelection = false, onSelect, onOpen,
+  model, mode = "full", hereId = "", suggestId = "", selected = "", drawSelection = false, laneId = "", onSelect, onOpen,
 }: {
   model: any;
   mode?: "full" | "mini";
@@ -52,6 +55,7 @@ export default function Atlas({
   suggestId?: string;
   selected?: string;
   drawSelection?: boolean;
+  laneId?: string;
   onSelect?: (id: string) => void;
   onOpen?: (id: string) => void;
 }) {
@@ -117,6 +121,12 @@ export default function Atlas({
       cool = window.setTimeout(() => { warm = false; }, 600);
     };
     const onClick = (e: MouseEvent) => {
+      const hit = (e.target as Element | null)?.closest?.(".trail-hit");
+      if (hit) {
+        const id = hit.getAttribute("data-to") || "";
+        if (id) onOpenRef.current?.(id);
+        return;
+      }
       const local = toLocal(svg, e.clientX, e.clientY);
       if (!local) return;
       const id = nearest(pointsRef.current, local.x, local.y, 18);
@@ -205,6 +215,8 @@ export default function Atlas({
   const here = hereId ? by.get(hereId) : null;
   const sug = suggestId ? by.get(suggestId) : null;
   const sel = selected ? by.get(selected) : null;
+  const order = new Map(readingOrder(points).map((row) => [row.id, row.n]));
+  const dotR = (n: number) => Math.max(8, 12 - (n - 1) * 0.55);
 
   return (
     <div className="atlas" ref={hostRef}>
@@ -219,7 +231,7 @@ export default function Atlas({
         <g className="lanes">
           {(model?.lanes || []).map((lane: any) => (
             <g key={lane.id}>
-              <rect className={`lane${lane.far ? " is-far" : ""}`} x={0} y={lane.top} width={ATLAS_W} height={lane.h} rx={mini ? 10 : 6} style={ink(lane.color)} />
+              <rect className={`lane${lane.far ? " is-far" : ""}${laneId && !mini && lane.id !== laneId ? " is-quiet" : ""}${laneId && !mini && lane.id === laneId ? " is-pick" : ""}`} x={0} y={lane.top} width={ATLAS_W} height={lane.h} rx={mini ? 10 : 6} style={ink(lane.color)} />
               {!mini && lane.name ? <text className="ln-name" x={14} y={lane.top + 22} style={ink(lane.color)}>{lane.name}</text> : null}
               {!mini && lane.name && lane.h >= 52 ? <text className="ln-n" x={14} y={lane.top + 39}>{lane.n} {lane.n === 1 ? "paper" : "papers"}</text> : null}
             </g>
@@ -249,20 +261,33 @@ export default function Atlas({
             const a = by.get(pair.from);
             const b = by.get(pair.to);
             if (!a || !b) return null;
-            return <path key={`${pair.from}-${pair.to}`} d={curve(a, b)} vectorEffect="non-scaling-stroke" />;
+            const d = curve(a, b);
+            return (
+              <g key={`${pair.from}-${pair.to}`}>
+                <path className="trail-draw" d={d} vectorEffect="non-scaling-stroke" />
+                {!mini ? <path className="trail-hit" data-to={pair.to} d={d} vectorEffect="non-scaling-stroke"><title>{`Open ${b.title || "paper"}`}</title></path> : null}
+              </g>
+            );
           })}
         </g>
         <g className="halo">
           {here ? <circle className="h-cur" cx={here.x} cy={here.y} r={mini ? 30 : 14} /> : null}
           {sug ? <circle className="h-sug" cx={sug.x} cy={sug.y} r={mini ? 30 : 13} vectorEffect="non-scaling-stroke" /> : null}
           {!mini && sel && sel.id !== hereId ? <circle className="h-sel" cx={sel.x} cy={sel.y} r={11} vectorEffect="non-scaling-stroke" /> : null}
+          {!mini ? points.map((point) => {
+            const n = order.get(point.id) || 0;
+            if (!n || n > 3) return null;
+            return <circle key={point.id} className="h-read" cx={point.x} cy={point.y} r={dotR(n) + 4.5} vectorEffect="non-scaling-stroke" />;
+          }) : null}
         </g>
         <g className="dots">
           {points.map((point, i) => {
             const vis = visited.has(point.id);
             const cur = point.id === hereId;
             const hot = point.id === focus || point.id === hereId;
-            const r = mini ? (vis ? 13 : 8) : (hot ? 6.5 : vis ? 5.6 : 4.6);
+            const n = order.get(point.id) || 0;
+            const numbered = !mini && n > 0 && n <= 8;
+            const r = mini ? (vis ? 13 : 8) : numbered ? dotR(n) : (hot ? 6.5 : vis ? 5.6 : 4.6);
             const cls = [
               "p",
               point.full ? "p--f" : "p--h",
@@ -270,6 +295,7 @@ export default function Atlas({
               cur ? "is-cur" : "",
               fset && !fset.has(point.id) ? "is-dim" : "",
               fset && fset.has(point.id) && point.id !== focus ? "is-rel" : "",
+              laneId && !mini && point.lane && point.lane !== laneId ? "is-dim" : "",
               point.far ? "is-far" : "",
               point.retracted ? "is-retracted" : "",
             ].filter(Boolean).join(" ");
@@ -278,6 +304,7 @@ export default function Atlas({
                 key={point.id}
                 className={cls}
                 data-id={point.id}
+                data-read={numbered ? n : undefined}
                 cx={Number(point.x.toFixed(1))}
                 cy={Number(point.y.toFixed(1))}
                 r={r}
@@ -305,14 +332,51 @@ export default function Atlas({
             })}
           </g>
         ) : null}
+        {!mini ? (
+          <g className="ords">
+            {points.map((point) => {
+              const n = order.get(point.id) || 0;
+              if (!n || n > 8) return null;
+              return (
+                <g key={point.id}>
+                  <circle className="ord-badge" cx={point.x} cy={point.y} r={5.4} />
+                  <text className="p-ord" x={point.x} y={point.y + 3} textAnchor="middle">{n}</text>
+                </g>
+              );
+            })}
+          </g>
+        ) : null}
       </svg>
       {!mini && tip && hoverPoint ? (
         <div className={`peek${hoverPoint.x > ATLAS_W * 0.62 ? " is-flip" : ""}`} role="tooltip" style={{ left: tip.left, top: tip.top }}>
-          <b>{hoverPoint.title || "Paper"}</b>
+          <b><Rich text={hoverPoint.title || "Paper"} /></b>
+          {(order.get(hoverPoint.id) || 0) > 0 ? <span className="tip-n">Read {(order.get(hoverPoint.id) || 0) === 1 ? "first" : order.get(hoverPoint.id)}</span> : null}
           {metaLine(hoverPoint) ? <span>{metaLine(hoverPoint)}</span> : null}
           <span className="tip-n">Cites {hoverPoint.cites.length} · cited by {hoverPoint.citedBy.length} in this map</span>
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** The first papers in the search rank, numbered the same way as the dots. */
+export function ReadFirst({ points, onPick }: { points: any[]; onPick?: (id: string) => void }) {
+  const rows = readingOrder(points).slice(0, 8);
+  if (!rows.length) return null;
+  const by = new Map((points || []).map((point) => [point.id, point]));
+  return (
+    <ol className="read-first" aria-label="Reading order">
+      {rows.map((row) => {
+        const point = by.get(row.id);
+        return (
+          <li key={row.id}>
+            <button type="button" onClick={() => onPick?.(row.id)}>
+              <span className={`rf-n${row.n <= 3 ? " is-top" : ""}`}>{row.n}</span>
+              <span><Rich text={point?.title || row.id} /></span>
+            </button>
+          </li>
+        );
+      })}
+    </ol>
   );
 }

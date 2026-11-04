@@ -7,7 +7,7 @@ import Instrument from "./Instrument";
 import { bibtex } from "@/lib/bibtex.js";
 import { eqTex, fetchNotes, paperKey, refText, sourcePdfUrl } from "@/lib/backend.js";
 import { collectV2 } from "@/lib/artifacts.js";
-import { pdfPagesOnly, polishText, presentInlines, visibleInlines } from "@/lib/prose.js";
+import { pdfPagesOnly, presentInlines, splitIntertext, visibleInlines } from "@/lib/prose.js";
 import { faltaText } from "@/lib/falta.js";
 import { hasConclusion, scanIds } from "@/lib/scan.js";
 import { citeName } from "@/lib/layout.js";
@@ -23,17 +23,19 @@ import { createTracker } from "@/lib/companion.js";
 import { analyze } from "@/lib/tablechart.js";
 import Companion, { Offer } from "./Companion";
 import { Ctx, plainOf } from "./paper/inline";
-import { GapView, ShapePill, artsAt, notesAt, repeatsBlock } from "./paper/GapNotes";
+import { GapView, ShapePill, artsAt, notesAt, normPhrase, repeatsBlock, samePhrase } from "./paper/GapNotes";
 import Popover, { PopState } from "./paper/Popover";
 import { Table } from "./paper/TableFig";
 import { Cited } from "./paper/Cited";
 import { citingIndex } from "@/lib/figrefs.js";
-import { CropStrip, FigImg, ZoneFig } from "./paper/Figures";
+import { CropStrip, FigImg, FigZoom, ZoneFig } from "./paper/Figures";
+import { figRows } from "@/lib/figures.js";
 import Margin, { MarginNote } from "./paper/Margin";
 import Rights from "./paper/Rights";
 import { arxivPdf, isGated } from "@/lib/rights.js";
 import { Boundary, Notice } from "./faults";
 import { Cap, Icon, Prov, Segmented } from "./ui";
+import { Pulse, Skeleton } from "./ui/Pulse";
 import type { AtlasCtx } from "./screens/types";
 
 export { plainOf } from "./paper/inline";
@@ -84,7 +86,7 @@ function One({ x, ctx, prev = "" }: { x: Inline; ctx: Ctx; prev?: string }) {
       return <a href={x.href} target="_blank" rel="noreferrer"><Inlines inls={x.c} ctx={ctx} /></a>;
     }
     case "cite": {
-      const lab = x.keys.map((k: string) => ctx.refLabels?.[k] ?? ctx.refIndex[k] ?? k);
+      const lab = x.keys.map((k: string) => citeFace(k, ctx.refLabels, ctx.refIndex));
       const key = `c|${x.keys.join(",")}`;
       const open = ctx.popKey === key;
       return (
@@ -95,19 +97,58 @@ function One({ x, ctx, prev = "" }: { x: Inline; ctx: Ctx; prev?: string }) {
     }
     case "note": {
       const n = x.n || 0;
+      const body = (x.blocks || []).flatMap((b: Block) => b.inlines || []);
+      if (!n && body.length) return <span className="fn-inline"><Inlines inls={body} ctx={ctx} /></span>;
       return <sup className="fn" id={n ? `fn-${n}` : undefined} tabIndex={0} data-pop={`n|${n}`}>{n}</sup>;
     }
     case "ref": {
       const label = x.label || "";
-      let text = refText(x, ctx.xref);
+      let text = niceRef(label, refText(x, ctx.xref));
       if (/(?:figure|fig\.|table|tab\.|section|sec\.|equation|eq\.|appendix|figura|tabla|sección|ecuación|apéndice)\s*~?\s*$/i.test(prev) && /^(Figure|Table|Section|Appendix|equation|Figura|Tabla|Sección|Apéndice|ecuación)\s+/.test(text)) {
         text = text.replace(/^\S+\s+/, "");
       }
-      const href = x.target ? `#blk-${x.target}` : `#${label}`;
-      return <a href={href} className="xref" data-xref={label} {...(x.target ? { "data-target": x.target } : {})}>{text}</a>;
+      const dest = x.target ? `blk-${x.target}` : (ctx.target?.[label] || "");
+      if (!dest) return <span>{text}</span>;
+      return <a href={`#${dest}`} className="xref" data-xref={label} data-target={dest}>{text}</a>;
     }
     default: return null;
   }
+}
+
+function niceRef(label: string, mapped: string) {
+  if (mapped && mapped !== label) return mapped;
+  const kind = label.split(":")[0].toLowerCase();
+  const name: Record<string, string> = {
+    fig: "Figure", figure: "Figure", tab: "Table", table: "Table",
+    eq: "equation", eqn: "equation", app: "Appendix", appendix: "Appendix",
+    sec: "Section", section: "Section", thm: "Theorem", lem: "Lemma", lemma: "Lemma",
+    prop: "Proposition", cor: "Corollary", def: "Definition", rem: "Remark",
+    alg: "Algorithm", assumption: "Assumption", claim: "Claim", conj: "Conjecture",
+  };
+  return name[kind] || mapped || label;
+}
+
+function texKey(node: HTMLElement | null) {
+  const host = node?.closest?.("[data-sym],[data-tex]") as HTMLElement | null;
+  if (!host) return "";
+  if (host.dataset.sym) return `id:${host.dataset.sym}`;
+  const tex = (host.dataset.tex || "").replace(/\s+/g, "");
+  if (!tex || !/[A-Za-z]/.test(tex)) return "";
+  return `tex:${tex}`;
+}
+
+function symbolWorth(blocks: Block[], tex: string, at?: { block: string; index: number } | null) {
+  const hit = symbolHover(blocks, tex, at || undefined);
+  if (!hit || hit.here || hit.text === UNDEFINED) return false;
+  return normPhrase(hit.text).length > 12 && !samePhrase(hit.text, tex);
+}
+
+function citeFace(k: string, labels?: Record<string, string>, index?: Record<string, string | number>) {
+  const numbered = index?.[k];
+  if (numbered != null && String(numbered).length <= 8) return String(numbered);
+  const raw = labels?.[k];
+  if (raw && raw.length <= 48) return raw;
+  return k;
 }
 
 function autoSentence(text: string) {
@@ -191,21 +232,28 @@ function pinName(pin: { kind: string; val: string }, att: any) {
 
 function SymbolMargin({ tex, name, blocks, at }: { tex: string; name: string; blocks: Block[]; at?: { block: string; index: number } | null }) {
   const hit = symbolHover(blocks, tex, at || undefined);
-  const missing = !hit || hit.text === UNDEFINED;
+  if (!hit || hit.here || hit.text === UNDEFINED) return null;
+  if (normPhrase(hit.text).length <= 12 || samePhrase(hit.text, tex)) return null;
   return (
     <>
       <p className="sn-sym">
         <span className="sn-s"><Tex tex={tex} /></span>
         {name && <span className="sn-d">{name}</span>}
       </p>
-      {missing
-        ? <Notice kind="absence">the paper does not define it</Notice>
-        : <>
-            <p className="sn-q">“{hit.text}”</p>
-            <p><Prov kind="paper" text={hit.section || "paper"} /></p>
-          </>}
+      <p className="sn-q">“<Rich text={hit.shown || hit.text} />”</p>
+      <p><Prov kind="paper" text={hit.section || "paper"} /></p>
     </>
   );
+}
+
+function noteBodies(inls: Inline[]) {
+  const out: { n: number; inls: Inline[] }[] = [];
+  const walk = (list: Inline[]) => (list || []).forEach((x) => {
+    if (x?.t === "note") out.push({ n: x.n || out.length + 1, inls: (x.blocks || []).flatMap((b: Block) => b.inlines || []) });
+    else if (Array.isArray(x?.c)) walk(x.c);
+  });
+  walk(inls);
+  return out;
 }
 
 export function mountKey(paper: Paper) {
@@ -217,6 +265,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const art = useRef<HTMLElement>(null);
   const [pop, setPop] = useState<PopState>(null);
   const [pack, setPack] = useState<any>(null);
+  const [notePhase, setNotePhase] = useState<"" | "ai" | "ready" | "error">("");
   const [symHot, setSymHot] = useState("");
   const [symPin, setSymPin] = useState("");
   const [pinAt, setPinAt] = useState<{ block: string; index: number } | null>(null);
@@ -226,6 +275,10 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const [wide, setWide] = useState(true);
   const [prog, setProg] = useState(0);
   const timer = useRef<any>(null);
+  const closeTimer = useRef<any>(null);
+  const citePin = useRef("");
+  const symGroups = useRef<Map<string, HTMLElement[]>>(new Map());
+  const symMarked = useRef<HTMLElement[]>([]);
   const [active, setActive] = useState<string>("");
   const tracker = useRef(createTracker());
   const [offer, setOffer] = useState<Offer | null>(null);
@@ -233,6 +286,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   useEffect(() => { if (!point) return; const el = document.getElementById(point); el?.classList.remove("flash"); void el?.offsetWidth; el?.classList.add("flash"); const t = setTimeout(() => setPoint(null), 12000); return () => clearTimeout(t); }, [point]);
   useEffect(() => { if (companion && focus) setPoint(`blk-${focus}`); }, [focus, companion, paper.arxivId]);
   const [breakdown, setBreakdown] = useState<string | null>(null);
+  const [zoomFig, setZoomFig] = useState<string | null>(null);
   useEffect(() => { tracker.current.reset(); setOffer(null); }, [paper.arxivId, paper.stage, paper.upgraded_from, companion]);
 
   const paperId = paper.corpusid != null ? String(paper.corpusid) : (paper.arxivId || "");
@@ -253,6 +307,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     setSymPin("");
     setPinAt(null);
     setPop(null);
+    setZoomFig(null);
     setCopied("");
     return () => window.clearTimeout(timer);
   }, [paperId, core]);
@@ -288,7 +343,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     for (const b of paper.blocks) {
       byId[b.id] = b; noteBase[b.id] = notes.length;
       if (b.kind === "h" && b.unnumbered) {
-        cur = ""; toc.push({ id: b.id, label: polishText(plainOf(b.inlines)), num: "", level: 1 });
+        cur = ""; toc.push({ id: b.id, label: plainOf(b.inlines), num: "", level: 1 });
         if (/^(appendix|ap[ée]ndice)/i.test(plainOf(b.inlines))) { app = true; h = [0, 0, 0]; }
       } else if (b.kind === "h" && b.level <= 3) {
         if (b.number != null) cur = String(b.number);
@@ -298,13 +353,15 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         }
         nums[b.id] = cur;
         if (b.label) { xref[b.label] = `${app ? "Appendix" : "Section"} ${cur}`; target[b.label] = `sec-${b.id}`; }
-        if (b.level <= 2) toc.push({ id: b.id, label: polishText(plainOf(b.inlines)), num: cur, level: b.level });
+        if (b.level <= 2) toc.push({ id: b.id, label: plainOf(b.inlines), num: cur, level: b.level });
       }
       secOf[b.id] = cur;
-      if (b.kind === "fig") { figN[b.id] = ++fig; if (b.label) { xref[b.label] = `Figure ${fig}`; byLabel[b.label] = b; figs.add(b.label); } }
+      if (b.kind === "fig") { figN[b.id] = ++fig; if (b.label) { xref[b.label] = `Figure ${fig}`; target[b.label] = b.label; byLabel[b.label] = b; figs.add(b.label); } }
       if (b.kind === "eq") {
         const tg = /\\tag\{([^}]*)\}/.exec(b.tex);
-        (b.labels || []).forEach((l: string) => {
+        const labs = new Set<string>(b.labels || []);
+      for (const m of String(b.tex || "").matchAll(/\\label\{([^{}]+)\}/g)) labs.add(m[1]);
+      labs.forEach((l: string) => {
           if (b.number != null) xref[l] = String(l).startsWith("eq") ? `(${b.number})` : String(b.number);
           else xref[l] = tg ? `(${tg[1]})` : "equation";
           target[l] = `blk-${b.id}`;
@@ -312,7 +369,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       }
       if (b.kind === "table") {
         b.an = analyze(b as any);
-        tabN[b.id] = ++tab; if (b.label) xref[b.label] = `Table ${tab}`;
+        tabN[b.id] = ++tab; if (b.label) { xref[b.label] = `Table ${tab}`; target[b.label] = `blk-${b.id}`; }
       }
       walk(b.inlines);
     }
@@ -325,24 +382,35 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   }, [paper, att]);
 
   const onOver = (e: React.MouseEvent | React.FocusEvent) => {
-    const el = (e.target as HTMLElement).closest("[data-pop],[data-sym]") as HTMLElement | null;
+    const target = e.target as HTMLElement;
+    const inPop = Boolean(target.closest?.(".popover"));
+    const el = target.closest?.("[data-pop],[data-sym]") as HTMLElement | null;
+    if (inPop || target.closest?.("[data-tex],[data-sym],.eq,.popover")) clearTimeout(closeTimer.current);
     clearTimeout(timer.current);
     if (!el) return;
     const key = el.dataset.pop || `y|${el.dataset.sym}`;
+    if (pop && (el.dataset.pop === pop.key || (el.dataset.sym && pop.key === `y|${el.dataset.sym}`))) clearTimeout(closeTimer.current);
     if (core) {
-      const host = (e.target as HTMLElement).closest("[data-sym],[data-tex]") as HTMLElement | null;
-      const sym = host?.dataset.sym ? `id:${host.dataset.sym}` : host?.dataset.tex ? `tex:${host.dataset.tex.replace(/\s+/g, "")}` : "";
-      if (sym) setSymHot(sym);
+      const sym = texKey(e.target as HTMLElement);
+      if (sym) setSymHot((cur) => (cur === sym ? cur : sym));
     }
+    if (key.startsWith("c|")) {
+      if (citePin.current && citePin.current !== key) return;
+      if (pop?.key === key) { clearTimeout(closeTimer.current); return; }
+      setPop({ key, rect: el.getBoundingClientRect() });
+      return;
+    }
+    if (core && key.startsWith("m|")) return;
     if (core && !SENTENCE_MOCK && key.startsWith("s|")) {
       const parts = key.split("|");
-      const has = (pack?.notes || []).some((n: any) => n.block_id === parts[1] && n.sent_index === +parts[2]);
+      const block = (paper.blocks || []).find((b) => b.id === parts[1]);
+      const has = (pack?.notes || []).some((n: any) => n.block_id === parts[1] && n.sent_index === +parts[2] && !(block && repeatsBlock(n, block)));
       if (!has) return;
     }
     if (key.startsWith("e|") || key.startsWith("n|")) return;
     if (companion) signal(key);
-    const show = () => setPop({ key, rect: el.getBoundingClientRect() });
-    if (key.startsWith("s|")) timer.current = setTimeout(show, 380); else show();
+    const show = () => setPop((cur) => (cur?.key === key ? cur : { key, rect: el.getBoundingClientRect() }));
+    if (key.startsWith("s|")) timer.current = setTimeout(show, 120); else show();
   };
   const signal = (key: string) => {
     const [kind, a, b] = key.split("|");
@@ -360,18 +428,50 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     }
   };
   const touched = useRef(0);
-  const onOut = (e: { relatedTarget: EventTarget | null }) => {
+  const sameHost = (node: HTMLElement | null) => {
+    if (!node || typeof node.closest !== "function" || !pop) return false;
+    if (node.closest(".popover")) return true;
+    const host = node.closest("[data-pop],[data-sym]") as HTMLElement | null;
+    return Boolean(host && (host.dataset.pop === pop.key || (host.dataset.sym && pop.key === `y|${host.dataset.sym}`)));
+  };
+  const onOut = (e: { relatedTarget: EventTarget | null; target?: EventTarget | null }) => {
     const next = e.relatedTarget as HTMLElement | null;
-    if (next && typeof next.closest === "function" && next.closest(".popover")) return;
+    if (!next) return;
+    const left = e.target as HTMLElement | null;
+    const leftKey = texKey(left);
+    const nextKey = next && typeof next.closest === "function" ? texKey(next) : "";
+    if (leftKey && nextKey && leftKey === nextKey) return;
+    const zone = left && typeof left.closest === "function" ? left.closest("[data-tex],[data-sym],[data-pop]") : null;
+    if (next && zone && (zone === next || zone.contains(next))) return;
+    if (sameHost(next)) return;
     if (Date.now() - touched.current < 800) return;
     clearTimeout(timer.current);
-    setPop(null);
-    setSymHot("");
+    clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => {
+      setSymHot("");
+      setPop((cur) => (citePin.current && cur?.key === citePin.current ? cur : null));
+    }, 280);
   };
   useEffect(() => {
     const away = (e: TouchEvent) => { const t = e.target as HTMLElement; if (!t.closest?.("[data-pop],[data-sym],.popover")) setPop(null); };
-    document.addEventListener("touchstart", away, { passive: true }); return () => document.removeEventListener("touchstart", away);
+    document.addEventListener("touchstart", away, { passive: true });
+    return () => { document.removeEventListener("touchstart", away); clearTimeout(closeTimer.current); clearTimeout(timer.current); };
   }, []);
+  useEffect(() => {
+    if (!pop) return;
+    const down = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest?.(".popover")) return;
+      const host = t.closest?.("[data-pop],[data-sym]") as HTMLElement | null;
+      if (host && (host.dataset.pop === pop.key || (host.dataset.sym && pop.key === `y|${host.dataset.sym}`))) return;
+      clearTimeout(closeTimer.current);
+      citePin.current = "";
+      setPop(null);
+      setSymHot("");
+    };
+    document.addEventListener("mousedown", down);
+    return () => document.removeEventListener("mousedown", down);
+  }, [pop]);
   const onClick = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement;
     if (Date.now() - touched.current < 800 && !t.closest("[data-sym],[data-xref]")) { const el = t.closest("[data-pop]") as HTMLElement | null; const popKey = el?.dataset.pop || ""; if (el && !popKey.startsWith("s|") && !popKey.startsWith("n|") && !popKey.startsWith("e|")) setPop({ key: popKey, rect: el.getBoundingClientRect() }); }
@@ -382,6 +482,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         const host = sym.closest("[data-pop]") as HTMLElement | null;
         const parts = host?.dataset.pop?.split("|") || [];
         const off = symPin === mark;
+        const at = parts[0] === "m" ? { block: parts[1], index: Number(parts[2]) } : parts[0] === "e" ? { block: parts[1], index: 0 } : null;
+        if (!off && !symbolWorth(paper.blocks, sym.dataset.tex || "", at)) return;
         setSymPin(off ? "" : mark);
         if (off) setPinAt(null);
         else if (parts[0] === "m") setPinAt({ block: parts[1], index: Number(parts[2]) });
@@ -395,14 +497,16 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     if (xr) {
       e.preventDefault();
       const tid = xr.dataset.target || "";
-      const byTarget = tid ? (document.getElementById(`blk-${tid}`) || document.querySelector(`[data-tab="${CSS.escape(tid)}"]`)) : null;
-      const el = byTarget || document.getElementById(model.target[xr.dataset.xref!] || xr.dataset.xref!);
+      const el = (tid && document.getElementById(tid)) || document.getElementById(model.target[xr.dataset.xref!] || xr.dataset.xref!);
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
     const cite = t.closest("[data-pop]") as HTMLElement | null;
     if (core && cite?.dataset.pop?.startsWith("c|")) {
-      setPop({ key: cite.dataset.pop, rect: cite.getBoundingClientRect() });
+      const key = cite.dataset.pop;
+      if (citePin.current === key) { citePin.current = ""; setPop(null); return; }
+      citePin.current = key;
+      setPop({ key, rect: cite.getBoundingClientRect() });
       return;
     }
     const cp = t.closest("[data-copy]") as HTMLElement | null;
@@ -457,7 +561,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     if (flashSent(row.block, row.sent)) return;
     if (core && !reading && paper.full) { pendingJump.current = row; setReading(true); }
   };
-  useEffect(() => {
+  useLayoutEffect(() => {
     const row = pendingJump.current;
     if (!reading || !row) return;
     pendingJump.current = null;
@@ -466,39 +570,47 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   useEffect(() => { if (focus) setTimeout(() => goTo(focus), 250); }, [focus, paper.arxivId]);
   const blockCount = (paper.blocks || []).length;
   useEffect(() => {
-    if (!core || paper.corpusid == null || !blockCount) return;
+    if (!core || paper.corpusid == null || !blockCount) { setNotePhase(""); return; }
     const key = String(paper.corpusid);
     const hit = noteCache.get(key);
-    if (hit) { setPack(hit); return; }
+    if (hit) { setPack(hit); setNotePhase("ready"); return; }
     let stop = false;
-    const timer = window.setTimeout(() => { stop = true; }, 22000);
+    setNotePhase("ai");
+    setPack(null);
     fetchNotes(key).then((body) => {
       if (stop) return;
       noteCache.set(key, body);
       setPack(body);
+      setNotePhase("ready");
     }).catch(() => {
       if (stop) return;
-      const empty = { notes: [], artifacts: [], usage: { cost_usd: 0 } };
-      noteCache.set(key, empty);
-      setPack(empty);
+      setPack({ notes: [], artifacts: [], usage: { cost_usd: 0 } });
+      setNotePhase("error");
     });
-    return () => { stop = true; window.clearTimeout(timer); };
+    return () => { stop = true; };
   }, [core, paper.corpusid, blockCount]);
-  useEffect(() => {
+  const paintSym = (key: string) => {
+    symMarked.current.forEach((el) => el.classList.remove("sym-mark"));
+    const next = key ? (symGroups.current.get(key) || []) : [];
+    next.forEach((el) => el.classList.add("sym-mark"));
+    symMarked.current = next;
+  };
+  useLayoutEffect(() => {
     const root = art.current;
-    if (!root) return;
-    root.querySelectorAll(".sym-mark").forEach((el) => el.classList.remove("sym-mark"));
-    const key = symPin || symHot;
-    if (!key) return;
-    const cut = key.indexOf(":");
-    const kind = key.slice(0, cut);
-    const val = key.slice(cut + 1);
-    root.querySelectorAll(kind === "id" ? "[data-sym]" : "[data-tex]").forEach((el) => {
-      const node = el as HTMLElement;
-      const cur = kind === "id" ? node.dataset.sym : (node.dataset.tex || "").replace(/\s+/g, "");
-      if (cur === val) node.classList.add("sym-mark");
+    const map = new Map<string, HTMLElement[]>();
+    const put = (key: string, node: HTMLElement) => {
+      const list = map.get(key);
+      if (list) list.push(node);
+      else map.set(key, [node]);
+    };
+    root?.querySelectorAll<HTMLElement>("[data-sym],[data-tex]").forEach((node) => {
+      if (node.dataset.sym) put(`id:${node.dataset.sym}`, node);
+      if (node.dataset.tex) put(`tex:${node.dataset.tex.replace(/\s+/g, "")}`, node);
     });
-  }, [symPin, symHot, paper, reading]);
+    symGroups.current = map;
+    paintSym(symPin || symHot);
+  }, [paper, reading]);
+  useLayoutEffect(() => { paintSym(symPin || symHot); }, [symPin, symHot]);
   const pendingSec = useRef("");
   const toSection = (id: string) => {
     const el = document.getElementById(`sec-${id}`);
@@ -540,7 +652,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const scan = core && !reading ? scanIds(paper.blocks) : null;
   const firstHead = (paper.blocks || []).find((b) => b.kind === "h");
   const sectionNow = active.startsWith("sec-") ? (paper.blocks || []).find((b) => b.kind === "h" && b.id === active.slice(4)) : firstHead;
-  const sectionLabel = sectionNow ? polishText(plainOf(sectionNow.inlines)) : "Start";
+  const sectionLabel = sectionNow ? plainOf(sectionNow.inlines) : "Start";
   const abstractId = (paper.blocks || []).find((b) => b.kind === "p" && b.abs)?.id || "";
   const nameOf = (id: string, section?: string) => citeName((map?.papers || []).find((item) => paperKey(item) === String(id)), section);
   const focusId = paper.corpusid != null ? String(paper.corpusid) : "";
@@ -575,8 +687,17 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     const shown = Number.isFinite(n) ? n.toLocaleString("en-US") : String(cites);
     metaBits.push({ key: "cites", text: `${shown} ${n === 1 ? "citation" : "citations"}`, tnum: true });
   }
-  const quote = undrawn ? polishText(paper.abstract || "") : (remote ? polishText(autoSentence(paper.abstract)) : "");
+  const quote = undrawn ? (paper.abstract || "") : (remote ? autoSentence(paper.abstract) : "");
   const pin = symPin ? pinOf(symPin) : null;
+  const pinUseful = Boolean(pin && symbolWorth(paper.blocks, pinTex(pin, att), pinAt));
+  const titleOf = (id: string) => {
+    if (!id || id === String(paper.corpusid ?? "")) return "";
+    const pools = [...(map?.papers || []), ...(atlasCtx?.papers || [])];
+    const hit = pools.find((item) => paperKey(item) === id || String(item?.corpusid ?? "") === id || item?.arxivId === id);
+    const title = String(hit?.title || "").replace(/\s+/g, " ").trim();
+    if (!title || /^\d+$/.test(title)) return "";
+    return title.length > 90 ? `${title.slice(0, 90).replace(/\s+\S*$/, "").trim()}…` : title;
+  };
   const showMini = Boolean(core && (map || (explore?.nodes || []).length > 0));
   const showNav = model.toc.length > 0 || showMini;
   const pct = Math.round(prog * 100);
@@ -600,7 +721,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           <div key={`end-${sec.id}`} className="sec-end">
             {openAsk === sec.id
               ? askBox("section", sec.id, sec.title)
-              : <button type="button" className="yw press" onClick={() => { setOpenAsk(sec.id); if (paper.corpusid != null) rememberSession(`rrm.ask.${paper.corpusid}`, sec.id); }}><Icon name="pen" /><span>Explain “{sec.title}” in your words</span></button>}
+              : <button type="button" className="yw press" onClick={() => { setOpenAsk(sec.id); if (paper.corpusid != null) rememberSession(`rrm.ask.${paper.corpusid}`, sec.id); }}><Icon name="pen" /><span>Explain “<Rich text={sec.title} />” in your words</span></button>}
           </div>,
         );
       }
@@ -609,9 +730,9 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       if (scan && !scan.has(b.id)) return;
       if (core && reading && b.kind === "h" && b.level <= 2) {
         closeUntil(b.level);
-        stack.push({ id: b.id, level: b.level, title: polishText(plainOf(b.inlines)) });
+        stack.push({ id: b.id, level: b.level, title: plainOf(b.inlines) });
       }
-      const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, refLabels: paper.refLabels, xref: model.xref, figs: model.figs, counter: { n: model.noteBase[b.id] }, core, block: b.id, popKey: pop?.key, pin };
+      const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, refLabels: paper.refLabels, xref: model.xref, target: model.target, figs: model.figs, counter: { n: model.noteBase[b.id] }, core, block: b.id, popKey: pop?.key, pin };
       let el: ReactNode = null;
       if (b.kind === "h") {
         const Tag: any = b.level === 1 ? "h2" : b.level === 2 ? "h3" : "h4";
@@ -631,7 +752,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           else if (Array.isArray(x?.c)) takeNums(x.c);
         });
         stampedSents.forEach(takeNums);
-        const noted = (i: number) => (pack?.notes || []).some((n: any) => n.block_id === b.id && n.sent_index === i) || (SENTENCE_MOCK && core);
+        const noted = (i: number) => (pack?.notes || []).some((n: any) => n.block_id === b.id && n.sent_index === i && !repeatsBlock(n, b)) || (SENTENCE_MOCK && core);
         const prose = (
           <div id={`blk-${b.id}`} className={`blk ${b.abs ? "abstract" : ""} ${b.raw ? "raw" : ""}`}>
             {b.abs && <div className="abs-label">Abstract</div>}
@@ -665,7 +786,9 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       } else if (b.kind === "eq") {
         el = (
           <div id={`blk-${b.id}`} className={`eq blk${pop?.key === `e|${b.id}` ? " is-hover" : ""}`} {...(core ? { "data-pop": `e|${b.id}`, tabIndex: 0 } : {})}>
-            <Tex tex={eqTex(b)} display syms={model.syms} />
+            {splitIntertext(eqTex(b)).map((part, i) => part.t === "text"
+              ? <p key={i} className="eq-note"><Rich text={part.v} /></p>
+              : <Tex key={i} tex={part.v} display syms={model.syms} />)}
             <button className="copy press" type="button" data-copy={b.tex} data-copied={b.id} aria-label={copied === b.id ? "Copied" : "Copy LaTeX"}>
               <Icon name="copy" size={14} />
               {copied === b.id ? "Copied" : "LaTeX"}
@@ -675,13 +798,60 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       } else if (b.kind === "list") {
         el = <ul id={`blk-${b.id}`} className="blk list">{b.items.map((it: Inline[], i: number) => <li key={i}><Inlines inls={it} ctx={ctx} /></li>)}</ul>;
       } else if (b.kind === "fig") {
-        const imgs = b.images || [];
+        const panels = Array.isArray(b.panels) && b.panels.length ? b.panels : (b.images || []).map((src: string) => ({ src, caption: [] as Inline[] }));
+        const many = panels.length > 1;
+        const alt = plainOf(b.caption);
+        const cap = stampNotes(b.caption || [], 0).inls;
+        const notes = noteBodies(cap);
+        const firstSub = plainOf(panels[0]?.caption || []);
+        const mainText = plainOf(cap);
+        const showMain = Boolean(mainText) && mainText !== firstSub;
+        const rows = figRows(panels);
+        const board = (large: boolean) => (
+          <div
+            className={`fig-board${many ? "" : " is-single"}${large ? " is-large" : ""}`}
+            onClick={large ? undefined : (e) => {
+              if ((e.target as HTMLElement).closest("button,a,.zone")) return;
+              e.stopPropagation();
+              setZoomFig(b.id);
+            }}
+          >
+            {rows.map((row, ri) => {
+              const base = rows.slice(0, ri).reduce((n, r) => n + r.length, 0);
+              return (
+                <div className="fig-row" key={ri}>
+                  {row.map((p: { src: string; caption?: Inline[] }, j: number) => {
+                    const i = base + j;
+                    const letter = String.fromCharCode(97 + i);
+                    const zs = i === 0 && b.label ? (content.zones?.figures || []).find((f: any) => f.paper === paper.arxivId && f.fig === b.label)?.zones : null;
+                    const sub = stampNotes(p.caption || [], 0).inls;
+                    const named = /^\s*\([a-z]\)/i.test(plainOf(sub));
+                    return (
+                      <div className="fig-panel" key={`${i}-${p.src}`}>
+                        {zs && !large ? <ZoneFig paper={paper} name={p.src} alt={plainOf(p.caption) || alt} zones={zs} onGo={goTo} /> : <FigImg paper={paper} name={p.src} alt={plainOf(p.caption) || alt || letter} eager={i === 0 || large} />}
+                        {many && visibleInlines(sub) && <p className="fig-sub">{named ? null : <b>({letter}) </b>}<Inlines inls={sub} ctx={ctx} /></p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        );
         el = (
           <figure id={b.label || `blk-${b.id}`} className="fig blk">
-            {imgs.length > 0 && <div className="fig-imgs">{imgs.map((src: string, i: number) => { const zs = i === 0 && b.label ? (content.zones?.figures || []).find((f: any) => f.paper === paper.arxivId && f.fig === b.label)?.zones : null;
-              return zs ? <ZoneFig key={`${i}-${src}`} paper={paper} name={src} alt={plainOf(b.caption)} zones={zs} onGo={goTo} /> : <FigImg key={`${i}-${src}`} paper={paper} name={src} alt={plainOf(b.caption)} eager={i === 0} />; })}</div>}
-            <figcaption><b>Figure {model.figN[b.id]}.</b> <Inlines inls={b.caption} ctx={ctx} /> <Prov kind="paper" text="original figure" /></figcaption>
+            {panels.length > 0 && board(false)}
+            {showMain && <figcaption><b>Figure {model.figN[b.id]}.</b> <Inlines inls={cap} ctx={ctx} /> <Prov kind="paper" text="original figure" /></figcaption>}
+            {!showMain && <figcaption><b>Figure {model.figN[b.id]}.</b> <Prov kind="paper" text="original figure" /></figcaption>}
+            {notes.length > 0 && <ol className="fig-notes">{notes.map((n) => <li key={n.n} value={n.n}><Inlines inls={n.inls} ctx={{ ...ctx, counter: { n: 999 } }} /></li>)}</ol>}
             {core && FIG_PASSAGES && model.passages[b.id] && <Cited rows={model.passages[b.id].top} rest={model.passages[b.id].rest} onJump={jumpPassage} />}
+            {zoomFig === b.id && (
+              <FigZoom open onClose={() => setZoomFig(null)}>
+                {board(true)}
+                <figcaption><b>Figure {model.figN[b.id]}.</b> <Inlines inls={cap} ctx={ctx} /></figcaption>
+                {notes.length > 0 && <ol className="fig-notes">{notes.map((n) => <li key={n.n} value={n.n}><Inlines inls={n.inls} ctx={{ ...ctx, counter: { n: 999 } }} /></li>)}</ol>}
+              </FigZoom>
+            )}
           </figure>
         );
       } else if (b.kind === "table") {
@@ -707,7 +877,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               </aside>
             )}
             {showInstrument && !undrawn && att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
-            {symbolHere && (
+            {symbolHere && pinUseful && (
               <div className="margin-inline sn sn--sym">
                 <SymbolMargin tex={pinTex(pin!, att)} name={pinName(pin!, att)} blocks={paper.blocks} at={pinAt} />
               </div>
@@ -720,7 +890,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       if (core && !reading && b.id === abstractId) rows.push(<div key="ask-slot">{askBox("slot", abstractId, sectionLabel)}</div>);
     });
     if (core && reading) closeUntil(0);
-    if (wide && pin && (!pinAt || !scan || scan.has(pinAt.block))) {
+    if (wide && pin && pinUseful && (!pinAt || !scan || scan.has(pinAt.block))) {
       side.push({
         id: `sym-${symPin}`,
         anchor: pin.kind === "tex" ? "[data-pin='1']" : ".sym-mark",
@@ -734,16 +904,17 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   function gapPieces(b: Block) {
     if (!core) return null;
     const arts = artsAt(b.id, pack, local);
+    const host = plainOf(b.inlines || []);
     const notes = (b.kind === "p" || b.kind === "eq") ? notesAt(b.id, pack, local).filter((n: any) => !repeatsBlock(n, b, arts)) : [];
     const artsDrawn = (b.kind === "p" || b.kind === "eq") ? arts.filter((a) => a.type !== "forma") : [];
     const shape = arts.some((a) => a.type === "forma" && a.label);
     const nodes: ReactNode[] = [];
     if (shape) nodes.push(<ShapePill key="shape" arts={arts} />);
     notes.forEach((n: any, i: number) => nodes.push(
-      <Boundary key={`n-${n.block_id}-${n.sent_index}-${n.kind || "n"}-${i}`} name="gap"><GapView note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} /></Boundary>,
+      <Boundary key={`n-${n.block_id}-${n.sent_index}-${n.kind || "n"}-${i}`} name="gap"><GapView note={n} host={host} self={String(paper.corpusid ?? "")} titleOf={titleOf} onOpen={onOpenPaper} /></Boundary>,
     ));
     artsDrawn.forEach((a, i) => nodes.push(
-      <Boundary key={`a-${b.id}-${i}`} name="gap"><GapView art={a} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} /></Boundary>,
+      <Boundary key={`a-${b.id}-${i}`} name="gap"><GapView art={a} host={host} self={String(paper.corpusid ?? "")} titleOf={titleOf} onOpen={onOpenPaper} /></Boundary>,
     ));
     if (wide) {
       nodes.forEach((node, i) => side.push({ id: `g-${b.id}-${i}`, anchor: `[data-blk="${b.id}"]`, body: node }));
@@ -768,7 +939,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
                     <li key={t.id} className={`${t.level > 1 ? "sub" : ""}${on ? " is-on" : ""}`}>
                       <a href={`#sec-${t.id}`} aria-current={on ? "location" : undefined} onClick={(e) => { e.preventDefault(); toSection(t.id); }}>
                         <span className="n">{t.num}</span>
-                        <span className="t">{t.label}</span>
+                        <span className="t"><Rich text={t.label} /></span>
                       </a>
                     </li>
                   );
@@ -812,7 +983,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
                 />
               )}
             </div>
-            <h1>{polishText(paper.title)}</h1>
+            <h1><Rich text={paper.title || ""} /></h1>
             {authors && <p className="ah-auth">{authors}</p>}
             {rights ? <Rights rights={rights} /> : null}
             <p className="ah-links">
@@ -830,16 +1001,19 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             {quote && (
               <blockquote className="ah-quote">
                 <Prov kind="paper" text="Abstract" />
-                «{quote}»
+                «<Rich text={quote} />»
               </blockquote>
             )}
             {core && !reading && !undrawn && paper.full && !hasConclusion(paper.blocks) && <Notice kind="absence">No conclusion section.</Notice>}
             {remote?.source === "ocr" && <Notice kind="absence">Read by OCR: equations may contain errors.</Notice>}
             {paper.license && <p className="license">{paper.license}</p>}
             {paper.authorNotes?.length > 0 && (
-              <details className="author-notes"><summary>Author notes</summary>{paper.authorNotes.map((n: string, i: number) => <p key={i}>{polishText(n)}</p>)}</details>
+              <details className="author-notes"><summary>Author notes</summary>{paper.authorNotes.map((n: string, i: number) => <p key={i}><Rich text={n} /></p>)}</details>
             )}
             {showCrops && remote && paper.corpusid != null && /^\d+$/.test(String(paper.corpusid)) && <CropStrip id={String(paper.corpusid)} />}
+            {notePhase === "ai" && <Pulse mode="ai" detail="Writing margin notes…" />}
+            {notePhase === "error" && <Pulse mode="error" detail="Margin notes didn’t finish. The paper is here." />}
+            {notePhase === "ready" && <Pulse mode="ready" compact />}
           </header>
         </Boundary>
         {undrawn && gated && !quote && (
@@ -857,6 +1031,9 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         {undrawn && core && askBox("slot", abstractId, "Abstract")}
         {!undrawn && pdfPagesOnly(paper.blocks) && <Notice kind="absence">This e-print has no text: the pages are inserted from a PDF.</Notice>}
         {!undrawn && !abstractId && core && !reading && askBox("slot", "", sectionLabel)}
+        {core && remote && !["done", "abstract_only", "failed"].includes(String(remote.status || "")) && (paper.blocks || []).length < 2 && (
+          <><Skeleton lines={7} /><Pulse mode="loading" /></>
+        )}
         {!undrawn && rows}
         {!gated && (
           <footer className="paper-foot">
@@ -867,7 +1044,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             )}
           </footer>
         )}
-        {pop && <Boundary name="popover" resetKeys={[pop.key]}><Popover pop={pop} paper={paper} model={model} content={content} core={core} pack={pack} onOpen={onOpenPaper} /></Boundary>}
+        {pop && <Boundary name="popover" resetKeys={[pop.key]}><Popover pop={pop} paper={paper} model={model} content={content} core={core} pack={pack} titleOf={titleOf} onOpen={onOpenPaper} /></Boundary>}
       </article>
       {wide && <Margin notes={side} layoutKey={layoutKey} />}
       {companion && <Companion offer={offer} target={point} onAnswer={() => setOffer(null)} onHide={() => onHideCompanion?.()} />}

@@ -79,6 +79,83 @@ L = -\sum_i y_i
 """
 
 
+def test_align_rows_get_their_own_numbers(monkeypatch):
+    """2205.01138 Equations (8) and (8) were both labels on one alignat."""
+    monkeypatch.delenv("RRM_EQ_ROW_NUMBERS", raising=False)
+    prior = "\n".join(
+        rf"\begin{{equation}} a_{i} = {i} \label{{eq:pre{i}}} \end{{equation}}" for i in range(1, 8)
+    )
+    tex = (
+        r"\documentclass{article}\begin{document}"
+        + prior
+        + r"""
+Equations \ref{eq:PE-1} and \ref{eq:PE-2}.
+\begin{alignat}{2}
+    \text{PE}_{(pos, 2i)} &= \sin\left(\frac{pos}{10000^\frac{2i}{d}}\right), \label{eq:PE-1} \\
+    \text{PE}_{(pos, 2i+1)} &= \cos\left(\frac{pos}{10000^\frac{2i}{d}}\right), \label{eq:PE-2}
+\end{alignat}
+\begin{align}
+x &= y \label{eq:keep} \\
+z &= w \nonumber \\
+u &= v \label{eq:nextrow}
+\end{align}
+\begin{align*}
+p &= q \label{eq:star}
+\end{align*}
+\begin{equation} c = d \label{eq:after} \end{equation}
+\end{document}"""
+    )
+    paper = parse_tex(tex)
+    by_label = {}
+    for block in paper["blocks"]:
+        if block["kind"] != "eq":
+            continue
+        for lab in block.get("labels") or []:
+            by_label[lab] = block.get("number")
+        assert not str(block.get("tex") or "").lstrip().startswith("{2}")
+    assert by_label["eq:PE-1"] == 8
+    assert by_label["eq:PE-2"] == 9
+    assert by_label["eq:keep"] == 10
+    assert by_label["eq:nextrow"] == 11
+    assert by_label["eq:star"] is None
+    assert by_label["eq:after"] == 12
+    refs = [x for b in paper["blocks"] if b["kind"] == "p" for x in b["inlines"] if x["t"] == "ref"]
+    got = {x["label"]: x["number"] for x in refs}
+    assert got["eq:PE-1"] == 8 and got["eq:PE-2"] == 9
+
+    monkeypatch.setenv("RRM_EQ_ROW_NUMBERS", "0")
+    off = parse_tex(tex)
+    paired = [b for b in off["blocks"] if b.get("labels") == ["eq:PE-1", "eq:PE-2"]]
+    assert len(paired) == 1 and paired[0]["number"] == 8
+
+
+def test_paren_math_and_appendix_env_are_not_one_raw_blob():
+    """\\( ... \\) was one text token, and \\begin{appendix} swallowed the algorithms."""
+    tex = r"""
+\documentclass{article}
+\begin{document}
+\section{Optimization with Adaptive Density Control of 3D Gaussians}
+We densify.
+\section{Discussion and Conclusions}
+Thanks.
+\begin{appendix}
+\section{Optimization and Densification Algorithm}
+where \(Q\) is a matrix.
+\end{appendix}
+\end{document}
+"""
+    paper = parse_tex(tex)
+    kinds = [b["kind"] for b in paper["blocks"]]
+    assert "h" in kinds and kinds.count("p") >= 2
+    assert not any(b.get("raw") and "\\begin{appendix}" in (b.get("text") or "") for b in paper["blocks"])
+    paras = [b for b in paper["blocks"] if b["kind"] == "p"]
+    math = [x for b in paras for x in b["inlines"] if x["t"] == "math"]
+    assert any(x["v"] == "Q" for x in math)
+    assert all("\\(" not in (x.get("v") or "") for b in paras for x in b["inlines"] if x["t"] == "text")
+    heads = [b for b in paper["blocks"] if b["kind"] == "h"]
+    assert any(b.get("appendix") for b in heads)
+
+
 def test_macro_expansion_and_label_link():
     macros = collect_macros(MACRO)
     assert expand_math(r"\vect{x}+\argmax", macros) == r"\mathbf{x}+\operatorname{arg\,max}"
@@ -130,6 +207,37 @@ def test_figure_star_section_star_and_raw(tmp_path: Path):
     n = materialize_figures(paper["blocks"], tmp_path, tmp_path / "figures")
     assert n == 1
     assert list((tmp_path / "figures").glob("*.png"))
+
+
+def test_subfigure_panels_keep_author_order_and_footnote():
+    tex = r"""
+\documentclass{article}
+\begin{document}
+\begin{figure}
+\begin{subfigure}{0.45\linewidth}
+\includegraphics{a.png}
+\caption{(a) left side}
+\end{subfigure}
+\begin{subfigure}{0.45\linewidth}
+\includegraphics{b.png}
+\caption{(b) right side $x$}
+\end{subfigure}
+\caption{Both panels.\footnote{Measured on the same split.}}
+\label{fig:both}
+\end{figure}
+See fig:both in the text.
+\end{document}
+"""
+    paper = parse_tex(tex, arxiv_id="0")
+    fig = next(b for b in paper["blocks"] if b["kind"] == "fig")
+    assert fig["images"] == ["a.png", "b.png"]
+    assert [p["src"] for p in fig["panels"]] == ["a.png", "b.png"]
+    assert fig["panels"][0]["w"] == 0.45
+    assert fig["panels"][1]["w"] == 0.45
+    assert "(a)" in plain(fig["panels"][0]["caption"])
+    assert "(b)" in plain(fig["panels"][1]["caption"])
+    assert any(x.get("t") == "note" for x in fig["caption"])
+    assert fig["label"] == "fig:both"
 
 
 def test_theorem_and_list_keep_display_math():

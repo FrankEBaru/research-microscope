@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from rrm.demo_guard import ALLOWED_ORIGINS, check, cors_kwargs
+from rrm.demo_guard import ALLOWED_ORIGINS, check, cors_kwargs, failure
 from rrm.reader.files import resolve_figure
 from rrm.reader.latex import parse_tex
 
@@ -52,6 +52,16 @@ def test_file_name_accepts_png(tmp_path):
     found = resolve_figure(root, "42", "plot.png")
     assert found == png.resolve()
     assert found.parent.name == "figures"
+
+
+def test_failure_names_the_reason_without_the_token(monkeypatch):
+    monkeypatch.delenv("RRM_DEMO_TOKEN", raising=False)
+    assert failure("secret", None) == "missing"
+    monkeypatch.setenv("RRM_DEMO_TOKEN", "secret")
+    assert failure(None, None) == "empty"
+    assert failure("nope", None) == "mismatch"
+    assert failure(None, "secret") is None
+    assert "secret" not in (failure("nope", None) or "")
 
 
 def test_guard_fails_closed_without_token(monkeypatch):
