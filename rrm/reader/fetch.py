@@ -215,7 +215,38 @@ def download_url(
     max_bytes: int = PDF_MAX_BYTES,
     cancel=None,
 ) -> bytes:
-    """GET `url`. The limiter runs only before the socket opens, never during the body."""
+    """GET `url`. The limiter runs only before the socket opens, never during the body.
+
+    A body shorter than its Content-Length is a truncated transfer (RRM-97: a cut
+    e-print sent LSTMN to a cold OCR). It is retried once, then raised.
+    """
+    for attempt in range(2):
+        try:
+            return _download_once(
+                url, limiter, opener=opener, now=now, connect_timeout=connect_timeout,
+                total_timeout=total_timeout, max_bytes=max_bytes, cancel=cancel,
+            )
+        except TruncatedDownload:
+            if attempt:
+                raise
+    raise DownloadError("download failed")  # unreachable
+
+
+class TruncatedDownload(DownloadError):
+    pass
+
+
+def _expected_length(resp):
+    headers = getattr(resp, "headers", None)
+    raw = headers.get("Content-Length") if headers is not None else None
+    try:
+        n = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return n if n >= 0 else None
+
+
+def _download_once(url, limiter, *, opener, now, connect_timeout, total_timeout, max_bytes, cancel) -> bytes:
     now = now or time.time
     if limiter is not None:
         limiter.wait()
@@ -231,7 +262,11 @@ def download_url(
     except Exception as err:
         raise DownloadError(_download_reason(err)) from err
     try:
-        return _read_capped(resp, deadline, int(max_bytes), now, cancel)
+        body = _read_capped(resp, deadline, int(max_bytes), now, cancel)
+        expected = _expected_length(resp)
+        if expected is not None and len(body) < expected:
+            raise TruncatedDownload(f"truncated download: {len(body)} of {expected} bytes")
+        return body
     finally:
         close = getattr(resp, "close", None)
         if close:

@@ -34,7 +34,7 @@ export function openRoute(meta, paper) {
   const p = paper || {};
   if (m.arxiv || p.arxivId) return "arxiv";
   if (m.oa_pdf || p.oaPdf || m.pdf) return "pdf";
-  if (m.stage === "stub" || m.status === "parsing" || p.title) return "none";
+  if (m.stage === "stub" || m.stage === "download" || m.status === "parsing" || p.title) return "none";
   return "unknown";
 }
 
