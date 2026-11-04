@@ -122,7 +122,7 @@ def judge(parts, model, salt=""):
     schema = {"type": "object", "additionalProperties": False, "required": ["grades"], "properties": {"grades": {"type": "array", "items": {
         "type": "object", "additionalProperties": False, "required": ["n", "correct", "simple"],
         "properties": {"n": {"type": "integer"}, "correct": {"type": "boolean"}, "simple": {"type": "boolean"}}}}}}
-    payload = L.body(_JUDGE, listed, schema, "grades", model=model, effort="low", tokens=1500)
+    payload = L.body(_JUDGE, listed, schema, "grades", model=model, effort="low", tokens=4000)
     resp, cost, _s, _h = L.call(payload, salt=salt)
     data = L.json_of(resp) or {}
     grades = {g.get("n"): g for g in data.get("grades") or [] if isinstance(g, dict)}
