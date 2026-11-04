@@ -12,6 +12,21 @@ function textOf(nodes) {
   }).join("");
 }
 
+/** Misma frase, con el math envuelto para que el globo pase por KaTeX. */
+function showOf(nodes) {
+  return (nodes || []).map((node) => {
+    if (!node || typeof node !== "object") return "";
+    if (node.t === "math") {
+      const v = String(node.v || "");
+      if (!v) return "";
+      return node.display ? `\\[${v}\\]` : `$${v}$`;
+    }
+    if (node.t === "text" || node.t === "code") return node.v || "";
+    if (Array.isArray(node.c)) return showOf(node.c);
+    return "";
+  }).join("");
+}
+
 function mathOf(nodes) {
   const bits = [];
   for (const node of nodes || []) {
@@ -37,7 +52,7 @@ export function sentences(blocks) {
     if (block.kind !== "p") continue;
     const sents = block.sents && block.sents.length ? block.sents : [block.inlines || []];
     sents.forEach((sent, index) => {
-      out.push({ block: block.id, index, section, text: clean(textOf(sent)), math: mathOf(sent) });
+      out.push({ block: block.id, index, section, text: clean(textOf(sent)), shown: showOf(sent).trim(), math: mathOf(sent) });
     });
   }
   return out;
@@ -62,7 +77,7 @@ export function symbolHover(blocks, tex, at) {
     if (index <= cursor && hasSymbol(row, tex)) found = row;
   });
   if (!found) return { text: UNDEFINED };
-  return { text: found.text, section: found.section };
+  return { text: found.text, shown: found.shown, section: found.section };
 }
 
 export function equationHover(blocks, blockId) {
@@ -71,7 +86,10 @@ export function equationHover(blocks, blockId) {
   const prev = at > 0 ? list[at - 1] : null;
   if (!prev || prev.kind !== "p") return { texts: [] };
   const sents = prev.sents && prev.sents.length ? prev.sents : [prev.inlines || []];
-  return { texts: sents.map((sent) => clean(textOf(sent))).filter(Boolean) };
+  return {
+    texts: sents.map((sent) => clean(textOf(sent))).filter(Boolean),
+    shown: sents.map((sent) => showOf(sent).trim()).filter(Boolean),
+  };
 }
 
 export function tableHover(blocks, blockId) {
@@ -79,6 +97,7 @@ export function tableHover(blocks, blockId) {
   const at = list.findIndex((block) => block.id === blockId);
   const table = at >= 0 ? list[at] : null;
   const caption = clean(textOf(table && table.caption));
+  const captionShown = showOf(table && table.caption).trim();
   const label = (table && table.label) || "";
   const seq = sentences(list);
   let best = null;
@@ -93,5 +112,5 @@ export function tableHover(blocks, blockId) {
       best = row;
     }
   });
-  return { caption, sentence: best ? best.text : "" };
+  return { caption, captionShown, sentence: best ? best.text : "", sentenceShown: best ? best.shown : "" };
 }

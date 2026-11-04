@@ -345,7 +345,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
       <div className="box-act">
         <Button variant="primary" type="submit" disabled={busy || !text.trim()}>Review</Button>
       </div>
-      {(busy || live) && !err && <Pulse mode="ai" compact />}
+      {(busy || live) && !err && <Pulse mode="ai" compact detail="Answering…" />}
       {live && <p className="box-status tnum" aria-live="polite">{live}</p>}
       {(err || slow) && <Pulse mode="error" compact detail={err ? ASK_FAULT : ASK_SLOW} />}
       {slow && <Notice kind="fault" code="F-ASK-SLOW">{ASK_SLOW}</Notice>}

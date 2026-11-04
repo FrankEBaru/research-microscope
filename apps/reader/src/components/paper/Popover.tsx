@@ -40,7 +40,7 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
     let tex = r[2] || "";
     try { tex = decodeURIComponent(tex); } catch { /* el LaTeX se muestra igual */ }
     const hit = symbolHover(paper.blocks, tex, { block: r[0], index: Number(r[1]) });
-    body = <><p className="pop-quote">{hit.text}</p><div className="pop-meta"><Prov kind="paper" text="author’s sentence" /></div></>;
+    body = <><p className="pop-quote"><Rich text={hit.shown || hit.text} /></p><div className="pop-meta"><Prov kind="paper" text="author’s sentence" /></div></>;
   } else if (kind === "e" && core) {
     const card = (pack?.notes || []).find((n: any) => n.block_id === r[0]);
     const art = (pack?.artifacts || []).find((n: any) => n.block_id === r[0]);
@@ -48,7 +48,8 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
       body = <GapView note={card} art={art} self={String(paper.corpusid ?? "")} onOpen={onOpen} />;
     } else {
     const hit = equationHover(paper.blocks, r[0]);
-    body = <><p className="pop-title">Where it comes from</p>{hit.texts.map((text: string, i: number) => <p key={i} className="pop-quote">{text}</p>)}{!hit.texts.length && <p className="pop-quote">the paper does not define it</p>}<div className="pop-meta"><ProvChip kind="paper" text="author’s sentence" /></div></>;
+    const lines = hit.shown?.length ? hit.shown : hit.texts;
+    body = <><p className="pop-title">Where it comes from</p>{lines.map((text: string, i: number) => <p key={i} className="pop-quote"><Rich text={text} /></p>)}{!lines.length && <p className="pop-quote">the paper does not define it</p>}<div className="pop-meta"><ProvChip kind="paper" text="author’s sentence" /></div></>;
     }
   } else if (kind === "s" && core && pack) {
     const card = (pack.notes || []).find((n: any) => n.block_id === r[0] && n.sent_index === +r[1]);
@@ -96,8 +97,8 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
     body = core ? (
       <>
         <p className="pop-title">{tableNo ? `Table ${tableNo}` : "Table"}</p>
-        {told.caption && <p className="pop-quote">{told.caption}</p>}
-        {told.sentence ? <p className="pop-quote">{told.sentence}</p> : <p className="pop-line">The paper does not discuss it in a sentence.</p>}
+        {(told.captionShown || told.caption) && <p className="pop-quote"><Rich text={told.captionShown || told.caption} /></p>}
+        {told.sentenceShown || told.sentence ? <p className="pop-quote"><Rich text={told.sentenceShown || told.sentence} /></p> : <p className="pop-line">The paper does not discuss it in a sentence.</p>}
         <div className="pop-meta"><Prov kind="paper" text="caption and author’s sentence" /></div>
       </>
     ) : (

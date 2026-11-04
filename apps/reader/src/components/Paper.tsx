@@ -202,7 +202,7 @@ function SymbolMargin({ tex, name, blocks, at }: { tex: string; name: string; bl
       {missing
         ? <Notice kind="absence">the paper does not define it</Notice>
         : <>
-            <p className="sn-q">“{hit.text}”</p>
+            <p className="sn-q">“<Rich text={hit.shown || hit.text} />”</p>
             <p><Prov kind="paper" text={hit.section || "paper"} /></p>
           </>}
     </>
@@ -228,6 +228,9 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const [wide, setWide] = useState(true);
   const [prog, setProg] = useState(0);
   const timer = useRef<any>(null);
+  const closeTimer = useRef<any>(null);
+  const symGroups = useRef<Map<string, HTMLElement[]>>(new Map());
+  const symMarked = useRef<HTMLElement[]>([]);
   const [active, setActive] = useState<string>("");
   const tracker = useRef(createTracker());
   const [offer, setOffer] = useState<Offer | null>(null);
@@ -327,7 +330,9 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   }, [paper, att]);
 
   const onOver = (e: React.MouseEvent | React.FocusEvent) => {
-    const el = (e.target as HTMLElement).closest("[data-pop],[data-sym]") as HTMLElement | null;
+    const target = e.target as HTMLElement;
+    if (target.closest?.(".popover,[data-pop],[data-sym]")) clearTimeout(closeTimer.current);
+    const el = target.closest?.("[data-pop],[data-sym]") as HTMLElement | null;
     clearTimeout(timer.current);
     if (!el) return;
     const key = el.dataset.pop || `y|${el.dataset.sym}`;
@@ -364,15 +369,16 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const touched = useRef(0);
   const onOut = (e: { relatedTarget: EventTarget | null }) => {
     const next = e.relatedTarget as HTMLElement | null;
-    if (next && typeof next.closest === "function" && next.closest(".popover")) return;
+    if (next && typeof next.closest === "function" && next.closest(".popover,[data-pop],[data-sym]")) return;
     if (Date.now() - touched.current < 800) return;
     clearTimeout(timer.current);
-    setPop(null);
-    setSymHot("");
+    clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => { setPop(null); setSymHot(""); }, 320);
   };
   useEffect(() => {
     const away = (e: TouchEvent) => { const t = e.target as HTMLElement; if (!t.closest?.("[data-pop],[data-sym],.popover")) setPop(null); };
-    document.addEventListener("touchstart", away, { passive: true }); return () => document.removeEventListener("touchstart", away);
+    document.addEventListener("touchstart", away, { passive: true });
+    return () => { document.removeEventListener("touchstart", away); clearTimeout(closeTimer.current); clearTimeout(timer.current); };
   }, []);
   const onClick = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement;
@@ -474,7 +480,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     if (hit) { setPack(hit); setNotePhase("ready"); return; }
     let stop = false;
     setNotePhase("ai");
-    const timer = window.setTimeout(() => { stop = true; }, 22000);
+    setPack(null);
     fetchNotes(key).then((body) => {
       if (stop) return;
       noteCache.set(key, body);
@@ -482,28 +488,33 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       setNotePhase("ready");
     }).catch(() => {
       if (stop) return;
-      const empty = { notes: [], artifacts: [], usage: { cost_usd: 0 } };
-      noteCache.set(key, empty);
-      setPack(empty);
+      setPack({ notes: [], artifacts: [], usage: { cost_usd: 0 } });
       setNotePhase("error");
     });
-    return () => { stop = true; window.clearTimeout(timer); };
+    return () => { stop = true; };
   }, [core, paper.corpusid, blockCount]);
-  useEffect(() => {
+  const paintSym = (key: string) => {
+    symMarked.current.forEach((el) => el.classList.remove("sym-mark"));
+    const next = key ? (symGroups.current.get(key) || []) : [];
+    next.forEach((el) => el.classList.add("sym-mark"));
+    symMarked.current = next;
+  };
+  useLayoutEffect(() => {
     const root = art.current;
-    if (!root) return;
-    root.querySelectorAll(".sym-mark").forEach((el) => el.classList.remove("sym-mark"));
-    const key = symPin || symHot;
-    if (!key) return;
-    const cut = key.indexOf(":");
-    const kind = key.slice(0, cut);
-    const val = key.slice(cut + 1);
-    root.querySelectorAll(kind === "id" ? "[data-sym]" : "[data-tex]").forEach((el) => {
-      const node = el as HTMLElement;
-      const cur = kind === "id" ? node.dataset.sym : (node.dataset.tex || "").replace(/\s+/g, "");
-      if (cur === val) node.classList.add("sym-mark");
+    const map = new Map<string, HTMLElement[]>();
+    const put = (key: string, node: HTMLElement) => {
+      const list = map.get(key);
+      if (list) list.push(node);
+      else map.set(key, [node]);
+    };
+    root?.querySelectorAll<HTMLElement>("[data-sym],[data-tex]").forEach((node) => {
+      if (node.dataset.sym) put(`id:${node.dataset.sym}`, node);
+      if (node.dataset.tex) put(`tex:${node.dataset.tex.replace(/\s+/g, "")}`, node);
     });
-  }, [symPin, symHot, paper, reading]);
+    symGroups.current = map;
+    paintSym(symPin || symHot);
+  }, [paper, reading]);
+  useLayoutEffect(() => { paintSym(symPin || symHot); }, [symPin, symHot]);
   const pendingSec = useRef("");
   const toSection = (id: string) => {
     const el = document.getElementById(`sec-${id}`);
@@ -845,8 +856,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               <details className="author-notes"><summary>Author notes</summary>{paper.authorNotes.map((n: string, i: number) => <p key={i}><Rich text={n} /></p>)}</details>
             )}
             {showCrops && remote && paper.corpusid != null && /^\d+$/.test(String(paper.corpusid)) && <CropStrip id={String(paper.corpusid)} />}
-            {notePhase === "ai" && <><Skeleton lines={3} /><Pulse mode="ai" /></>}
-            {notePhase === "error" && <Pulse mode="error" detail="No se pudieron preparar las notas" />}
+            {notePhase === "ai" && <Pulse mode="ai" detail="Writing margin notes…" />}
+            {notePhase === "error" && <Pulse mode="error" detail="Margin notes didn’t finish. The paper is here." />}
             {notePhase === "ready" && <Pulse mode="ready" compact />}
           </header>
         </Boundary>

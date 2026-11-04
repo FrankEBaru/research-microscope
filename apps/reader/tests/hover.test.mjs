@@ -22,10 +22,13 @@ const blocks = [
 test("el símbolo usa la frase anterior que lo contiene, o dice que el paper no lo define", () => {
   const early = symbolHover(blocks, "\\alpha", { block: "p1", index: 0 });
   assert.match(early.text, /defined here/);
+  assert.match(early.shown, /\$\\alpha\$/);
+  assert.match(early.shown, /defined here/);
   const later = symbolHover(blocks, "\\alpha", { block: "p2", index: 0 });
   assert.match(later.text, /defined here/);
   const missing = symbolHover(blocks, "\\gamma", { block: "p2", index: 0 });
   assert.equal(missing.text, UNDEFINED);
+  assert.equal(missing.shown, undefined);
 });
 
 test("la ecuación muestra las frases de donde sale y la tabla el pie, sin un número nuevo", () => {

@@ -1,22 +1,27 @@
 "use client";
 import { useEffect, useState } from "react";
 
-const AI = ["Analizando el paper…", "Buscando extractos…", "Preparando notas…"];
-const LOAD = ["Cargando el paper…", "Armando la página…", "Esperando el texto…"];
+const SAY = {
+  loading: "Loading the paper…",
+  ai: "Working…",
+  ready: "Ready",
+  error: "Couldn’t finish",
+};
 
 export type PulseMode = "loading" | "ai" | "ready" | "error";
 
 export function Pulse({ mode, detail, compact = false }: { mode: PulseMode; detail?: string; compact?: boolean }) {
-  const lines = mode === "ai" ? AI : mode === "loading" ? (detail ? [detail, ...LOAD] : LOAD) : mode === "error" ? [detail || "No se pudo cargar"] : ["Listo"];
-  const [i, setI] = useState(0);
-  useEffect(() => { setI(0); }, [mode, detail]);
+  const clock = mode === "loading" || mode === "ai";
+  const hasTime = /\d+\s*s\b/.test(detail || "");
+  const [sec, setSec] = useState(0);
   useEffect(() => {
-    if (lines.length < 2) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const id = window.setInterval(() => setI((n) => (n + 1) % lines.length), 3200);
+    setSec(0);
+    if (!clock || hasTime) return;
+    const id = window.setInterval(() => setSec((n) => n + 1), 1000);
     return () => window.clearInterval(id);
-  }, [mode, detail, lines.length]);
-  const say = lines[i % lines.length];
+  }, [mode, detail, clock, hasTime]);
+  const base = detail || SAY[mode];
+  const say = clock && !hasTime ? `${base} ${sec} s` : base;
   return (
     <p className={`pulse${compact ? " is-compact" : ""}`} data-state={mode} role="status">
       {mode === "ready" ? <span className="pulse-mark" aria-hidden="true">✓</span> : mode === "error" ? <span className="pulse-mark" aria-hidden="true">!</span> : (
