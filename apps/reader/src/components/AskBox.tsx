@@ -426,7 +426,8 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
             })}
           </section>
         ) : null)}
-        {result && !result.empty && (
+        {/* RRM-100: con el motor por sección cada cita ya va junto a su afirmación; la lista suelta solo repetía. */}
+        {result && !result.empty && !(hasParts && (result.engine === "sheet" || result.engine === "window")) && (
           <>
             <Cap gap>{result.papers === 1 ? "The paper says" : `These papers say (${result.papers})`}{result.matched > listed ? <span className="cap-n tnum"> · {listed} of {result.matched} nearby</span> : null}</Cap>
             {groups.map(([id, rows]) => rows.map((row: any, index: number) => {
