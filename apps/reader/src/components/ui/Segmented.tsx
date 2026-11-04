@@ -1,4 +1,6 @@
-export type Option<T extends string> = { value: T; label: string };
+import type { ReactNode } from "react";
+
+export type Option<T extends string> = { value: T; label: ReactNode };
 
 type Props<T extends string> = {
   options: Option<T>[];

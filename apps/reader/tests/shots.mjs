@@ -148,7 +148,7 @@ function describe(dir) {
   const done = Object.keys(papers).filter((id) => papers[id] === "done");
   const licenses = readJson(path.join(dir, "licenses.json"));
   const hasMap = Boolean(licenses && typeof licenses === "object");
-  const gateOff = process.env.RRM_LICENSE_GATE === "0";
+  const gateOff = ["0", "off", "false", "no"].includes(String(process.env.RRM_LICENSE_GATE || "").trim().toLowerCase());
   const rawOf = (id) => {
     if (!hasMap) return "";
     const hit = Object.entries(licenses).find(([key, val]) => !key.startsWith("_") && val && String(val.corpusid) === String(id));

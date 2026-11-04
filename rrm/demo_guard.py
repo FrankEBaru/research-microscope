@@ -24,25 +24,31 @@ def cors_kwargs():
     }
 
 
-def check(header, query, origin=None):
-    """Return 401 or 403, or None when the request may proceed.
-
-    `query` is the `/file` token (`k`). Other routes pass None so a query
-    string cannot authorize them. An empty `RRM_DEMO_TOKEN` fails closed.
-    """
+def failure(header, query):
+    """Why the token was refused, or None. The value is a short name, never the token."""
     expected = os.environ.get("RRM_DEMO_TOKEN") or ""
     if not expected:
-        return 401
+        return "missing"
     supplied = header or ""
     if not supplied and query:
         supplied = query
     if not supplied:
-        return 401
+        return "empty"
     try:
         ok = hmac.compare_digest(str(supplied), str(expected))
     except Exception:
-        return 401
+        return "mismatch"
     if not ok:
+        return "mismatch"
+    return None
+
+
+def check(header, query, origin=None):
+    """Return 401 or 403, or None when the request may proceed.
+
+    `query` is the token in `k`. An empty `RRM_DEMO_TOKEN` fails closed.
+    """
+    if failure(header, query):
         return 401
     if origin and origin not in ALLOWED_ORIGINS:
         return 403

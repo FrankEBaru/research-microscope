@@ -11,6 +11,7 @@ export interface Ctx {
   refIndex: Record<string, number>;
   refLabels?: Record<string, string>;
   xref?: Record<string, string>;
+  target?: Record<string, string>;
   counter: { n: number };
   core?: boolean;
   block?: string;

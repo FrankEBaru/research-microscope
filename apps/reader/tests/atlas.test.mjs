@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { atlasModel, lastVisit, nearest, related, suggestOf, trailPairs, yearOffset } from "../src/lib/atlas.js";
+import { atlasModel, lastVisit, nearest, readingOrder, related, suggestOf, trailPairs, yearOffset } from "../src/lib/atlas.js";
 import { clusterColor } from "../src/lib/layout.js";
 
 function paper(id, extra = {}) {
@@ -151,6 +151,18 @@ test("no papers: explore nodes sit on a circle", () => {
   assert.equal(model.points.length, 2);
   assert.equal(model.trail.length, 1);
   assert.equal(model.lanes.length, 0);
+});
+
+test("reading order follows the search rank, lowest rank first", () => {
+  const model = atlasModel({
+    papers: [paper(3), paper(1), paper(2)],
+    edges: [],
+    layout: { points: [], groups: [] },
+    states: {},
+    explore: null,
+  });
+  assert.deepEqual(readingOrder(model.points).map((row) => [row.id, row.n]), [["3", 1], ["1", 2], ["2", 3]]);
+  assert.equal(suggestOf(model), "3");
 });
 
 test("clusterColor is a group token", () => {

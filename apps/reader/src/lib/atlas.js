@@ -391,6 +391,14 @@ export function atlasModel({ papers, edges, layout, states, explore } = {}) {
   };
 }
 
+/** 1 is the paper the search already ranked first. */
+export function readingOrder(points) {
+  return [...(points || [])]
+    .filter((point) => point && point.id)
+    .sort((a, b) => (a.rank - b.rank) || cmpId(a.id, b.id))
+    .map((point, index) => ({ id: point.id, n: index + 1, rank: point.rank }));
+}
+
 export function suggestOf(model) {
   if (model?.visited?.length) return "";
   let best = null;

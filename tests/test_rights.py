@@ -223,8 +223,17 @@ def test_status_file_crops_and_ask(tmp_path, monkeypatch):
         httpd.shutdown()
 
 
-def test_gate_off_keeps_today(tmp_path, monkeypatch):
+def test_gate_flag_words(monkeypatch):
     monkeypatch.setenv("RRM_LICENSE_GATE", "0")
+    assert gate_on() is False
+    monkeypatch.setenv("RRM_LICENSE_GATE", "on")
+    assert gate_on() is True
+    monkeypatch.setenv("RRM_LICENSE_GATE", "OFF")
+    assert gate_on() is False
+
+
+def test_gate_off_keeps_today(tmp_path, monkeypatch):
+    monkeypatch.setenv("RRM_LICENSE_GATE", "off")
     m = _map(tmp_path)
     src = _paper(4, "1706.03762")
     out = gate_paper_response(src, m)

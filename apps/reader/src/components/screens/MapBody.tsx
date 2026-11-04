@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { mapLayout } from "@/lib/backend.js";
 import { atlasModel, lastVisit, suggestOf } from "@/lib/atlas.js";
-import Atlas, { Legend } from "../atlas/Atlas";
+import Atlas, { Legend, ReadFirst } from "../atlas/Atlas";
 import { AtlasCard } from "../atlas/Card";
 import type { AtlasCtx } from "./types";
 
@@ -61,11 +61,12 @@ export default function MapBody({ atlasCtx, onLayout }: { atlasCtx: AtlasCtx; on
     <div className="atlas-screen" data-live-map>
       <div className="atlas-grid">
         <div className="plot">
-          <Atlas model={model} mode="full" hereId={hereId} suggestId={suggested} selected={selected} drawSelection={linked} onSelect={pick} onOpen={scan} />
+          <Atlas model={model} mode="full" hereId={hereId} suggestId={suggested} selected={selected} drawSelection={linked} laneId={atlasCtx.laneId || ""} onSelect={pick} onOpen={scan} />
         </div>
-        <AtlasCard model={model} explore={atlasCtx.explore} states={atlasCtx.states} selected={selected} hereId={hereId} suggestId={suggested} onScan={scan} onRead={read} onPick={pick} />
+        <AtlasCard model={model} explore={atlasCtx.explore} states={atlasCtx.states} selected={selected} hereId={hereId} suggestId={suggested} onScan={scan} onRead={read} onPick={pick} onOpen={read} />
       </div>
       <Legend />
+      <ReadFirst points={model.points || []} onPick={pick} />
     </div>
   );
 }

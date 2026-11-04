@@ -52,7 +52,7 @@ export function TableChart({ model, n, predict = true, tableId }: { model: any; 
           label="Column"
           value={String(col)}
           onChange={(v) => setCol(Number(v))}
-          options={cols.map((c) => ({ value: String(c), label: model.headers[c] || `Column ${c + 1}` }))}
+          options={cols.map((c) => ({ value: String(c), label: <Rich text={model.headers[c] || `Column ${c + 1}`} /> }))}
         />
         <div className="fc-r">
           {predict && <Switch checked={ask} onChange={setAsk} label="Predict first" />}
@@ -72,7 +72,7 @@ export function TableChart({ model, n, predict = true, tableId }: { model: any; 
         </div>
       </div>
       {hide && <span className="sr-only" role="status">Choose the row you think is highest in {model.headers[col]}.</span>}
-      {ask && guess !== null && top && <p className="fig-msg tp-result" role="status">You chose <b>{guess}</b>. The highest is <b>{top.label}</b>.</p>}
+      {ask && guess !== null && top && <p className="fig-msg tp-result" role="status">You chose <b><Rich text={guess} /></b>. The highest is <b><Rich text={top.label} /></b>.</p>}
       <div className={`tbars${hide ? " bars--q" : ""}`}>
         {data.map((d: any) => (
           <div
@@ -86,7 +86,7 @@ export function TableChart({ model, n, predict = true, tableId }: { model: any; 
             onMouseEnter={() => ping(tableId, d.label)}
             onMouseLeave={() => ping(tableId, "")}
           >
-            <span className="tb-label" title={d.label}>{d.label}</span>
+            <span className="tb-label" title={d.label}><Rich text={d.label} /></span>
             <span className="tb-track">{hide ? <i className="b-q" /> : <i className={`fill${d.value === max ? " is-max" : ""}`} style={{ width: `${Math.max(1.5, d.frac * 100)}%` }} />}</span>
             <span className="tb-val tnum">{hide ? "?" : <Rich text={d.raw} />}</span>
           </div>

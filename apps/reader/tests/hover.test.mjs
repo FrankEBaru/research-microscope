@@ -21,11 +21,33 @@ const blocks = [
 
 test("el símbolo usa la frase anterior que lo contiene, o dice que el paper no lo define", () => {
   const early = symbolHover(blocks, "\\alpha", { block: "p1", index: 0 });
+  assert.equal(early.here, true);
   assert.match(early.text, /defined here/);
+  assert.match(early.shown, /\$\\alpha\$/);
+  assert.match(early.shown, /defined here/);
   const later = symbolHover(blocks, "\\alpha", { block: "p2", index: 0 });
   assert.match(later.text, /defined here/);
+  assert.equal(later.here, false);
   const missing = symbolHover(blocks, "\\gamma", { block: "p2", index: 0 });
   assert.equal(missing.text, UNDEFINED);
+  assert.equal(missing.shown, undefined);
+});
+
+test("una H en math es símbolo: otra frase la explica, la palabra Here no", () => {
+  const rows = [{ id: "p", kind: "p", sents: [
+    [{ t: "text", v: "Let " }, { t: "math", v: "H" }, { t: "text", v: " be the hidden state of the layer." }],
+    [{ t: "text", v: "Here the model copies between columns." }],
+    [{ t: "text", v: "Then " }, { t: "math", v: "H" }, { t: "text", v: " is reused." }],
+  ] }];
+  const onDef = symbolHover(rows, "H", { block: "p", index: 0 });
+  assert.equal(onDef.here, true);
+  assert.match(onDef.text, /hidden state/);
+  const onReuse = symbolHover(rows, "H", { block: "p", index: 2 });
+  assert.equal(onReuse.here, false);
+  assert.match(onReuse.text, /hidden state/);
+  const onWord = symbolHover(rows, "H", { block: "p", index: 1 });
+  assert.match(onWord.text, /hidden state/);
+  assert.equal(onWord.here, false);
 });
 
 test("la ecuación muestra las frases de donde sale y la tabla el pie, sin un número nuevo", () => {

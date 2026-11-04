@@ -22,7 +22,7 @@ from pathlib import Path
 
 import modal
 
-from rrm.demo_guard import add_error_json, check, cors_kwargs
+from rrm.demo_guard import add_error_json, check, cors_kwargs, failure
 from rrm.demo_warm import scaledown_window
 from rrm.features import core_mode, features_mode
 from rrm.panorama import docs_for, parse_request, run as run_panorama
@@ -119,6 +119,10 @@ if modal.is_local():
         "RRM_CLAIMS": os.environ.get("RRM_CLAIMS", ""),
         # Vacío: el lector no abre /data/passages. 1 consulta el índice por embedding.
         "RRM_PASSAGES": os.environ.get("RRM_PASSAGES", ""),
+        # Demo personal: off muestra el texto completo. on/1 vuelve a la compuerta.
+        "RRM_LICENSE_GATE": os.environ.get("RRM_LICENSE_GATE", "off"),
+        # Vacío: /ask y /notes no adjuntan el prompt. Una ruta guarda el crudo en la respuesta.
+        "RRM_RAW_DUMP": os.environ.get("RRM_RAW_DUMP", ""),
     })
 else:
     secret = modal.Secret.from_dict({})
@@ -987,11 +991,12 @@ def api():
     web.add_middleware(CORSMiddleware, **cors_kwargs())
 
     def gate(request: Request, allow_query: bool):
-        code = check(
-            request.headers.get("x-rrm-demo"),
-            request.query_params.get("k") if allow_query else None,
-            request.headers.get("origin"),
-        )
+        header = request.headers.get("x-rrm-demo")
+        query = request.query_params.get("k") if allow_query else None
+        origin = request.headers.get("origin")
+        code = check(header, query, origin)
+        if code == 401:
+            return JSONResponse({"error": failure(header, query) or "mismatch"}, status_code=401)
         if code:
             return Response(status_code=code)
         return None
@@ -1080,10 +1085,17 @@ def api():
             if paper.get("corpusid") is None:
                 paper = dict(paper)
                 paper["corpusid"] = cid
+            from rrm.reader.metacall import raw_dump_on, take_raw
             from rrm.reader.notes import answer_notes
             from rrm.reader.phrases import read_phrases
 
-            return answer_notes(paper, read_phrases(folder))
+            if raw_dump_on():
+                take_raw()
+            body = answer_notes(paper, read_phrases(folder))
+            if raw_dump_on() and isinstance(body, dict):
+                body = dict(body)
+                body["raw"] = take_raw()
+            return body
         except Exception:
             return empty
 

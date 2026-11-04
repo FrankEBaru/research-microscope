@@ -17,6 +17,12 @@ const DROP = new Set([
   "toprule", "midrule", "bottomrule", "tabularnewline",
 ]);
 const STYLE = { it: "em", em: "em", bf: "strong", bfit: "strong", sc: "em", rm: "span", tt: "code", textbf: "strong", textit: "em" };
+const STRUCTURAL = new Set([
+  "footnote", "footnotetext", "footnotemark", "caption", "subcaption", "captionof",
+  "paragraph", "subparagraph", "section", "subsection", "subsubsection",
+  "chapter", "part", "item", "abstract", "thanks", "title", "author",
+  "cite", "ref", "eqref", "url", "href", "label", "captionsetup",
+]);
 const ACCENT = {
   '"': { a: "ä", e: "ë", i: "ï", o: "ö", u: "ü", y: "ÿ", A: "Ä", E: "Ë", I: "Ï", O: "Ö", U: "Ü" },
   "'": { a: "á", e: "é", i: "í", o: "ó", u: "ú", y: "ý", A: "Á", E: "É", I: "Í", O: "Ó", U: "Ú" },
@@ -49,7 +55,11 @@ function readCommand(s, i) {
   const name = m[1];
   if (s[j] === "*") j += 1;
   const args = [];
-  while (s[j] === "[" || s[j] === "{") {
+  while (true) {
+    let k = j;
+    while (s[k] === " " || s[k] === "\n" || s[k] === "\t") k += 1;
+    if (s[k] !== "[" && s[k] !== "{") break;
+    j = k;
     if (s[j] === "[") {
       let d = 0;
       let closed = false;
@@ -124,12 +134,45 @@ export function parseProse(input) {
   let depth = 0;
   const s = s0;
   while (i < s.length) {
+    if (s.startsWith("\\begingroup", i)) {
+      const window = s.slice(i, i + 900);
+      if (window.includes("NAT@")) {
+        const endg = window.indexOf("\\endgroup");
+        const chunk = endg >= 0 ? window.slice(0, endg) : window.slice(0, 500);
+        const braced = [...chunk.matchAll(/\{([A-Za-z][A-Za-z0-9:_+-]{2,})\}/g)];
+        const bare = chunk.match(/[A-Z][A-Za-z0-9:_+-]{3,}/g);
+        const key = braced.length ? braced[braced.length - 1][1] : (bare ? bare[bare.length - 1] : "");
+        if (key) {
+          flush();
+          out.push({ t: "cite", keys: [key] });
+          const at = chunk.lastIndexOf(key);
+          let next = i + at + key.length;
+          if (endg >= 0 && endg < at + key.length + 40) next = i + endg + "\\endgroup".length;
+          i = next;
+          continue;
+        }
+      }
+    }
     if (s.startsWith("\\def\\citename#1", i)) {
       const m = CITE_DUMP.exec(s.slice(i));
       if (m && m.index === 0) {
         flush();
         out.push({ t: "cite", keys: [m[1]] });
         i += m[0].length;
+        continue;
+      }
+    }
+    if (s.startsWith("\\(", i) || s.startsWith("\\[", i)) {
+      const display = s.startsWith("\\[", i);
+      const close = display ? "\\]" : "\\)";
+      const end = s.indexOf(close, i + 2);
+      if (end > i) {
+        const body = s.slice(i + 2, end).trim();
+        if (body) {
+          flush();
+          out.push({ t: "math", v: body, display });
+        }
+        i = end + close.length;
         continue;
       }
     }
@@ -169,10 +212,27 @@ export function parseProse(input) {
     }
     if (s[i] === "\\") {
       if (s[i + 1] === "\\") { buf += " "; i += 2; continue; }
+      const loose = takeLooseMath(s, i);
+      if (loose) {
+        flush();
+        out.push({ t: "math", v: loose[0], display: false });
+        i = loose[1];
+        continue;
+      }
       const cmd = readCommand(s, i);
       if (!cmd) { buf += s[i]; i += 1; continue; }
       const accent = accentChar(cmd.name, s, cmd.j);
       if (accent && cmd.args.length === 0) { buf += accent[0]; i = accent[1]; continue; }
+      if (cmd.name === "tnote" || cmd.name === "tnotetext") {
+        if (cmd.args.length) { i = cmd.j; continue; }
+        if (s[cmd.j] === "{") {
+          const g = readGroup(s, cmd.j);
+          i = g ? g[1] : cmd.j + 1;
+          continue;
+        }
+        i = cmd.j;
+        continue;
+      }
       if (cmd.name === "boldmath") {
         const arg = cmd.args[0] || "";
         const inner = /^\$([^$]+)\$$/.exec(arg.trim());
@@ -215,6 +275,7 @@ export function parseProse(input) {
         continue;
       }
       if (DROP.has(cmd.name)) { i = cmd.j; continue; }
+      if (isAnnotation(cmd)) { i = cmd.j; continue; }
       if (cmd.args.length && !/\\/.test(cmd.args[cmd.args.length - 1])) {
         pushParsed(parseProse(cmd.args[cmd.args.length - 1]));
         i = cmd.j;
@@ -248,11 +309,137 @@ export function parseProse(input) {
   return tidy(out);
 }
 
+const GREEK = {
+  alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε", theta: "θ", lambda: "λ",
+  mu: "μ", pi: "π", rho: "ρ", sigma: "σ", tau: "τ", phi: "φ", omega: "ω",
+  Theta: "Θ", Sigma: "Σ", Omega: "Ω",
+};
+
+function flatMath(tex) {
+  return String(tex || "")
+    .replace(/\s+/g, "")
+    .replace(/\\([A-Za-z]+)/g, (_, name) => GREEK[name] || "")
+    .replace(/[{}\\^_]/g, "");
+}
+
+function echoOf(tex) {
+  const flat = flatMath(tex);
+  if (!flat || flat.length > 48) return "";
+  return flat;
+}
+
+/** $d$ seguido de otra d, o θθ: el parser dejó el símbolo y además su texto. */
+function collapseEcho(nodes) {
+  const out = [];
+  for (const n of nodes) {
+    const prev = out[out.length - 1];
+    if (n.t === "text" && prev && prev.t === "math") {
+      const echo = echoOf(prev.v);
+      if (echo && n.v.startsWith(echo)) {
+        const rest = n.v.slice(echo.length);
+        const boundary = echo.length > 1 || !/^[A-Za-z]/.test(rest) || rest[0] === echo[0];
+        if (boundary) {
+          if (rest) out.push({ ...n, v: rest });
+          continue;
+        }
+      }
+    }
+    out.push(n);
+  }
+  return out;
+}
+
+/** \\intertext parte una ecuación que KaTeX no puede tragar entera. */
+export function splitIntertext(tex) {
+  const s = String(tex || "");
+  const re = /\\intertext\s*\{/g;
+  const parts = [];
+  let i = 0;
+  let m;
+  while ((m = re.exec(s))) {
+    const before = s.slice(i, m.index);
+    let depth = 1;
+    let j = re.lastIndex;
+    for (; j < s.length && depth > 0; j++) {
+      if (s[j] === "\\") { j += 1; continue; }
+      if (s[j] === "{") depth += 1;
+      else if (s[j] === "}") depth -= 1;
+    }
+    if (depth > 0) break;
+    if (before.trim()) parts.push({ t: "math", v: before });
+    const inner = s.slice(re.lastIndex, j - 1).trim();
+    if (inner) parts.push({ t: "text", v: inner });
+    i = j;
+    re.lastIndex = j;
+  }
+  const tail = s.slice(i);
+  if (tail.trim() || !parts.length) parts.push({ t: "math", v: tail });
+  return parts;
+}
+
+const LOOSE_MATH = new Set([
+  "frac", "dfrac", "tfrac", "sqrt", "binom", "sum", "prod", "int",
+  "Big", "Bigg", "bigg", "bigl", "bigr", "Bigl", "Bigr", "Biggl", "Biggr",
+  "left", "right", "mathrm", "mathbf", "boldsymbol", "operatorname", "mathbb",
+  "overline", "bar", "hat", "tilde", "vec",
+]);
+
+/** Fórmulas que perdieron los dólares: \\Big(\\frac{x}{\\sqrt{2}}\\Big). */
+function takeLooseMath(s, i) {
+  const name = /^\\([A-Za-z]+)/.exec(s.slice(i));
+  if (!name || !LOOSE_MATH.has(name[1])) return null;
+  let j = i;
+  let depth = 0;
+  let started = false;
+  while (j < s.length) {
+    const c = s[j];
+    if (c === "\\") {
+      const nxt = /^\\([A-Za-z]+)/.exec(s.slice(j));
+      if (depth === 0 && started && nxt && !LOOSE_MATH.has(nxt[1]) && !GREEK[nxt[1]]) break;
+      if (!nxt) break;
+      started = true;
+      j += nxt[0].length;
+      continue;
+    }
+    if (c === "{") { depth += 1; started = true; j += 1; continue; }
+    if (c === "}") {
+      if (!depth) break;
+      depth -= 1;
+      j += 1;
+      continue;
+    }
+    if (depth === 0 && started && /[A-Za-z]/.test(c)) break;
+    if (depth === 0 && started && c === " " && s[j + 1] !== "\\" && s[j + 1] !== "^" && s[j + 1] !== "_") break;
+    if ("^_(),.[]|+-=<>*/ ".includes(c) || /[0-9]/.test(c)) { started = true; j += 1; continue; }
+    break;
+  }
+  let body = s.slice(i, j).trim();
+  if (!/\\(?:frac|dfrac|tfrac|sqrt|Big|boldsymbol|mathrm)/.test(body)) return null;
+  body = body.replace(/(\\(?:Bigg|bigg|Big|big)[r)])(?:\s*\1)+$/, "$1");
+  return [body, j];
+}
+
+function isAnnotation(cmd) {
+  if (!cmd || !cmd.args || !cmd.args.length) return false;
+  if (UNWRAP.has(cmd.name) || STYLE[cmd.name] || DROP.has(cmd.name) || STRUCTURAL.has(cmd.name)) return false;
+  const arg = String(cmd.args[cmd.args.length - 1] || "");
+  if (arg.length < 40 || (arg.match(/ /g) || []).length <= 4) return false;
+  const commentName = /todo|fixme|comment|xxx|remark/i.test(cmd.name);
+  const personal = /\b(?:I|we|I'd|I'm|TODO|FIXME)\b/.test(arg);
+  return commentName || personal;
+}
+
 function tidy(nodes) {
   const out = [];
   for (const n of nodes) {
     if (n.t === "text") {
-      const v = n.v.replace(/[ \t]{2,}/g, " ");
+      const v = n.v
+        .replace(/\[cite\]/gi, "")
+        .replace(/---/g, "—")
+        .replace(/--/g, "–")
+        .replace(/([\u0391-\u03A9\u03B1-\u03C9])\1/g, "$1")
+        .replace(/[ \t]{2,}/g, " ")
+        .replace(/,{2,}/g, ",");
       if (!v) continue;
       const prev = out[out.length - 1];
       if (prev && prev.t === "text") prev.v += v;
@@ -378,12 +565,33 @@ export function presentInlines(inls) {
         blocks: (x.blocks || []).map((b) => ({ ...b, inlines: presentInlines(b.inlines) })),
       });
     } else if (x.t === "math") {
-      const ref = /^\\(?:eqref|ref|autoref|cref|Cref)\{([^{}]+)\}$/.exec(String(x.v || "").trim());
+      const v = String(x.v || "");
+      const ref = /^\\(?:eqref|ref|autoref|cref|Cref)\{([^{}]+)\}$/.exec(v.trim());
       if (ref) out.push({ t: "ref", label: ref[1].trim() });
+      else if (/\\texttt\b/.test(v) && /\([A-Za-z]+;/.test(v)) out.push(...parseProse(v));
       else out.push(x);
     } else out.push(x);
   }
   flush();
+  return liftLabels(collapseEcho(out));
+}
+
+const LABEL_RE = /\b((?:fig|figure|tab|table|eq|eqn|app|appendix|sec|section|thm|lem|lemma|prop|cor|def|rem|alg|lst|assumption|claim|conj):[A-Za-z0-9_-]+)\b/g;
+
+function liftLabels(nodes) {
+  const out = [];
+  for (const n of nodes) {
+    if (n.t !== "text" || !LABEL_RE.test(n.v)) { LABEL_RE.lastIndex = 0; out.push(n); continue; }
+    LABEL_RE.lastIndex = 0;
+    let last = 0;
+    let m;
+    while ((m = LABEL_RE.exec(n.v))) {
+      if (m.index > last) out.push({ t: "text", v: n.v.slice(last, m.index) });
+      out.push({ t: "ref", label: m[1] });
+      last = m.index + m[0].length;
+    }
+    if (last < n.v.length) out.push({ t: "text", v: n.v.slice(last) });
+  }
   return out;
 }
 
