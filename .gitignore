@@ -75,3 +75,27 @@ apps/reader/shots/
 .demo-urls
 .shots98/
 /offline-final/
+
+# Paper files and media: never committed (papers stay out of the public repo)
+*.pdf
+*.tar.gz
+*.mp4
+*.mov
+*.wav
+*.mp3
+apps/reader/.cache/
+apps/reader/public/papers/
+
+# Video pipeline outputs and personal recordings
+video/out/
+video/public/voice/
+video/public/takes/
+video/public/audio/
+
+# Editors and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.log
