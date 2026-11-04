@@ -224,6 +224,13 @@
   cursor: pointer;
 }
 
+/* RRM-97: una acción por referencia del globo. */
+.folio .popover .pop-cite + .pop-cite { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.folio .popover .pop-cite .pop-ref { margin: 0; }
+.folio .popover .pop-acts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 6px 0 0; }
+.folio .popover .pop-acts .pop-go { min-height: 28px; }
+.folio .popover .pop-go:focus-visible { outline: none; border-radius: var(--r-xs); box-shadow: 0 0 0 2px var(--focus-gap), 0 0 0 4px var(--focus); }
+
 .folio .sec-end { margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--rule); }
 .folio .yw {
   display: inline-flex;

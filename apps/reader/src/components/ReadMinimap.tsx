@@ -39,7 +39,20 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [narrow, setNarrow] = useState(false);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
+  const [focusId, setFocusId] = useState("");
   useEffect(() => { setHost(document.body); }, []);
+  // RRM-97: «See in the atlas» from a citation opens the atlas with that paper selected.
+  useEffect(() => {
+    const onAtlas = (e: Event) => {
+      const id = String((e as CustomEvent).detail?.id || "");
+      if (!id) return;
+      setFocusId(id);
+      setFrom(btn.current);
+      setOpen(true);
+    };
+    window.addEventListener("rrm-atlas", onAtlas);
+    return () => window.removeEventListener("rrm-atlas", onAtlas);
+  }, []);
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 760px)");
     const apply = () => {
@@ -53,9 +66,10 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
   }, []);
   const close = () => {
     setOpen(false);
+    setFocusId("");
     btn.current?.focus();
   };
-  const scan = (id: string) => { onOpen(id); setOpen(false); };
+  const scan = (id: string) => { onOpen(id); setOpen(false); setFocusId(""); };
   const read = (id: string) => {
     source?.onWant?.(id);
     markRead(id);
@@ -76,7 +90,7 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-label="Open the atlas"
-          onClick={() => { setFrom(btn.current); setOpen(true); }}
+          onClick={() => { setFocusId(""); setFrom(btn.current); setOpen(true); }}
         >Atlas</button>
       ) : (
       <button
@@ -86,7 +100,7 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label="Open the atlas"
-        onClick={() => { setFrom(btn.current); setOpen(true); }}
+        onClick={() => { setFocusId(""); setFrom(btn.current); setOpen(true); }}
       >
         <Atlas model={model} mode="mini" hereId={hereId} suggestId={suggested} />
         <span className="mini-foot">Atlas · {n} explored</span>
@@ -103,6 +117,7 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
         states={source?.states}
         hereId={hereId}
         suggestId={suggested}
+        focusId={focusId}
         onScan={scan}
         onRead={read}
       />

@@ -5,7 +5,7 @@ import { AtlasCard } from "./Card";
 import { Icon } from "../ui";
 
 export default function Overlay({
-  open, onClose, from, query, model, explore, states, hereId, suggestId, onScan, onRead,
+  open, onClose, from, query, model, explore, states, hereId, suggestId, focusId = "", onScan, onRead,
 }: {
   open: boolean;
   onClose: () => void;
@@ -16,12 +16,13 @@ export default function Overlay({
   states?: Record<string, any>;
   hereId: string;
   suggestId: string;
+  focusId?: string;
   onScan: (id: string) => void;
   onRead: (id: string) => void;
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [out, setOut] = useState(false);
-  const [selected, setSelected] = useState(hereId || suggestId || "");
+  const [selected, setSelected] = useState(focusId || hereId || suggestId || "");
   const [linked, setLinked] = useState(false);
   const closing = useRef(false);
   const onCloseRef = useRef(onClose);
@@ -44,9 +45,9 @@ export default function Overlay({
     if (!open) return;
     closing.current = false;
     setOut(false);
-    setSelected(hereId || suggestId || "");
-    setLinked(false);
-  }, [open, hereId, suggestId]);
+    setSelected(focusId || hereId || suggestId || "");
+    setLinked(Boolean(focusId));
+  }, [open, hereId, suggestId, focusId]);
 
   useLayoutEffect(() => {
     if (!open) return;

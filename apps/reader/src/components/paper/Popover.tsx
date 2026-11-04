@@ -13,28 +13,39 @@ import { FigImg } from "./Figures";
 
 export type PopState = { key: string; rect: DOMRect } | null;
 
-export default function Popover({ pop, paper, model, content, core, pack, titleOf, onOpen }: { pop: NonNullable<PopState>; paper: Paper; model: any; content: any; core?: boolean; pack?: any; titleOf?: (id: string) => string; onOpen?: (id: string, why: string) => void }) {
+export default function Popover({ pop, paper, model, content, core, pack, titleOf, onOpen, inMap, onAtlas }: { pop: NonNullable<PopState>; paper: Paper; model: any; content: any; core?: boolean; pack?: any; titleOf?: (id: string) => string; onOpen?: (id: string, why: string) => void; inMap?: (id: string) => boolean; onAtlas?: (id: string) => void }) {
   const [kind, ...r] = pop.key.split("|");
   const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, counter: { n: 0 } };
   let body: any = null;
   if (kind === "c") {
     const keys = r[0].split(",");
-    const openId = keys.map((k) => resolveCite(k, paper.citeMap)).find(Boolean) || "";
+    // RRM-97: each reference opens on its own. In the map: Open + See in the atlas. Known to S2 only: Open. Unknown: just the text.
     body = (
       <>
         {keys.map((k) => {
-          const brief = briefRef(paper.refs[k] || "");
+          const raw = String(paper.refs[k] || "").replace(/\s+/g, " ").trim();
+          const brief = briefRef(raw);
           const n = paper.refLabels?.[k] ?? model.refIndex[k] ?? k;
+          const id = resolveCite(k, paper.citeMap);
+          const here = Boolean(id && inMap?.(id));
+          const short = raw.length > 220 ? `${raw.slice(0, 220).replace(/\s+\S*$/, "")}…` : raw;
           return (
-            <p key={k} className="pop-ref">
-              {brief.who ? <b className="pop-who">{brief.who}</b> : <b className="pop-who">{`Reference ${n}`}</b>}
-              {brief.title ? <span>{brief.title}</span> : <span>title not found in the reference</span>}
-            </p>
+            <div key={k} className="pop-cite" data-ref={k} data-cite-id={id || undefined}>
+              <p className="pop-ref">
+                <b className="pop-who">{brief.who || `[${n}]`}</b>
+                <span>{brief.title || short || `Reference ${n}`}</span>
+              </p>
+              {id && onOpen && (
+                <p className="pop-acts">
+                  <button type="button" className="pop-go press" onClick={() => onOpen(id, "cita en el paper")}>Open →</button>
+                  {here && onAtlas && <button type="button" className="pop-go press" onClick={() => onAtlas(id)}>See in the atlas</button>}
+                </p>
+              )}
+            </div>
           );
         })}
         <div className="pop-f">
           <Prov kind="paper" text="from the paper’s references" />
-          {openId && onOpen && <button type="button" className="pop-go press" onClick={() => onOpen(openId, "cita en el paper")}>Open →</button>}
         </div>
       </>
     );

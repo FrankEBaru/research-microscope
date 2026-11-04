@@ -8,7 +8,7 @@ import { bibtex } from "@/lib/bibtex.js";
 import { eqTex, fetchNotes, paperKey, refText, sourcePdfUrl } from "@/lib/backend.js";
 import { collectV2 } from "@/lib/artifacts.js";
 import { pdfPagesOnly, presentInlines, splitIntertext, visibleInlines } from "@/lib/prose.js";
-import { faltaText } from "@/lib/falta.js";
+import { absenceText } from "@/lib/falta.js";
 import { hasConclusion, scanIds } from "@/lib/scan.js";
 import { citeName } from "@/lib/layout.js";
 import { UNDEFINED, symbolHover } from "@/lib/hover.js";
@@ -28,6 +28,7 @@ import Companion, { Offer } from "./Companion";
 import { Ctx, plainOf } from "./paper/inline";
 import { GapView, ShapePill, artsAt, notesAt, normPhrase, repeatsBlock, samePhrase } from "./paper/GapNotes";
 import Popover, { PopState } from "./paper/Popover";
+import OpenPhases, { type OpenTrack } from "./paper/OpenPhases";
 import { Table } from "./paper/TableFig";
 import { Cited } from "./paper/Cited";
 import { citingIndex } from "@/lib/figrefs.js";
@@ -264,7 +265,7 @@ export function mountKey(paper: Paper) {
   return paper.upgraded_from ? "body-up" : "body";
 }
 
-export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote, showInstrument = true, showCrops = true, core = false, burstIds, map, explore, openId, onOpenPaper, onPromote, atlasCtx }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string; pdf?: boolean; oa_pdf?: string; arxiv?: string } | null; showInstrument?: boolean; showCrops?: boolean; core?: boolean; burstIds?: string[]; map?: { papers: any[]; edges: any[]; layout: any } | null; explore?: { nodes?: any[]; edges?: any[] } | null; openId?: string; onOpenPaper?: (id: string, why: string) => void; onPromote?: () => void; atlasCtx?: AtlasCtx }) {
+export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote, showInstrument = true, showCrops = true, core = false, burstIds, map, explore, openId, onOpenPaper, onPromote, atlasCtx, openTrack }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string; pdf?: boolean; oa_pdf?: string; arxiv?: string } | null; showInstrument?: boolean; showCrops?: boolean; core?: boolean; burstIds?: string[]; map?: { papers: any[]; edges: any[]; layout: any } | null; explore?: { nodes?: any[]; edges?: any[] } | null; openId?: string; onOpenPaper?: (id: string, why: string) => void; onPromote?: () => void; atlasCtx?: AtlasCtx; openTrack?: OpenTrack | null }) {
   const art = useRef<HTMLElement>(null);
   const [pop, setPop] = useState<PopState>(null);
   const [pack, setPack] = useState<any>(null);
@@ -727,6 +728,9 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     return title.length > 90 ? `${title.slice(0, 90).replace(/\s+\S*$/, "").trim()}…` : title;
   };
   const showMini = Boolean(core && (map || (explore?.nodes || []).length > 0));
+  const inMap = (id: string) => [...(map?.papers || []), ...(atlasCtx?.papers || [])].some((item) => paperKey(item) === id || String(item?.corpusid ?? "") === id);
+  // RRM-97: the minimap owns the atlas overlay; it opens it with this paper selected.
+  const seeInAtlas = (id: string) => { citePin.current = ""; setPop(null); window.dispatchEvent(new CustomEvent("rrm-atlas", { detail: { id } })); };
   const showNav = model.toc.length > 0 || showMini;
 
   const askBox = (variant: "slot" | "section", sectionId: string, label: string) => (
@@ -1073,14 +1077,14 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             {absHref ? <> · <a href={absHref} target="_blank" rel="noreferrer">{rights?.arxiv ? `arXiv:${rights.arxiv}${rights.version || ""}` : "arXiv"}</a></> : null}
           </Notice>
         )}
-        {undrawn && !gated && <Notice kind="absence">{`Missing: ${faltaText(remote?.reason)}`}</Notice>}
+        {undrawn && !gated && <Notice kind="absence">{absenceText(remote?.reason, venue, Boolean(paper.abstract || quote))}</Notice>}
         {undrawn && !gated && pdfHref && <iframe className="source-pdf" title="Paper PDF" src={pdfHref} />}
         {undrawn && !gated && !pdfHref && honest && <p className="ah-links"><a href={honest} target="_blank" rel="noreferrer">No PDF in the reader, on arXiv, or as an open-access PDF. The record is here.</a></p>}
         {undrawn && core && askBox("slot", abstractId, "Abstract")}
         {!undrawn && pdfPagesOnly(paper.blocks) && <Notice kind="absence">This e-print has no text: the pages are inserted from a PDF.</Notice>}
         {!undrawn && !abstractId && core && !reading && askBox("slot", "", sectionLabel)}
         {core && remote && !["done", "abstract_only", "failed"].includes(String(remote.status || "")) && (paper.blocks || []).length < 2 && (
-          <><Skeleton lines={7} /><Pulse mode="loading" /></>
+          openTrack ? <><OpenPhases track={openTrack} compact /><Skeleton lines={7} /></> : <><Skeleton lines={7} /><Pulse mode="loading" /></>
         )}
         {!undrawn && rows}
         {!gated && (
@@ -1092,7 +1096,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             )}
           </footer>
         )}
-        {pop && <Boundary name="popover" resetKeys={[pop.key]}><Popover pop={pop} paper={paper} model={model} content={content} core={core} pack={pack} titleOf={titleOf} onOpen={onOpenPaper} /></Boundary>}
+        {pop && <Boundary name="popover" resetKeys={[pop.key]}><Popover pop={pop} paper={paper} model={model} content={content} core={core} pack={pack} titleOf={titleOf} onOpen={onOpenPaper} inMap={inMap} onAtlas={showMini ? seeInAtlas : undefined} /></Boundary>}
       </article>
       {wide && <Margin notes={side} layoutKey={layoutKey} />}
       {companion && <Companion offer={offer} target={point} onAnswer={() => setOffer(null)} onHide={() => onHideCompanion?.()} />}
