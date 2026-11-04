@@ -121,14 +121,18 @@ export function sectionCite(meta: LiveEntry["meta"]) {
   return bits.filter(Boolean).join(" · ");
 }
 
+// RRM-98: where bundle.json and ui.woff2 live. A path under public/ or a URL; the data stays in compass
+// (datos/offline/rrm96-widgets or the rrm96-widgets Release) and scripts/liveart_assets.sh copies it in.
+export const LIVEART_BASE = (process.env.NEXT_PUBLIC_RRM_LIVEART_BASE || "/liveart96").replace(/\/$/, "");
+
 let fontBytes: Promise<ArrayBuffer | null> | null = null;
 // R3: the iframe gets the UI font as bytes; the CSP stays closed.
-export function uiFont(base = "/liveart96") {
+export function uiFont(base = LIVEART_BASE) {
   if (!fontBytes) fontBytes = fetch(`${base}/ui.woff2`).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
   return fontBytes;
 }
 
-export async function loadBundle(base = "/liveart96"): Promise<LiveEntry[]> {
+export async function loadBundle(base = LIVEART_BASE): Promise<LiveEntry[]> {
   const r = await fetch(`${base}/bundle.json`, { cache: "no-store" });
   if (!r.ok) throw new Error(`bundle ${r.status}`);
   const data = await r.json();

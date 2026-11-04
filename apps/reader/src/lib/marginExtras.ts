@@ -11,17 +11,45 @@
 // Items join the same margin column as the notes, so they align with their
 // anchor and never overlap other notes. Under 1280 px the margin column is not
 // drawn; items with `inline: true` are rendered under their block instead.
-import type { ReactNode } from "react";
+//
+// Extras that load data async (RRM-96 widgets) call refreshMarginExtras() when it arrives; Paper subscribes
+// with useMarginExtrasVersion() and asks every extra again (a re-render, not only a re-layout).
+// An item may list `takes`: things the paper should not draw itself because this extra replaces them
+// ("dk-instrument", "art:<block>:<type>"), so one topic shows up once.
+import { useSyncExternalStore, type ReactNode } from "react";
 
 export type MarginExtraCtx = { paper: any; reading: boolean; core: boolean };
-export type MarginExtraItem = { id: string; anchor: string; dy?: number; kind?: string; inline?: boolean; block?: string; body: ReactNode };
+export type MarginExtraItem = { id: string; anchor: string; dy?: number; kind?: string; inline?: boolean; block?: string; takes?: string[]; body: ReactNode };
 export type MarginExtra = (ctx: MarginExtraCtx) => MarginExtraItem[];
 
 const extras: MarginExtra[] = [];
+const listeners = new Set<() => void>();
+let version = 0;
+
+export function refreshMarginExtras() {
+  version += 1;
+  listeners.forEach((l) => l());
+}
 
 export function registerMarginExtra(fn: MarginExtra) {
   extras.push(fn);
-  return () => { const i = extras.indexOf(fn); if (i >= 0) extras.splice(i, 1); };
+  refreshMarginExtras();
+  return () => { const i = extras.indexOf(fn); if (i >= 0) { extras.splice(i, 1); refreshMarginExtras(); } };
+}
+
+function subscribe(fn: () => void) {
+  listeners.add(fn);
+  return () => { listeners.delete(fn); };
+}
+
+/** Re-render the caller whenever an extra registers or refreshes. Returns a number that changes each time. */
+export function useMarginExtrasVersion() {
+  return useSyncExternalStore(subscribe, () => version, () => 0);
+}
+
+/** Everything the items of this paper replace (see `takes`). */
+export function marginTakes(items: MarginExtraItem[]) {
+  return new Set(items.flatMap((x) => x.takes || []));
 }
 
 /** Never throws: a broken extra drops out instead of taking the paper with it. */

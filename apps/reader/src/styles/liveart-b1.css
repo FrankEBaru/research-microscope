@@ -173,3 +173,12 @@ html.lv96-open body { overflow: hidden; }
 /* The claim sentence in the paper: yellow fill (B.1 "what you point at"), never yellow text */
 .lv96-mark { background: var(--hl-soft); color: inherit; border-radius: 3px; box-shadow: 0 0 0 2px var(--hl-soft); }
 .folio .sn--lv { width: 100%; }
+
+/* RRM-98 · one topic, two views (√dₖ: the RRM-95 instrument first, the Muse figure second). */
+.lv96-tabs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.lv96-panel .lv96-tabs button { height: 32px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--rule-2); font: 500 14px/1 var(--font-ui); color: var(--ink-2); background: var(--sheet); }
+.lv96-panel .lv96-tabs button[aria-selected="true"] { background: var(--ink); border-color: var(--ink); color: var(--page); }
+@media (hover: hover) { .lv96-panel .lv96-tabs button[aria-selected="false"]:hover { border-color: var(--ink-3); color: var(--ink); } }
+.lv96-lead .ins { margin: 14px 0 0; background: none; border: 0; padding: 0; }
+.lv96-lead .ins-h h3 { display: none; }
+.lv96-hook-q .katex { font-size: 1em; }

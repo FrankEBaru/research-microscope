@@ -15,7 +15,8 @@ import { UNDEFINED, symbolHover } from "@/lib/hover.js";
 import { autoSyms, symKey } from "@/lib/symcolor.js";
 import AskBox from "./AskBox";
 import DkInstrument, { dkAnchor } from "./paper/DkInstrument";
-import { marginExtras } from "@/lib/marginExtras";
+import { marginExtras, marginTakes, useMarginExtrasVersion } from "@/lib/marginExtras";
+import "@/lib/liveart-margin";
 import "@/styles/lectura.css";
 
 // Pop de oración con la maqueta «ejemplo simulado… no está conectado». Apagado en core; NEXT_PUBLIC_RRM_SENTENCE_MOCK=1 lo vuelve a mostrar.
@@ -280,6 +281,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   };
   const paintSymRef = useRef<(key: string) => void>(() => {});
   const [symPin, setSymPin] = useState("");
+  useMarginExtrasVersion(); // RRM-98: async extras (live figures) re-render the paper when they arrive
   const [pinAt, setPinAt] = useState<{ block: string; index: number } | null>(null);
   const [reading, setReading] = useState(false);
   const [openAsk, setOpenAsk] = useState("");
@@ -740,6 +742,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const side: MarginNote[] = [];
   // RRM-95: extra margin items (lib/marginExtras.ts). Wide: in the margin column; narrow: under their block when inline.
   const extras = marginExtras({ paper, reading, core });
+  const takes = marginTakes(extras);
   const rows: ReactNode[] = [];
   if (!undrawn) {
     const stack: { id: string; level: number; title: string }[] = [];
@@ -910,7 +913,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               </aside>
             )}
             {showInstrument && !undrawn && att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
-            {core && !undrawn && dkAt && b.id === dkAt && <Boundary name="instrument"><DkInstrument syms={model.syms} /></Boundary>}
+            {core && !undrawn && dkAt && b.id === dkAt && !takes.has("dk-instrument") && <Boundary name="instrument"><DkInstrument syms={model.syms} /></Boundary>}
             {!wide && extras.filter((x) => x.inline && x.block === b.id).map((x) => <div key={x.id} className={`margin-inline sn sn--${x.kind || "extra"}`}>{x.body}</div>)}
             {symbolHere && pinUseful && (
               <div className="margin-inline sn sn--sym">
@@ -938,7 +941,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
 
   function gapPieces(b: Block) {
     if (!core) return null;
-    const arts = artsAt(b.id, pack, local);
+    const arts = artsAt(b.id, pack, local).filter((a) => !takes.has(`art:${b.id}:${a.type}`));
     const host = plainOf(b.inlines || []);
     const notes = (b.kind === "p" || b.kind === "eq") ? notesAt(b.id, pack, local).filter((n: any) => !repeatsBlock(n, b, arts)) : [];
     const artsDrawn = (b.kind === "p" || b.kind === "eq") ? arts.filter((a) => a.type !== "forma") : [];

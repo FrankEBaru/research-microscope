@@ -102,7 +102,11 @@ export function questionMoves(q: Question, controls: Knob[]): Record<string, num
   return Object.keys(out).length ? out : null;
 }
 
-export default function LiveFigure({ entry, from, onClose }: { entry: LiveEntry; from: DOMRect | null; onClose: () => void }) {
+// RRM-98: one topic, one panel. `lead` is a first view drawn by the host (the √dₖ instrument in Attention);
+// the Muse widget becomes the second tab. Without `lead` the panel is exactly RRM-96's.
+export type LeadView = { label: string; node: React.ReactNode; title?: React.ReactNode };
+
+export default function LiveFigure({ entry, from, onClose, lead }: { entry: LiveEntry; from: DOMRect | null; onClose: () => void; lead?: LeadView }) {
   const w = entry.widget;
   const panel = useRef<HTMLDivElement | null>(null);
   const box = useRef<HTMLDivElement | null>(null);
@@ -114,6 +118,8 @@ export default function LiveFigure({ entry, from, onClose }: { entry: LiveEntry;
   const [down, setDown] = useState<string[] | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
+  const [tab, setTab] = useState<"lead" | "muse">(lead ? "lead" : "muse");
+  const onLead = !!lead && tab === "lead";
 
   const close = useCallback(() => {
     if (leaving) return;
@@ -140,14 +146,15 @@ export default function LiveFigure({ entry, from, onClose }: { entry: LiveEntry;
   useEffect(() => {
     document.documentElement.classList.add("lv96-open");
     const t = window.setTimeout(() => closeBtn.current?.focus(), 30);
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    // Esc closes this panel only: the reader's own Esc (back to the map, on window) must not see it.
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
     document.addEventListener("keydown", key);
     return () => { window.clearTimeout(t); document.removeEventListener("keydown", key); document.documentElement.classList.remove("lv96-open"); };
   }, [close]);
 
   useEffect(() => {
     const host = box.current;
-    if (!host || down) return;
+    if (!host || down || onLead) return;
     let live = true;
     let handle: ReturnType<typeof mountSandbox> | null = null;
     uiFont().then((font) => {
@@ -162,7 +169,7 @@ export default function LiveFigure({ entry, from, onClose }: { entry: LiveEntry;
       api.current = handle;
     });
     return () => { live = false; handle?.destroy(); api.current = null; };
-  }, [w, down]);
+  }, [w, down, onLead]);
 
   const set = (id: string, v: number) => {
     setVals((p) => ({ ...p, [id]: v }));
@@ -188,8 +195,16 @@ export default function LiveFigure({ entry, from, onClose }: { entry: LiveEntry;
           <button ref={closeBtn} type="button" className="lv96-x" aria-label="Close live figure" onClick={close}>
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" /></svg>
           </button>
-          <h2 id={`lv96-h-${entry.id}`}>{w.hook || w.title}</h2>
+          <h2 id={`lv96-h-${entry.id}`}>{lead?.title || w.hook || w.title}</h2>
+          {lead ? (
+            <div className="lv96-tabs" role="tablist" aria-label="Views">
+              <button type="button" role="tab" aria-selected={onLead} onClick={() => setTab("lead")}>{lead.label}</button>
+              <button type="button" role="tab" aria-selected={!onLead} onClick={() => setTab("muse")}>{w.hook || w.title}</button>
+            </div>
+          ) : null}
         </header>
+
+        {onLead ? <div className="lv96-lead" role="tabpanel">{lead!.node}</div> : (<>
 
         <section className="lv96-anchor" aria-label="What this figure explains">
           {w.anchor?.latex ? <div className="lv96-eq"><Tex tex={w.anchor.latex} display />{entry.meta.eq && /^\d+$/.test(entry.meta.eq) ? <span className="lv96-eqn">({entry.meta.eq})</span> : null}</div> : null}
@@ -271,6 +286,7 @@ export default function LiveFigure({ entry, from, onClose }: { entry: LiveEntry;
           </span>
           <span className="lv96-prov-r">The figure is an illustration computed in your browser, not a result from the paper.</span>
         </footer>
+        </>)}
       </div>
     </div>,
     document.body,

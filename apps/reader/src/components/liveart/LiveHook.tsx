@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { mountSandbox } from "@/lib/liveart/mount.js";
 import type { LiveEntry } from "@/lib/liveart/live96";
-import LiveFigure from "./LiveFigure";
+import LiveFigure, { type LeadView } from "./LiveFigure";
 
 function Thumb({ entry }: { entry: LiveEntry }) {
   const box = useRef<HTMLSpanElement | null>(null);
@@ -26,7 +26,8 @@ function Thumb({ entry }: { entry: LiveEntry }) {
   return <span className="lv96-thumb-fig" data-ok={ok ? "1" : "0"} ref={box} aria-hidden="true" />;
 }
 
-export default function LiveHook({ entry, inline = false }: { entry: LiveEntry; inline?: boolean }) {
+// RRM-98: `lead` puts a host view first in the panel (√dₖ in Attention); the hook then asks the lead's question.
+export default function LiveHook({ entry, inline = false, lead }: { entry: LiveEntry; inline?: boolean; lead?: LeadView }) {
   const btn = useRef<HTMLButtonElement | null>(null);
   const [from, setFrom] = useState<DOMRect | null>(null);
   const [open, setOpen] = useState(false);
@@ -45,11 +46,11 @@ export default function LiveHook({ entry, inline = false }: { entry: LiveEntry; 
         <Thumb entry={entry} />
         <span className="lv96-hook-b">
           <span className="lv96-hook-k"><i aria-hidden="true" />Live figure</span>
-          <span className="lv96-hook-q">{w.hook || w.title}</span>
-          <span className="lv96-hook-f">Muse · verified {entry.provenance.contract.replace("rrm-widget/", "v")}</span>
+          <span className="lv96-hook-q">{lead?.title || w.hook || w.title}</span>
+          <span className="lv96-hook-f">{lead ? `${lead.label} · Muse figure` : `Muse · verified ${entry.provenance.contract.replace("rrm-widget/", "v")}`}</span>
         </span>
       </button>
-      {open ? <LiveFigure entry={entry} from={from} onClose={() => { setOpen(false); btn.current?.focus(); }} /> : null}
+      {open ? <LiveFigure entry={entry} from={from} lead={lead} onClose={() => { setOpen(false); btn.current?.focus(); }} /> : null}
     </>
   );
 }
