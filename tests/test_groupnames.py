@@ -40,7 +40,7 @@ def test_name_groups_stays_empty_until_a_mock_answers(monkeypatch):
 
     def complete(body):
         assert body["reasoning"]["effort"] == "minimal"
-        assert body["max_output_tokens"] == 800
+        assert body["max_output_tokens"] == 600
         raw = {
             "names": [
                 {"id": "0", "name": "Attention Need"},

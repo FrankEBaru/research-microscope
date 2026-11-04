@@ -480,12 +480,26 @@ export default function Engine() {
     const packs = groupPacks(mapPapers(liveResult), liveResult.layout);
     if (!packs.length) return;
     let stop = false;
+    // RRM-95: the map is already painted with c-TF-IDF names; Muse names fade in
+    // when they arrive. Cached per question for the tab; a slow or failed call
+    // leaves the first names in place.
+    const cacheKey = `rrm.gnames.${normalizeQuestion(namesKey)}`;
+    try {
+      const hit = JSON.parse(sessionStorage.getItem(cacheKey) || "null");
+      if (Array.isArray(hit) && hit.length) {
+        setLiveResult((prev) => (prev ? applyGroupNames(prev, hit) : prev));
+        return;
+      }
+    } catch { /* private mode */ }
+    const t0 = performance.now();
     groupNames(packs).then(
       (body: any) => {
+        note("group-names", `${Math.round(performance.now() - t0)} ms · ${body?.names?.length || 0} names · $${body?.meta?.cost_usd ?? 0}`);
         if (stop || !body?.enabled || !body?.names?.length) return;
+        try { sessionStorage.setItem(cacheKey, JSON.stringify(body.names)); } catch { /* private mode */ }
         setLiveResult((prev) => (prev ? applyGroupNames(prev, body.names) : prev));
       },
-      () => {},
+      () => { note("group-names", `kept c-TF-IDF after ${Math.round(performance.now() - t0)} ms`); },
     );
     return () => { stop = true; };
   }, [namesKey]);

@@ -131,35 +131,71 @@ function laneHeights(rows) {
   });
 }
 
+// RRM-95: a year is a column whose width grows with sqrt(papers that year), so a
+// recent, crowded field does not pile up at the right edge. A few very old
+// outliers (under ~6 %) fold into one "earlier" column at the left instead of
+// stretching the axis back decades. Ticks still name real years.
 function placeX(points) {
   const dated = points.filter((p) => p.year != null);
   const undated = points.filter((p) => p.year == null);
-  const x1 = undated.length ? 786 : 876;
-  const noYearX = undated.length ? 848 : null;
+  const x1 = undated.length ? 800 : 884;
+  const noYearX = undated.length ? 852 : null;
   const ticks = [];
-  let min = null;
-  let max = null;
   if (!dated.length) {
     const x = noYearX ?? 450;
     for (const p of points) p.x = x;
-    return { min, max, ticks, noYearX: x };
+    return { min: null, max: null, ticks, noYearX: x, earlierX: null, cut: null };
   }
-  const ts = dated.map((p) => p.year + yearOffset(p.id));
-  let lo = Math.min(...ts);
-  let hi = Math.max(...ts);
-  if (hi - lo < 1) { lo -= 0.5; hi += 0.5; }
-  const pad = Math.max(0.35, (hi - lo) * 0.06);
-  const a = lo - pad;
-  const b = hi + pad;
-  const X = (t) => X0 + ((t - a) / (b - a)) * (x1 - X0);
-  for (const p of dated) p.x = X(p.year + yearOffset(p.id));
+  const sorted = dated.map((p) => p.year).sort((a, b) => a - b);
+  const min = sorted[0];
+  const max = sorted[sorted.length - 1];
+  let cut = min;
+  if (sorted.length >= 12) {
+    const q = sorted[Math.floor(sorted.length * 0.06)];
+    // Fold only when it saves real room: at least 4 years.
+    if (q - min >= 4) cut = Math.max(q, max - 24);
+  }
+  const early = dated.filter((p) => p.year < cut);
+  const earlierW = early.length ? 46 : 0;
+  const xs = X0 + earlierW;
+  const count = new Map();
+  for (const p of dated) if (p.year >= cut) count.set(p.year, (count.get(p.year) || 0) + 1);
+  const cols = [];
+  let total = 0;
+  for (let year = cut; year <= max; year++) {
+    const w = 0.7 + Math.sqrt(count.get(year) || 0);
+    cols.push({ year, w });
+    total += w;
+  }
+  const span = x1 - xs;
+  let at = xs;
+  const col = new Map();
+  for (const c of cols) {
+    const w = (c.w / total) * span;
+    col.set(c.year, { x: at, w });
+    at += w;
+  }
+  for (const p of dated) {
+    if (p.year < cut) {
+      p.x = X0 + earlierW / 2 + ((hashId(p.id) % 1000) / 999 - 0.5) * 18;
+      continue;
+    }
+    const c = col.get(p.year);
+    const f = (hashId(p.id) % 1000) / 999;
+    p.x = c.x + c.w * (0.18 + 0.64 * f);
+  }
   for (const p of undated) p.x = noYearX;
-  min = Math.min(...dated.map((p) => p.year));
-  max = Math.max(...dated.map((p) => p.year));
-  const span = Math.max(0, max - min);
-  const step = span > 18 ? Math.ceil(span / 10) : 1;
-  for (let year = min; year <= max; year += step) ticks.push({ year, x: X(year) });
-  return { min, max, ticks, noYearX };
+  let lastX = early.length ? X0 + earlierW / 2 + 8 : -1e9;
+  for (const c of cols) {
+    const { x, w } = col.get(c.year);
+    const cx = x + w / 2;
+    const major = c.year === cut || c.year === max || c.year % 5 === 0;
+    if (cx - lastX < 34 && !major) continue;
+    if (cx - lastX < 30) continue;
+    ticks.push({ year: c.year, x: cx, edge: x });
+    lastX = cx;
+  }
+  return { min, max, ticks, noYearX, earlierX: early.length ? X0 + earlierW / 2 : null, cut: early.length ? cut : null };
 }
 
 function separate(items, top, h) {
@@ -179,8 +215,9 @@ function separate(items, top, h) {
         const dx = A.x - B.x;
         const dy = A.y - B.y;
         const d = Math.hypot(dx, dy);
-        if (d < SEP) {
-          const push = (SEP - d) / 2 || 0.5;
+        const need = Math.max(SEP, (A.r || 0) + (B.r || 0) + 3);
+        if (d < need) {
+          const push = (need - d) / 2 || 0.5;
           const s = dy >= 0 ? 1 : -1;
           A.y += s * push;
           B.y -= s * push;
@@ -370,7 +407,17 @@ export function atlasModel({ papers, edges, layout, states, explore } = {}) {
       authors,
       venue: String(paper?.venue || ""),
       abstract: String(paper?.abstract || ""),
+      citations: Number(paper?.citationcount ?? paper?.citations) || 0,
     }));
+  }
+
+  // RRM-95: size says weight. The first five of the ranking are badges; the
+  // rest grow gently with log(citations), so a landmark reads from afar.
+  const ord = new Map(readingOrder(points).map((row) => [row.id, row.n]));
+  for (const p of points) {
+    const n = ord.get(p.id) || 0;
+    p.order = n;
+    p.r = n && n <= 5 ? 9 : Math.min(7.2, 3.4 + 0.95 * Math.log10(1 + p.citations));
   }
 
   const years = placeX(points);

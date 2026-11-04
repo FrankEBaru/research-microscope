@@ -88,8 +88,7 @@ export default function MapScreen({
           <h1>{shownQ}</h1>
           {papers.length > 0 && (
             <p className="map-stats tnum">
-              {papers.length} in the list · {onMap} on the map · {groups.length} groups · full text of {full}
-              {refining ? " · refining groups" : ""}
+              {onMap || papers.length} papers · {groups.length} {groups.length === 1 ? "group" : "groups"}{full ? ` · full text of ${full}` : ""}
             </p>
           )}
         </div>
@@ -112,8 +111,7 @@ export default function MapScreen({
       )}
       {liveErr && <Pulse mode="error" detail={liveErr} />}
       {liveErr && <Notice kind="fault" code={liveCode} />}
-      {papers.length > 0 && (refining || pending) && <Pulse mode="loading" compact detail="Armando el mapa…" />}
-      {papers.length > 0 && !refining && !pending && !liveErr && <Pulse mode="ready" compact />}
+      {papers.length > 0 && (refining || pending) && <Pulse mode="loading" compact detail="Arranging the atlas…" />}
       {empty && (
         <div data-screen="vacio">
           <Notice kind="absence">The burst found no papers for this question.</Notice>

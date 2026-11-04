@@ -1,16 +1,18 @@
 "use client";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-
-function ink(color: string, delay?: string): CSSProperties {
-  const style: CSSProperties & Record<string, string> = { ["--c"]: color };
-  if (delay) style.animationDelay = delay;
-  return style;
-}
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ATLAS_H, ATLAS_W, nearest, readingOrder, related } from "@/lib/atlas.js";
 import { nodeLabel } from "@/lib/layout.js";
 import { Rich } from "@/lib/math";
 
+// RRM-95. Hover never re-renders the dots: the dot layer is memoized and the
+// focus set is applied as classes straight on the SVG nodes. Only the small
+// hover layer (citation lines, ring, tooltip) re-renders on pointer move.
+
 const FULL_H = ATLAS_H + 40;
+
+function ink(color: string, extra?: Record<string, string>): CSSProperties {
+  return { ["--c" as string]: color, ...(extra || {}) } as CSSProperties;
+}
 
 function curve(a: { x: number; y: number }, b: { x: number; y: number }) {
   const mx = (a.x + b.x) / 2;
@@ -19,32 +21,145 @@ function curve(a: { x: number; y: number }, b: { x: number; y: number }) {
 }
 
 function toLocal(svg: SVGSVGElement, clientX: number, clientY: number) {
-  const pt = svg.createSVGPoint();
-  pt.x = clientX;
-  pt.y = clientY;
   const ctm = svg.getScreenCTM();
   if (!ctm) return null;
-  const local = pt.matrixTransform(ctm.inverse());
-  return { x: local.x, y: local.y };
+  const pt = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+  return { x: pt.x, y: pt.y };
 }
 
 function metaLine(point: any) {
   const tail = [point.venue, point.year].filter(Boolean).join(" ");
-  return [point.authorLine, tail].filter(Boolean).join(" · ");
+  const names: string[] = point.authors || [];
+  const who = names.length > 3 ? `${names.slice(0, 2).join(", ")} et al.` : names.join(", ");
+  return [who, tail].filter(Boolean).join(" · ");
+}
+
+/** Short on-map name: "Vaswani 2017" when authors are known, else a clipped title. */
+function shortLabel(point: any) {
+  const label = nodeLabel({ authors: point.authors, year: point.year, title: point.title });
+  if (label.length <= 30) return label;
+  return label.slice(0, 28).replace(/\s+\S*$/, "") + "…";
 }
 
 export function Legend() {
   return (
-    <div className="lg">
-      <span className="lg-item"><i className="lg-n" aria-hidden="true">1</i>Read first</span>
-      <span className="lg-item"><i className="lg-ring" aria-hidden="true" />Top of the ranking</span>
-      <span className="lg-item"><i className="lg-dot lg-dot--full" aria-hidden="true" />Full text</span>
-      <span className="lg-item"><i className="lg-dot lg-dot--abs" aria-hidden="true" />Abstract only</span>
-      <span className="lg-item"><i className="lg-t" aria-hidden="true" />Your path</span>
-      <span className="lg-item"><i className="lg-c" aria-hidden="true" />Citations</span>
+    <div className="lg" aria-hidden="true">
+      <span className="lg-item"><i className="lg-n">1</i>Read first</span>
+      <span className="lg-item"><i className="lg-dot lg-dot--full" />Full text</span>
+      <span className="lg-item"><i className="lg-dot lg-dot--abs" />Abstract only</span>
+      <span className="lg-item"><i className="lg-size" />More cited</span>
+      <span className="lg-item"><i className="lg-t" />Your path</span>
+      <span className="lg-item"><i className="lg-c" />Citations</span>
     </div>
   );
 }
+
+type Pt = any;
+
+const Lanes = memo(function Lanes({ lanes, mini, laneId, years }: { lanes: any[]; mini: boolean; laneId: string; years: any }) {
+  return (
+    <>
+      <g className="lanes">
+        {lanes.map((lane, i) => (
+          <g key={lane.id} className="ln" style={{ ["--i" as string]: String(i) } as CSSProperties}>
+            <rect className={`lane${lane.far ? " is-far" : ""}${laneId && !mini && lane.id !== laneId ? " is-quiet" : ""}${laneId && !mini && lane.id === laneId ? " is-pick" : ""}`} x={0} y={lane.top} width={ATLAS_W} height={lane.h} rx={mini ? 10 : 6} style={ink(lane.color)} />
+            {!mini && lane.name ? <text key={lane.name} className="ln-name" x={14} y={lane.top + 23} style={ink(lane.color)}>{lane.name}</text> : null}
+            {!mini && lane.name && lane.h >= 52 ? <text className="ln-n" x={14} y={lane.top + 41}>{lane.n} {lane.n === 1 ? "paper" : "papers"}</text> : null}
+          </g>
+        ))}
+      </g>
+      {!mini && (years?.ticks?.length || years?.noYearX != null) ? (
+        <g className="grid">
+          {(years.ticks || []).map((tick: any) => (
+            <g key={tick.year}>
+              <line x1={tick.x} x2={tick.x} y1={0} y2={ATLAS_H + 8} />
+              <text className="yr" x={tick.x} y={ATLAS_H + 30} textAnchor="middle">{tick.year}</text>
+            </g>
+          ))}
+          {years.earlierX != null ? <text className="yr yr--soft" x={years.earlierX} y={ATLAS_H + 30} textAnchor="middle">{`< ${years.cut}`}</text> : null}
+          {years.noYearX != null ? <text className="yr yr--soft" x={years.noYearX} y={ATLAS_H + 30} textAnchor="middle">no year</text> : null}
+        </g>
+      ) : null}
+    </>
+  );
+});
+
+const Dots = memo(function Dots({ points, visited, hereId, mini, laneId }: { points: Pt[]; visited: string[]; hereId: string; mini: boolean; laneId: string }) {
+  const seen = new Set(visited);
+  // Arrival sweeps left to right in time, like the field being written.
+  return (
+    <g className="dots">
+      {points.map((point) => {
+        const vis = seen.has(point.id);
+        const cur = point.id === hereId;
+        const r = mini ? (vis ? 13 : 8) : point.r || 4.6;
+        const cls = [
+          "p",
+          point.full ? "p--f" : "p--h",
+          vis ? "is-vis" : "",
+          cur ? "is-cur" : "",
+          !mini && point.order && point.order <= 5 ? "is-top" : "",
+          laneId && !mini && point.lane && point.lane !== laneId ? "is-out" : "",
+          point.far ? "is-far" : "",
+          point.retracted ? "is-retracted" : "",
+        ].filter(Boolean).join(" ");
+        const delay = Math.round((point.x / ATLAS_W) * 620 + (point.y % 37) * 2);
+        return (
+          <circle
+            key={point.id}
+            className={cls}
+            data-id={point.id}
+            data-read={!mini && point.order && point.order <= 5 ? point.order : undefined}
+            cx={Number(point.x.toFixed(1))}
+            cy={Number(point.y.toFixed(1))}
+            r={r}
+            style={ink(point.color, { animationDelay: `${delay}ms` })}
+          />
+        );
+      })}
+    </g>
+  );
+});
+
+const Badges = memo(function Badges({ points }: { points: Pt[] }) {
+  return (
+    <g className="ords">
+      {points.filter((p) => p.order && p.order <= 5).map((point) => (
+        <text key={point.id} className="p-ord" x={point.x} y={point.y + 3.6} textAnchor="middle" style={{ animationDelay: `${Math.round((point.x / ATLAS_W) * 620) + 260}ms` }}>{point.order}</text>
+      ))}
+    </g>
+  );
+});
+
+/** Persistent labels: the first three of the reading order and the papers you touched. Skips any that would collide. */
+const Labels = memo(function Labels({ points, ids, strongIds }: { points: Pt[]; ids: string[]; strongIds: string[] }) {
+  const by = new Map(points.map((p) => [p.id, p]));
+  const strong = new Set(strongIds);
+  const boxes: { x0: number; x1: number; y0: number; y1: number }[] = [];
+  // Badges and labeled dots are obstacles too.
+  for (const p of points) {
+    if ((p.order && p.order <= 5) || ids.includes(p.id)) {
+      const r = (p.r || 5) + 1;
+      boxes.push({ x0: p.x - r, x1: p.x + r, y0: p.y - r, y1: p.y + r });
+    }
+  }
+  const out: any[] = [];
+  for (const id of ids) {
+    const p = by.get(id);
+    if (!p) continue;
+    const text = shortLabel(p);
+    const w = text.length * 6.6 + 6;
+    const right = p.x + w + 16 < ATLAS_W;
+    const x = right ? p.x + (p.r || 5) + 5 : p.x - (p.r || 5) - 5;
+    const box = { x0: right ? x : x - w, x1: right ? x + w : x, y0: p.y - 8, y1: p.y + 8 };
+    if (boxes.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1)) continue;
+    boxes.push(box);
+    out.push(
+      <text key={id} data-for={id} className={`p-lab${strong.has(id) ? " p-lab--sel" : ""}`} x={x} y={p.y + 4} textAnchor={right ? "start" : "end"}>{text}</text>,
+    );
+  }
+  return <g className="labs">{out}</g>;
+});
 
 export default function Atlas({
   model, mode = "full", hereId = "", suggestId = "", selected = "", drawSelection = false, laneId = "", onSelect, onOpen,
@@ -62,7 +177,8 @@ export default function Atlas({
   const mini = mode === "mini";
   const svgRef = useRef<SVGSVGElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const pointsRef = useRef<any[]>(model?.points || []);
+  const points: Pt[] = model?.points || [];
+  const pointsRef = useRef<Pt[]>(points);
   const hoverRef = useRef<string | null>(null);
   const selectedRef = useRef(selected || "");
   const hereRef = useRef(hereId);
@@ -70,56 +186,59 @@ export default function Atlas({
   const onSelectRef = useRef(onSelect);
   const onOpenRef = useRef(onOpen);
   const [hover, setHover] = useState<string | null>(null);
-  const [tip, setTip] = useState<{ id: string; left: number; top: number } | null>(null);
-  pointsRef.current = model?.points || [];
+  pointsRef.current = points;
   selectedRef.current = selected || "";
   hereRef.current = hereId || "";
   suggestRef.current = suggestId || "";
   onSelectRef.current = onSelect;
   onOpenRef.current = onOpen;
 
-  const show = (id: string | null) => {
-    if (hoverRef.current === id) return;
-    hoverRef.current = id;
-    setHover(id);
-  };
+  const by = useMemo(() => new Map(points.map((p) => [p.id, p])), [points]);
+  const focus = hover || (drawSelection ? selected : "") || "";
+  const rel = useMemo(() => (focus && by.has(focus) ? related(model, focus, 14) : []), [model, by, focus]);
+
+  // Focus classes go straight onto the DOM: no re-render of ~100 circles per move.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || mini) return;
+    svg.querySelectorAll(".p.is-on, .p.is-focus, .p-lab.is-on").forEach((el) => el.classList.remove("is-on", "is-focus"));
+    if (!focus) { svg.classList.remove("has-focus"); return; }
+    svg.classList.add("has-focus");
+    const mark = (id: string, cls: string) => {
+      svg.querySelector(`.p[data-id="${CSS.escape(id)}"]`)?.classList.add(cls);
+      svg.querySelector(`.p-lab[data-for="${CSS.escape(id)}"]`)?.classList.add("is-on");
+    };
+    mark(focus, "is-focus");
+    for (const id of rel) mark(id, "is-on");
+    for (const id of [hereId, suggestId]) if (id) svg.querySelector(`.p-lab[data-for="${CSS.escape(id)}"]`)?.classList.add("is-on");
+  }, [focus, rel, mini, hereId, suggestId, points]);
 
   useEffect(() => {
     const svg = svgRef.current;
-    const host = hostRef.current;
-    if (!svg || !host || mini) return;
-    let warm = false;
-    let timer = 0;
-    let cool = 0;
+    if (!svg || mini) return;
     let touchArmed: string | null = null;
-    const placeTip = (id: string | null) => {
-      show(id);
-      if (!id) { setTip(null); return; }
-      const point = pointsRef.current.find((p) => p.id === id);
-      if (!point) { setTip(null); return; }
-      const r = svg.getBoundingClientRect();
-      const hr = host.getBoundingClientRect();
-      const k = r.width / ATLAS_W;
-      setTip({ id, left: r.left - hr.left + point.x * k, top: r.top - hr.top + point.y * k });
+    const show = (id: string | null) => {
+      if (hoverRef.current === id) return;
+      hoverRef.current = id;
+      setHover(id);
     };
-    const onMove = (e: PointerEvent) => {
-      if (e.pointerType === "touch") return;
-      const local = toLocal(svg, e.clientX, e.clientY);
+    let raf = 0;
+    let last: PointerEvent | null = null;
+    const step = () => {
+      raf = 0;
+      if (!last) return;
+      const local = toLocal(svg, last.clientX, last.clientY);
       if (!local) return;
       const id = nearest(pointsRef.current, local.x, local.y, 18);
       svg.style.cursor = id ? "pointer" : "default";
-      if (id === hoverRef.current) return;
-      window.clearTimeout(timer);
-      window.clearTimeout(cool);
-      if (!id) { placeTip(null); return; }
-      if (warm) placeTip(id);
-      else timer = window.setTimeout(() => { warm = true; placeTip(id); }, 260);
+      show(id);
     };
-    const onLeave = () => {
-      window.clearTimeout(timer);
-      placeTip(null);
-      cool = window.setTimeout(() => { warm = false; }, 600);
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return;
+      last = e;
+      if (!raf) raf = requestAnimationFrame(step);
     };
+    const onLeave = () => { last = null; show(null); };
     const onClick = (e: MouseEvent) => {
       const hit = (e.target as Element | null)?.closest?.(".trail-hit");
       if (hit) {
@@ -133,226 +252,138 @@ export default function Atlas({
       const touch = (e as PointerEvent).pointerType === "touch" || window.matchMedia("(hover: none)").matches;
       if (id && touch && touchArmed !== id) {
         touchArmed = id;
-        warm = true;
-        placeTip(id);
+        show(id);
         return;
       }
       touchArmed = null;
       if (id) onSelectRef.current?.(id);
     };
+    const onDbl = (e: MouseEvent) => {
+      const local = toLocal(svg, e.clientX, e.clientY);
+      const id = local ? nearest(pointsRef.current, local.x, local.y, 18) : null;
+      if (id) onOpenRef.current?.(id);
+    };
     const onKey = (e: KeyboardEvent) => {
-      const points = pointsRef.current;
-      const by = new Map(points.map((p) => [p.id, p]));
+      const list = pointsRef.current;
+      const map = new Map(list.map((p) => [p.id, p]));
       const base = selectedRef.current || hereRef.current || suggestRef.current;
-      const origin = by.get(base);
+      const origin = map.get(base);
       let next: string | null = null;
-      if (origin && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
-        const dir = e.key === "ArrowRight" ? 1 : -1;
-        let best = 1e9;
-        for (const o of points) {
-          const dx = (o.x - origin.x) * dir;
-          if (dx > 0) {
-            const score = dx + Math.abs(o.y - origin.y) * 2.5;
-            if (score < best) { best = score; next = o.id; }
-          }
-        }
-      }
-      if (origin && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-        const dir = e.key === "ArrowDown" ? 1 : -1;
-        let best = 1e9;
-        for (const o of points) {
-          const dy = (o.y - origin.y) * dir;
-          if (dy > 0) {
-            const score = dy + Math.abs(o.x - origin.x) * 2.5;
-            if (score < best) { best = score; next = o.id; }
-          }
-        }
-      }
-      if (e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === "ArrowDown" || e.key === "ArrowUp") e.preventDefault();
-      if (next) {
-        onSelectRef.current?.(next);
-        placeTip(next);
-      }
-      if (e.key === "Enter" && selectedRef.current) {
+      const arrows: Record<string, [number, number]> = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] };
+      const dir = arrows[e.key];
+      if (dir) {
         e.preventDefault();
-        onOpenRef.current?.(selectedRef.current);
+        if (origin) {
+          let best = 1e9;
+          for (const o of list) {
+            const along = dir[0] ? (o.x - origin.x) * dir[0] : (o.y - origin.y) * dir[1];
+            const across = dir[0] ? Math.abs(o.y - origin.y) : Math.abs(o.x - origin.x);
+            if (along > 0) {
+              const score = along + across * 2.5;
+              if (score < best) { best = score; next = o.id; }
+            }
+          }
+        }
       }
-      if (e.key === "Escape") placeTip(null);
+      if (next) { onSelectRef.current?.(next); show(next); }
+      if (e.key === "Enter" && selectedRef.current) { e.preventDefault(); onOpenRef.current?.(selectedRef.current); }
+      if (e.key === "Escape") show(null);
     };
     svg.addEventListener("pointermove", onMove);
     svg.addEventListener("pointerleave", onLeave);
     svg.addEventListener("click", onClick);
+    svg.addEventListener("dblclick", onDbl);
     svg.addEventListener("keydown", onKey);
     return () => {
-      window.clearTimeout(timer);
-      window.clearTimeout(cool);
+      if (raf) cancelAnimationFrame(raf);
       svg.removeEventListener("pointermove", onMove);
       svg.removeEventListener("pointerleave", onLeave);
       svg.removeEventListener("click", onClick);
+      svg.removeEventListener("dblclick", onDbl);
       svg.removeEventListener("keydown", onKey);
     };
   }, [mini]);
 
-  const points: any[] = model?.points || [];
-  const by = new Map(points.map((p) => [p.id, p]));
-  const focus = hover || (drawSelection ? selected : "") || "";
-  const fset = (() => {
-    if (!focus || !by.has(focus)) return null;
-    const set = new Set<string>([focus]);
-    for (const id of related(model, focus, 14)) set.add(id);
-    return set;
-  })();
-  const visited = new Set<string>(model?.visited || []);
-  const hoverPoint = hover ? by.get(hover) : null;
-  const labs = new Set<string>();
-  if (!mini) {
-    for (const id of visited) if (by.has(id)) labs.add(id);
-    if (hereId && by.has(hereId)) labs.add(hereId);
-    if (suggestId && by.has(suggestId)) labs.add(suggestId);
-    if (selected && by.has(selected)) labs.add(selected);
-    if (hover && by.has(hover)) labs.add(hover);
-  }
+  const visited: string[] = model?.visited || [];
+  const labelIds = useMemo(() => {
+    if (mini) return [];
+    const ids: string[] = [];
+    const add = (id: string) => { if (id && by.has(id) && !ids.includes(id)) ids.push(id); };
+    add(hereId); add(selected); add(suggestId);
+    for (const id of visited) add(id);
+    for (const row of readingOrder(points).slice(0, 3)) add(row.id);
+    return ids;
+  }, [mini, by, hereId, selected, suggestId, visited, points]);
+  const strongIds = useMemo(() => [hereId, selected, suggestId].filter(Boolean), [hereId, selected, suggestId]);
+
   const here = hereId ? by.get(hereId) : null;
   const sug = suggestId ? by.get(suggestId) : null;
   const sel = selected ? by.get(selected) : null;
-  const order = new Map(readingOrder(points).map((row) => [row.id, row.n]));
-  const dotR = (n: number) => Math.max(8, 12 - (n - 1) * 0.55);
+  const fp = focus ? by.get(focus) : null;
+  const hoverPoint = hover ? by.get(hover) : null;
+  const scale = (() => {
+    const svg = svgRef.current;
+    if (!svg) return 1;
+    const w = svg.getBoundingClientRect().width;
+    return w ? w / ATLAS_W : 1;
+  })();
 
   return (
-    <div className="atlas" ref={hostRef}>
+    <div className={`atlas${mini ? "" : " is-live"}`} ref={hostRef}>
       <svg
         ref={svgRef}
-        className={`atl-svg${mini ? " is-mini" : ""}${fset ? " has-focus" : ""}`}
+        className={`atl-svg${mini ? " is-mini" : ""}`}
         viewBox={`0 0 ${ATLAS_W} ${mini ? ATLAS_H : FULL_H}`}
         role={mini ? "img" : "application"}
         aria-label={mini ? "Atlas: papers you explored and where you are" : "Atlas of papers by group and year"}
         tabIndex={mini ? undefined : 0}
       >
-        <g className="lanes">
-          {(model?.lanes || []).map((lane: any) => (
-            <g key={lane.id}>
-              <rect className={`lane${lane.far ? " is-far" : ""}${laneId && !mini && lane.id !== laneId ? " is-quiet" : ""}${laneId && !mini && lane.id === laneId ? " is-pick" : ""}`} x={0} y={lane.top} width={ATLAS_W} height={lane.h} rx={mini ? 10 : 6} style={ink(lane.color)} />
-              {!mini && lane.name ? <text className="ln-name" x={14} y={lane.top + 22} style={ink(lane.color)}>{lane.name}</text> : null}
-              {!mini && lane.name && lane.h >= 52 ? <text className="ln-n" x={14} y={lane.top + 39}>{lane.n} {lane.n === 1 ? "paper" : "papers"}</text> : null}
-            </g>
-          ))}
-        </g>
-        {!mini && (model?.years?.ticks?.length || model?.years?.noYearX) ? (
-          <g className="grid">
-            {(model.years.ticks || []).map((tick: any) => (
-              <g key={tick.year}>
-                <line x1={tick.x} x2={tick.x} y1={0} y2={ATLAS_H + 8} />
-                <text className="yr" x={tick.x} y={ATLAS_H + 30} textAnchor="middle">{tick.year}</text>
-              </g>
-            ))}
-            {model.years.noYearX != null ? <text className="yr" x={model.years.noYearX} y={ATLAS_H + 30} textAnchor="middle">no year</text> : null}
-          </g>
-        ) : null}
+        <Lanes lanes={model?.lanes || []} mini={mini} laneId={laneId} years={model?.years} />
         <g className="cit">
-          {!mini && focus && by.has(focus) ? related(model, focus, 14).map((id: string) => {
+          {!mini && fp ? rel.map((id: string) => {
             const other = by.get(id);
-            const from = by.get(focus);
-            if (!other || !from) return null;
-            return <line key={id} x1={from.x} y1={from.y} x2={other.x} y2={other.y} vectorEffect="non-scaling-stroke" />;
+            if (!other) return null;
+            const out = fp.cites.includes(id);
+            return <line key={id} className={out ? "is-out" : "is-in"} x1={fp.x} y1={fp.y} x2={other.x} y2={other.y} vectorEffect="non-scaling-stroke" />;
           }) : null}
         </g>
         <g className="trail">
-          {(model?.trail || []).map((pair: any) => {
+          {(model?.trail || []).map((pair: any, i: number) => {
             const a = by.get(pair.from);
             const b = by.get(pair.to);
             if (!a || !b) return null;
             const d = curve(a, b);
             return (
               <g key={`${pair.from}-${pair.to}`}>
-                <path className="trail-draw" d={d} vectorEffect="non-scaling-stroke" />
+                <path className="trail-draw" d={d} pathLength={1} vectorEffect="non-scaling-stroke" style={{ animationDelay: `${700 + i * 120}ms` }} />
                 {!mini ? <path className="trail-hit" data-to={pair.to} d={d} vectorEffect="non-scaling-stroke"><title>{`Open ${b.title || "paper"}`}</title></path> : null}
               </g>
             );
           })}
         </g>
         <g className="halo">
-          {here ? <circle className="h-cur" cx={here.x} cy={here.y} r={mini ? 30 : 14} /> : null}
-          {sug ? <circle className="h-sug" cx={sug.x} cy={sug.y} r={mini ? 30 : 13} vectorEffect="non-scaling-stroke" /> : null}
-          {!mini && sel && sel.id !== hereId ? <circle className="h-sel" cx={sel.x} cy={sel.y} r={11} vectorEffect="non-scaling-stroke" /> : null}
-          {!mini ? points.map((point) => {
-            const n = order.get(point.id) || 0;
-            if (!n || n > 3) return null;
-            return <circle key={point.id} className="h-read" cx={point.x} cy={point.y} r={dotR(n) + 4.5} vectorEffect="non-scaling-stroke" />;
-          }) : null}
+          {here ? <circle className="h-cur" cx={here.x} cy={here.y} r={mini ? 30 : (here.r || 5) + 8} /> : null}
+          {sug ? <circle className="h-sug" cx={sug.x} cy={sug.y} r={mini ? 30 : (sug.r || 5) + 6} vectorEffect="non-scaling-stroke" /> : null}
+          {!mini && sel && sel.id !== hereId ? <circle className="h-sel" cx={sel.x} cy={sel.y} r={(sel.r || 5) + 4} vectorEffect="non-scaling-stroke" /> : null}
         </g>
-        <g className="dots">
-          {points.map((point, i) => {
-            const vis = visited.has(point.id);
-            const cur = point.id === hereId;
-            const hot = point.id === focus || point.id === hereId;
-            const n = order.get(point.id) || 0;
-            const numbered = !mini && n > 0 && n <= 8;
-            const r = mini ? (vis ? 13 : 8) : numbered ? dotR(n) : (hot ? 6.5 : vis ? 5.6 : 4.6);
-            const cls = [
-              "p",
-              point.full ? "p--f" : "p--h",
-              vis ? "is-vis" : "",
-              cur ? "is-cur" : "",
-              fset && !fset.has(point.id) ? "is-dim" : "",
-              fset && fset.has(point.id) && point.id !== focus ? "is-rel" : "",
-              laneId && !mini && point.lane && point.lane !== laneId ? "is-dim" : "",
-              point.far ? "is-far" : "",
-              point.retracted ? "is-retracted" : "",
-            ].filter(Boolean).join(" ");
-            return (
-              <circle
-                key={point.id}
-                className={cls}
-                data-id={point.id}
-                data-read={numbered ? n : undefined}
-                cx={Number(point.x.toFixed(1))}
-                cy={Number(point.y.toFixed(1))}
-                r={r}
-                style={ink(point.color, `${i * 7}ms`)}
-              />
-            );
-          })}
-        </g>
-        {!mini ? (
-          <g className="labs">
-            {[...labs].map((id) => {
-              const point = by.get(id);
-              if (!point) return null;
-              const strong = id === hereId || id === selected || id === suggestId;
-              const dim = Boolean(fset && !fset.has(id) && id !== hereId);
-              const label = nodeLabel({ authors: point.authors, year: point.year, title: point.title });
-              return (
-                <text
-                  key={id}
-                  className={`p-lab${strong ? " p-lab--sel" : ""}${dim ? " is-dim" : ""}`}
-                  x={point.x + (strong ? 17 : 10)}
-                  y={point.y + (strong ? 5 : -8)}
-                >{label}</text>
-              );
-            })}
-          </g>
-        ) : null}
-        {!mini ? (
-          <g className="ords">
-            {points.map((point) => {
-              const n = order.get(point.id) || 0;
-              if (!n || n > 8) return null;
-              return (
-                <g key={point.id}>
-                  <circle className="ord-badge" cx={point.x} cy={point.y} r={5.4} />
-                  <text className="p-ord" x={point.x} y={point.y + 3} textAnchor="middle">{n}</text>
-                </g>
-              );
-            })}
-          </g>
-        ) : null}
+        <Dots points={points} visited={visited} hereId={hereId} mini={mini} laneId={laneId} />
+        {!mini ? <Badges points={points} /> : null}
+        {!mini ? <Labels points={points} ids={labelIds} strongIds={strongIds} /> : null}
+        {!mini && fp ? <circle className="h-hov" cx={fp.x} cy={fp.y} r={(fp.r || 5) + 3.5} vectorEffect="non-scaling-stroke" /> : null}
       </svg>
-      {!mini && tip && hoverPoint ? (
-        <div className={`peek${hoverPoint.x > ATLAS_W * 0.62 ? " is-flip" : ""}`} role="tooltip" style={{ left: tip.left, top: tip.top }}>
+      {!mini && hoverPoint ? (
+        <div
+          className={`peek${hoverPoint.x > ATLAS_W * 0.62 ? " is-flip" : ""}${hoverPoint.y < 90 ? " is-below" : ""}`}
+          role="tooltip"
+          style={{ left: hoverPoint.x * scale, top: hoverPoint.y * scale, ["--c" as string]: hoverPoint.color } as CSSProperties}
+        >
           <b><Rich text={hoverPoint.title || "Paper"} /></b>
-          {(order.get(hoverPoint.id) || 0) > 0 ? <span className="tip-n">Read {(order.get(hoverPoint.id) || 0) === 1 ? "first" : order.get(hoverPoint.id)}</span> : null}
           {metaLine(hoverPoint) ? <span>{metaLine(hoverPoint)}</span> : null}
-          <span className="tip-n">Cites {hoverPoint.cites.length} · cited by {hoverPoint.citedBy.length} in this map</span>
+          <span className="tip-row tnum">
+            {hoverPoint.order && hoverPoint.order <= 5 ? <em>Read {hoverPoint.order === 1 ? "first" : `#${hoverPoint.order}`}</em> : null}
+            {hoverPoint.citations ? <span>{hoverPoint.citations.toLocaleString("en-US")} citations</span> : null}
+            <span>{hoverPoint.cites.length} out · {hoverPoint.citedBy.length} in, here</span>
+          </span>
         </div>
       ) : null}
     </div>
@@ -360,8 +391,8 @@ export default function Atlas({
 }
 
 /** The first papers in the search rank, numbered the same way as the dots. */
-export function ReadFirst({ points, onPick }: { points: any[]; onPick?: (id: string) => void }) {
-  const rows = readingOrder(points).slice(0, 8);
+export function ReadFirst({ points, onPick, selected = "" }: { points: any[]; onPick?: (id: string) => void; selected?: string }) {
+  const rows = readingOrder(points).slice(0, 5);
   if (!rows.length) return null;
   const by = new Map((points || []).map((point) => [point.id, point]));
   return (
@@ -370,9 +401,10 @@ export function ReadFirst({ points, onPick }: { points: any[]; onPick?: (id: str
         const point = by.get(row.id);
         return (
           <li key={row.id}>
-            <button type="button" onClick={() => onPick?.(row.id)}>
-              <span className={`rf-n${row.n <= 3 ? " is-top" : ""}`}>{row.n}</span>
-              <span><Rich text={point?.title || row.id} /></span>
+            <button type="button" className={row.id === selected ? "is-sel" : undefined} onClick={() => onPick?.(row.id)}>
+              <span className="rf-n">{row.n}</span>
+              <span className="rf-t"><Rich text={point?.title || row.id} /></span>
+              {point?.year ? <span className="rf-y tnum">{point.year}</span> : null}
             </button>
           </li>
         );

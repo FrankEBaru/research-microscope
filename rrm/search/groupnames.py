@@ -19,12 +19,15 @@ _STOP = {
     "más", "mas", "entre", "sobre", "hacia", "desde",
 }
 _WORD = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
+# RRM-95: one short call per group, all in parallel, so the slowest group sets
+# the wait (not the sum). The prompt is minimal: the verifier below does the rest.
 _PROMPT = (
-    "Ponle a cada grupo un nombre distinto de 2 a 5 palabras. "
-    "Cada palabra tiene que estar ya escrita en los títulos de ese grupo. "
-    "No inventes un tema y no repitas un nombre entre grupos. "
-    "Responde solo el JSON."
+    "Name the GROUP of papers in 2 to 4 English words that a reader would recognise as its topic, "
+    "and that tells it apart from the OTHER groups. "
+    "Use only words already written in the group's titles. Answer only the JSON."
 )
+CALL_TIMEOUT = float(os.environ.get("RRM_GROUP_NAMES_TIMEOUT", "6"))
+_CACHE = {}
 _SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -83,7 +86,7 @@ def _blob(group):
     return "\n".join(str(item) for item in list(titles) + list(abstracts) if item)
 
 
-def _user(groups):
+def _user(groups, others=None):
     lines = []
     for group in groups:
         lines.append(f"Grupo {group.get('id')}:")
@@ -93,17 +96,21 @@ def _user(groups):
             continue
         for title in titles[:12]:
             lines.append(f"- {title[:180]}")
+    if others:
+        lines.append("OTHER groups (do not name these):")
+        for title in others:
+            lines.append(f"- {str(title)[:120]}")
     return wrap_user("TITULOS", "\n".join(lines))
 
 
-def _body(user):
+def _body(user, max_tokens=600):
     from rrm.reader.metacall import MODEL
 
     return {
         "model": MODEL,
         "store": False,
         "reasoning": {"effort": "minimal"},
-        "max_output_tokens": 800,
+        "max_output_tokens": max_tokens,
         "input": [
             {"role": "developer", "content": with_guard(_PROMPT)},
             {"role": "user", "content": user},
@@ -140,19 +147,72 @@ def accept(groups, data):
     return out
 
 
+def _key(group):
+    import hashlib
+
+    raw = "\n".join(sorted(str(t) for t in (group.get("titles") or [])[:12]))
+    return hashlib.sha1(raw.encode("utf-8", "replace")).hexdigest()
+
+
 def name_groups(groups, complete=None):
-    """Una llamada. Devuelve (nombres aceptados, costo). Sin flag y sin mock: vacío."""
-    from rrm.reader.metacall import parse_json, post_responses, response_text, usage_cost
+    """One call per group, in parallel, each capped at CALL_TIMEOUT s.
+
+    Returns (accepted names, cost). A group whose call fails, times out or does
+    not pass the verifier keeps its c-TF-IDF name. Cached per group titles.
+    """
+    import time
+    from concurrent.futures import ThreadPoolExecutor, wait
+
+    from rrm.reader.metacall import add_usage, parse_json, post_responses, response_text, usage_cost
 
     rows = [group for group in groups or [] if isinstance(group, dict) and (group.get("titles") or [])]
     if not rows:
         return [], usage_cost(None)
     if complete is None and not enabled():
         return [], usage_cost(None)
-    call = complete or post_responses
-    try:
-        payload = call(_body(_user(rows)))
-    except Exception:
-        return [], usage_cost(None)
-    cost = usage_cost(payload.get("usage") if isinstance(payload, dict) else None)
-    return accept(rows, parse_json(response_text(payload))), cost
+    t0 = time.perf_counter()
+    call = complete or (lambda body: post_responses(body, timeout=CALL_TIMEOUT))
+
+    def one(group):
+        key = _key(group)
+        if key in _CACHE:
+            return _CACHE[key], usage_cost(None), True
+        others = [t for g in rows if g is not group for t in (g.get("titles") or [])[:3]]
+        payload = call(_body(_user([group], others)))
+        cost = usage_cost(payload.get("usage") if isinstance(payload, dict) else None)
+        data = parse_json(response_text(payload))
+        if isinstance(data, dict) and isinstance(data.get("names"), list):
+            for item in data["names"]:
+                if isinstance(item, dict):
+                    item["id"] = str(group.get("id"))
+        got = accept([group], data)
+        if got:
+            _CACHE[key] = got
+        return got, cost, False
+
+    names, total, cached, failed = [], usage_cost(None), 0, 0
+    pool = ThreadPoolExecutor(max_workers=max(1, min(8, len(rows))))
+    futures = [pool.submit(one, group) for group in rows]
+    done, _late = wait(futures, timeout=CALL_TIMEOUT + 1.5)
+    pool.shutdown(wait=False, cancel_futures=True)
+    used = set()
+    for future in futures:
+        if future not in done:
+            failed += 1
+            continue
+        try:
+            got, cost, hit = future.result()
+        except Exception:
+            failed += 1
+            continue
+        total = add_usage(total, cost)
+        cached += int(hit)
+        for row in got:
+            folded = _fold(row["name"])
+            if folded in used:
+                continue
+            used.add(folded)
+            names.append(row)
+    total = dict(total)
+    total.update({"seconds": round(time.perf_counter() - t0, 3), "calls": len(rows) - cached, "cached": cached, "failed": failed})
+    return names, total

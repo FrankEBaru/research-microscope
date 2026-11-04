@@ -66,7 +66,7 @@ export default function MapBody({ atlasCtx, onLayout }: { atlasCtx: AtlasCtx; on
         <AtlasCard model={model} explore={atlasCtx.explore} states={atlasCtx.states} selected={selected} hereId={hereId} suggestId={suggested} onScan={scan} onRead={read} onPick={pick} onOpen={read} />
       </div>
       <Legend />
-      <ReadFirst points={model.points || []} onPick={pick} />
+      <ReadFirst points={model.points || []} onPick={pick} selected={selected} />
     </div>
   );
 }
