@@ -1,0 +1,43 @@
+{
+ "controls": [
+  {
+   "id": "nkv",
+   "label": "KV heads",
+   "max": 8,
+   "min": 1,
+   "step": 1,
+   "value": 4
+  },
+  {
+   "id": "nq",
+   "label": "query heads",
+   "max": 32,
+   "min": 4,
+   "step": 4,
+   "value": 16
+  }
+ ],
+ "draw": "function draw(ctx, state, t) {\n  var top = 36;\n  var bot = 286;\n  var thr = 400;\n  var nkv = state.nkv;\n  var nq = state.nq;\n  function fmt(v) { return Math.round(v * 100) / 100; }\n  var scale = 250 / 1024;\n  var Lmax = 128;\n  var cache = nkv * Lmax;\n  var yend = cache * scale;\n  var ythr = bot - thr * scale;\n  var i = 0;\n  var g = 0;\n  var bw = 0;\n  var bx = 0;\n  var by = 252;\n  var bh = 22;\n  ctx.clearRect(0, 0, state.w, state.h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, state.w, state.h);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  ctx.moveTo(48, bot);\n  if (yend > bot - top) {\n    ctx.lineTo(560, top);\n    ctx.stroke();\n    ctx.fillStyle = \"#1f4b99\";\n    ctx.font = \"12px sans-serif\";\n    ctx.fillText(\"clipped\", 500, top + 16);\n  } else {\n    ctx.lineTo(560, bot - yend);\n    ctx.stroke();\n  }\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(48, ythr);\n  ctx.lineTo(560, ythr);\n  ctx.stroke();\n  ctx.fillStyle = \"#c4512c\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"threshold \" + fmt(thr), 48, ythr - 8);\n  bw = 512 / nq;\n  for (i = 0; i < nq; i++) {\n    g = Math.floor(i * nkv / nq);\n    bx = 48 + i * bw + g * 4;\n    if (g % 2 === 0) { ctx.fillStyle = \"#1f4b99\"; } else { ctx.fillStyle = \"#2e7d4f\"; }\n    ctx.fillRect(bx, by, bw - 2, bh);\n  }\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"cache = \" + fmt(cache), 48, 318);\n  ctx.fillText(\"group \" + fmt(nq) + \" over \" + fmt(nkv), 320, 318);\n  ctx.fillText(\"toy nkv x L\", 48, 344);\n}",
+ "explain": "Moving the KV-head control in this toy redraws the cache curve as cache = n_kv x L past the threshold line, with readout n_kv = value from arXiv 2305.13245. More queries share one key-value so cache grows with KV heads, which only holds if the threshold line stays still.",
+ "id": "gqa-cache-share",
+ "questions": [
+  {
+   "q": "Predict which queries share one key when KV heads set to 2?",
+   "why": "doubt about sharing under grouping"
+  },
+  {
+   "q": "Why does KV cache stay flat when query heads rise to 32?",
+   "why": "doubt about cache growing rule"
+  },
+  {
+   "q": "Which query group reuses the same value when groups set to 4?",
+   "why": "doubt about reuse inside group"
+  },
+  {
+   "q": "Where is the best tradeoff when KV heads set to 8?",
+   "why": "doubt about decision changing step"
+  }
+ ],
+ "title": "KV heads set cache, queries share keys",
+ "topic": "gqa"
+}

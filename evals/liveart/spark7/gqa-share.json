@@ -1,0 +1,130 @@
+{
+ "id": "gqa-share",
+ "claim_text": "Grouped-query attention lets several queries share one key and value, so the KV cache grows with the number of KV heads ",
+ "spec": {
+  "archetype": "blocks",
+  "constraints": [
+   "kv <= kv*group"
+  ],
+  "controls": [
+   {
+    "id": "kv",
+    "label": "KV heads",
+    "max": 8,
+    "min": 1,
+    "step": 1,
+    "value": 4
+   },
+   {
+    "id": "group",
+    "label": "Queries per KV head",
+    "max": 8,
+    "min": 1,
+    "step": 1,
+    "value": 4
+   }
+  ],
+  "derived": [
+   {
+    "formula": "kv*group",
+    "name": "q_heads"
+   },
+   {
+    "formula": "kv/(kv*group)",
+    "name": "cache_ratio"
+   }
+  ],
+  "direction": [
+   {
+    "control": "group",
+    "effect": "up",
+    "readout": "q_heads"
+   }
+  ],
+  "explain": "Toy grouped-query attention from 2305.13245: query blocks share one key-value block. Watch q_heads and cache_ratio to see the KV cache grow with KV heads, not queries.",
+  "questions": [
+   {
+    "q": "Set kv to 1: what happens to the queries? Do you expect the query heads to shrink too?",
+    "why": "misconception that fewer KV heads means fewer queries"
+   },
+   {
+    "q": "Set group to 1: what happens to q_heads?",
+    "why": "regime MHA value"
+   },
+   {
+    "q": "Set kv to 8: what happens to q_heads?",
+    "why": "reads query count at max KV heads"
+   },
+   {
+    "q": "Set group to 8: what happens to cache_ratio?",
+    "why": "reads cache saving at max sharing"
+   }
+  ],
+  "regime": [
+   {
+    "control": "kv",
+    "formula": "1",
+    "label": "MQA"
+   },
+   {
+    "control": "group",
+    "formula": "1",
+    "label": "MHA"
+   }
+  ],
+  "scale": false,
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "kv",
+    "label": "KV heads",
+    "max": 8,
+    "min": 1,
+    "step": 1,
+    "value": 4
+   },
+   {
+    "id": "group",
+    "label": "Queries per KV head",
+    "max": 8,
+    "min": 1,
+    "step": 1,
+    "value": 4
+   }
+  ],
+  "draw": "function draw(ctx, state, t) {\nfunction fmt(v) { return Math.round(v * 100) / 100; }\n\n  \n  var w = state.w;\n  var h = state.h;\n  var kv = state.kv;\n  var group = state.group;\n  var qh = kv * group;\n  var ratio = kv / (kv * group);\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.fillStyle = \"#222222\";\n  ctx.font = \"12px sans-serif\";\n  ctx.textAlign = \"left\";\n  ctx.textBaseline = \"alphabetic\";\n  ctx.fillText(\"not to scale\", 24, 22);\n  ctx.fillText(\"kv = \" + fmt(kv), 24, 44);\n  ctx.fillText(\"group = \" + fmt(group), 24, 62);\n  ctx.fillText(\"q_heads = \" + fmt(qh), 24, 84);\n  ctx.fillText(\"cache_ratio = \" + fmt(ratio), 24, 102);\n  var x0 = 240;\n  var tr = 160;\n  var i = 0;\n  var j = 0;\n  ctx.strokeStyle = \"#222222\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(x0, 36);\n  ctx.lineTo(x0 + tr, 36);\n  ctx.stroke();\n  ctx.beginPath();\n  ctx.moveTo(x0, 30);\n  ctx.lineTo(x0, 42);\n  ctx.stroke();\n  ctx.fillText(\"MQA = \" + fmt(1), x0 - 10, 58);\n  ctx.fillText(\"kv track\", x0 + tr + 8, 40);\n  ctx.beginPath();\n  ctx.moveTo(x0, 74);\n  ctx.lineTo(x0 + tr, 74);\n  ctx.stroke();\n  ctx.beginPath();\n  ctx.moveTo(x0, 68);\n  ctx.lineTo(x0, 80);\n  ctx.stroke();\n  ctx.fillText(\"MHA = \" + fmt(1), x0 - 10, 96);\n  ctx.fillText(\"group track\", x0 + tr + 8, 78);\n  var px = x0 + (kv - 1) * (tr / 7);\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.fillRect(px - 3, 28, 6, 16);\n  var gx = x0 + (group - 1) * (tr / 7);\n  ctx.fillRect(gx - 3, 66, 6, 16);\n  var bx = 60;\n  var step = 66;\n  var qy = 130;\n  var ky = 280;\n  for (i = 0; i < kv; i++) {\n    var qhh = group * 14;\n    var qx = bx + i * step;\n    ctx.fillStyle = \"#1f4b99\";\n    ctx.fillRect(qx, qy, 46, qhh);\n    ctx.strokeStyle = \"#1f4b99\";\n    ctx.lineWidth = 1;\n    ctx.strokeRect(qx, qy, 46, qhh);\n    ctx.fillStyle = \"#222222\";\n    ctx.fillText(\"Q\", qx - 14, qy + qhh / 2);\n    ctx.fillStyle = \"#c4512c\";\n    ctx.fillRect(qx, ky, 46, 30);\n    ctx.fillStyle = \"#222222\";\n    ctx.fillText(\"KV\", qx - 20, ky + 18);\n    ctx.strokeStyle = \"#555555\";\n    ctx.lineWidth = 1;\n    ctx.beginPath();\n    ctx.moveTo(qx + 23, qy + qhh);\n    ctx.lineTo(qx + 23, ky);\n    ctx.stroke();\n    for (j = 0; j < group; j++) {\n      ctx.strokeStyle = \"#ffffff\";\n      ctx.beginPath();\n      ctx.moveTo(qx, qy + (j + 1) * 14);\n      ctx.lineTo(qx + 46, qy + (j + 1) * 14);\n      ctx.stroke();\n    }\n  }\n  ctx.fillStyle = \"#222222\";\n  ctx.fillText(\"Q blocks share KV block\", 60, 122);\n  ctx.fillText(\"KV cache grows with kv\", 60, 332);\n}",
+  "explain": "Toy grouped-query attention from 2305.13245: query blocks share one key-value block. Watch q_heads and cache_ratio to see the KV cache grow with KV heads, not queries.",
+  "id": "gqa-share",
+  "questions": [
+   {
+    "q": "Set kv to 1: what happens to the queries? Do you expect the query heads to shrink too?",
+    "why": "misconception that fewer KV heads means fewer queries"
+   },
+   {
+    "q": "Set group to 1: what happens to q_heads?",
+    "why": "regime MHA value"
+   },
+   {
+    "q": "Set kv to 8: what happens to q_heads?",
+    "why": "reads query count at max KV heads"
+   },
+   {
+    "q": "Set group to 8: what happens to cache_ratio?",
+    "why": "reads cache saving at max sharing"
+   }
+  ],
+  "title": "Grouped queries share one key-value block",
+  "topic": "gqa"
+ },
+ "row": {
+  "id": "gqa-share",
+  "verify": "pass",
+  "gate": [
+   "generic_questions",
+   "regime"
+  ],
+  "outcome": "fallback"
+ }
+}

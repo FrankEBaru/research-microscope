@@ -1,0 +1,110 @@
+{
+ "id": "lora-rank",
+ "claim": {
+  "text": "LoRA writes a weight update as the product of two low-rank matrices, so the number of trained parameters grows with the ",
+  "latex": "",
+  "context": "",
+  "arxiv": "2106.09685"
+ },
+ "spec": {
+  "archetype": "bars",
+  "controls": [
+   {
+    "id": "r",
+    "label": "Rank r",
+    "max": 64.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 8.0
+   },
+   {
+    "id": "d",
+    "label": "Width d",
+    "max": 2048.0,
+    "min": 128.0,
+    "step": 128.0,
+    "value": 1024.0
+   }
+  ],
+  "derived": [
+   {
+    "formula": "2*d*r",
+    "name": "lora_params"
+   },
+   {
+    "formula": "d*d",
+    "name": "full_params"
+   }
+  ],
+  "direction": [
+   {
+    "control": "r",
+    "effect": "up",
+    "readout": "lora_params"
+   }
+  ],
+  "explain": "Illustrative toy from arXiv 2106.09685 comparing LoRA trained parameters against full width-squared update. The figure shows two bars for LoRA versus full tuning, with the LoRA limit set by rank.",
+  "questions": [
+   {
+    "q": "Predict the state with r=16 and d=1024?",
+    "why": "Tests rank scaling of LoRA parameters."
+   },
+   {
+    "q": "What state results from r=4 and d=1024?",
+    "why": "Tests low-rank savings."
+   },
+   {
+    "q": "What state results from r=8 and d=2048?",
+    "why": "Tests width dependence."
+   },
+   {
+    "q": "What state results from r=32 and d=512?",
+    "why": "Tests higher rank comparison."
+   }
+  ],
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "r",
+    "label": "Rank r",
+    "max": 64.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 8.0
+   },
+   {
+    "id": "d",
+    "label": "Width d",
+    "max": 2048.0,
+    "min": 128.0,
+    "step": 128.0,
+    "value": 1024.0
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var r = state.r; var d = state.d; var lora = 2 * d * r; var full = d * d; var maxFull = 4194304; var maxH = 150; var baseY = 250; var i = 0; ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"14px sans-serif\"; ctx.textAlign = \"left\"; ctx.textBaseline = \"alphabetic\"; ctx.fillText(\"LoRA vs full update\", 16, 22); ctx.font = \"12px sans-serif\"; ctx.fillStyle = \"#5c564c\"; ctx.fillText(\"2*d*r vs d*d\", 16, 40); var hFull = full / maxFull * maxH; var hLora = lora / maxFull * maxH; if (hLora < 4) { hLora = 4; }; var x1 = 60; var x2 = 250; var bw = 110; ctx.fillStyle = \"#e4d6c4\"; ctx.fillRect(x1, baseY - maxH, bw, maxH); ctx.fillRect(x2, baseY - maxH, bw, maxH); ctx.fillStyle = \"#1f4b99\"; ctx.fillRect(x1, baseY - hLora, bw, hLora); ctx.fillStyle = \"#c4512c\"; ctx.fillRect(x2, baseY - hFull, bw, hFull); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"13px sans-serif\"; ctx.fillText(\"LoRA\", x1 + 32, baseY + 20); ctx.fillText(\"full\", x2 + 38, baseY + 20); ctx.font = \"12px sans-serif\"; ctx.fillText(\"\" + lora, x1 + 22, baseY - hLora - 8); ctx.fillText(\"\" + full, x2 + 22, baseY - hFull - 8); var ax = 430; var ay = 90; var sq = 40 + d / 2048 * 80; var rw = 8 + r / 64 * 60; ctx.fillStyle = \"#d9e3f5\"; ctx.fillRect(ax, ay, sq, sq); ctx.fillStyle = \"#1f4b99\"; ctx.fillRect(ax + sq + 12, ay, rw, sq); ctx.fillRect(ax + sq + 12 + rw + 12, ay, sq, rw); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"d by d\", ax, ay - 8); ctx.fillText(\"d by r + r by d\", ax, ay + sq + 18); ctx.fillText(\"r=\" + r + \" d=\" + d, ax, ay + sq + 36); var ratio = Math.round(full / lora * 10) / 10; ctx.fillStyle = \"#1d1a16\"; ctx.font = \"14px sans-serif\"; ctx.fillText(\"saves \" + ratio + \"x\", x1, baseY + 44); for (i = 0; i < 5; i++) { var gy = baseY - maxH + i * 30; ctx.strokeStyle = \"#8a8175\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x1 - 6, gy); ctx.lineTo(x1 + bw + 150, gy); ctx.stroke(); }; }",
+  "explain": "Illustrative toy from arXiv 2106.09685 comparing LoRA trained parameters against full width-squared update. The figure shows two bars for LoRA versus full tuning, with the LoRA limit set by rank.",
+  "id": "lora-bars",
+  "questions": [
+   {
+    "q": "Predict the state with r=16 and d=1024?",
+    "why": "Tests rank scaling of LoRA parameters."
+   },
+   {
+    "q": "What state results from r=4 and d=1024?",
+    "why": "Tests low-rank savings."
+   },
+   {
+    "q": "What state results from r=8 and d=2048?",
+    "why": "Tests width dependence."
+   },
+   {
+    "q": "What state results from r=32 and d=512?",
+    "why": "Tests higher rank comparison."
+   }
+  ],
+  "title": "LoRA rank sets trained parameters",
+  "topic": "lora"
+ }
+}

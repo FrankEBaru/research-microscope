@@ -72,3 +72,5 @@ offline-fixtures-synth/
 offline-fixtures-v*.tar.gz
 offline-fixtures-attention/
 apps/reader/shots/
+.demo-urls
+.shots98/

@@ -1,0 +1,51 @@
+{
+ "controls": [
+  {
+   "id": "m",
+   "label": "position m",
+   "max": 16,
+   "min": 0,
+   "step": 1,
+   "value": 6
+  },
+  {
+   "id": "base",
+   "label": "base",
+   "max": 20000,
+   "min": 1000,
+   "step": 500,
+   "value": 10000
+  },
+  {
+   "id": "ang",
+   "label": "angle",
+   "max": 0.5,
+   "min": 0.05,
+   "step": 0.05,
+   "value": 0.3
+  }
+ ],
+ "draw": "function draw(ctx, state, t) {\n  var top = 36;\n  var bot = 286;\n  var left = 48;\n  var right = 560;\n  var mid = 161;\n  var m = state.m;\n  var base = state.base;\n  var ang = state.ang;\n  function fmt(v) { return Math.round(v * 100) / 100; }\n  function scoreAt(d, th) { return Math.cos(d * th); }\n  var theta = ang * 10000 / base;\n  if (theta < 0.01) { theta = 0.01; }\n  var thr = 0;\n  var ythr = mid;\n  var i = 0;\n  var n = 32;\n  var d = 0;\n  var x = 0;\n  var y = 0;\n  var s = 0;\n  ctx.clearRect(0, 0, state.w, state.h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, state.w, state.h);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 1;\n  ctx.strokeRect(left, top, right - left, bot - top);\n  ctx.beginPath();\n  ctx.moveTo(left, ythr);\n  ctx.lineTo(right, ythr);\n  ctx.stroke();\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  for (i = 0; i <= n; i++) {\n    d = i * 16 / n;\n    s = scoreAt(d, theta);\n    x = left + d * (right - left) / 16;\n    y = mid - s * 100;\n    if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); }\n  }\n  ctx.stroke();\n  var xm = left + m * (right - left) / 16;\n  var sm = scoreAt(m, theta);\n  var ym = mid - sm * 100;\n  ctx.fillStyle = \"#c4512c\";\n  ctx.beginPath();\n  ctx.arc(xm, ym, 5, 0, Math.PI * 2);\n  ctx.fill();\n  var cx = 120;\n  var cy = 90;\n  var r = 32;\n  var a = m * theta;\n  var qx = cx + Math.cos(a) * r;\n  var qy = cy - Math.sin(a) * r;\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  ctx.arc(cx, cy, r, 0, Math.PI * 2);\n  ctx.stroke();\n  ctx.beginPath();\n  ctx.moveTo(cx, cy);\n  ctx.lineTo(qx, qy);\n  ctx.stroke();\n  ctx.fillStyle = \"#c4512c\";\n  ctx.beginPath();\n  ctx.arc(qx, qy, 4, 0, Math.PI * 2);\n  ctx.fill();\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"threshold \" + fmt(thr), left, ythr - 8);\n  ctx.fillText(\"score = \" + fmt(sm) + \" at m = \" + fmt(m), 48, 318);\n  ctx.fillText(\"toy theta = \" + fmt(theta), 48, 344);\n}",
+ "explain": "Moving m rotates the toy query and the curve score = q_m^T R_{n-m} k_n falls against the threshold line threshold = value as relative distance n-m grows per arXiv 2104.09864, which only holds if absolute rotations cancel.",
+ "id": "rope-relative-widget",
+ "questions": [
+  {
+   "q": "Predict which pairs keep the same score if both positions shift by 5?",
+   "why": "Absolute rotation versus relative-only score confuses newcomers."
+  },
+  {
+   "q": "Set relative distance to 8, which head dimension still stays aligned?",
+   "why": "Different frequencies decay at different rates with distance."
+  },
+  {
+   "q": "Move position m to 16 with base 10000, which high dimension barely rotates?",
+   "why": "High dimensions rotate slower than low dimensions."
+  },
+  {
+   "q": "Raise the rotation angle to 0.3, which distance reaches orthogonal first?",
+   "why": "Angle speed controls where similarity drops to zero."
+  }
+ ],
+ "title": "RoPE score falls with relative distance",
+ "topic": "rope"
+}

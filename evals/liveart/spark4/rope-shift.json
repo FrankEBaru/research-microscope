@@ -1,0 +1,127 @@
+{
+ "id": "rope-shift",
+ "claim": {
+  "text": "RoPE rotates each absolute position, and the attention score depends only on the relative distance between the tokens.",
+  "latex": "",
+  "context": "",
+  "arxiv": "2104.09864"
+ },
+ "spec": {
+  "archetype": "dial",
+  "constraints": [],
+  "controls": [
+   {
+    "id": "m",
+    "label": "position m",
+    "max": 10,
+    "min": 0,
+    "step": 1,
+    "value": 4
+   },
+   {
+    "id": "n",
+    "label": "position n",
+    "max": 10,
+    "min": 0,
+    "step": 1,
+    "value": 1
+   },
+   {
+    "id": "theta",
+    "label": "base angle theta",
+    "max": 1,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 0.5
+   }
+  ],
+  "derived": [
+   {
+    "formula": "m-n",
+    "name": "rel"
+   },
+   {
+    "formula": "(m-n)*theta",
+    "name": "ang"
+   }
+  ],
+  "direction": [
+   {
+    "control": "m",
+    "effect": "up",
+    "readout": "rel"
+   }
+  ],
+  "explain": "Toy illustration of arXiv 2104.09864 rope rotation: the dial turns by relative distance, bounded by absolute positions rotating together.",
+  "questions": [
+   {
+    "q": "Predict what m = 7 does to the dial before moving it?",
+    "why": "prediction"
+   },
+   {
+    "q": "Does n = 3 mean absolute position n is ignored, before moving n?",
+    "why": "misunderstanding"
+   },
+   {
+    "q": "What happens to the shared rotation when theta = 0.8 is set?",
+    "why": "parameter sense"
+   },
+   {
+    "q": "Why does m = 2 with n = 8 give the same gap as shifted pairs?",
+    "why": "relativity"
+   }
+  ],
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "m",
+    "label": "position m",
+    "max": 10,
+    "min": 0,
+    "step": 1,
+    "value": 4
+   },
+   {
+    "id": "n",
+    "label": "position n",
+    "max": 10,
+    "min": 0,
+    "step": 1,
+    "value": 1
+   },
+   {
+    "id": "theta",
+    "label": "base angle theta",
+    "max": 1,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 0.5
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var m = state.m; var n = state.n; var th = state.theta; var rel = m - n; var ang = rel * th; function fmt(v) { return Math.round(v * 100) / 100; } ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); var cx = w * 0.3; var cy = h * 0.52; var r = h * 0.32; var cx2 = w * 0.76; var cy2 = h * 0.52; var r2 = h * 0.22; var i = 0; var a = 0; var tx = 0; var ty = 0; ctx.strokeStyle = \"#1f4b99\"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(cx2, cy2, r2, 0, Math.PI * 2); ctx.stroke(); ctx.lineWidth = 1; ctx.strokeStyle = \"#9aa3b2\"; ctx.beginPath(); for (i = 0; i < 12; i = i + 1) { a = i * Math.PI / 6; tx = cx + Math.cos(a) * r; ty = cy + Math.sin(a) * r; ctx.moveTo(cx + Math.cos(a) * (r - 8), cy + Math.sin(a) * (r - 8)); ctx.lineTo(tx, ty); } ctx.stroke(); ctx.beginPath(); for (i = 0; i < 8; i = i + 1) { a = i * Math.PI / 4; ctx.moveTo(cx2 + Math.cos(a) * (r2 - 6), cy2 + Math.sin(a) * (r2 - 6)); ctx.lineTo(cx2 + Math.cos(a) * r2, cy2 + Math.sin(a) * r2); } ctx.stroke(); var aM = -m * th; var aN = -n * th; var lo = Math.min(aM, aN); var hi = Math.max(aM, aN); ctx.strokeStyle = \"#c46a1b\"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, r * 0.55, lo, hi); ctx.stroke(); ctx.strokeStyle = \"#1f4b99\"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(aM) * r, cy + Math.sin(aM) * r); ctx.stroke(); ctx.strokeStyle = \"#c46a1b\"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(aN) * r, cy + Math.sin(aN) * r); ctx.stroke(); ctx.fillStyle = \"#1f4b99\"; ctx.beginPath(); ctx.arc(cx + Math.cos(aM) * r, cy + Math.sin(aM) * r, 6, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = \"#c46a1b\"; ctx.beginPath(); ctx.arc(cx + Math.cos(aN) * r, cy + Math.sin(aN) * r, 6, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = \"#111111\"; ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(cx2, cy2, 4, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = \"#0e7a3d\"; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(cx2, cy2); ctx.lineTo(cx2 + Math.cos(-ang) * r2, cy2 + Math.sin(-ang) * r2); ctx.stroke(); ctx.fillStyle = \"#111111\"; ctx.font = \"14px sans-serif\"; ctx.textAlign = \"left\"; ctx.fillText(\"m vector blue\", cx - r, cy + r + 28); ctx.fillText(\"n vector orange\", cx - r, cy + r + 48); ctx.fillText(\"rel dial green\", cx2 - r2 - 10, cy2 + r2 + 28); ctx.font = \"15px sans-serif\"; ctx.fillText(\"rel = \" + fmt(rel), 48, 318); ctx.fillText(\"ang = \" + fmt(ang), 220, 318); ctx.fillText(\"m = 7 shifts blue needle\", 380, 318); }",
+  "explain": "Toy illustration of arXiv 2104.09864 rope rotation: the dial turns by relative distance, bounded by absolute positions rotating together.",
+  "id": "rope-dial",
+  "questions": [
+   {
+    "q": "Predict what m = 7 does to the dial before moving it?",
+    "why": "prediction"
+   },
+   {
+    "q": "Does n = 3 mean absolute position n is ignored, before moving n?",
+    "why": "misunderstanding"
+   },
+   {
+    "q": "What happens to the shared rotation when theta = 0.8 is set?",
+    "why": "parameter sense"
+   },
+   {
+    "q": "Why does m = 2 with n = 8 give the same gap as shifted pairs?",
+    "why": "relativity"
+   }
+  ],
+  "title": "RoPE dial turns by relative distance",
+  "topic": "rope"
+ }
+}

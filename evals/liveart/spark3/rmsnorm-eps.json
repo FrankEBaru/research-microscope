@@ -1,0 +1,126 @@
+{
+ "id": "rmsnorm-eps",
+ "claim": {
+  "text": "RMSNorm divides each coordinate by the root mean square of the vector, so a larger epsilon stops that division from shri",
+  "latex": "",
+  "context": "",
+  "arxiv": "1910.07467"
+ },
+ "spec": {
+  "archetype": "curve",
+  "controls": [
+   {
+    "id": "rms",
+    "label": "Vector RMS",
+    "max": 2.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 1.0
+   },
+   {
+    "id": "eps",
+    "label": "Epsilon",
+    "max": 2.0,
+    "min": 0.0,
+    "step": 0.05,
+    "value": 0.2
+   },
+   {
+    "id": "xval",
+    "label": "Coordinate value",
+    "max": 5.0,
+    "min": 0.5,
+    "step": 0.1,
+    "value": 2.0
+   }
+  ],
+  "derived": [
+   {
+    "formula": "sqrt(rms*rms+eps)",
+    "name": "denom"
+   },
+   {
+    "formula": "xval/sqrt(rms*rms+eps)",
+    "name": "scaled"
+   }
+  ],
+  "direction": [
+   {
+    "control": "eps",
+    "effect": "down",
+    "readout": "scaled"
+   }
+  ],
+  "explain": "Illustrative toy from arXiv 1910.07467 showing RMSNorm rescaling of one coordinate by the root mean square; the curve shows scaled output falling as epsilon grows past the RMS limit.",
+  "questions": [
+   {
+    "q": "Predict scaled when eps=1 with rms=1 and xval=2?",
+    "why": "Tests epsilon-dominated regime."
+   },
+   {
+    "q": "What is scaled if rms=1.5 with eps=0.2 and xval=2?",
+    "why": "Tests RMS-dominated shrinking."
+   },
+   {
+    "q": "What is denom if eps=0 with rms=1 and xval=2?",
+    "why": "Checks no-epsilon limit."
+   },
+   {
+    "q": "What is scaled if xval=4 with rms=1 and eps=0.2?",
+    "why": "Checks linearity in coordinate."
+   }
+  ],
+  "threshold_formula": "eps - rms*rms"
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "rms",
+    "label": "Vector RMS",
+    "max": 2.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 1.0
+   },
+   {
+    "id": "eps",
+    "label": "Epsilon",
+    "max": 2.0,
+    "min": 0.0,
+    "step": 0.05,
+    "value": 0.2
+   },
+   {
+    "id": "xval",
+    "label": "Coordinate value",
+    "max": 5.0,
+    "min": 0.5,
+    "step": 0.1,
+    "value": 2.0
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var rms = state.rms; var eps = state.eps; var xval = state.xval; ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); var x0 = 56; var y0 = 22; var pw = w - x0 - 150; var ph = h - y0 - 58; var xMax = 2; var yMax = 6; function X(e) { return x0 + e / xMax * pw; } function Y(s) { return y0 + ph - s / yMax * ph; } ctx.strokeStyle = \"#8a8175\"; ctx.lineWidth = 1; ctx.strokeRect(x0, y0, pw, ph); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"12px sans-serif\"; ctx.textAlign = \"center\"; ctx.fillText(\"eps 0\", x0, y0 + ph + 18); ctx.fillText(\"eps 2\", x0 + pw, y0 + ph + 18); ctx.fillText(\"epsilon\", x0 + pw / 2, y0 + ph + 34); ctx.textAlign = \"left\"; ctx.fillText(\"6\", 28, Y(6) + 4); ctx.fillText(\"0\", 28, Y(0) + 4); ctx.fillText(\"scaled\", 28, y0 - 6); var thr = rms * rms; var clipped = 0; var i = 0; var e = 0; var s = 0; var px = 0; var py = 0; if (thr >= 0 && thr <= xMax) { ctx.strokeStyle = \"#c4512c\"; ctx.lineWidth = 1; var yt = y0; while (yt < y0 + ph) { ctx.beginPath(); ctx.moveTo(X(thr), yt); ctx.lineTo(X(thr), yt + 6); ctx.stroke(); yt = yt + 12; } ctx.fillStyle = \"#c4512c\"; ctx.fillText(\"rms^2\", X(thr) + 6, y0 + 14); } ctx.strokeStyle = \"#1f4b99\"; ctx.lineWidth = 2; ctx.beginPath(); for (i = 0; i <= 60; i++) { e = i / 60 * xMax; s = xval / Math.sqrt(rms * rms + e); px = X(e); py = Y(s); if (s > yMax) { py = y0; clipped = 1; } if (i === 0) { ctx.moveTo(px, py); } else { ctx.lineTo(px, py); } } ctx.stroke(); var denom = Math.sqrt(rms * rms + eps); var scaled = xval / denom; var cpy = Y(scaled); var cpx = X(eps); var dotClipped = 0; if (scaled > yMax) { cpy = y0; dotClipped = 1; } ctx.strokeStyle = \"#1d1a16\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cpx, y0 + ph); ctx.lineTo(cpx, cpy); ctx.stroke(); ctx.fillStyle = \"#1f4b99\"; ctx.beginPath(); ctx.arc(cpx, cpy, 6, 0, 6.2832); ctx.fill(); ctx.fillStyle = \"#ffffff\"; ctx.beginPath(); ctx.arc(cpx, cpy, 2.5, 0, 6.2832); ctx.fill(); var lx = x0 + pw + 12; ctx.fillStyle = \"#1d1a16\"; ctx.font = \"13px sans-serif\"; ctx.textAlign = \"left\"; ctx.fillText(\"rms \" + Math.round(rms * 100) / 100, lx, y0 + 30); ctx.fillText(\"eps \" + Math.round(eps * 100) / 100, lx, y0 + 52); ctx.fillText(\"x \" + Math.round(xval * 100) / 100, lx, y0 + 74); ctx.fillText(\"denom \" + Math.round(denom * 100) / 100, lx, y0 + 104); ctx.fillText(\"scaled \" + Math.round(scaled * 100) / 100, lx, y0 + 126); ctx.fillStyle = \"#8a8175\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"x div sqrt(rms^2+eps)\", lx, y0 + 152); if (eps > thr) { ctx.fillStyle = \"#c4512c\"; ctx.fillText(\"eps past rms^2\", lx, y0 + 174); } else { ctx.fillStyle = \"#1f4b99\"; ctx.fillText(\"rms holds\", lx, y0 + 174); } if (clipped === 1 || dotClipped === 1) { ctx.fillStyle = \"#c4512c\"; ctx.fillText(\"clipped\", x0 + 8, y0 + 16); } }",
+  "explain": "Illustrative toy from arXiv 1910.07467 showing RMSNorm rescaling of one coordinate by the root mean square; the curve shows scaled output falling as epsilon grows past the RMS limit.",
+  "id": "rmsnorm-eps-curve",
+  "questions": [
+   {
+    "q": "Predict scaled when eps=1 with rms=1 and xval=2?",
+    "why": "Tests epsilon-dominated regime."
+   },
+   {
+    "q": "What is scaled if rms=1.5 with eps=0.2 and xval=2?",
+    "why": "Tests RMS-dominated shrinking."
+   },
+   {
+    "q": "What is denom if eps=0 with rms=1 and xval=2?",
+    "why": "Checks no-epsilon limit."
+   },
+   {
+    "q": "What is scaled if xval=4 with rms=1 and eps=0.2?",
+    "why": "Checks linearity in coordinate."
+   }
+  ],
+  "title": "RMSNorm output falls as epsilon grows",
+  "topic": "rmsnorm"
+ }
+}

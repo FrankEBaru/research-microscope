@@ -1,0 +1,108 @@
+{
+ "id": "rmsnorm-eps",
+ "claim": {
+  "text": "RMSNorm divides each coordinate by the root mean square of the vector, so a larger epsilon stops that division from shri",
+  "latex": "",
+  "context": "",
+  "arxiv": "1910.07467"
+ },
+ "spec": {
+  "archetype": "curve",
+  "constraints": [],
+  "controls": [
+   {
+    "id": "r",
+    "label": "RMS of vector",
+    "max": 2.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 1.0
+   },
+   {
+    "id": "eps",
+    "label": "epsilon stabilizer",
+    "max": 2.0,
+    "min": 0.0,
+    "step": 0.1,
+    "value": 0.5
+   }
+  ],
+  "derived": [
+   {
+    "formula": "r/sqrt(r^2+eps)",
+    "name": "gain"
+   }
+  ],
+  "direction": [
+   {
+    "control": "eps",
+    "effect": "down",
+    "readout": "gain"
+   }
+  ],
+  "explain": "Toy RMSNorm sketch for arXiv 1910.07467: the curve is illustrative, not exact. Watch the gain number: near 1 means big values survive, much smaller means epsilon shrinks them.",
+  "questions": [
+   {
+    "q": "Predict what happens to gain if eps = 1.5?",
+    "why": "Tests large-epsilon regime."
+   },
+   {
+    "q": "What is gain when r = 1 with large eps?",
+    "why": "Checks RMS dependence."
+   },
+   {
+    "q": "Why does gain fall when eps = 2 and r = 0.2?",
+    "why": "Probes small-RMS shrinkage."
+   },
+   {
+    "q": "At which eps does r = 1 stop keeping gain near 1?",
+    "why": "Locates regime change."
+   }
+  ],
+  "scale": false,
+  "threshold_formula": "r^2-eps"
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "r",
+    "label": "RMS of vector",
+    "max": 2.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 1.0
+   },
+   {
+    "id": "eps",
+    "label": "epsilon stabilizer",
+    "max": 2.0,
+    "min": 0.0,
+    "step": 0.1,
+    "value": 0.5
+   }
+  ],
+  "draw": "function draw(ctx, state, t) {\n  var w = state.w;\n  var h = state.h;\n  var r = state.r;\n  var eps = state.eps;\n  function fmt(v) { return Math.round(v * 100) / 100; }\n  function X(e) { return 48 + e / 2 * 544; }\n  function Y(g) { return 272 - g * 224; }\n  var gain = r / Math.sqrt(r * r + eps);\n  var thr = r * r - eps;\n  var thrEps = r * r;\n  var thrX = X(0);\n  var clipped = 0;\n  if (thrEps > 2) { thrX = X(2); clipped = 1; } else { thrX = X(thrEps); }\n  var i = 0;\n  var e = 0;\n  var g = 0;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(X(0), Y(0));\n  ctx.lineTo(X(2), Y(0));\n  ctx.moveTo(X(0), Y(0));\n  ctx.lineTo(X(0), Y(1));\n  ctx.stroke();\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  for (i = 0; i <= 60; i++) { e = i / 60 * 2; g = r / Math.sqrt(r * r + e); if (i === 0) { ctx.moveTo(X(e), Y(g)); } else { ctx.lineTo(X(e), Y(g)); } }\n  ctx.stroke();\n  ctx.strokeStyle = \"#c4512c\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  for (i = 0; i < 14; i++) { ctx.moveTo(thrX, 48 + i * 16); ctx.lineTo(thrX, 48 + i * 16 + 8); }\n  ctx.stroke();\n  ctx.fillStyle = \"#c4512c\";\n  ctx.beginPath();\n  ctx.arc(X(eps), Y(gain), 6, 0, 6.2832);\n  ctx.fill();\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"gain = \" + fmt(gain), 48, 316);\n  ctx.fillText(\"r = \" + fmt(state.r), 220, 316);\n  ctx.fillText(\"eps = \" + fmt(state.eps), 340, 316);\n  ctx.fillText(\"not to scale\", 48, 30);\n  ctx.fillText(\"thr = \" + fmt(thr), 470, 316);\n  ctx.font = \"12px sans-serif\";\n  ctx.fillStyle = \"#8a8175\";\n  ctx.fillText(\"eps axis 0 to 2\", 48, 340);\n  ctx.fillText(\"gain axis 0 to 1\", 340, 340);\n  if (clipped === 1) { ctx.fillStyle = \"#c4512c\"; ctx.fillText(\"clipped\", thrX - 52, 60); }\n}",
+  "explain": "Toy RMSNorm sketch for arXiv 1910.07467: the curve is illustrative, not exact. Watch the gain number: near 1 means big values survive, much smaller means epsilon shrinks them.",
+  "id": "rmsnorm-gain-curve",
+  "questions": [
+   {
+    "q": "Predict what happens to gain if eps = 1.5?",
+    "why": "Tests large-epsilon regime."
+   },
+   {
+    "q": "What is gain when r = 1 with large eps?",
+    "why": "Checks RMS dependence."
+   },
+   {
+    "q": "Why does gain fall when eps = 2 and r = 0.2?",
+    "why": "Probes small-RMS shrinkage."
+   },
+   {
+    "q": "At which eps does r = 1 stop keeping gain near 1?",
+    "why": "Locates regime change."
+   }
+  ],
+  "title": "Bigger epsilon shrinks RMSNorm gain",
+  "topic": "rmsnorm"
+ }
+}

@@ -1,0 +1,92 @@
+{
+ "id": "gelu-tail",
+ "claim": {
+  "text": "GELU does not cut at zero: a negative input still leaks through, unlike a hard cutoff.",
+  "latex": "",
+  "context": "",
+  "arxiv": "1606.08415"
+ },
+ "spec": {
+  "archetype": "curve",
+  "constraints": [],
+  "controls": [
+   {
+    "id": "x",
+    "label": "input x value",
+    "max": 3,
+    "min": -3,
+    "step": 0.1,
+    "value": -1
+   }
+  ],
+  "derived": [
+   {
+    "formula": "x*0.5*(1+erf(x/sqrt(2)))",
+    "name": "gelu"
+   }
+  ],
+  "direction": [
+   {
+    "control": "x",
+    "effect": "up",
+    "readout": "gelu"
+   }
+  ],
+  "explain": "From arXiv 1606.08415: toy GELU curve showing soft leak for x<0. Watch the gelu number: it stays small-negative instead of 0, unlike ReLU hard cutoff.",
+  "questions": [
+   {
+    "q": "What is gelu when x is -1?",
+    "why": "Tests negative leak."
+   },
+   {
+    "q": "Predict what happens to gelu when x moves to 2?",
+    "why": "Tests positive regime."
+   },
+   {
+    "q": "How does gelu at x = -2 compare to 0?",
+    "why": "Tests small leak magnitude."
+   },
+   {
+    "q": "What value appears for gelu when x equals 0?",
+    "why": "Tests zero crossing."
+   }
+  ],
+  "scale": false,
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "x",
+    "label": "input x value",
+    "max": 3,
+    "min": -3,
+    "step": 0.1,
+    "value": -1
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var xv = state.x; ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); function fmt(v) { return Math.round(v * 100) / 100; } function erfA(z) { var s = 1; var zz = z; if (zz < 0) { s = -1; zz = -zz; } var tt = 1 / (1 + 0.3275911 * zz); var t2 = tt * tt; var t3 = t2 * tt; var t4 = t3 * tt; var t5 = t4 * tt; var poly = 0.254829592 * tt - 0.284496736 * t2 + 1.421413741 * t3 - 1.453152027 * t4 + 1.061405429 * t5; var y = 1 - poly * Math.exp(-zz * zz); return s * y; } function geluF(u) { var z = u / Math.sqrt(2); return u * 0.5 * (1 + erfA(z)); } var L = 60; var R = 590; var T = 30; var B = 290; var ymin = -1; var ymax = 3; function X(u) { return L + (u + 3) / 6 * (R - L); } function Y(v) { return B - (v - ymin) / (ymax - ymin) * (B - T); } ctx.strokeStyle = \"#d8cfbf\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(L, Y(0)); ctx.lineTo(R, Y(0)); ctx.stroke(); ctx.beginPath(); ctx.moveTo(X(0), T); ctx.lineTo(X(0), B); ctx.stroke(); var u = 0; var g = 0; var r = 0; var i = 0; ctx.strokeStyle = \"#c9bc a8\"; ctx.strokeStyle = \"#c9bca8\"; ctx.lineWidth = 1; ctx.beginPath(); for (i = 0; i <= 60; i++) { u = -3 + i / 60 * 6; if (u > 0) { r = u; } else { r = 0; } if (i === 0) { ctx.moveTo(X(u), Y(r)); } else { if ((i % 2) === 0) { ctx.moveTo(X(u), Y(r)); } else { ctx.lineTo(X(u), Y(r)); } } } ctx.stroke(); ctx.strokeStyle = \"#1f4b99\"; ctx.lineWidth = 2; ctx.beginPath(); for (i = 0; i <= 120; i++) { u = -3 + i / 120 * 6; g = geluF(u); if (i === 0) { ctx.moveTo(X(u), Y(g)); } else { ctx.lineTo(X(u), Y(g)); } } ctx.stroke(); var gv = geluF(xv); var mx = X(xv); var my = Y(gv); ctx.strokeStyle = \"#8a8175\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(mx, B); ctx.lineTo(mx, my); ctx.stroke(); ctx.fillStyle = \"#c4512c\"; ctx.beginPath(); ctx.arc(mx, my, 6, 0, 6.2832); ctx.fill(); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"13px sans-serif\"; ctx.textAlign = \"left\"; ctx.fillText(\"x = \" + fmt(xv), 60, 318); ctx.fillText(\"gelu = \" + fmt(gv), 200, 318); ctx.fillText(\"not to scale\", 420, 318); ctx.font = \"12px sans-serif\"; ctx.fillStyle = \"#8a8175\"; ctx.fillText(\"ReLU cutoff\", 430, 120); ctx.fillStyle = \"#1f4b99\"; ctx.fillText(\"GELU leaks below zero\", 370, 220); }",
+  "explain": "From arXiv 1606.08415: toy GELU curve showing soft leak for x<0. Watch the gelu number: it stays small-negative instead of 0, unlike ReLU hard cutoff.",
+  "id": "gelu-leak",
+  "questions": [
+   {
+    "q": "What is gelu when x is -1?",
+    "why": "Tests negative leak."
+   },
+   {
+    "q": "Predict what happens to gelu when x moves to 2?",
+    "why": "Tests positive regime."
+   },
+   {
+    "q": "How does gelu at x = -2 compare to 0?",
+    "why": "Tests small leak magnitude."
+   },
+   {
+    "q": "What value appears for gelu when x equals 0?",
+    "why": "Tests zero crossing."
+   }
+  ],
+  "title": "GELU leaks below zero unlike hard cutoff",
+  "topic": "gelu"
+ }
+}

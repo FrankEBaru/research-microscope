@@ -8,3 +8,4 @@ next-env.d.ts
 !src/lib/
 fidelity/out/
 out-live/
+public/liveart96/
