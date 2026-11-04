@@ -41,6 +41,7 @@ export default function StartScreen({ draft, setDraft, onSearch, pending, engine
     <section className="s-start" data-screen="start">
       <div className="st">
         <section className="st-l">
+          <p className="st-tag">The joy of understanding, from a field to a single idea.</p>
           <Cap>One question</Cap>
           <h1>What do you want to understand?</h1>
           <form className="ask-field" onSubmit={(e) => onSearch(e)}>

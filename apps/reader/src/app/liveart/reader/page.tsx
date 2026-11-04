@@ -69,7 +69,7 @@ export default function LiveReaderPage() {
     <>
       <header className="b1-top">
         <div className="top-brand">
-          <a className="wm" href="#" aria-label="Reading Microscope"><span className="wm-mark" aria-hidden="true"><i /></span><span className="wm-name">Reading Microscope</span></a>
+          <a className="wm" href="#" aria-label="Research Microscope"><span className="wm-mark" aria-hidden="true"><i /></span><span className="wm-name">Research Microscope</span></a>
         </div>
         <nav className="crumbs" aria-label="Breadcrumb"><span className="cur" aria-current="page">{m.paper}</span></nav>
       </header>

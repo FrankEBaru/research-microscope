@@ -1,4 +1,4 @@
-/** RRM-102: Reading Microscope mark (S18, "the R that underlines"). A soft R whose leg runs on as an underline,
+/** RRM-102: Research Microscope mark (S18, "the R that underlines"). A soft R whose leg runs on as an underline,
  * with a lens in its eye. Colors come from tokens (.wm-logo in inicio.css). `animate` plays it once: the R appears,
  * the leg underlines left to right (≈0.75 s) and the lens lights up; reduced motion shows it still.
  * Standalone files: public/brand/rm-s18*.svg, s18-anim.svg. */

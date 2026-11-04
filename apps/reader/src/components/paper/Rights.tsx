@@ -10,7 +10,7 @@ export default function Rights({ rights }: { rights: any }) {
   const note = rights.fixture
     ? "Local fixture: full text for offline testing. Live still treats this license as closed."
     : open
-      ? "Annotated by Research Reading Microscope (modified)"
+      ? "Annotated by Research Microscope (modified)"
       : rights.gated ? "Abstract and our explanations only" : "";
   return (
     <p className="rights">

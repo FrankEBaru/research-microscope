@@ -16,7 +16,7 @@ test("rightsLine names the license, the version, and the annotation", () => {
   assert.deepEqual(rightsLine(open), [
     "CC BY 4.0",
     "arXiv:2302.13971v1",
-    "Annotated by Research Reading Microscope (modified)",
+    "Annotated by Research Microscope (modified)",
   ]);
   assert.ok(rightsLine(sa).includes("Our annotations: CC BY-SA 4.0"));
   assert.equal(rightsLine(sa)[1], "arXiv:0000.00002");
