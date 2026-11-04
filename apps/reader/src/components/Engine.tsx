@@ -496,6 +496,8 @@ export default function Engine() {
     if (!q || pending) return;
     const gen = ++searchGen.current;
     setLiveQ(q); setLiveOn(true); setLiveErr(""); setLiveCode(""); setImpatient(false); setForced(false); setTopics(null); setAsList(false); setLabelNote("");
+    setLiveResult(null); setRowState({}); setOpened(null); setCamino([]); setExplore({ q, nodes: [], edges: [] }); setLaneId("");
+    go({});
     setPending(true);
     let cached: any = null;
     try { cached = recallQuestion(localStorage, q); } catch (e) { storageFault(e, "localStorage"); cached = null; }
@@ -614,7 +616,10 @@ export default function Engine() {
     group: groupNow,
     paper: liveId ? titleFor(liveId) : "",
     paperId: liveId,
-    steps: pathOf(explore),
+    steps: pathOf(explore).map((step) => {
+      const known = step.title && !/^\d+$/.test(step.title) ? step.title : titleFor(step.id);
+      return { ...step, title: known && !/^\d+$/.test(known) ? known : "Paper" };
+    }),
     onStep: irPaso,
   } : null;
   const frame = {

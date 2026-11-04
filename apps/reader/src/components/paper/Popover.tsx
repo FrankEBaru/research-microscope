@@ -3,11 +3,11 @@ import { Block, Inline, Paper } from "@/lib/types";
 import { Tex, Rich, Sym } from "@/lib/math";
 import { ProvChip } from "../Bits";
 import { Cap, Prov } from "@/components/ui";
-import { equationHover, symbolHover, tableHover } from "@/lib/hover.js";
+import { UNDEFINED, equationHover, symbolHover, tableHover } from "@/lib/hover.js";
 import { resolveCite } from "@/lib/path.js";
 import { Inlines } from "../Paper";
 import { Ctx, plainOf } from "./inline";
-import { GapView } from "./GapNotes";
+import { GapView, repeatsBlock } from "./GapNotes";
 import { FigImg } from "./Figures";
 
 export type PopState = { key: string; rect: DOMRect } | null;
@@ -22,7 +22,8 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
     body = (
       <>
         {keys.map((k) => {
-          const n = paper.refLabels?.[k] ?? model.refIndex[k] ?? "?";
+          const raw = paper.refLabels?.[k] ?? model.refIndex[k];
+          const n = raw != null && String(raw).length <= 48 ? raw : k;
           return (
             <div key={k}>
               <Cap>{`Reference ${n}`}</Cap>
@@ -40,7 +41,9 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
     let tex = r[2] || "";
     try { tex = decodeURIComponent(tex); } catch { /* el LaTeX se muestra igual */ }
     const hit = symbolHover(paper.blocks, tex, { block: r[0], index: Number(r[1]) });
-    body = <><p className="pop-quote"><Rich text={hit.shown || hit.text} /></p><div className="pop-meta"><Prov kind="paper" text="author’s sentence" /></div></>;
+    if (!hit.here && hit.text !== UNDEFINED) {
+      body = <><p className="pop-quote"><Rich text={hit.shown || hit.text} /></p><div className="pop-meta"><Prov kind="paper" text="author’s sentence" /></div></>;
+    }
   } else if (kind === "e" && core) {
     const card = (pack?.notes || []).find((n: any) => n.block_id === r[0]);
     const art = (pack?.artifacts || []).find((n: any) => n.block_id === r[0]);
@@ -52,7 +55,8 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
     body = <><p className="pop-title">Where it comes from</p>{lines.map((text: string, i: number) => <p key={i} className="pop-quote"><Rich text={text} /></p>)}{!lines.length && <p className="pop-quote">the paper does not define it</p>}<div className="pop-meta"><ProvChip kind="paper" text="author’s sentence" /></div></>;
     }
   } else if (kind === "s" && core && pack) {
-    const card = (pack.notes || []).find((n: any) => n.block_id === r[0] && n.sent_index === +r[1]);
+    const host = (paper.blocks || []).find((b) => b.id === r[0]);
+    const card = (pack.notes || []).find((n: any) => n.block_id === r[0] && n.sent_index === +r[1] && !(host && repeatsBlock(n, host)));
     if (card) body = <GapView note={card} self={String(paper.corpusid ?? "")} onOpen={onOpen} />;
   } else if (kind === "y") {
     const s = content.attention.symbols.find((s: any) => s.id === r[0]);
@@ -109,6 +113,7 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
       </>
     );
   }
+  if (!body) return null;
   const narrow = typeof window !== "undefined" && window.innerWidth <= 760;
   let style: any;
   if (narrow) {

@@ -7,7 +7,7 @@ import Instrument from "./Instrument";
 import { bibtex } from "@/lib/bibtex.js";
 import { eqTex, fetchNotes, paperKey, refText, sourcePdfUrl } from "@/lib/backend.js";
 import { collectV2 } from "@/lib/artifacts.js";
-import { pdfPagesOnly, presentInlines, visibleInlines } from "@/lib/prose.js";
+import { pdfPagesOnly, presentInlines, splitIntertext, visibleInlines } from "@/lib/prose.js";
 import { faltaText } from "@/lib/falta.js";
 import { hasConclusion, scanIds } from "@/lib/scan.js";
 import { citeName } from "@/lib/layout.js";
@@ -85,7 +85,7 @@ function One({ x, ctx, prev = "" }: { x: Inline; ctx: Ctx; prev?: string }) {
       return <a href={x.href} target="_blank" rel="noreferrer"><Inlines inls={x.c} ctx={ctx} /></a>;
     }
     case "cite": {
-      const lab = x.keys.map((k: string) => ctx.refLabels?.[k] ?? ctx.refIndex[k] ?? k);
+      const lab = x.keys.map((k: string) => citeFace(k, ctx.refLabels, ctx.refIndex));
       const key = `c|${x.keys.join(",")}`;
       const open = ctx.popKey === key;
       return (
@@ -109,6 +109,14 @@ function One({ x, ctx, prev = "" }: { x: Inline; ctx: Ctx; prev?: string }) {
     }
     default: return null;
   }
+}
+
+function citeFace(k: string, labels?: Record<string, string>, index?: Record<string, string | number>) {
+  const numbered = index?.[k];
+  if (numbered != null && String(numbered).length <= 8) return String(numbered);
+  const raw = labels?.[k];
+  if (raw && raw.length <= 48) return raw;
+  return k;
 }
 
 function autoSentence(text: string) {
@@ -201,7 +209,9 @@ function SymbolMargin({ tex, name, blocks, at }: { tex: string; name: string; bl
       </p>
       {missing
         ? <Notice kind="absence">the paper does not define it</Notice>
-        : <>
+        : hit.here
+          ? null
+          : <>
             <p className="sn-q">“<Rich text={hit.shown || hit.text} />”</p>
             <p><Prov kind="paper" text={hit.section || "paper"} /></p>
           </>}
@@ -331,11 +341,13 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
 
   const onOver = (e: React.MouseEvent | React.FocusEvent) => {
     const target = e.target as HTMLElement;
-    if (target.closest?.(".popover,[data-pop],[data-sym]")) clearTimeout(closeTimer.current);
+    const inPop = Boolean(target.closest?.(".popover"));
     const el = target.closest?.("[data-pop],[data-sym]") as HTMLElement | null;
+    if (inPop) clearTimeout(closeTimer.current);
     clearTimeout(timer.current);
     if (!el) return;
     const key = el.dataset.pop || `y|${el.dataset.sym}`;
+    if (pop && (el.dataset.pop === pop.key || (el.dataset.sym && pop.key === `y|${el.dataset.sym}`))) clearTimeout(closeTimer.current);
     if (core) {
       const host = (e.target as HTMLElement).closest("[data-sym],[data-tex]") as HTMLElement | null;
       const sym = host?.dataset.sym ? `id:${host.dataset.sym}` : host?.dataset.tex ? `tex:${host.dataset.tex.replace(/\s+/g, "")}` : "";
@@ -343,8 +355,16 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     }
     if (core && !SENTENCE_MOCK && key.startsWith("s|")) {
       const parts = key.split("|");
-      const has = (pack?.notes || []).some((n: any) => n.block_id === parts[1] && n.sent_index === +parts[2]);
+      const block = (paper.blocks || []).find((b) => b.id === parts[1]);
+      const has = (pack?.notes || []).some((n: any) => n.block_id === parts[1] && n.sent_index === +parts[2] && !(block && repeatsBlock(n, block)));
       if (!has) return;
+    }
+    if (core && key.startsWith("m|")) {
+      const parts = key.split("|");
+      let tex = parts[3] || "";
+      try { tex = decodeURIComponent(tex); } catch { /* el tex del globo sigue siendo el del botón */ }
+      const hit = symbolHover(paper.blocks, tex, { block: parts[1], index: Number(parts[2]) });
+      if (!hit || hit.here || hit.text === UNDEFINED) return;
     }
     if (key.startsWith("e|") || key.startsWith("n|")) return;
     if (companion) signal(key);
@@ -367,9 +387,15 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     }
   };
   const touched = useRef(0);
+  const sameHost = (node: HTMLElement | null) => {
+    if (!node || typeof node.closest !== "function" || !pop) return false;
+    if (node.closest(".popover")) return true;
+    const host = node.closest("[data-pop],[data-sym]") as HTMLElement | null;
+    return Boolean(host && (host.dataset.pop === pop.key || (host.dataset.sym && pop.key === `y|${host.dataset.sym}`)));
+  };
   const onOut = (e: { relatedTarget: EventTarget | null }) => {
     const next = e.relatedTarget as HTMLElement | null;
-    if (next && typeof next.closest === "function" && next.closest(".popover,[data-pop],[data-sym]")) return;
+    if (sameHost(next)) return;
     if (Date.now() - touched.current < 800) return;
     clearTimeout(timer.current);
     clearTimeout(closeTimer.current);
@@ -380,6 +406,20 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     document.addEventListener("touchstart", away, { passive: true });
     return () => { document.removeEventListener("touchstart", away); clearTimeout(closeTimer.current); clearTimeout(timer.current); };
   }, []);
+  useEffect(() => {
+    if (!pop) return;
+    const down = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest?.(".popover")) return;
+      const host = t.closest?.("[data-pop],[data-sym]") as HTMLElement | null;
+      if (host && (host.dataset.pop === pop.key || (host.dataset.sym && pop.key === `y|${host.dataset.sym}`))) return;
+      clearTimeout(closeTimer.current);
+      setPop(null);
+      setSymHot("");
+    };
+    document.addEventListener("mousedown", down);
+    return () => document.removeEventListener("mousedown", down);
+  }, [pop]);
   const onClick = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement;
     if (Date.now() - touched.current < 800 && !t.closest("[data-sym],[data-xref]")) { const el = t.closest("[data-pop]") as HTMLElement | null; const popKey = el?.dataset.pop || ""; if (el && !popKey.startsWith("s|") && !popKey.startsWith("n|") && !popKey.startsWith("e|")) setPop({ key: popKey, rect: el.getBoundingClientRect() }); }
@@ -410,6 +450,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     }
     const cite = t.closest("[data-pop]") as HTMLElement | null;
     if (core && cite?.dataset.pop?.startsWith("c|")) {
+      if (pop?.key === cite.dataset.pop) { setPop(null); return; }
       setPop({ key: cite.dataset.pop, rect: cite.getBoundingClientRect() });
       return;
     }
@@ -647,7 +688,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
           else if (Array.isArray(x?.c)) takeNums(x.c);
         });
         stampedSents.forEach(takeNums);
-        const noted = (i: number) => (pack?.notes || []).some((n: any) => n.block_id === b.id && n.sent_index === i) || (SENTENCE_MOCK && core);
+        const noted = (i: number) => (pack?.notes || []).some((n: any) => n.block_id === b.id && n.sent_index === i && !repeatsBlock(n, b)) || (SENTENCE_MOCK && core);
         const prose = (
           <div id={`blk-${b.id}`} className={`blk ${b.abs ? "abstract" : ""} ${b.raw ? "raw" : ""}`}>
             {b.abs && <div className="abs-label">Abstract</div>}
@@ -681,7 +722,9 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       } else if (b.kind === "eq") {
         el = (
           <div id={`blk-${b.id}`} className={`eq blk${pop?.key === `e|${b.id}` ? " is-hover" : ""}`} {...(core ? { "data-pop": `e|${b.id}`, tabIndex: 0 } : {})}>
-            <Tex tex={eqTex(b)} display syms={model.syms} />
+            {splitIntertext(eqTex(b)).map((part, i) => part.t === "text"
+              ? <p key={i} className="eq-note"><Rich text={part.v} /></p>
+              : <Tex key={i} tex={part.v} display syms={model.syms} />)}
             <button className="copy press" type="button" data-copy={b.tex} data-copied={b.id} aria-label={copied === b.id ? "Copied" : "Copy LaTeX"}>
               <Icon name="copy" size={14} />
               {copied === b.id ? "Copied" : "LaTeX"}

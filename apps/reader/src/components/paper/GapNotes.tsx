@@ -109,11 +109,11 @@ export function ShapePill({ arts }: { arts: any[] }) {
   return <span className="shape-pill" data-artifact="forma">{hit.tex ? <Tex tex={hit.tex} /> : hit.label}</span>;
 }
 
-export function repeatsBlock(note: any, block: any, arts: any[]) {
-  if (!(arts || []).some((item) => item.type === "forma")) return false;
+export function repeatsBlock(note: any, block: any, _arts?: any[]) {
   const quote = String(note?.cite || note?.note || "").replace(/\s+/g, " ").trim();
-  const host = plainOf(block?.inlines || []);
-  return quote.length > 24 && (host === quote || host.includes(quote));
+  const host = plainOf(block?.inlines || []).replace(/\s+/g, " ").trim();
+  if (quote.length < 40 || host.length < 40) return false;
+  return host === quote || host.includes(quote) || quote.includes(host);
 }
 
 export function artsAt(id: string, pack: any, local: any) {

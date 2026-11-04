@@ -77,7 +77,8 @@ export function symbolHover(blocks, tex, at) {
     if (index <= cursor && hasSymbol(row, tex)) found = row;
   });
   if (!found) return { text: UNDEFINED };
-  return { text: found.text, shown: found.shown, section: found.section };
+  const here = Boolean(at && found.block === at.block && found.index === at.index);
+  return { text: found.text, shown: found.shown, section: found.section, here };
 }
 
 export function equationHover(blocks, blockId) {

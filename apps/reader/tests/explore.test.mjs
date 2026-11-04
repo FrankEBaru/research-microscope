@@ -55,6 +55,7 @@ test("sin pregunta, el deep link recupera el grafo que contiene el paper", () =>
   assert.equal(picked.nodes.length, 2);
   assert.equal(picked.edges[0].porQue, "cita");
   assert.equal(pickExplore(all, "otra", "").nodes.length, 0);
+  assert.equal(pickExplore(all, "otra", "13756489").nodes.length, 0);
 });
 
 test("la primera visita dice de dónde salió y el salto del minimapa se lee", () => {

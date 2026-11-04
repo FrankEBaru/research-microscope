@@ -40,6 +40,8 @@ export function pickExplore(all, question, paperId) {
   const bag = all && typeof all === "object" && !Array.isArray(all) ? all : {};
   const own = pack(bag[q], q);
   if (own.nodes.length) return own;
+  // Otra pregunta no hereda el camino de la anterior. Solo un enlace sin pregunta busca el paper.
+  if (q !== "_solo") return own;
   const id = String(paperId || "");
   if (!id) return own;
   let best = null;

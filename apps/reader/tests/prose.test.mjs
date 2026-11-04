@@ -1,8 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseProse, polishText, presentInlines, visibleInlines, pdfPagesOnly } from "../src/lib/prose.js";
+import { parseProse, polishText, presentInlines, splitIntertext, visibleInlines, pdfPagesOnly } from "../src/lib/prose.js";
 
 const text = (nodes) => nodes.map((n) => n.t === "text" ? n.v : n.t === "em" ? `*${text(n.c)}*` : n.t === "strong" ? `**${text(n.c)}**` : n.t === "math" ? `$${n.v}$` : n.t === "cite" ? `[@${n.keys.join(",")}]` : n.t === "ref" ? `#${n.label}` : "").join("");
+
+test("natbib, table notes and a repeated symbol do not stay raw", () => {
+  const nat = parseProse("learning \\begingroup\\NAT@swatrue\\NAT@ctype\\z@\\NAT@partrue Brown2020LanguageMA.");
+  assert.equal(nat.some((n) => n.t === "cite" && n.keys[0] === "Brown2020LanguageMA"), true);
+  assert.equal(nat.some((n) => n.t === "text" && /NAT@/.test(n.v)), false);
+  const braced = parseProse("see \\begingroup\\NAT@swafalse\\@ifnextchar[{[]}{Brown2020LanguageMA}");
+  assert.equal(braced.some((n) => n.t === "cite" && n.keys[0] === "Brown2020LanguageMA"), true);
+  assert.equal(text(parseProse("a learner \\tnote{edited, unclear} remains")), "a learner remains");
+  assert.equal(text(parseProse("words \\tnote{edited, unclear what a learner is")), "words edited, unclear what a learner is");
+  const mov = parseProse("\\textbf{\\texttt{mov}}(H; s)");
+  assert.equal(mov.some((n) => n.t === "strong" || n.t === "code"), true);
+  assert.equal(mov.some((n) => n.t === "text" && /textbf|texttt/.test(n.v)), false);
+  const echo = presentInlines([{ t: "math", v: "\\theta" }, { t: "text", v: "θ to denote" }]);
+  assert.equal(text(echo), "$\\theta$ to denote");
+  const dd = presentInlines([{ t: "math", v: "d" }, { t: "text", v: "d-dimensional" }]);
+  assert.equal(text(dd), "$d$-dimensional");
+  const parts = splitIntertext("a &= b \\\\ \\intertext{where each head is} c &= d");
+  assert.equal(parts[1].t, "text");
+  assert.match(parts[1].v, /where each head/);
+  assert.equal(parts.filter((p) => p.t === "math").length, 2);
+});
 
 test("titles and paren math stay as nodes the body renderer can draw", () => {
   const nodes = presentInlines([{ t: "text", v: "\\texttt{OLMo}: Paper de prueba $L_2$" }]);

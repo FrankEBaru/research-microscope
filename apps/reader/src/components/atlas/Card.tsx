@@ -1,6 +1,7 @@
 "use client";
 import type { CSSProperties } from "react";
 import { Cap, Button, Prov } from "../ui";
+import { readingOrder } from "@/lib/atlas.js";
 import { phaseOf } from "@/lib/qcache.js";
 import { visitWhy } from "@/lib/explore.js";
 import { nodeLabel } from "@/lib/layout.js";
@@ -36,13 +37,14 @@ export function phaseLabel(status: string | undefined) {
 }
 
 export default function Card({
-  point, status, phase, linked, path, license, gated, onScan, onRead, onPick, onOpen,
+  point, status, phase, linked, path, license, gated, readN, onScan, onRead, onPick, onOpen,
 }: {
   point: any;
   status?: string;
   phase?: string;
   linked?: any[];
   path?: { id: string; title: string; why: string }[];
+  readN?: number;
   license?: string;
   gated?: boolean;
   onScan?: (id: string) => void;
@@ -82,7 +84,8 @@ export default function Card({
       <dl className="card-m tnum">
         <div><dt>Year</dt><dd>{point.year ?? "No year"}</dd></div>
         <div><dt>Venue</dt><dd>{point.venue || "—"}</dd></div>
-        <div><dt>In this map</dt><dd>{(point.cites?.length || 0) + (point.citedBy?.length || 0)}</dd></div>
+        {readN && readN <= 8 ? <div><dt>Read order</dt><dd>{readN}</dd></div> : null}
+        <div><dt>Links in this map</dt><dd>{(point.cites?.length || 0) + (point.citedBy?.length || 0)}</dd></div>
       </dl>
       {quote ? (
         <blockquote>
@@ -169,11 +172,14 @@ export function AtlasCard({
   const here = hereId || "";
   const suggest = suggestId || "";
   const picked = selected || "";
-  const showPath = !picked && visited.size > 0;
-  const showId = picked || (showPath ? "" : (here || suggest));
+  const showId = picked || here || suggest;
   const by = new Map<string, any>((model?.points || []).map((p: any) => [p.id, p]));
   const point = showId ? by.get(showId) : null;
-  if (!point) return <Card point={null} path={pathOf(explore)} onPick={onPick} onOpen={onOpen} />;
+  const order = new Map(readingOrder(model?.points || []).map((row) => [row.id, row.n]));
+  if (!point) {
+    const path = pathOf(explore).map((row) => ({ ...row, title: /^\d+$/.test(row.title) ? "Paper" : row.title }));
+    return <Card point={null} path={path} onPick={onPick} onOpen={onOpen} />;
+  }
   const state = states?.[point.id];
   return (
     <Card
@@ -183,6 +189,7 @@ export function AtlasCard({
       license={state?.license || ""}
       gated={Boolean(state?.gated)}
       linked={linkedOf(point, by)}
+      readN={order.get(point.id)}
       onScan={onScan}
       onRead={onRead}
       onPick={onPick}

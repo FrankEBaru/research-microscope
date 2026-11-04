@@ -124,6 +124,25 @@ export function parseProse(input) {
   let depth = 0;
   const s = s0;
   while (i < s.length) {
+    if (s.startsWith("\\begingroup", i)) {
+      const window = s.slice(i, i + 900);
+      if (window.includes("NAT@")) {
+        const endg = window.indexOf("\\endgroup");
+        const chunk = endg >= 0 ? window.slice(0, endg) : window.slice(0, 500);
+        const braced = [...chunk.matchAll(/\{([A-Za-z][A-Za-z0-9:_+-]{2,})\}/g)];
+        const bare = chunk.match(/[A-Z][A-Za-z0-9:_+-]{3,}/g);
+        const key = braced.length ? braced[braced.length - 1][1] : (bare ? bare[bare.length - 1] : "");
+        if (key) {
+          flush();
+          out.push({ t: "cite", keys: [key] });
+          const at = chunk.lastIndexOf(key);
+          let next = i + at + key.length;
+          if (endg >= 0 && endg < at + key.length + 40) next = i + endg + "\\endgroup".length;
+          i = next;
+          continue;
+        }
+      }
+    }
     if (s.startsWith("\\def\\citename#1", i)) {
       const m = CITE_DUMP.exec(s.slice(i));
       if (m && m.index === 0) {
@@ -187,6 +206,16 @@ export function parseProse(input) {
       if (!cmd) { buf += s[i]; i += 1; continue; }
       const accent = accentChar(cmd.name, s, cmd.j);
       if (accent && cmd.args.length === 0) { buf += accent[0]; i = accent[1]; continue; }
+      if (cmd.name === "tnote" || cmd.name === "tnotetext") {
+        if (cmd.args.length) { i = cmd.j; continue; }
+        if (s[cmd.j] === "{") {
+          const g = readGroup(s, cmd.j);
+          i = g ? g[1] : cmd.j + 1;
+          continue;
+        }
+        i = cmd.j;
+        continue;
+      }
       if (cmd.name === "boldmath") {
         const arg = cmd.args[0] || "";
         const inner = /^\$([^$]+)\$$/.exec(arg.trim());
@@ -260,6 +289,69 @@ export function parseProse(input) {
   }
   flush();
   return tidy(out);
+}
+
+const GREEK = {
+  alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε", theta: "θ", lambda: "λ",
+  mu: "μ", pi: "π", rho: "ρ", sigma: "σ", tau: "τ", phi: "φ", omega: "ω",
+  Theta: "Θ", Sigma: "Σ", Omega: "Ω",
+};
+
+function echoOf(tex) {
+  const v = String(tex || "").replace(/\s+/g, "");
+  const g = /^\\([A-Za-z]+)$/.exec(v);
+  if (g && GREEK[g[1]]) return GREEK[g[1]];
+  if (v && v.length <= 24 && !/\\/.test(v)) return v;
+  return "";
+}
+
+/** $d$ seguido de otra d, o θθ: el parser dejó el símbolo y además su texto. */
+function collapseEcho(nodes) {
+  const out = [];
+  for (const n of nodes) {
+    const prev = out[out.length - 1];
+    if (n.t === "text" && prev && prev.t === "math") {
+      const echo = echoOf(prev.v);
+      if (echo && n.v.startsWith(echo)) {
+        const rest = n.v.slice(echo.length);
+        const boundary = echo.length > 1 || !/^[A-Za-z]/.test(rest) || rest[0] === echo[0];
+        if (boundary) {
+          if (rest) out.push({ ...n, v: rest });
+          continue;
+        }
+      }
+    }
+    out.push(n);
+  }
+  return out;
+}
+
+/** \\intertext parte una ecuación que KaTeX no puede tragar entera. */
+export function splitIntertext(tex) {
+  const s = String(tex || "");
+  const re = /\\intertext\s*\{/g;
+  const parts = [];
+  let i = 0;
+  let m;
+  while ((m = re.exec(s))) {
+    const before = s.slice(i, m.index);
+    let depth = 1;
+    let j = re.lastIndex;
+    for (; j < s.length && depth > 0; j++) {
+      if (s[j] === "\\") { j += 1; continue; }
+      if (s[j] === "{") depth += 1;
+      else if (s[j] === "}") depth -= 1;
+    }
+    if (depth > 0) break;
+    if (before.trim()) parts.push({ t: "math", v: before });
+    const inner = s.slice(re.lastIndex, j - 1).trim();
+    if (inner) parts.push({ t: "text", v: inner });
+    i = j;
+    re.lastIndex = j;
+  }
+  const tail = s.slice(i);
+  if (tail.trim() || !parts.length) parts.push({ t: "math", v: tail });
+  return parts;
 }
 
 function tidy(nodes) {
@@ -398,7 +490,7 @@ export function presentInlines(inls) {
     } else out.push(x);
   }
   flush();
-  return out;
+  return collapseEcho(out);
 }
 
 /** A paragraph whose only payload was preamble or \\includegraphics. */

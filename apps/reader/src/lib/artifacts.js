@@ -202,6 +202,9 @@ function denomValue(tex) {
 }
 
 export function compareOf(tex) {
+  const squashed = String(tex || "").replace(/\s+/g, "");
+  // Solo la escala de atención. Otra raíz (una regresión, un O(d)) no es d_k.
+  if (!/\\sqrt\{(?:d(?:_\{k\}|_k)|64)\}/.test(squashed)) return null;
   const denom = denomValue(tex);
   if (denom == null) return null;
   const probe = [1, 2, 4, 8];
@@ -323,8 +326,9 @@ function maskSigmaRatio(text) {
 function escalaKind(latex) {
   const text = squash(latex);
   const low = text.toLowerCase();
-  if (low.includes("softmax") && text.includes("\\sqrt")) return "softmax";
-  if (text.includes("\\exp") && text.includes("\\sqrt") && /d[_}]|\/\\sqrt|\\sqrt\{d/.test(text)) return "softmax";
+  const scale = DIM_SQRT.test(text);
+  if (scale && low.includes("softmax") && text.includes("\\sqrt")) return "softmax";
+  if (scale && text.includes("\\exp") && text.includes("\\sqrt")) return "softmax";
   const ln = maskSigmaRatio(stripNormal(text));
   if ((/\\over\\sigma|\/\\sigma/.test(ln)) && ln.includes("\\mu") && !low.includes("softmax")) return "ln";
   return "";
@@ -851,7 +855,7 @@ export function collectV2(items, flag) {
     if (group.length > 6 || group.some((row) => escalaKind(row.latex))) continue;
     const blob = group.map((row) => squash(row.latex)).join("");
     const low = blob.toLowerCase();
-    if ((low.includes("softmax") || (blob.includes("\\exp") && blob.includes("\\sum"))) && blob.includes("\\sqrt") && /d[_z}]/.test(blob)) {
+    if (DIM_SQRT.test(blob) && (low.includes("softmax") || (blob.includes("\\exp") && blob.includes("\\sum"))) && blob.includes("\\sqrt")) {
       const host = group.find((row) => squash(row.latex).includes("\\sqrt"));
       if (host) scaleHost.set(host.id, host);
     }
