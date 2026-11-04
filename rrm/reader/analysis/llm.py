@@ -73,7 +73,9 @@ def body_for(model, system, user, *, schema=None, name="out", effort="minimal", 
 
 
 def _key(body):
-    return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    # RRM_ANALYSIS_SALT cambia la llave de caché sin tocar el prompt (corridas de estabilidad).
+    salt = os.environ.get("RRM_ANALYSIS_SALT", "")
+    return hashlib.sha256((salt + json.dumps(body, sort_keys=True, ensure_ascii=False)).encode()).hexdigest()
 
 
 class BudgetExceeded(RuntimeError):
@@ -109,7 +111,7 @@ def call(body, role="", timeout=120, post=None):
     rec = {
         "key": key, "model": body.get("model"), "role": role, "wall_s": wall, "error": err,
         "status": (payload or {}).get("status", ""), "text": text, "json": parse_json(text) if text else None,
-        "cost": c, "payload_output": (payload or {}).get("output") if payload else None, "cached": False,
+        "cost": c, "usage": (payload or {}).get("usage") if payload else None, "payload_output": (payload or {}).get("output") if payload else None, "cached": False,
     }
     with _LOCK:
         LEDGER["calls"] += 1
