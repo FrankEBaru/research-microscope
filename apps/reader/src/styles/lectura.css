@@ -10,9 +10,9 @@
 }
 .folio {
   display: grid;
-  grid-template-columns: 200px minmax(0, 39rem) 240px;
+  grid-template-columns: 220px minmax(0, 700px) 250px;
   justify-content: center;
-  gap: 36px;
+  gap: 52px;
   width: 100%;
   padding: 28px 0 140px;
   box-sizing: border-box;
@@ -24,7 +24,7 @@
 .folio .toc li { margin: 0; padding: 0; }
 .folio .toc a {
   display: grid;
-  grid-template-columns: 4.6rem 1fr;
+  grid-template-columns: 2rem 1fr;
   align-items: baseline;
   column-gap: 8px;
   padding: 4px 0;
@@ -35,8 +35,12 @@
   border-left: 0;
   transition: color var(--dur-1);
 }
-.folio .toc .sub a { padding-left: 14px; font-size: 13px; }
-.folio .toc .n { font: 500 12.5px/1.35 var(--font-ui); font-variant-numeric: tabular-nums; color: var(--ink-3); text-align: right; }
+.folio .toc .sub a { padding-left: 14px; grid-template-columns: 2.2rem 1fr; font-size: 13px; animation: toc-in 160ms var(--ease-out); }
+@keyframes toc-in { from { opacity: 0; transform: translateY(-2px); } }
+/* RRM-95: the minimap lives under the contents, as in B.1, not floating over the margin notes. */
+.folio .toc .mini { position: static; width: 100%; margin: 18px 0 0; }
+.folio .toc .colo { margin-top: 14px; }
+.folio .toc .n { font: 500 12.5px/1.35 var(--font-ui); font-variant-numeric: tabular-nums; color: var(--ink-3); text-align: left; }
 .folio .toc .is-on a { color: var(--ink); font-weight: 600; }
 .folio .toc .is-on .t { background: linear-gradient(transparent 52%, var(--hl-soft) 52%, var(--hl-soft) 94%, transparent 94%); }
 .folio .prog { height: 3px; margin-top: 16px; border-radius: 2px; background: var(--page-3); overflow: hidden; }
@@ -62,8 +66,8 @@
 .folio .read-minimap.is-big svg { width: 100%; height: auto; }
 
 .folio .ah { padding-bottom: 24px; margin-bottom: 32px; border-bottom: 1px solid var(--rule); }
-.folio .ah-bar { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
-.folio .ah-bar .seg { align-self: flex-end; }
+.folio .ah-bar { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.folio .ah-bar .seg { margin-left: auto; }
 .folio .ah-meta { display: flex; align-items: center; gap: 0; flex-wrap: wrap; font: 400 13px/1.4 var(--font-ui); color: var(--ink-2); margin: 0; }
 .folio .ah-meta > span + span::before { content: "·"; margin: 0 10px; color: var(--rule-2); }
 .folio .ah h1 { margin: 16px 0 12px; font: 600 44px/1.1 var(--font-read); letter-spacing: -.015em; text-wrap: balance; }
@@ -284,7 +288,11 @@
 }
 .folio .step-list li.on { background: var(--hl-soft); }
 .folio .case-cond { color: var(--ink-2); }
-.folio .sym-mark { background: var(--accent-soft); border-radius: 2px; box-shadow: inset 0 0 0 1px var(--accent-line); }
+.folio .sym-mark { background: var(--sym-hl-bg); border-radius: 3px; box-shadow: 0 0 0 2px var(--sym-hl-bg); }
+/* RRM-95 · automatic symbol colors (lib/symcolor.js). Slot order chosen so Attention matches B.1. */
+.symc-1 { color: var(--sym-v); } .symc-2 { color: var(--sym-dk); } .symc-3 { color: var(--sym-k); }
+.symc-4 { color: var(--sym-q); } .symc-5 { color: var(--sym-dm); } .symc-6 { color: var(--sym-dv); }
+.folio [data-tex] { cursor: pointer; border-radius: 3px; transition: background-color 90ms linear; }
 .folio .fig-board { display: flex; flex-direction: column; align-items: stretch; gap: 14px; width: 100%; cursor: zoom-in; }
 .folio .fig-board.is-large { cursor: default; }
 .folio .fig-row { display: flex; align-items: stretch; gap: 12px; width: 100%; }
@@ -296,14 +304,35 @@
 .folio .fig-board.is-large .fig-row .fig-panel img { height: min(42vh, 480px); max-height: min(42vh, 480px); }
 .folio .fig-sub, .folio .fig-notes { margin: 6px 0 0; font: 400 13.5px/1.45 var(--font-ui); color: var(--ink-2); text-align: center; }
 .folio .fig-notes { text-align: left; padding-left: 1.2rem; }
-.fig-zoom { position: fixed; inset: 0; z-index: 80; background: rgba(20, 16, 12, .55); display: flex; align-items: center; justify-content: center; padding: 24px; }
-.fig-zoom-sheet { position: relative; background: var(--sheet, #fff); width: min(1100px, 100%); max-height: 92vh; overflow: auto; padding: 16px 16px 20px; border-radius: 12px; }
+/* RRM-95 · figure viewer: the figure large on the left, caption and the sentences that cite it on the right. */
+.fig-zoom { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; padding: 28px;
+  background: var(--scrim); backdrop-filter: blur(3px); animation: fz-fade 160ms var(--ease-out) both; text-align: left; hyphens: manual; }
+.fig-zoom-sheet { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; align-items: start;
+  width: min(1320px, 100%); max-height: calc(100vh - 56px); overflow: auto; padding: 28px 28px 26px; border-radius: 16px;
+  background: var(--sheet); box-shadow: var(--shadow-panel); animation: fz-in 220ms var(--ease-emph) both; }
+.fz-art { display: flex; align-items: center; justify-content: center; min-height: 52vh; }
+.fz-art .fig-board, .fz-art .fig-board.is-large { cursor: default; }
+.fz-art .fig-board.is-single .fig-panel img, .fz-art .fig-board.is-large .fig-row .fig-panel img { height: auto; max-height: calc(100vh - 140px); width: 100%; object-fit: contain; }
+.fz-side { position: sticky; top: 0; display: flex; flex-direction: column; gap: 12px; padding: 34px 0 0 24px; border-left: 1px solid var(--rule); }
+.fz-side figcaption { margin: 0; font: 400 16px/1.5 var(--font-read); color: var(--ink); }
+.fz-side figcaption b { font-family: var(--font-ui); font-weight: 700; }
+.fz-side .cited { margin: 6px 0 0; }
+@keyframes fz-fade { from { opacity: 0; } }
+@keyframes fz-in { from { opacity: 0; transform: translateY(8px) scale(.985); } }
 .fig-zoom-x {
-  position: absolute; top: 10px; right: 10px; z-index: 1;
+  position: absolute; top: 14px; right: 14px; z-index: 1;
   display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; padding: 0; border-radius: 8px;
-  border: 1px solid var(--rule-2); background: var(--sheet); color: var(--ink-2); cursor: pointer;
+  width: 36px; height: 36px; padding: 0; border-radius: 9px;
+  border: 1px solid var(--rule-2); background: var(--sheet); color: var(--ink-2); cursor: pointer; transition: color var(--dur-1), border-color var(--dur-1);
 }
+@media (hover: hover) { .fig-zoom-x:hover { color: var(--ink); border-color: var(--ink-3); } }
+@media (max-width: 900px) {
+  .fig-zoom { padding: 0; }
+  .fig-zoom-sheet { grid-template-columns: 1fr; max-height: 100vh; height: 100vh; border-radius: 0; padding: 56px 16px 20px; }
+  .fz-art { min-height: 0; }
+  .fz-side { position: static; border-left: 0; padding: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .fig-zoom, .fig-zoom-sheet { animation: none; } }
 .pop-ref { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; }
 .pop-who { flex: none; font-weight: 650; }
 

@@ -572,7 +572,9 @@ class BurstSearch:
                 item = await request.json()
             except Exception:
                 item = {}
-            names, meta = name_groups((item or {}).get("groups") or [])
+            import asyncio
+
+            names, meta = await asyncio.to_thread(name_groups, (item or {}).get("groups") or [])
             return {"enabled": True, "names": names, "meta": meta}
 
         @web.get("/labels")

@@ -25,6 +25,12 @@ function clip(text: string, n = 280) {
   return `${(cut.length >= 40 ? cut : s.slice(0, n).trim())}…`;
 }
 
+function compact(n: number) {
+  if (n >= 10000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  return String(n);
+}
+
 function shortName(point: any) {
   const label = nodeLabel({ authors: point.authors, year: point.year, title: point.title });
   if (!point.year) return label;
@@ -37,8 +43,9 @@ export function phaseLabel(status: string | undefined) {
 }
 
 export default function Card({
-  point, status, phase, linked, path, license, gated, readN, onScan, onRead, onPick, onOpen,
+  point, status, phase, linked, path, license, gated, readN, absOnly, onScan, onRead, onPick, onOpen,
 }: {
+  absOnly?: boolean;
   point: any;
   status?: string;
   phase?: string;
@@ -70,7 +77,7 @@ export default function Card({
     );
   }
   const mark = [status, phase].filter(Boolean).join(" · ");
-  const quote = clip(point.abstract || "");
+  const quote = clip(point.abstract || "", 210);
   const rows = linked || [];
   return (
     <div className="card is-in" data-id={point.id} aria-live="polite">
@@ -81,11 +88,12 @@ export default function Card({
       </p>
       <h2><Rich text={point.title || "Paper"} /></h2>
       {point.authorLine ? <p className="card-a">{point.authorLine}</p> : null}
+      {point.venue ? <p className="card-v">{point.venue}</p> : null}
       <dl className="card-m tnum">
-        <div><dt>Year</dt><dd>{point.year ?? "No year"}</dd></div>
-        <div><dt>Venue</dt><dd>{point.venue || "—"}</dd></div>
-        {readN && readN <= 8 ? <div><dt>Read order</dt><dd>{readN}</dd></div> : null}
-        <div><dt>Links in this map</dt><dd>{(point.cites?.length || 0) + (point.citedBy?.length || 0)}</dd></div>
+        <div><dt>Year</dt><dd>{point.year ?? "—"}</dd></div>
+        {readN && readN <= 5 ? <div><dt>Read</dt><dd>#{readN}</dd></div> : null}
+        {point.citations ? <div><dt>Cited</dt><dd>{compact(point.citations)}</dd></div> : null}
+        <div><dt>In this map</dt><dd>{(point.cites?.length || 0) + (point.citedBy?.length || 0)}</dd></div>
       </dl>
       {quote ? (
         <blockquote>
@@ -98,7 +106,7 @@ export default function Card({
       {point.retracted ? <p className="card-flag">Retracted</p> : null}
       <div className="card-act">
         <Button variant="line" onClick={() => onScan?.(point.id)}>Scan</Button>
-        <Button variant="primary" onClick={() => onRead?.(point.id)}>{gated ? "Open" : "Read in full"}</Button>
+        <Button variant="primary" onClick={() => onRead?.(point.id)}>{gated ? "Open" : absOnly ? "Open abstract" : "Read in full"}</Button>
       </div>
       {rows.length ? (
         <>
@@ -181,11 +189,14 @@ export function AtlasCard({
     return <Card point={null} path={path} onPick={onPick} onOpen={onOpen} />;
   }
   const state = states?.[point.id];
+  // RRM-95: say it before the click. abstract_only/missing used to read "Ready".
+  const absOnly = state?.status === "abstract_only" || state?.status === "missing";
   return (
     <Card
       point={point}
       status={statusOf(point.id, here, suggest, visited)}
-      phase={phaseLabel(state?.status)}
+      phase={absOnly ? "Abstract only" : phaseLabel(state?.status)}
+      absOnly={absOnly}
       license={state?.license || ""}
       gated={Boolean(state?.gated)}
       linked={linkedOf(point, by)}

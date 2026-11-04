@@ -12,7 +12,10 @@ import { faltaText } from "@/lib/falta.js";
 import { hasConclusion, scanIds } from "@/lib/scan.js";
 import { citeName } from "@/lib/layout.js";
 import { UNDEFINED, symbolHover } from "@/lib/hover.js";
+import { autoSyms, symKey } from "@/lib/symcolor.js";
 import AskBox from "./AskBox";
+import DkInstrument, { dkAnchor } from "./paper/DkInstrument";
+import { marginExtras } from "@/lib/marginExtras";
 import "@/styles/lectura.css";
 
 // Pop de oración con la maqueta «ejemplo simulado… no está conectado». Apagado en core; NEXT_PUBLIC_RRM_SENTENCE_MOCK=1 lo vuelve a mostrar.
@@ -266,14 +269,23 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const [pop, setPop] = useState<PopState>(null);
   const [pack, setPack] = useState<any>(null);
   const [notePhase, setNotePhase] = useState<"" | "ai" | "ready" | "error">("");
-  const [symHot, setSymHot] = useState("");
+  // RRM-95: hover is DOM-only. A state here re-rendered the whole paper (~85 ms) on every math hover.
+  const symHotRef = useRef("");
+  const symPinRef = useRef("");
+  const setSymHot = (next: string | ((cur: string) => string)) => {
+    const value = typeof next === "function" ? next(symHotRef.current) : next;
+    if (value === symHotRef.current) return;
+    symHotRef.current = value;
+    paintSymRef.current(symPinRef.current || value);
+  };
+  const paintSymRef = useRef<(key: string) => void>(() => {});
   const [symPin, setSymPin] = useState("");
   const [pinAt, setPinAt] = useState<{ block: string; index: number } | null>(null);
   const [reading, setReading] = useState(false);
   const [openAsk, setOpenAsk] = useState("");
   const [copied, setCopied] = useState("");
   const [wide, setWide] = useState(true);
-  const [prog, setProg] = useState(0);
+  const progRef = useRef<HTMLDivElement | null>(null);
   const timer = useRef<any>(null);
   const closeTimer = useRef<any>(null);
   const citePin = useRef("");
@@ -327,7 +339,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const local = useMemo(() => collectV2(paper.blocks || []), [paper]);
   const att = content.attention?.paper === paper.arxivId ? content.attention : null;
   const model = useMemo(() => {
-    const syms: Sym[] = att ? att.symbols : [];
+    const syms: Sym[] = att ? att.symbols : core ? autoSyms(paper.blocks || []) : [];
     const refIndex: Record<string, number> = {};
     Object.keys(paper.refs || {}).forEach((k, i) => (refIndex[k] = i + 1));
     const byLabel: Record<string, any> = {}, figs = new Set<string>();
@@ -379,7 +391,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       passages[id] = { top: tag(pack.top), rest: tag(pack.rest) };
     }
     return { syms, refIndex, byId, secOf, nums, notes, noteBase, toc, figN, tabN, xref, target, byLabel, figs, passages };
-  }, [paper, att]);
+  }, [paper, att, core]);
 
   const onOver = (e: React.MouseEvent | React.FocusEvent) => {
     const target = e.target as HTMLElement;
@@ -391,7 +403,9 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     const key = el.dataset.pop || `y|${el.dataset.sym}`;
     if (pop && (el.dataset.pop === pop.key || (el.dataset.sym && pop.key === `y|${el.dataset.sym}`))) clearTimeout(closeTimer.current);
     if (core) {
-      const sym = texKey(e.target as HTMLElement);
+      const colored = (e.target as HTMLElement).closest?.("[class*='symc-']") as HTMLElement | null;
+      const cls = colored ? Array.from(colored.classList).find((c) => c.startsWith("symc-")) : "";
+      const sym = cls ? `cls:${cls}` : texKey(e.target as HTMLElement);
       if (sym) setSymHot((cur) => (cur === sym ? cur : sym));
     }
     if (key.startsWith("c|")) {
@@ -591,7 +605,13 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   }, [core, paper.corpusid, blockCount]);
   const paintSym = (key: string) => {
     symMarked.current.forEach((el) => el.classList.remove("sym-mark"));
-    const next = key ? (symGroups.current.get(key) || []) : [];
+    let next = key ? (symGroups.current.get(key) || []) : [];
+    // RRM-95: a colored symbol also lights up inside equations and composite math.
+    const auto = key.startsWith("cls:")
+      ? model.syms.find((y: Sym) => y.cls === key.slice(4))
+      : key.startsWith("tex:") ? model.syms.find((y: Sym) => y.cls && symKey(y.latex) === symKey(key.slice(4))) : null;
+    if (auto?.cls) for (const y of model.syms) if (y.cls === auto.cls) next = [...next, ...(symGroups.current.get(`tex:${y.latex}`) || [])];
+    if (auto?.cls && art.current) next = [...next, ...Array.from(art.current.querySelectorAll<HTMLElement>(`.${auto.cls}`))];
     next.forEach((el) => el.classList.add("sym-mark"));
     symMarked.current = next;
   };
@@ -608,9 +628,11 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       if (node.dataset.tex) put(`tex:${node.dataset.tex.replace(/\s+/g, "")}`, node);
     });
     symGroups.current = map;
-    paintSym(symPin || symHot);
+    paintSym(symPin || symHotRef.current);
   }, [paper, reading]);
-  useLayoutEffect(() => { paintSym(symPin || symHot); }, [symPin, symHot]);
+  paintSymRef.current = paintSym;
+  symPinRef.current = symPin;
+  useLayoutEffect(() => { paintSym(symPin || symHotRef.current); }, [symPin]);
   const pendingSec = useRef("");
   const toSection = (id: string) => {
     const el = document.getElementById(`sec-${id}`);
@@ -638,7 +660,12 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       const view = window.innerHeight || 1;
       const total = el.offsetHeight - view;
       const next = total <= 8 ? (rect.bottom <= view ? 1 : 0) : Math.min(1, Math.max(0, -rect.top / total));
-      setProg((prev) => (Math.abs(prev - next) < 0.005 ? prev : next));
+      const bar = progRef.current;
+      if (bar) {
+        bar.style.setProperty("--p", String(next));
+        const pct = String(Math.round(next * 100));
+        if (bar.getAttribute("aria-valuenow") !== pct) { bar.setAttribute("aria-valuenow", pct); bar.setAttribute("aria-label", `Read ${pct}%`); }
+      }
     };
     const onScroll = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
     measure();
@@ -648,6 +675,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   }, [paperId, reading, wide]);
 
   const instAfter = att?.instrument.claim.anchor.blockId;
+  const dkAt = useMemo(() => (core ? dkAnchor(paper, plainOf) : ""), [core, paper]);
   const authors = authorLine(paper.authors || []);
   const scan = core && !reading ? scanIds(paper.blocks) : null;
   const firstHead = (paper.blocks || []).find((b) => b.kind === "h");
@@ -700,7 +728,6 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   };
   const showMini = Boolean(core && (map || (explore?.nodes || []).length > 0));
   const showNav = model.toc.length > 0 || showMini;
-  const pct = Math.round(prog * 100);
 
   const askBox = (variant: "slot" | "section", sectionId: string, label: string) => (
     <Boundary name="askbox">
@@ -711,6 +738,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   );
 
   const side: MarginNote[] = [];
+  // RRM-95: extra margin items (lib/marginExtras.ts). Wide: in the margin column; narrow: under their block when inline.
+  const extras = marginExtras({ paper, reading, core });
   const rows: ReactNode[] = [];
   if (!undrawn) {
     const stack: { id: string; level: number; title: string }[] = [];
@@ -847,9 +876,13 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             {core && FIG_PASSAGES && model.passages[b.id] && <Cited rows={model.passages[b.id].top} rest={model.passages[b.id].rest} onJump={jumpPassage} />}
             {zoomFig === b.id && (
               <FigZoom open onClose={() => setZoomFig(null)}>
-                {board(true)}
-                <figcaption><b>Figure {model.figN[b.id]}.</b> <Inlines inls={cap} ctx={ctx} /></figcaption>
-                {notes.length > 0 && <ol className="fig-notes">{notes.map((n) => <li key={n.n} value={n.n}><Inlines inls={n.inls} ctx={{ ...ctx, counter: { n: 999 } }} /></li>)}</ol>}
+                <div className="fz-art">{board(true)}</div>
+                <div className="fz-side">
+                  <figcaption><b>Figure {model.figN[b.id]}.</b> <Inlines inls={cap} ctx={ctx} /></figcaption>
+                  <Prov kind="paper" text="original figure" />
+                  {notes.length > 0 && <ol className="fig-notes">{notes.map((n) => <li key={n.n} value={n.n}><Inlines inls={n.inls} ctx={{ ...ctx, counter: { n: 999 } }} /></li>)}</ol>}
+                  {core && FIG_PASSAGES && model.passages[b.id] && <Cited rows={model.passages[b.id].top} rest={model.passages[b.id].rest} onJump={(row: { block: string; sent: number }) => { setZoomFig(null); jumpPassage(row); }} />}
+                </div>
               </FigZoom>
             )}
           </figure>
@@ -877,6 +910,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               </aside>
             )}
             {showInstrument && !undrawn && att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
+            {core && !undrawn && dkAt && b.id === dkAt && <Boundary name="instrument"><DkInstrument syms={model.syms} /></Boundary>}
+            {!wide && extras.filter((x) => x.inline && x.block === b.id).map((x) => <div key={x.id} className={`margin-inline sn sn--${x.kind || "extra"}`}>{x.body}</div>)}
             {symbolHere && pinUseful && (
               <div className="margin-inline sn sn--sym">
                 <SymbolMargin tex={pinTex(pin!, att)} name={pinName(pin!, att)} blocks={paper.blocks} at={pinAt} />
@@ -923,6 +958,18 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     return nodes;
   }
 
+  const topOf: number[] = [];
+  let lastTop = -1;
+  model.toc.forEach((t, i) => { if (t.level <= 1) lastTop = i; topOf.push(lastTop); });
+  const openTop = new Set<number>();
+  const blockAt = active.startsWith("sec-") ? (paper.blocks || []).findIndex((b) => b.id === active.slice(4)) : -1;
+  if (blockAt >= 0) {
+    let hit = -1;
+    model.toc.forEach((t, i) => { const at = (paper.blocks || []).findIndex((b) => b.id === t.id); if (at >= 0 && at <= blockAt) hit = i; });
+    if (hit >= 0) openTop.add(topOf[hit]);
+  }
+  if (model.toc.length <= 12) model.toc.forEach((_, i) => openTop.add(topOf[i]));
+  if (wide) side.push(...extras);
   const layoutKey = `${reading ? 1 : 0}|${symPin}|${pack ? 1 : 0}|${side.map((n) => n.id).join(",")}`;
 
   return (
@@ -933,8 +980,10 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             <>
               <Cap>Contents</Cap>
               <ol>
-                {model.toc.map((t) => {
+                {model.toc.map((t, ti) => {
                   const on = active === `sec-${t.id}`;
+                  // RRM-95: subsections open only under the section you are in, so the list stays short and the minimap fits.
+                  if (t.level > 1 && !openTop.has(topOf[ti])) return null;
                   return (
                     <li key={t.id} className={`${t.level > 1 ? "sub" : ""}${on ? " is-on" : ""}`}>
                       <a href={`#sec-${t.id}`} aria-current={on ? "location" : undefined} onClick={(e) => { e.preventDefault(); toSection(t.id); }}>
@@ -945,8 +994,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
                   );
                 })}
               </ol>
-              <div className="prog" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`Read ${pct}%`}>
-                <span style={{ ["--p" as string]: String(prog) }} />
+              <div className="prog" ref={progRef} role="progressbar" aria-valuenow={0} aria-valuemin={0} aria-valuemax={100} aria-label="Read 0%" style={{ ["--p" as string]: "0" }}>
+                <span />
               </div>
             </>
           )}
@@ -998,7 +1047,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               {remote?.stage === "stub" && <Prov kind="curado" text="reading sections…" />}
               {(remote?.status === "abstract_only" || remote?.stage === "abstract_only") && <Prov kind="curado" text="abstract only" />}
             </div>
-            {quote && (
+            {quote && !(abstractId && !undrawn) && (
               <blockquote className="ah-quote">
                 <Prov kind="paper" text="Abstract" />
                 «<Rich text={quote} />»
@@ -1011,9 +1060,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               <details className="author-notes"><summary>Author notes</summary>{paper.authorNotes.map((n: string, i: number) => <p key={i}><Rich text={n} /></p>)}</details>
             )}
             {showCrops && remote && paper.corpusid != null && /^\d+$/.test(String(paper.corpusid)) && <CropStrip id={String(paper.corpusid)} />}
-            {notePhase === "ai" && <Pulse mode="ai" detail="Writing margin notes…" />}
+            {notePhase === "ai" && <Pulse mode="ai" compact detail="Writing margin notes…" />}
             {notePhase === "error" && <Pulse mode="error" detail="Margin notes didn’t finish. The paper is here." />}
-            {notePhase === "ready" && <Pulse mode="ready" compact />}
           </header>
         </Boundary>
         {undrawn && gated && !quote && (

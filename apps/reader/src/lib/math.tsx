@@ -4,7 +4,7 @@ import { displayTex, katexSource } from "@/lib/backend.js";
 import { presentInlines } from "@/lib/prose.js";
 import { reportFault } from "@/lib/faults.js";
 
-export interface Sym { id: string; latex: string; name: string; color: string }
+export interface Sym { id: string; latex: string; name: string; color: string; cls?: string }
 
 const SKIP_BRACE = ["\\mathrm", "\\text", "\\textbf", "\\mathbf", "\\operatorname", "\\mathit"];
 
@@ -13,7 +13,8 @@ export function colorize(tex: string, syms: Sym[]): string {
   if (!syms.length) return tex;
   const multi = syms.filter((s) => s.latex.length > 1).sort((a, b) => b.latex.length - a.latex.length);
   const single = Object.fromEntries(syms.filter((s) => s.latex.length === 1).map((s) => [s.latex, s]));
-  const wrap = (s: Sym) => `\\htmlData{sym=${s.id}}{\\textcolor{${s.color}}{${s.latex}}}`;
+  // Automatic symbols (RRM-95) carry a CSS class instead of a color and no data-sym, so the core hover keeps keying on data-tex.
+  const wrap = (s: Sym) => (s.cls ? `\\htmlClass{${s.cls}}{${s.latex}}` : `\\htmlData{sym=${s.id}}{\\textcolor{${s.color}}{${s.latex}}}`);
   let out = "";
   let i = 0;
   while (i < tex.length) {

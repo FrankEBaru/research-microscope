@@ -17,6 +17,8 @@
 
   --sym-q: #c2321f; --sym-dk: #a8530a; --sym-v: #127a55; --sym-k: #2759c4; --sym-dv: #a8286f; --sym-dm: #6a3fcc;
   --sym-hl-bg: var(--hl-soft);
+  /* RRM-95 · Explain verdicts */
+  --verdict-match: var(--accent); --verdict-contra: var(--sym-q); --verdict-none: var(--ink-3); --verdict-missed: var(--sym-dk);
 
   --data-raw: #8c8271;  --data-on: var(--accent);  --data-track: #efe8da;
   --fam-rec: #a8681c;

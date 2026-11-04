@@ -11,12 +11,12 @@ export default function Rights({ rights }: { rights: any }) {
     ? "Local fixture: full text for offline testing. Live still treats this license as closed."
     : open
       ? "Annotated by Research Reading Microscope (modified)"
-      : "Abstract and our explanations only";
+      : rights.gated ? "Abstract and our explanations only" : "";
   return (
     <p className="rights">
       {rights.url ? <a href={rights.url} target="_blank" rel="noreferrer">{label}</a> : <span>{label}</span>}
       {id ? <> · <a href={abs} target="_blank" rel="noreferrer">{id}</a></> : null}
-      {" · "}{note}
+      {note ? <>{" · "}{note}</> : null}
       {open && rights.sa ? " · Our annotations: CC BY-SA 4.0" : null}
     </p>
   );
