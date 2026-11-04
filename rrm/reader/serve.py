@@ -123,6 +123,9 @@ if modal.is_local():
         "RRM_LICENSE_GATE": os.environ.get("RRM_LICENSE_GATE", "off"),
         # Vacío: /ask y /notes no adjuntan el prompt. Una ruta guarda el crudo en la respuesta.
         "RRM_RAW_DUMP": os.environ.get("RRM_RAW_DUMP", ""),
+        # RRM-99: análisis v2 de notas (vacío = notes.py de siempre).
+        "RRM_ANALYSIS": os.environ.get("RRM_ANALYSIS", ""),
+        "RRM_ANALYSIS_CAND": os.environ.get("RRM_ANALYSIS_CAND", ""),
     })
 else:
     secret = modal.Secret.from_dict({})
@@ -1091,6 +1094,16 @@ def api():
 
             if raw_dump_on():
                 take_raw()
+            from rrm.reader.analysis.run import cached_or_kick, enabled
+
+            if enabled() and paper.get("blocks"):
+                try:
+                    # RRM-99: caché v2 al instante; si no hay, se calcula en un hilo y aquí sigue notes.py.
+                    got = cached_or_kick(paper, commit=getattr(vol, "commit", None))
+                    if got:
+                        return got
+                except Exception:
+                    pass
             body = answer_notes(paper, read_phrases(folder))
             if raw_dump_on() and isinstance(body, dict):
                 body = dict(body)

@@ -17,8 +17,8 @@ JUDGE_SYS = (
     "You are a strict reviewer of margin notes written for master's students reading a research paper. For each NOTE, score 1-5:\n"
     "correct (no false statement), fills_gap (explains what the author takes for granted at the anchor, not a paraphrase), "
     "grounded (consistent with the quoted paper text / passages), concise (no filler), no_repeat (does not restate the anchor).\n"
-    "worth_note: would a good teaching assistant put a note at this spot? addresses_need: if a REFERENCE NEED is given, does the note "
-    "deliver it (yes/no); if none is given, na. passages_useful: if passages from other papers are attached, do they help "
+    "worth_note: would a good teaching assistant put a note at this spot? needs_met: if REFERENCE NEEDS are listed (each with an id), "
+    "the ids whose core point the note delivers (judge each need on its own; partial coverage of the main idea counts); [] if none. passages_useful: if passages from other papers are attached, do they help "
     "(yes/no); if none, na. flaw: one of none, superficial, wrong, off_anchor, repeats, broken_math, other.\n"
     "For each WIDGET: visualizable (one knob changes a visible figure, computable from the paper's formula), surprising (1-5: the "
     "question makes the reader bet and learn), demo_worthy (would you show it in a 2-minute demo).\n"
@@ -28,9 +28,9 @@ JUDGE_SYS = (
 _NOTE = {"type": "object", "additionalProperties": False, "properties": {
     "i": {"type": "integer"}, "correct": {"type": "integer"}, "fills_gap": {"type": "integer"}, "grounded": {"type": "integer"},
     "concise": {"type": "integer"}, "no_repeat": {"type": "integer"}, "worth_note": {"type": "boolean"},
-    "addresses_need": {"type": "string", "enum": ["yes", "no", "na"]}, "passages_useful": {"type": "string", "enum": ["yes", "no", "na"]},
+    "needs_met": {"type": "array", "items": {"type": "string"}}, "passages_useful": {"type": "string", "enum": ["yes", "no", "na"]},
     "flaw": {"type": "string", "enum": ["none", "superficial", "wrong", "off_anchor", "repeats", "broken_math", "other"]}},
-    "required": ["i", "correct", "fills_gap", "grounded", "concise", "no_repeat", "worth_note", "addresses_need", "passages_useful", "flaw"]}
+    "required": ["i", "correct", "fills_gap", "grounded", "concise", "no_repeat", "worth_note", "needs_met", "passages_useful", "flaw"]}
 _ART = {"type": "object", "additionalProperties": False, "properties": {
     "i": {"type": "integer"}, "visualizable": {"type": "boolean"}, "surprising": {"type": "integer"}, "demo_worthy": {"type": "boolean"}},
     "required": ["i", "visualizable", "surprising", "demo_worthy"]}
@@ -67,7 +67,8 @@ def judge(ix, result, gold_items, effort="low", max_out=6000):
             row = (result.get("rows") or {}).get(pid) or {}
             lines.append(f"OTHER-PAPER PASSAGE («{row.get('title', '')[:60]}»): {(row.get('text') or row.get('latex') or '')[:400]}")
         if gm:
-            lines.append("REFERENCE NEED: " + " | ".join(g["need"] for g in gm))
+            for g in gm:
+                lines.append(f"REFERENCE NEED [{g['id']}]: {g['need']}")
     for i, a in enumerate(arts):
         lines.append(f"\nWIDGET #{i} at {ix.text(a.get('anchor', ''))[:200]}")
         lines.append(f"claim: {a.get('claim', '')} | figure: {a.get('figure_idea', '')} | knob: {a.get('knob', '')} | consequence: {a.get('consequence', '')} | question: {a.get('question', '')}")
@@ -82,7 +83,6 @@ def score(ix, result, gold_items, jrec):
     yn = {"yes": True, "no": False}
     for x in j.get("notes") or []:
         if isinstance(x, dict):
-            x["addresses_need"] = yn.get(x.get("addresses_need"))
             x["passages_useful"] = yn.get(x.get("passages_useful"))
     jn = {int(x["i"]): x for x in j.get("notes") or [] if isinstance(x, dict)}
     ja = {int(x["i"]): x for x in j.get("widgets") or [] if isinstance(x, dict)}
@@ -91,14 +91,14 @@ def score(ix, result, gold_items, jrec):
     for i, it in enumerate(items):
         gm = gold_matches(it["anchor"], gold_items, ix)
         r = jn.get(i, {})
-        ok_content = r.get("addresses_need") is not False  # None (sin juez) cuenta si hay ancla
+        met = set(r.get("needs_met") or [])
         for g in gm:
-            if ok_content and r:
+            if g["id"] in met:
                 covered[g["id"]] = g["level"]
         rub = [r.get(k) for k in ("correct", "fills_gap", "grounded", "concise", "no_repeat") if isinstance(r.get(k), int)]
         per.append({"i": i, "anchor": it["anchor"], "kind": it["kind"], "gold": [g["id"] for g in gm],
                     "rubric": round(sum(rub) / len(rub), 2) if rub else None, "worth": r.get("worth_note"),
-                    "addresses": r.get("addresses_need"), "psg_useful": r.get("passages_useful"), "flaw": r.get("flaw"),
+                    "met": sorted(met & {g["id"] for g in gm}), "psg_useful": r.get("passages_useful"), "flaw": r.get("flaw"),
                     "n_passages": len(it.get("passages") or []), "helped": it.get("passages_helped")})
     n_i = sum(1 for g in gold_items if g["level"] == "I")
     n_r = sum(1 for g in gold_items if g["level"] == "R")
