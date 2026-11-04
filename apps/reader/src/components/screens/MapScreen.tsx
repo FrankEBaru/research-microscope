@@ -111,8 +111,10 @@ export default function MapScreen({
           </div>
         </div>
       )}
-      {liveErr && <Pulse mode="error" detail={liveErr} />}
+      {/* RRM-103: offline, a question that was not recorded said the same line twice and left no way on. */}
+      {liveErr && liveCode !== "F-NOREC" && <Pulse mode="error" detail={liveErr} />}
       {liveErr && <Notice kind="fault" code={liveCode} />}
+      {liveCode === "F-NOREC" && <p className="muted"><button type="button" className="link" onClick={() => go({})}>See the recorded questions</button></p>}
       {papers.length > 0 && (refining || pending) && <Pulse mode="loading" compact detail="Arranging the atlas…" />}
       {empty && (
         <div data-screen="vacio">

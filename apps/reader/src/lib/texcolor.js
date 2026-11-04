@@ -16,6 +16,7 @@ export const TEX_MACROS = {
   "\\rowsum": "\\operatorname{rowsum}",
   "\\dropout": "\\operatorname{dropout}",
   "\\mask": "\\operatorname{mask}",
+  "\\hdots": "\\ldots", // RRM-103: FlashAttention §3.1 (amsmath alias KaTeX lacks)
   ...Object.fromEntries("ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((c) => [`\\vd${c}`, `\\mathbf{d${c}}`])),
   ...Object.fromEntries("ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((c) => [`\\v${c}`, `\\mathbf{${c}}`])),
 };

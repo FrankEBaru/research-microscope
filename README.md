@@ -1,4 +1,4 @@
-# Research Reading Microscope
+# Research Microscope
 
 En la máquina Frank (WSL), después de arrancar, con el venv y Node en el PATH:
 

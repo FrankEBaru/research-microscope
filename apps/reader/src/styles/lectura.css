@@ -144,6 +144,7 @@
 .folio .eq .katex { color: var(--ink); }
 .folio .eq .katex .tag { color: var(--ink-3); }
 .folio .eq.is-hover, .folio .eq:focus-within { background: var(--page-2); }
+@media (hover: hover) { .folio .eq:hover { background: var(--page-2); } } /* RRM-103: B.1 §10, shading on hover too (core never sets is-hover) */
 .folio .eq .copy {
   position: absolute;
   top: 8px;
@@ -383,6 +384,13 @@
   .folio .table-fig,
   .folio .instrument { margin-right: 0; }
 }
+/* RRM-103: tablet (761–1079 px). The 180 | 39rem grid did not fit below ~920 px and the index and the text were cut
+   on both sides. One centered reading column; the index goes away and the minimap becomes the «Atlas» button in the
+   paper header (ReadMinimap, same as phones); notes already sit under their block below 1280 px. */
+@media (min-width: 761px) and (max-width: 1079px) {
+  .folio { display: block; max-width: 42rem; margin: 0 auto; }
+  .folio .toc { display: none; }
+}
 @media (max-width: 760px) {
   [data-screen="paper"].lvl:has(> .folio) { padding-left: 20px; padding-right: 20px; }
   .folio { display: block; padding: 12px 0 48px; }
@@ -398,6 +406,10 @@
   .folio .fig, .folio .fig img, .folio .table-fig, .folio .ins, .folio img { max-width: 100%; }
   .folio .cited, .folio .cited-row, .folio .cited-q { overflow-wrap: anywhere; }
   .folio .table-wrap { overflow-x: auto; max-width: 100%; }
+  /* RRM-103: a long inline formula (FlashAttention: 815 px) or an unbroken word made the whole page pan sideways
+     at 390 px. Long words break; the article clips (clip, not auto: no focusable scroller without a focus ring). */
+  .folio .blk p { overflow-wrap: anywhere; }
+  .folio article.paper { overflow-x: clip; }
   .folio .popover {
     position: fixed; left: 12px; right: 12px; bottom: 12px; top: auto; width: auto;
     max-height: 46vh; overflow: auto;

@@ -25,14 +25,15 @@ import MapScreen from "./screens/MapScreen";
 import ReaderFrame from "./screens/ReaderFrame";
 import type { AtlasCtx } from "./screens/types";
 
-type Route = { q?: string; c?: string; p?: string; b?: string };
+type Route = { a?: string; q?: string; c?: string; p?: string; b?: string };
 const parse = (h: string): Route => {
   const parts = h.replace(/^#\/?/, "").split("/").filter(Boolean);
   const r: any = {};
   for (let i = 0; i + 1 < parts.length; i += 2) r[parts[i]] = decodeURIComponent(parts[i + 1]);
   return r;
 };
-const fmt = (r: Route) => "#/" + (["q", "c", "p", "b"] as const).filter((k) => r[k]).map((k) => `${k}/${encodeURIComponent(r[k]!)}`).join("/");
+// RRM-103: `a` = the live atlas of a question (#/a/<question>), so reload and browser Back/Forward land on the map, not on the start screen.
+const fmt = (r: Route) => "#/" + (["a", "q", "c", "p", "b"] as const).filter((k) => r[k]).map((k) => `${k}/${encodeURIComponent(r[k]!)}`).join("/");
 
 function beat(phase: string, since: number) {
   const tail = ` ${Math.max(0, since)} s`;
@@ -192,6 +193,7 @@ export default function Engine() {
   }, [core]);
 
   const go = useCallback((r: Route) => { location.hash = fmt(r); window.scrollTo({ top: 0 }); }, []);
+  const atlasRoute = (): Route => (core && live && liveQ ? { a: liveQ } : {});
   const liveIds: string[] = (liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p));
   const liveName = (id: string) => { const p = (liveResult?.papers || []).find((x: any) => paperKey(x) === id); return p ? `${String(p.title || id).slice(0, 28)}${p.year ? ` ${p.year}` : ""}` : id; };
   const liveId = live && route.p && /^\d+$/.test(route.p) ? route.p : "";
@@ -233,7 +235,7 @@ export default function Engine() {
     const next = popVisit(camino);
     setCamino(next);
     if (next.length) go({ p: next[next.length - 1].id });
-    else go({});
+    else go(atlasRoute());
   };
   const irPaso = (id: string) => {
     const key = String(id || "");
@@ -529,7 +531,7 @@ export default function Engine() {
     const gen = ++searchGen.current;
     setLiveQ(q); setLiveOn(true); setLiveErr(""); setLiveCode(""); setImpatient(false); setForced(false); setTopics(null); setAsList(false); setLabelNote("");
     setLiveResult(null); setRowState({}); setOpened(null); setCamino([]); setExplore({ q, nodes: [], edges: [] }); setLaneId("");
-    go({});
+    go({ a: q });
     setPending(true);
     let cached: any = null;
     try { cached = recallQuestion(localStorage, q); } catch (e) { storageFault(e, "localStorage"); cached = null; }
@@ -540,7 +542,7 @@ export default function Engine() {
       setPending(false);
       setPhase("");
       done(step, "ok", "caché del navegador");
-      go({});
+      go({ a: q });
       return;
     }
     setLiveResult(null); setRowState({});
@@ -564,7 +566,7 @@ export default function Engine() {
       setPhase(body?.layout?.pending_vectors?.length ? "layout" : "");
       const bits = body?.seconds ? Object.entries(body.seconds).map(([k, v]) => `${k} ${v}s`).join(", ") : "";
       done(step, "ok", body?.cached ? `caché del servidor${bits ? ` — ${bits}` : ""}` : bits);
-      go({});
+      go({ a: q });
     } catch (err: any) {
       if (searchGen.current !== gen) return;
       setPhase("");
@@ -574,6 +576,23 @@ export default function Engine() {
       if (searchGen.current === gen) setPending(false);
     }
   };
+  // RRM-103: the route drives the atlas. #/a/<q> on reload or Forward restores that question (browser cache first,
+  // else a search); #/ (Back from the atlas) is the start screen.
+  useEffect(() => {
+    if (!live || !core || route.p || pending) return;
+    const want = route.a || "";
+    if (!want) { if (liveOn) setLiveOn(false); return; }
+    if (liveOn && liveQ === want) return;
+    let cached: any = null;
+    try { cached = recallQuestion(localStorage, want); } catch (e) { storageFault(e, "localStorage"); cached = null; }
+    if (cached?.payload?.result) {
+      setLiveQ(want); setLiveResult(cached.payload.result); setRowState(cached.payload.states || {});
+      setLiveErr(""); setLiveCode(""); setPhase(""); setOpened(null); setLiveOn(true);
+      return;
+    }
+    onSearch({ preventDefault() {}, query: want });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.a, route.p, live, core]);
   const wantThis = (id: string) => {
     const step = note("quiero leer este", id);
     const key = String(id);
@@ -635,7 +654,7 @@ export default function Engine() {
   const onLayout = (next: any) => { setLiveResult((prev) => (prev ? { ...prev, layout: next } : prev)); if (!next?.pending_vectors?.length) setPhase((cur) => (cur === "layout" ? "" : cur)); };
   const back = !core ? <button type="button" className="link" onClick={backToCurated}>Back to the curated burst</button> : null;
   const backBtn = core && liveId
-    ? <button type="button" className="top-back press" aria-label="Back" onClick={() => (camino.length > 1 ? volver() : go({}))}>←</button>
+    ? <button type="button" className="top-back press" aria-label="Back" onClick={() => (camino.length > 1 ? volver() : go(atlasRoute()))}>←</button>
     : null;
   const jump = (() => {
     const top = camino[camino.length - 1];
@@ -645,8 +664,8 @@ export default function Engine() {
   const groupNow = liveId ? openGroup(liveResult, liveId) : null;
   const crumb = core && (liveOn || liveId) ? {
     question: shownQ,
-    onAtlas: () => { setLaneId(""); go({}); },
-    onGroup: groupNow ? () => { setLaneId(groupNow.id); go({}); } : undefined,
+    onAtlas: () => { setLaneId(""); go(atlasRoute()); },
+    onGroup: groupNow ? () => { setLaneId(groupNow.id); go(atlasRoute()); } : undefined,
     group: groupNow,
     paper: liveId ? titleFor(liveId) : "",
     paperId: liveId,

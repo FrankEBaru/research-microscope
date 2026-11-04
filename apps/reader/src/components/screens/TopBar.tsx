@@ -78,7 +78,7 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
   if (!core) {
     return (
       <header className="topbar">
-        <a className="brand" href="#/" onClick={() => window.scrollTo({ top: 0 })}><BrandMark size={20} />Reading Microscope</a>
+        <a className="brand" href="#/" onClick={() => window.scrollTo({ top: 0 })}><BrandMark size={20} />Research Microscope</a>
         {!(core && (liveOn || liveId)) && (
           <nav className="scope" aria-label="Nivel de zoom">
             {steps.map((s) => (
@@ -115,9 +115,9 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
     <header className="b1-top">
       <div className="top-brand">
         {back}
-        <a className="wm" href="#/" aria-label="Reading Microscope, home" onClick={(e) => { e.preventDefault(); onHome ? onHome() : window.scrollTo({ top: 0 }); }}>
+        <a className="wm" href="#/" aria-label="Research Microscope, home" onClick={(e) => { e.preventDefault(); onHome ? onHome() : window.scrollTo({ top: 0 }); }}>
           <BrandMark />
-          <span className="wm-name">Reading Microscope</span>
+          <span className="wm-name">Research Microscope</span>
         </a>
       </div>
       <nav className="crumbs" aria-label="Breadcrumb">

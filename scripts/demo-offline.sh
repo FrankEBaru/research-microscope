@@ -21,6 +21,17 @@ if [[ -z "$FIX" ]]; then
   fi
 fi
 [[ -f "$FIX/manifest.json" ]] || { echo "Falta manifest.json en $FIX" >&2; exit 1; }
+# RRM-103: el Release no trae licenses.json y sin él cada paper dice «License unknown». Si no hay mapa,
+# se baja el de compass (datos/offline/licenses-full.json). Si falla, sigue igual que antes.
+if [[ -z "${RRM_LICENSE_MAP:-}" && ! -f "$FIX/licenses.json" ]]; then
+  LIC="$ROOT/offline-final/licenses.json"
+  if [[ ! -s "$LIC" ]] && command -v gh >/dev/null 2>&1; then
+    gh api -H "Accept: application/vnd.github.raw" \
+      "repos/${RRM_OFFLINE_REPO:-FrankEBaru/research-microscope-compass}/contents/datos/offline/licenses-full.json?ref=${RRM_LICENSE_REF:-claude/rrm-50-plan-b1}" \
+      > "$LIC.tmp" 2>/dev/null && python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$LIC.tmp" 2>/dev/null && mv "$LIC.tmp" "$LIC" || rm -f "$LIC.tmp"
+  fi
+  [[ -s "$LIC" ]] && export RRM_LICENSE_MAP="$LIC"
+fi
 export RRM_FEATURES=core RRM_LICENSE_GATE=off RRM_META=off
 python3 -m rrm.offline --root "$FIX" --host 127.0.0.1 --port "$API" &
 API_PID=$!
@@ -33,7 +44,7 @@ export NEXT_PUBLIC_RRM_FEATURES=core NEXT_PUBLIC_RRM_LIVEART=1 NEXT_PUBLIC_RRM_O
 export NEXT_PUBLIC_BURST_URL="http://127.0.0.1:$API" NEXT_PUBLIC_READER_URL="http://127.0.0.1:$API" NEXT_PUBLIC_RRM_DEMO_TOKEN=local
 rm -rf .next out
 echo "next build (producción, offline)…"
-npx next build >/tmp/rrm-demo-offline-build.log 2>&1 || { tail -n 30 /tmp/rrm-demo-offline-build.log >&2; exit 1; }
+npx next build >${RRM_BUILD_LOG:-/tmp/rrm-demo-offline-build.log} 2>&1 || { tail -n 30 ${RRM_BUILD_LOG:-/tmp/rrm-demo-offline-build.log} >&2; exit 1; }
 echo ""
 echo "Demo offline: http://localhost:${PORT}   (preguntas grabadas en la pantalla de inicio; Ctrl+C apaga)"
 npx serve out -l "$PORT" >/dev/null 2>&1 &

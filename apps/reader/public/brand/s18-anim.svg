@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Reading Microscope">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Research Microscope">
 <style>
 .rm-r{animation:rm-fade .3s ease-out both}
 .rm-leg{stroke-dasharray:1 1.1;stroke-dashoffset:1.01;animation:rm-draw .75s cubic-bezier(.45,0,.2,1) .25s both}

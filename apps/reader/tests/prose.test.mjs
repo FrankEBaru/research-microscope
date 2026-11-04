@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseProse, polishText, presentInlines, splitIntertext, visibleInlines, pdfPagesOnly } from "../src/lib/prose.js";
+import { liftCiteKeys, parseProse, polishText, presentInlines, splitIntertext, visibleInlines, pdfPagesOnly } from "../src/lib/prose.js";
 
 const text = (nodes) => nodes.map((n) => n.t === "text" ? n.v : n.t === "em" ? `*${text(n.c)}*` : n.t === "strong" ? `**${text(n.c)}**` : n.t === "math" ? `$${n.v}$` : n.t === "cite" ? `[@${n.keys.join(",")}]` : n.t === "ref" ? `#${n.label}` : "").join("");
 
@@ -157,4 +157,54 @@ test("presentInlines merges split tokens and is idempotent", () => {
   assert.equal(text(once), "**Parser**");
   const twice = presentInlines(once);
   assert.equal(text(twice), text(once));
+});
+
+test("RRM-103: a display environment inside a raw paragraph renders as display math", () => {
+  const toks = "We define the projection $f$ as \\begin{equation} f(r; \\piref, \\beta)(x, y) = r(x, y) - \\beta\\log\\sum_{y}\\piref(y\\mid x) \\label{eq:proj} \\end{equation} The operator $f$ normalizes."
+    .split(/( )/).filter(Boolean).map((v) => ({ t: "text", v }));
+  const out = presentInlines(toks);
+  const disp = out.filter((n) => n.t === "math" && n.display);
+  assert.equal(disp.length, 1);
+  assert.match(disp[0].v, /^f\(r; \\piref, \\beta\)\(x, y\) = r\(x, y\)/);
+  assert.doesNotMatch(disp[0].v, /label/);
+  const words = out.filter((n) => n.t === "text").map((n) => n.v).join("");
+  assert.doesNotMatch(words, /\\piref|\\beta|equation/);
+  const al = presentInlines([{ t: "text", v: "so \\begin{align*} a &= b \\\\ c &= d \\end{align*} done" }]).find((n) => n.t === "math");
+  assert.equal(al.display, true);
+  assert.match(al.v, /^\\begin\{aligned\}a &= b \\\\ c &= d\\end\{aligned\}$/);
+});
+
+test("RRM-103: bare BibTeX keys of the paper become citations; ordinary words do not", () => {
+  const refs = { su2022roformer: 1, "yu-etal:2018:_qanet": 2, bidaf: 3, shazeer2019mq: 4 };
+  const out = liftCiteKeys([{ t: "text", v: "embeddings (RoPE, su2022roformer). As in yu-etal:2018:_qanet, the bidaf model and shazeer2019mq or shazeer2019mqx." }], refs);
+  assert.deepEqual(out.filter((n) => n.t === "cite").map((n) => n.keys[0]), ["su2022roformer", "yu-etal:2018:_qanet", "shazeer2019mq"]);
+  assert.equal(text(out.filter((n) => n.t === "text")).includes("bidaf"), true);
+  assert.equal(text(out.filter((n) => n.t === "text")).includes("shazeer2019mqx"), true);
+  assert.deepEqual(liftCiteKeys([{ t: "text", v: "no keys" }], {}), [{ t: "text", v: "no keys" }]);
+});
+
+test("RRM-103: \\textellipsis, \\textgreater and booktabs row spacing are not left raw", () => {
+  const out = text(presentInlines([{ t: "text", v: "RLHF-V1, \\textellipsis, RLHF-V5 with \\textgreater= 0.005% here.\\\\[\\heavyrulewidth] Prompt:" }]));
+  assert.doesNotMatch(out, /\\text|heavyrulewidth/);
+  assert.match(out, /RLHF-V1, …, RLHF-V5 with >= 0.005% here\./);
+});
+
+test("RRM-103: a braced umlaut keeps its letter", () => {
+  assert.equal(text(presentInlines([{ t: "text", v: "the Nystr{\\\"o}mformer and Nystr\\\"omformer baselines" }])), "the Nyströmformer and Nyströmformer baselines");
+});
+
+test("RRM-103: \\hdots (FlashAttention §3.1) is a known macro", async () => {
+  const { TEX_MACROS } = await import("../src/lib/texcolor.js");
+  assert.equal(TEX_MACROS["\\hdots"], "\\ldots");
+});
+
+test("RRM-103: algorithm captions, nested \\IF arguments and layout leftovers", () => {
+  const cap = text(presentInlines([{ t: "text", v: "\\caption{\\small\\label{alg:x}Standard Attention Implementation} \\REQUIRE Matrices" }]));
+  assert.match(cap, /^\s*Standard Attention Implementation Require: Matrices/);
+  const step = presentInlines([{ t: "text", v: "\\IF{$M_{ij} \\neq 0$} Load the block." }]);
+  assert.equal(step.some((n) => n.t === "math" && n.v === "M_{ij} \\neq 0"), true);
+  assert.doesNotMatch(text(step), /\\IF/);
+  const junk = text(presentInlines([{ t: "text", v: "details. \\@startsection{paragraph}{4}{\\z@} {1.5ex \\@plus 0.5ex} {-1em} Next [\\dots] TL;DR *{\\baselineskip} We" }]));
+  assert.doesNotMatch(junk, /paragraph|1\.5ex|baselineskip|\\dots/);
+  assert.match(junk, /\[…\] TL;DR/);
 });

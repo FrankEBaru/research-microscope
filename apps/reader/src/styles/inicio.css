@@ -73,6 +73,8 @@
   flex: 1; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
   gap: 72px; align-items: center; width: 100%; max-width: 1300px; margin: 0 auto; padding: 56px 48px;
 }
+/* Research Microscope tagline (decision 4 nov): quiet, no box. */
+.st-tag { margin: 0 0 22px; font: italic 400 18px/1.4 var(--font-read); color: var(--ink-2); }
 .st-l h1 { margin: 14px 0 32px; font: 600 64px/1.05 var(--font-read); letter-spacing: -.02em; }
 .ask-field {
   display: flex; align-items: center; gap: 10px; height: 64px; padding: 0 8px 0 22px;
@@ -85,6 +87,11 @@
   font: 500 22px/1 var(--font-ui); color: var(--ink);
 }
 .ask-field input:focus-visible, .ask-field input:focus { outline: none; box-shadow: none; }
+/* RRM-103: el anillo de foco global (base.css, !important) dibujaba una caja dentro del campo; el campo ya lo marca con :focus-within.
+   Y el indicador ▼ del <datalist> de Chromium sobra: las preguntas grabadas están debajo y salen al escribir. */
+.ask-field input:focus-visible, .b1-search input:focus-visible { box-shadow: none !important; }
+.ask-field input::-webkit-calendar-picker-indicator, .b1-search input::-webkit-calendar-picker-indicator { display: none !important; }
+.b1-search:focus-within { border-color: var(--accent); }
 .b1-go {
   display: grid; place-items: center; width: 48px; height: 48px; border: 0; border-radius: 10px;
   background: var(--accent); color: var(--accent-ink); cursor: pointer;
@@ -96,7 +103,8 @@
 .b1-recorded { margin-top: 16px; }
 .b1-recorded-k { margin: 0 0 8px; font: 600 12px/1 var(--font-ui); letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
 .b1-recorded .b1-try { margin-top: 0; }
-.b1-try { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 16px 0 0; padding: 0; }
+.b1-try { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin: 16px 0 0; padding: 0; } /* RRM-103: pills in a row, as in mock 01-start */
+.b1-try .b1-more { border-style: dashed; color: var(--ink-3); }
 .b1-try button {
   height: auto; min-height: 32px; max-width: 100%; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--rule-2);
   background: var(--page); font-size: 13.5px; line-height: 1.35; color: var(--ink-2); cursor: pointer; text-align: left;
@@ -169,6 +177,7 @@
 @keyframes rrm-arrive { from { opacity: 0; transform: scale(.2); } }
 @keyframes rrm-drift { to { transform: translateY(-2.5px); } }
 .forming--quiet { margin: 0; }
+.forming--tall svg { max-height: 62vh; } /* RRM-103: the idle atlas on the start screen at the size of mock 01-start */
 
 .b1-foot { margin-top: auto; padding: 16px 28px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--ink-3); }
 .b1-foot a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--rule-2); }
@@ -215,6 +224,8 @@
 }
 
 @media (max-width: 1100px) {
+  /* RRM-103: tablet start screen in one column (two columns left a 4-line title in a narrow strip). */
+  .st { grid-template-columns: minmax(0, 1fr); gap: 40px; max-width: 760px; align-items: start; }
   .wm-name { display: none; }
   .crumbs button, .crumbs .cur { max-width: 42vw; }
 }
@@ -226,6 +237,7 @@
   .b1-search.is-open { width: auto; min-width: 0; padding: 0 8px; }
   .st { grid-template-columns: 1fr; gap: 28px; padding: 28px 16px; align-items: start; }
   .st-l h1 { font-size: 40px; margin-bottom: 20px; }
+  .st-tag { font-size: 16px; margin-bottom: 16px; }
   .ask-field input { font-size: 18px; }
   .s-map { padding: 20px 16px 0; }
   .s-map h1 { font-size: 32px; }

@@ -56,13 +56,15 @@ function formingDots() {
 
 const DOTS = formingDots();
 
-export function Forming({ still }: { still?: boolean }) {
+export function Forming({ still, tall }: { still?: boolean; tall?: boolean }) {
+  // RRM-103: `tall` = the idle atlas of the start screen, 2.6× taller (same dots, lanes stretched; circles stay round).
+  const k = tall ? 2.6 : 1;
   return (
-    <figure className={still ? "forming forming--quiet" : "forming"} aria-hidden="true">
-      <svg viewBox="0 0 520 150" width="100%" height="150">
+    <figure className={`${still ? "forming forming--quiet" : "forming"}${tall ? " forming--tall" : ""}`} aria-hidden="true">
+      <svg viewBox={`0 0 520 ${150 * k}`} width="100%" height={tall ? undefined : 150} preserveAspectRatio="xMidYMid meet">
         <g className="lanes">
           {LANES.map((lane) => (
-            <rect key={lane.c} y={lane.y} width="520" height={lane.h} fill={lane.c} />
+            <rect key={lane.c} y={lane.y * k} width="520" height={lane.h * k} fill={lane.c} />
           ))}
         </g>
         <g className={still ? "ar is-still" : "ar"}>
@@ -70,7 +72,7 @@ export function Forming({ still }: { still?: boolean }) {
             <circle
               key={i}
               cx={dot.cx}
-              cy={dot.cy}
+              cy={k === 1 ? dot.cy : (Number(dot.cy) * k).toFixed(1)}
               r={dot.r}
               className={dot.kind}
               style={{ ["--c" as string]: dot.c, animationDelay: `${dot.delay}ms` }}
@@ -154,7 +156,7 @@ export default function BootPanel({ engine, phase, pending, compact }: {
   }, [active]);
 
   if (!active && compact) return null;
-  if (!active) return <Forming still />;
+  if (!active) return <Forming still tall />;
 
   const order: PhaseId[] = ["wake", "search", "layout"];
   const at = order.indexOf(active as PhaseId);

@@ -19,15 +19,55 @@ function stripCmd(s, name, keep) {
   return out + s.slice(last);
 }
 
+/** \IF{…} / \FOR{…} / \WHILE{…} with balanced braces → " … : ". */
+function stepArg(s) {
+  const re = /\\(?:FOR|WHILE|IF|ELSIF)\s*\{/g;
+  let out = "", last = 0, m;
+  while ((m = re.exec(s))) {
+    let i = m.index + m[0].length, depth = 1;
+    while (i < s.length && depth) { if (s[i] === "\\") { i += 2; continue; } if (s[i] === "{") depth++; else if (s[i] === "}") depth--; i++; }
+    if (depth) break;
+    out += s.slice(last, m.index) + ` ${s.slice(m.index + m[0].length, i - 1)}: `;
+    last = i; re.lastIndex = i;
+  }
+  return out + s.slice(last);
+}
+
+// RRM-103: a raw paragraph can carry a whole display environment (DPO §5: \begin{equation} f(r; \piref, …) \end{equation}).
+// It becomes \[…\] (parseProse renders it as display math) instead of being stripped down to bare TeX.
+const MATH_ENV = /\\begin\{(equation|align|gather|multline|eqnarray|displaymath)(\*?)\}([\s\S]*?)\\end\{\1\2\}/g;
+function mathEnv(env, body) {
+  let t = body.replace(/\\label\{[^}]*\}/g, "").replace(/\\(?:nonumber|notag)\b/g, "").trim();
+  if (env !== "equation" && env !== "displaymath" && /\\\\/.test(t)) t = `\\begin{aligned}${t.replace(/&=&/g, "&=")}\\end{aligned}`;
+  return t;
+}
+
 export function cleanTexText(raw) {
   let s = String(raw ?? "");
   if (!/[\\{]/.test(s)) return s;
+  if (s.includes("\\begin{")) {
+    const hits = [...s.matchAll(MATH_ENV)];
+    if (hits.length) {
+      let out = "", last = 0;
+      for (const m of hits) {
+        const body = mathEnv(m[1], m[3]);
+        out += cleanTexText(s.slice(last, m.index)) + (body ? ` \\[${body}\\] ` : " ");
+        last = m.index + m[0].length;
+      }
+      return out + cleanTexText(s.slice(last));
+    }
+  }
   s = s.replace(/\\makeatletter[\s\S]*?\\makeatother/g, "");
   for (const n of DROP_ARG) s = stripCmd(s, n, false);
   for (const n of KEEP_ARG) s = stripCmd(s, n, true);
   s = stripCmd(s, "keywords", true);
+  s = stepArg(s); // RRM-103: \IF{$M_{ij} \neq 0$} (FlashAttention) has nested braces
   s = stripCmd(s, "answerYes", true).replace(/\\answer(?:No|NA)\b/g, "");
   s = s
+    .replace(/\\@startsection(?:\s*\{[^{}]*\}){0,6}/g, " ") // RRM-103: FlashAttention's \paragraph redefinition
+    .replace(/\\(?:small|footnotesize|scriptsize|normalsize|tiny|large|Large)(?=[A-Z])/g, "") // RRM-103: \small\label{…}Standard → Standard
+    .replace(/\[\\(?:dots|ldots)\]/g, "[…]")
+    .replace(/\*?\{\\baselineskip\}/g, " ")
     .replace(/\{\\(?:sl|sc|small|footnotesize|scriptsize|large|Large)\s+([^{}]*)\}/g, "$1")
     .replace(/\\(?:sl|sc|small|footnotesize|scriptsize|normalsize|large|Large|centering|noindent|indent|par|clearpage|newpage|medskip|smallskip|bigskip|hfill|vfill|raggedright|null|onecolumn|twocolumn)\b/g, "")
     .replace(/\\looseness\s*=\s*-?\d+/g, "")
@@ -43,6 +83,10 @@ export function cleanTexText(raw) {
     .replace(/\\textasciicircum(?![A-Za-z])\s*/g, "^")
     .replace(/\\textendash(?![A-Za-z])\s*/g, "–")
     .replace(/\\textemdash(?![A-Za-z])\s*/g, "—")
+    .replace(/\\textellipsis(?![A-Za-z])\s*/g, "…")
+    .replace(/\\textgreater(?![A-Za-z])\s*/g, ">")
+    .replace(/\\textless(?![A-Za-z])\s*/g, "<")
+    .replace(/(?:\\\\)?\[\\(?:heavy|light|cmid)rulewidth\]/g, " ")
     .replace(/\\textcolor\s*\{[^{}]*\}\s*/g, "")
     .replace(/\\ding\s*\{\s*55\s*\}/g, "✗")
     .replace(/\\ding\s*\{\s*51\s*\}/g, "✓")
@@ -55,6 +99,7 @@ export function cleanTexText(raw) {
     .replace(/\d*\.?\d+\\(?:textwidth|linewidth|columnwidth)\b/g, "")
     .replace(/\\[@a-z]*@[A-Za-z@]*/g, "")
     .replace(/\\(sysname|model|method|ours)\b/g, (m, k) => NAMES[k] || k)
+    .replace(/\{?\\"\{?([aeiouAEIOU])\}?\}?/g, (_m, v) => ({ a: "ä", e: "ë", i: "ï", o: "ö", u: "ü", A: "Ä", E: "Ë", I: "Ï", O: "Ö", U: "Ü" })[v] || v) // RRM-103: Nystr{\"o}m → Nyström
     .replace(/\\"([a-z])/g, "$1")
     .replace(/\{\s*\}/g, "")
     .replace(/\{([✓✗])\}/g, "$1")

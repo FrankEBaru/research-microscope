@@ -19,3 +19,12 @@ test("a citation balloon is the first author and the title, side by side", () =>
   assert.equal(briefRef("Jane Doe. A short title. Venue 2020.").who, "(Doe)");
   assert.equal(briefRef("").who, "");
 });
+
+test("RRM-103: ACL-style reference (Authors. Year. Title.) names the first author", () => {
+  const a = briefRef("Andrew M Dai and Quoc V Le. 2015. Semi-supervised sequence learning. In Advances in neural information processing systems, pages 3079--3087.");
+  assert.equal(a.who, "(Dai et al.)");
+  assert.equal(a.title, "Semi-supervised sequence learning");
+  const b = briefRef("Alan Akbik, Duncan Blythe, and Roland Vollgraf. 2018. Contextual string embeddings for sequence labeling. In Proceedings of COLING.");
+  assert.equal(b.who, "(Akbik et al.)");
+  assert.equal(b.title, "Contextual string embeddings for sequence labeling");
+});

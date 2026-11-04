@@ -1,4 +1,4 @@
-export const metadata = { title: "Licenses & use — Reading Microscope" };
+export const metadata = { title: "Licenses & use — Research Microscope" };
 
 export default function LicensesPage() {
   return (

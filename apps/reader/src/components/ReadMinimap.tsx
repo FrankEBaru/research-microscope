@@ -54,7 +54,7 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
     return () => window.removeEventListener("rrm-atlas", onAtlas);
   }, []);
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 760px)");
+    const mq = window.matchMedia("(max-width: 1079px)"); // RRM-103: tablet too (no index column there)
     const apply = () => {
       const small = mq.matches;
       setNarrow(small);

@@ -165,7 +165,9 @@ function cleanNote(s: string) {
     .replace(/\s*\[(?:[A-Za-z][\w:-]*\d{2,4}[\w:-]*)(?:\s*[,;]\s*[A-Za-z][\w:-]*\d{2,4}[\w:-]*)*\]/g, "")
     .replace(/\s+([,.;:])/g, "$1")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    // RRM-103: a quote cut in the middle of a formula ("given by: $a \in {0, 5, »") keeps an unclosed $: drop the stub.
+    .replace(/^((?:[^$\\]|\\.)*?(?:\$(?:[^$\\]|\\.)*\$(?:[^$\\]|\\.)*?)*)\$[^$]*$/, (_m, head: string) => `${head.replace(/[\s,;:]+$/, "")} …`);
 }
 
 export function GapView({ note, art, self, host = "", titleOf, onOpen }: { note?: any; art?: any; self: string; host?: string; titleOf?: (id: string) => string; onOpen?: (id: string, why: string) => void }) {

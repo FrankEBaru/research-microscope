@@ -264,7 +264,9 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
         same = ready === last ? same + 1 : 0;
         last = ready;
         tries += 1;
-        if (body?.store && ready < body.store.total && same < 8 && tries < 30) timer = window.setTimeout(tick, 2000);
+        // RRM-103: offline answers are recorded and never change: no 16 s of «Preparing sentences…» polling.
+        const offline = process.env.NEXT_PUBLIC_RRM_OFFLINE === "1";
+        if (!offline && body?.store && ready < body.store.total && same < 8 && tries < 30) timer = window.setTimeout(tick, 2000);
         else setStoreDone(true);
       } catch { /* el envío dice si no hubo almacén */ }
     };
