@@ -62,7 +62,7 @@ from rrm.reader.queue import release as release_job
 from rrm.reader.ocr_budget import claim_ocr_slot, ocr_gpu_from_env, ocr_limit_from_env
 from rrm.reader.sam import api_key, fill_pdf_crops, key_blocks_crops, parse_pages, sam_enabled, segment_pages, segmented_pages
 
-DATA = "/data"
+DATA = os.environ.get("RRM_DATA", "/data")  # RRM-100: local runs point it at a copy
 PAPERS = Path(DATA) / "papers"
 _fetch.S2_CACHE_DIR = PAPERS
 DISPLAY = Path(DATA) / "2026-10-20" / "index" / "display.parquet"
@@ -100,7 +100,8 @@ gpu_image = (
     .add_local_python_source("rrm")
 )
 
-app = modal.App("rrm-reader")
+# RRM-100: experiments deploy under another name; the demo app stays rrm-reader.
+app = modal.App(os.environ.get("RRM_READER_APP", "rrm-reader"))
 vol = modal.Volume.from_name("rrm-data", create_if_missing=True)
 if modal.is_local():
     secret = modal.Secret.from_dict({
@@ -123,6 +124,10 @@ if modal.is_local():
         "RRM_LICENSE_GATE": os.environ.get("RRM_LICENSE_GATE", "off"),
         # Vacío: /ask y /notes no adjuntan el prompt. Una ruta guarda el crudo en la respuesta.
         "RRM_RAW_DUMP": os.environ.get("RRM_RAW_DUMP", ""),
+        # RRM-100: 0 vuelve a la caja anterior; PASSAGES=0 arma la hoja sin otros papers.
+        "RRM_EXPLAIN": os.environ.get("RRM_EXPLAIN", ""),
+        "RRM_EXPLAIN_PASSAGES": os.environ.get("RRM_EXPLAIN_PASSAGES", ""),
+        "RRM_EXPLAIN_EFFORT": os.environ.get("RRM_EXPLAIN_EFFORT", ""),
     })
 else:
     secret = modal.Secret.from_dict({})
@@ -782,8 +787,21 @@ def prepare_paper_phrases(cid) -> dict:
     return out
 
 
+def _kick_explain(cid):
+    """RRM-100: hoja de respuestas de cada sección, en un hilo, al abrir el paper."""
+    try:
+        from rrm.reader.explain import service as explain
+        from rrm.reader.similar import specter_encode
+
+        explain.kick(int(cid), PAPERS / str(int(cid)), load_paper, encode=specter_encode,
+                     lock=_phrase_lock, commit=vol.commit, log=lambda msg: print(msg, flush=True))
+    except Exception as err:
+        print(f"explain kick: {type(err).__name__}", flush=True)
+
+
 def _kick_phrases(cid):
     """Al abrir, este paper va primero. El hilo usa el mismo candado que /ask."""
+    _kick_explain(cid)
     if os.environ.get("RRM_PHRASE_VECTORS") != "1":
         return
 
@@ -880,6 +898,19 @@ def _ask_body(ids, text, stage, focus=None):
         return specter_encode(texts)
 
     return answer(rows, text, ids=ids, root=PAPERS, encode=encode, vectors=vectors, stage=stage or "todo")
+
+
+def _explain_body(focus, section, text, stage):
+    """RRM-100: /ask de una sección del paper abierto. None si el paper no tiene texto."""
+    from rrm.reader.explain import service as explain
+    from rrm.reader.similar import specter_encode
+
+    folder = PAPERS / str(int(focus))
+    paper = load_paper(folder)
+    if not isinstance(paper, dict) or not paper.get("blocks"):
+        return None
+    _kick_explain(int(focus))
+    return explain.ask(folder, paper, section, text, stage=stage, encode=specter_encode)
 
 
 def read_status(ids: str = "", pending=None, question: str = ""):
@@ -1041,6 +1072,22 @@ def api():
         item = await request.json()
         item = item or {}
         focus = item.get("focus")
+        section = str(item.get("section") or "")
+        if str(focus or "").isdigit() and section and str(item.get("text") or "").strip():
+            from rrm.reader.explain import service as explain
+
+            if explain.explain_on():
+                try:
+                    body = _explain_body(focus, section, item.get("text") or "", item.get("stage") or "revisar")
+                except Exception as err:
+                    from rrm.reader.verify import ask_error_text
+                    return JSONResponse({"error": ask_error_text(err)}, status_code=500)
+                if body is not None:
+                    from rrm.reader.verify import ask_http
+                    code, payload = ask_http(body, item.get("stage") or "")
+                    if code != 200:
+                        return JSONResponse(payload, status_code=code)
+                    return gate_ask(payload, load_map(map_path()))
         prep = None
         if focus not in (None, ""):
             try:

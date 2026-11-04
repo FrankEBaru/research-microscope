@@ -460,7 +460,8 @@ export function fetchNotes(id) {
   });
 }
 
-export function ask(ids, text, stage, focus) {
+/** RRM-100: `section` (id del encabezado) revisa contra esa sección del paper abierto. */
+export function ask(ids, text, stage, focus, section) {
   if (!READER) {
     return Promise.resolve({
       extracts: [], papers: 0, line: "", empty: false, matched: 0, parts: {},
@@ -470,6 +471,6 @@ export function ask(ids, text, stage, focus) {
   return request("ask", `${READER}/ask`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, text, stage: stage || "", focus: focus || "" }),
+    body: JSON.stringify({ ids, text, stage: stage || "", focus: focus || "", ...(section ? { section } : {}) }),
   });
 }

@@ -83,11 +83,20 @@ class PassageBase:
         import pyarrow.parquet as pq
 
         root = Path(root)
-        table = pq.read_table(root / "rows.parquet", columns=["id", "corpusid", "kind", "section", "text", "latex", "title", "license", "url"])
-        self.rows = table.to_pylist()
-        self.index = faiss.read_index(str(root / "faiss.index"))
+        # Arrow, no lista de dicts: 298k filas como dicts pasaban de 2 GB en la WSL.
+        self.table = pq.read_table(root / "rows.parquet", columns=["id", "corpusid", "section", "text", "title", "license", "url"])
+        self.n = self.table.num_rows
+        self.corpus = self.table.column("corpusid").to_numpy()
+        try:
+            # mmap: el índice (917 MB) vive en caché de páginas, que el sistema puede soltar.
+            self.index = faiss.read_index(str(root / "faiss.index"), faiss.IO_FLAG_MMAP)
+        except Exception:
+            self.index = faiss.read_index(str(root / "faiss.index"))
         junk = root / "junk_mask.npy"
-        self.junk = np.load(junk) if junk.is_file() else np.zeros(len(self.rows), dtype=bool)
+        self.junk = np.load(junk) if junk.is_file() else np.zeros(self.n, dtype=bool)
+
+    def row(self, idx):
+        return self.table.slice(int(idx), 1).to_pylist()[0]
 
     def search(self, vecs, k=12, exclude=None):
         """[(fila, coseno)] únicos, mejores primero. Sin el paper abierto ni basura."""
@@ -98,13 +107,12 @@ class PassageBase:
             taken = 0
             for score, idx in zip(drow, irow):
                 idx = int(idx)
-                if idx < 0 or idx >= len(self.rows) or (idx < len(self.junk) and self.junk[idx]):
+                if idx < 0 or idx >= self.n or (idx < len(self.junk) and self.junk[idx]):
                     continue
-                row = self.rows[idx]
-                if exclude is not None and str(row.get("corpusid")) == str(exclude):
+                if exclude is not None and str(self.corpus[idx]) == str(exclude):
                     continue
-                text = str(row.get("text") or "")
-                if len(text) < 60:
+                row = self.row(idx)
+                if len(str(row.get("text") or "")) < 60:
                     continue
                 if idx not in best or score > best[idx][1]:
                     best[idx] = (row, float(score))
