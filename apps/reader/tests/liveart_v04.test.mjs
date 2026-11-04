@@ -71,3 +71,16 @@ test("flag parsing and the Python mirror of the examples", () => {
   const mirror = JSON.parse(readFileSync(new URL("../../../rrm/liveart/v04_examples.json", import.meta.url), "utf8"));
   assert.deepEqual(mirror, V04.map((e) => e.widget));
 });
+
+test("an area rect is fractions of the canvas, not pixels (RRM-96: pixel rects drew nothing)", () => {
+  const kl = V04.find((e) => e.widget.id === "kl-policy").widget;
+  const withRect = (rect) => {
+    const w = JSON.parse(JSON.stringify(kl));
+    w.areas = (w.areas || [{ id: "main" }]).map((a, i) => (i === 0 ? { ...a, rect } : a));
+    return verifyWidget(w, { v04: true });
+  };
+  assert.equal(withRect([0, 0, 1, 0.6]).accept, true);
+  for (const bad of [[80, 40, 520, 260], [0.5, 0, 0.7, 1], [0, 0, 0, 1], [0, 0, 1]]) {
+    assert.ok(withRect(bad).reasons.includes("areas"), JSON.stringify(bad));
+  }
+});

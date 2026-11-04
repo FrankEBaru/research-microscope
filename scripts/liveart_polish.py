@@ -79,6 +79,7 @@ def main():
     ap.add_argument("--model", default="muse-wonder-1.0")
     ap.add_argument("--max-usd", type=float, required=True, dest="max_usd")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--note", action="append", default=[], help="extra reason for the polish prompt (repeatable)")
     ap.add_argument("--merge-only", action="store_true", help="no calls: re-grade the saved polish answers of --raw-out")
     args = ap.parse_args()
 
@@ -123,7 +124,7 @@ def main():
             print(f"{cid:<16} no widget, skip")
             continue
         row = blob["row"]
-        reasons = [r for r in (row.get("reasons") or [])] + notes(widget)
+        reasons = [r for r in (row.get("reasons") or [])] + notes(widget) + list(args.note)
         msgs = P.polish_messages(claims[cid], widget, reasons)
         ceiling = _ceiling(args.model, _chars(msgs), 6000)
         if args.dry_run:

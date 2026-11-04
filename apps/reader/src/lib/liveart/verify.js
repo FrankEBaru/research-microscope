@@ -109,6 +109,11 @@ function shape04(widget) {
   else for (const a of areas) {
     if (!a || !ID_RE.test(a.id || "") || aids.has(a.id)) { errors.push("areas"); break; }
     aids.add(a.id);
+    // rect is [x, y, w, h] in fractions of the canvas (contract 0.4). Pixels put the area off the canvas: nothing shows.
+    const frac = (r) => Array.isArray(r) && r.length === 4 && r.every((v) => num(v) && v >= 0 && v <= 1)
+      && r[2] > 0 && r[3] > 0 && r[0] + r[2] <= 1.001 && r[1] + r[3] <= 1.001;
+    const rectOk = (r) => r == null || frac(r) || (typeof r === "object" && !Array.isArray(r) && Object.values(r).length > 0 && Object.values(r).every(frac));
+    if (!rectOk(a.rect)) { errors.push("areas"); break; }
     const axes = [a.x, a.y].filter(Boolean);
     if (axes.some((ax) => !(Array.isArray(ax.cats) ? ax.cats.length >= 2 && ax.cats.length <= 12 : num(ax.min) && num(ax.max) && ax.min < ax.max && (!ax.log || ax.min > 0)))) { errors.push("areas"); break; }
     if (axes.some((ax) => ax.label != null && !text(ax.label, L.label[1]))) { errors.push("areas"); break; }
