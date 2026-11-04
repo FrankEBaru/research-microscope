@@ -193,7 +193,7 @@ def assemble(ctx, sents, data, passages=None, points=None):
             out["paper_id"] = out["cites"][0]["paper_id"]
             out["section"] = out["cites"][0]["section"]
             out["ptr"] = out["cites"][0]["ptr"]
-        if verdict in ("coincide", "diverge"):
+        if verdict != "sin_respaldo":  # tocado, aunque sea mal: eso ya lo dice el veredicto
             for k in item.get("points") or []:
                 found = re.search(r"k\d+", str(k))
                 if found:
@@ -207,11 +207,18 @@ def assemble(ctx, sents, data, passages=None, points=None):
             parts["sin_respaldo"].append({"n": n, "text": sentence, "why": "", "cites": [], "others": [], "verified": False})
     if points is not None:
         # Cubierto también si una afirmación que coincide o diverge cita una frase del punto.
-        cited = {c["ptr"] for v in ("coincide", "diverge") for item in parts[v] for c in item.get("cites") or []}
+        cited = {c["ptr"] for v in ("coincide", "diverge", "contradice") for item in parts[v] for c in item.get("cites") or []}
         for point in points:
             if cited & set(point.get("ptrs") or []):
                 covered.add(point["id"])
-        parts["te_falto"] = _missed_from_points(ctx, points, covered, passages)
+        picked = None
+        if isinstance((data or {}).get("missed"), list):
+            picked = []
+            for item in data["missed"]:
+                found = re.search(r"k\d+", str((item or {}).get("point") if isinstance(item, dict) else item))
+                if found and found.group(0) not in picked:
+                    picked.append(found.group(0))
+        parts["te_falto"] = _missed_from_points(ctx, points, covered, passages, picked=picked)
     else:
         for item in ((data or {}).get("missed") or [])[:2]:
             if not isinstance(item, dict):
@@ -227,10 +234,14 @@ def assemble(ctx, sents, data, passages=None, points=None):
     return parts
 
 
-def _missed_from_points(ctx, points, covered, passages, limit=2):
+def _missed_from_points(ctx, points, covered, passages, limit=2, picked=None):
+    """Puntos clave que nadie tocó. Con `picked` (ids que eligió el modelo) solo esos, en su orden."""
     out = []
+    if picked is not None:
+        by = {p["id"]: p for p in points}
+        points = [by[k] for k in picked if k in by]
     for point in points:
-        if point["id"] in covered or not point.get("core"):
+        if point["id"] in covered or (picked is None and not point.get("core")):
             continue
         cites = _cite(ctx, point.get("ptrs"), limit=2)
         if not cites:
@@ -261,7 +272,13 @@ def review_e1(ctx, text, *, model=None, effort="minimal", salt=""):
     return assemble(ctx, sents, data), cost, {"llm_s": seconds, "cached": hit, "parsed": data is not None}
 
 
-def review_e2(ctx, text, sheet, *, model=None, effort="minimal", salt="", use_passages=True):
+_MISSED_PICK = (
+    "`missed`: up to 2 key points (k ids) the reader did not address at all, the most important first; "
+    "never a point that any claim talks about, even wrongly. Empty if the reader covered the essentials. "
+)
+
+
+def review_e2(ctx, text, sheet, *, model=None, effort="minimal", salt="", use_passages=True, pick=False):
     sents = sentences(text)
     if not sents:
         return {part: [] for part in PARTS}, llm.add(None, None), {}
@@ -272,8 +289,13 @@ def review_e2(ctx, text, sheet, *, model=None, effort="minimal", salt="", use_pa
     if passages:
         user += "\n\nPassages from other papers:\n" + "\n".join(f"[{p['id']}] (for {p['point']}; {p['title']}) {p['text']}" for p in passages)
     user += f"\n\nReader's explanation:\n{_said(sents)}"
-    rules = _RULES + _MISSED_POINTS + (_OTHERS if passages else "")
-    payload = llm.body(rules, user, _claim_schema(points=True, others=bool(passages)), "review", model=model, effort=effort, tokens=3000)
+    rules = _RULES + _MISSED_POINTS + (_OTHERS if passages else "") + (_MISSED_PICK if pick else "")
+    schema = _claim_schema(points=True, others=bool(passages))
+    if pick:
+        pick_item = {"type": "object", "additionalProperties": False, "properties": {"point": {"type": "string"}}, "required": ["point"]}
+        schema["properties"]["missed"] = {"type": "array", "items": pick_item}
+        schema["required"] = list(schema["properties"])
+    payload = llm.body(rules, user, schema, "review", model=model, effort=effort, tokens=3000)
     data, cost, seconds, hit = _run(payload, salt)
     return assemble(ctx, sents, data, passages=passages, points=points), cost, {"llm_s": seconds, "cached": hit, "parsed": data is not None}
 

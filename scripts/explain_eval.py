@@ -145,6 +145,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--tag", default="")
     ap.add_argument("--judge", action="store_true")
+    ap.add_argument("--threads", type=int, default=6)
     args = ap.parse_args()
 
     from rrm.reader.similar import specter_encode
@@ -159,7 +160,7 @@ def main():
     cands = [c.strip() for c in args.cands.split(",") if c.strip()]
     only = {x.strip() for x in args.only.split(",") if x.strip()}
     kinds = {x.strip() for x in args.kinds.split(",") if x.strip()}
-    records, sheets = [], {}
+    records, sheets, jobs = [], {}, []
     total = llm.add(None, None)
     for sec in gold["sections"]:
         key = f"{sec['paper']}:{sec['section']}"
@@ -186,46 +187,60 @@ def main():
                 print(f"WARN split {key} {ans['kind']}: {len(sents)} vs {len(ans['claims'])}", file=sys.stderr)
             for cand in cands:
                 for run in range(args.runs):
-                    salt = f"run{run}" if run else ""
-                    t0 = time.perf_counter()
-                    info = {}
-                    if cand == "E0":
-                        parts, cost = _e0(pdir, text, specter_encode)
-                    elif cand == "E1":
-                        parts, cost, info = review_e1(ctx, text, model=args.model, effort=args.effort, salt=salt)
-                    elif cand == "E2":
-                        parts, cost, info = review_e2(ctx, text, sheet, model=args.model, effort=args.effort, salt=salt)
-                    elif cand == "E2np":
-                        parts, cost, info = review_e2(ctx, text, sheet, model=args.model, effort=args.effort, salt=salt, use_passages=False)
-                    elif cand == "E3":
-                        parts, cost, info = review_e3(ctx, text, model=args.model, effort=args.effort, salt=salt)
-                    else:
-                        raise SystemExit(f"unknown candidate {cand}")
-                    wall = time.perf_counter() - t0
-                    total = llm.add(total, cost)
-                    verdicts, ptrs = per_claim(parts, sents)
-                    claims = []
-                    for n, gc in enumerate(ans["claims"], 1):
-                        pred = verdicts.get(n, "none")
-                        cite_hit = bool(set(gc["ptr"]) & ptrs.get(n, set())) if gc["ptr"] else None
-                        claims.append({"n": n, "gold": gc["verdict"], "ok": gc["ok"], "pred": pred,
-                                       "right": pred in gc["ok"], "strict": pred == gc["verdict"], "cite_hit": cite_hit})
-                    said = {p for gc in ans["claims"] if gc["verdict"] == "coincide" for p in gc["ptr"]}
-                    m = _missed_score(parts, ans.get("missed") or [], said)
-                    grades = []
-                    if args.judge:
-                        grades, jcost = judge(parts, llm.CONTRIBUTOR, salt=salt)
-                        total = llm.add(total, jcost)
-                    others = sum(len(item.get("others") or []) for p in PARTS for item in parts.get(p) or [])
-                    records.append({
-                        "cand": cand, "run": run, "section": key, "kind": ans["kind"], "answer": ai,
-                        "claims": claims, "missed": m, "others": others, "wall_s": round(wall, 3),
-                        "llm_s": info.get("llm_s"), "cached": info.get("cached"), "cost": cost.get("cost_usd", 0.0),
-                        "tool_calls": info.get("tool_calls"), "parts": parts, "grades": grades,
-                    })
-                    right = sum(c["right"] for c in claims)
-                    print(f"{cand} r{run} {key} {ans['kind']:8s} {right}/{len(claims)} missed={m} others={others} "
-                          f"{wall:.1f}s ${cost.get('cost_usd', 0):.5f}", file=sys.stderr)
+                    jobs.append((key, ai, ans, text, sents, ctx, sheet, pdir, cand, run))
+        # Un hilo por revisión: Meta espera red. El encoder tiene su propio candado.
+        from concurrent.futures import ThreadPoolExecutor
+
+        def one(job):
+            key, ai, ans, text, sents, ctx, sheet, pdir, cand, run = job
+            salt = f"run{run}" if run else ""
+            t0 = time.perf_counter()
+            info = {}
+            if cand == "E0":
+                parts, cost = _e0(pdir, text, specter_encode)
+            elif cand == "E1":
+                parts, cost, info = review_e1(ctx, text, model=args.model, effort=args.effort, salt=salt)
+            elif cand == "E2":
+                parts, cost, info = review_e2(ctx, text, sheet, model=args.model, effort=args.effort, salt=salt)
+            elif cand == "E2m":
+                parts, cost, info = review_e2(ctx, text, sheet, model=args.model, effort=args.effort, salt=salt, pick=True)
+            elif cand == "E2np":
+                parts, cost, info = review_e2(ctx, text, sheet, model=args.model, effort=args.effort, salt=salt, use_passages=False)
+            elif cand == "E3":
+                parts, cost, info = review_e3(ctx, text, model=args.model, effort=args.effort, salt=salt)
+            else:
+                raise SystemExit(f"unknown candidate {cand}")
+            wall = time.perf_counter() - t0
+            verdicts, ptrs = per_claim(parts, sents)
+            claims = []
+            for n, gc in enumerate(ans["claims"], 1):
+                pred = verdicts.get(n, "none")
+                cite_hit = bool(set(gc["ptr"]) & ptrs.get(n, set())) if gc["ptr"] else None
+                claims.append({"n": n, "gold": gc["verdict"], "ok": gc["ok"], "pred": pred,
+                               "right": pred in gc["ok"], "strict": pred == gc["verdict"], "cite_hit": cite_hit})
+            said = {p for gc in ans["claims"] if gc["verdict"] != "sin_respaldo" for p in gc["ptr"]}
+            m = _missed_score(parts, ans.get("missed") or [], said)
+            grades, jcost = [], None
+            if args.judge:
+                grades, jcost = judge(parts, llm.CONTRIBUTOR, salt=salt)
+            others = sum(len(item.get("others") or []) for p in PARTS for item in parts.get(p) or [])
+            right = sum(c["right"] for c in claims)
+            print(f"{cand} r{run} {key} {ans['kind']:8s} {right}/{len(claims)} missed={m} others={others} "
+                  f"{wall:.1f}s ${cost.get('cost_usd', 0):.5f}", file=sys.stderr, flush=True)
+            return {
+                "cand": cand, "run": run, "section": key, "kind": ans["kind"], "answer": ai,
+                "claims": claims, "missed": m, "others": others, "wall_s": round(wall, 3),
+                "llm_s": info.get("llm_s"), "cached": info.get("cached"), "cost": cost.get("cost_usd", 0.0),
+                "tool_calls": info.get("tool_calls"), "parts": parts, "grades": grades,
+            }, cost, jcost
+
+        with ThreadPoolExecutor(max_workers=args.threads) as pool:
+            for rec, cost, jcost in pool.map(one, jobs):
+                records.append(rec)
+                total = llm.add(total, cost)
+                if jcost:
+                    total = llm.add(total, jcost)
+        jobs = []
     out = {"tag": args.tag, "args": vars(args), "records": records, "sheets": sheets, "total": total, "summary": summarize(records, sheets)}
     Path(args.out).write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(out["summary"], indent=1))
