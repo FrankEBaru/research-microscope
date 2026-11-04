@@ -213,11 +213,11 @@ CONTRATO rrm-widget/0.4. Manda sobre lo de arriba donde choque.
 Llaves: id, topic, title, explain, questions, controls, draw, y además version, hook, takeaway, readouts, areas, marks y legend. version es "rrm-widget/0.4".
 draw es `function draw(ctx, state, t, ui)`. ctx dibuja solo geometría: curvas, barras, diales, rejillas, contornos. Nunca ctx.fillText: el texto va en las llaves y lo pinta la página.
 hook: el malentendido como pregunta, hasta 60 caracteres, termina en ?.
-readouts: hasta 4, {id, label, digits}. label es el name de la lectura del spec. En el draw: ui.readout("id", valor). No imprimas la lectura en el lienzo.
+readouts: hasta 4, {id, label, digits}. label es el name de la lectura del spec, escrito para un lector: palabras de hasta 16 caracteres («softmax top prob», «spread of q·k»), nunca un identificador con guion bajo. En el draw: ui.readout("id", valor). No imprimas la lectura en el lienzo.
 takeaway: una frase de hasta 100 caracteres con {id} de readouts o de controles, p. ej. "Con beta = {beta}, lol se queda {plol}.".
 areas: hasta 3, {id, rect, x_min, x_max, x_label, y_min, y_max, y_label}. rect es [x, y, ancho, alto] en fracciones del lienzo; [0, 0, 1, 1] es todo. Un eje sin números va con min = max = 0 y label "". En el draw: var A = ui.area("id"); A.X(v) y A.Y(v) dan píxeles; A.x, A.y, A.w, A.h el recuadro. ui.axes("id") dibuja los ejes con sus números.
 marks: el régimen del spec. {id, control, area, axis, label}. Con control (area "" y axis ""), la marca va sobre el slider de ese control. Con area y axis "x" o "y" (control ""), va en el lienzo. En el draw: ui.mark("id", valor). label hasta 18 caracteres.
-legend: hasta 4, {color, text}; color es c1, c2, c3, c4 o ref.
+legend: hasta 4, {color, text}; color es c1, c2, c3, c4 o ref. text de hasta 16 caracteres (el motor rechaza más de 24): «query q», «unscaled», no una frase.
 Colores, solo estos: ui.c.c1 la serie que importa, ui.c.c2 la ingenua u otra, ui.c.ref la referencia, ui.c.ink, ui.c.rule, ui.c.track. Grosores: ui.lw.hair, ui.lw.line, ui.lw.bold.
 Rótulos en el lienzo: a lo más 3 ui.label("texto", x, y, "c1"), de hasta 18 caracteres, junto a la geometría que nombran. El motor los acomoda.
 controls: cada uno lleva kind (slider, toggle, select o button) y options ([] salvo en select). Un toggle va de 0 a 1 con step 1. Un select usa min 0, max n-1, step 1 y sus options. Usa algo distinto de slider solo si la forma del control es el claim.
@@ -337,6 +337,29 @@ def repair_messages(claim, explain, questions, widget, reasons, shots=None, spec
         + json.dumps(shots or [], ensure_ascii=False)
     )
     return with_guard(system), wrap_user("ARREGLO", body)
+
+
+_POLISH_04 = """\
+Pules un widget rrm-widget/0.4 que ya monta. Lo lee un recién llegado en el margen de un paper, junto al enunciado.
+Respondes solo el JSON completo del widget, con las mismas llaves.
+No cambies la figura: el draw, los ids, los rangos de los controles, las áreas y las lecturas se quedan, salvo que un motivo nombre el draw o un id.
+Corrige cada motivo de la lista. Además:
+- hook: la pregunta que el lector se hace al ver la ecuación, hasta 60 caracteres, con ?. Símbolos escritos como en el paper con Unicode (dₖ, √dₖ, β, α, ε, θ, ℓ), nunca d_k ni sqrt.
+- title: hasta 60 caracteres, en el mismo estilo.
+- controls[].label, readouts[].label, legend[].text: palabras de un lector, hasta 16 caracteres, sin guion bajo ni identificadores (p_raw es «top weight», var_dot es «variance of q·k»). Un símbolo va con Unicode.
+- marks[].label: hasta 18 caracteres.
+- takeaway: una frase de hasta 100 caracteres que dice lo que se ve ahora, con {id} de lecturas o controles. Sin guion bajo fuera de las llaves.
+- questions: 3 o 4. Cada una empieza «Set <label del control> to <valor>» con un valor dentro del rango y termina en ?. Una ataca el malentendido. why responde en una frase con lo que se ve.
+- explain: dos frases a lo más. Qué es la figura y qué muestra el control. Nombra el arXiv. Di que la figura es una ilustración cuando no son datos del paper.
+Todo el texto en el idioma del enunciado: si el enunciado está en inglés, todo en inglés, aunque estas instrucciones estén en español.
+No cites otros papers ni autores: solo el arXiv del enunciado.
+"""
+
+
+def polish_messages(claim, widget, reasons):
+    """RRM-96. One Wonder call on a widget that mounts: fix the engine reasons and the reader-facing text."""
+    body = _claim_text(claim) + "\nmotivos:\n" + json.dumps(list(reasons or []), ensure_ascii=False) + "\nwidget:\n" + json.dumps(widget or {}, ensure_ascii=False)
+    return with_guard(_POLISH_04 + _limits()), wrap_user("PULIDO", body)
 
 
 def verifier_messages(claim, widget, engine=None):

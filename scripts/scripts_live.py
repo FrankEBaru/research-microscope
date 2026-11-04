@@ -166,6 +166,10 @@ _EFFORT = {
 
 def _pick(args, cases):
     """--ids wins over --n. Probe-2/3 and the RRM-85 eight are addressable by id."""
+    if getattr(args, "claims", ""):
+        rows = json.loads(Path(args.claims).read_text(encoding="utf-8"))
+        want = [i.strip() for i in getattr(args, "ids", "").split(",") if i.strip()]
+        return [{"id": r["id"], "claim": r["claim"]} for r in rows if not want or r["id"] in want]
     if not getattr(args, "ids", ""):
         n = getattr(args, "n", 0)
         return cases[:n] if n > 0 else list(cases)
@@ -418,6 +422,7 @@ def run_live(args, cases, node, root):
                 print("CAP HIT, stopping", flush=True)
                 return None
             got = _call(stage, msgs[0], msgs[1], schema, tokens, _EFFORT[stage], model)
+            got["messages"] = {"system": msgs[0], "user": msgs[1]}
             calls.append(got)
             _add(bucket, model, got["usage"])
             total += got["usage"]["cost_usd"]

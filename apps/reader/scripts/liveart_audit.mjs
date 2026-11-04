@@ -76,7 +76,7 @@ function connect(url) {
 }
 
 async function chromeUp(port, dir) {
-  const proc = spawn("google-chrome", [
+  const proc = spawn(process.env.CHROME || "google-chrome", [
     "--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage",
     `--remote-debugging-port=${port}`, `--user-data-dir=${dir}`, "about:blank",
   ], { stdio: "ignore" });
