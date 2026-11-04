@@ -61,12 +61,19 @@ export function sentences(blocks) {
 function hasSymbol(sentence, tex) {
   const needle = String(tex || "").replace(/\s+/g, "");
   if (!needle) return false;
-  // Una letra suelta (H) aparece en cualquier palabra. Solo cuenta si es un nodo de math igual.
+  // $H$ es un símbolo. La letra H dentro de una palabra ("Here") no lo es.
   if (needle.length <= 2 && /^[A-Za-z]+$/.test(needle)) {
     return (sentence.math || []).some((blob) => String(blob).replace(/\s+/g, "") === needle);
   }
   const blobs = [sentence.text, ...(sentence.math || [])];
   return blobs.some((blob) => String(blob).replace(/\s+/g, "").includes(needle));
+}
+
+/** La frase aporta algo además del símbolo (no es solo "$H$"). */
+function explains(sentence, tex) {
+  const needle = String(tex || "").replace(/\s+/g, "");
+  const rest = String(sentence.text || "").replace(/\s+/g, "").split(needle).join("");
+  return rest.replace(/[^A-Za-z]+/g, "").length > 12;
 }
 
 export function symbolHover(blocks, tex, at) {
@@ -76,13 +83,17 @@ export function symbolHover(blocks, tex, at) {
     const pos = seq.findIndex((row) => row.block === at.block && row.index === at.index);
     if (pos >= 0) cursor = pos;
   }
-  let found = null;
+  const hits = [];
   seq.forEach((row, index) => {
-    if (index <= cursor && hasSymbol(row, tex)) found = row;
+    if (index <= cursor && hasSymbol(row, tex)) hits.push(row);
   });
-  if (!found) return { text: UNDEFINED };
-  const here = Boolean(at && found.block === at.block && found.index === at.index);
-  return { text: found.text, shown: found.shown, section: found.section, here };
+  if (!hits.length) return { text: UNDEFINED };
+  const last = hits[hits.length - 1];
+  const onIt = Boolean(at && last.block === at.block && last.index === at.index);
+  if (!onIt) return { text: last.text, shown: last.shown, section: last.section, here: false };
+  const prior = hits.slice(0, -1).reverse().find((row) => explains(row, tex));
+  if (prior) return { text: prior.text, shown: prior.shown, section: prior.section, here: false };
+  return { text: last.text, shown: last.shown, section: last.section, here: true };
 }
 
 export function equationHover(blocks, blockId) {

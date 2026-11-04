@@ -96,6 +96,8 @@ function One({ x, ctx, prev = "" }: { x: Inline; ctx: Ctx; prev?: string }) {
     }
     case "note": {
       const n = x.n || 0;
+      const body = (x.blocks || []).flatMap((b: Block) => b.inlines || []);
+      if (!n && body.length) return <span className="fn-inline"><Inlines inls={body} ctx={ctx} /></span>;
       return <sup className="fn" id={n ? `fn-${n}` : undefined} tabIndex={0} data-pop={`n|${n}`}>{n}</sup>;
     }
     case "ref": {
@@ -114,13 +116,24 @@ function One({ x, ctx, prev = "" }: { x: Inline; ctx: Ctx; prev?: string }) {
 
 function niceRef(label: string, mapped: string) {
   if (mapped && mapped !== label) return mapped;
-  if (/^fig:/i.test(label)) return "Figure";
-  if (/^tab:/i.test(label)) return "Table";
-  if (/thm|lem/i.test(label)) return "Theorem";
-  if (/^app:/i.test(label)) return "Appendix";
-  if (/^eq:/i.test(label)) return "equation";
-  if (/^sec:/i.test(label)) return "Section";
-  return mapped || label;
+  const kind = label.split(":")[0].toLowerCase();
+  const name: Record<string, string> = {
+    fig: "Figure", figure: "Figure", tab: "Table", table: "Table",
+    eq: "equation", eqn: "equation", app: "Appendix", appendix: "Appendix",
+    sec: "Section", section: "Section", thm: "Theorem", lem: "Lemma", lemma: "Lemma",
+    prop: "Proposition", cor: "Corollary", def: "Definition", rem: "Remark",
+    alg: "Algorithm", assumption: "Assumption", claim: "Claim", conj: "Conjecture",
+  };
+  return name[kind] || mapped || label;
+}
+
+function texKey(node: HTMLElement | null) {
+  const host = node?.closest?.("[data-sym],[data-tex]") as HTMLElement | null;
+  if (!host) return "";
+  if (host.dataset.sym) return `id:${host.dataset.sym}`;
+  const tex = (host.dataset.tex || "").replace(/\s+/g, "");
+  if (!tex || !/[A-Za-z]/.test(tex)) return "";
+  return `tex:${tex}`;
 }
 
 function symbolWorth(blocks: Block[], tex: string, at?: { block: string; index: number } | null) {
@@ -376,12 +389,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     const key = el.dataset.pop || `y|${el.dataset.sym}`;
     if (pop && (el.dataset.pop === pop.key || (el.dataset.sym && pop.key === `y|${el.dataset.sym}`))) clearTimeout(closeTimer.current);
     if (core) {
-      const host = (e.target as HTMLElement).closest("[data-sym],[data-tex]") as HTMLElement | null;
-      const sym = host?.dataset.sym ? `id:${host.dataset.sym}` : host?.dataset.tex ? `tex:${host.dataset.tex.replace(/\s+/g, "")}` : "";
-      const where = host?.closest("[data-pop]") as HTMLElement | null;
-      const bits = where?.dataset.pop?.split("|") || [];
-      const at = bits[0] === "m" ? { block: bits[1], index: Number(bits[2]) } : null;
-      if (sym && symbolWorth(paper.blocks, host?.dataset.tex || "", at)) setSymHot(sym);
+      const sym = texKey(e.target as HTMLElement);
+      if (sym) setSymHot(sym);
     }
     if (core && !SENTENCE_MOCK && key.startsWith("s|")) {
       const parts = key.split("|");
@@ -393,8 +402,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       const parts = key.split("|");
       let tex = parts[3] || "";
       try { tex = decodeURIComponent(tex); } catch { /* el tex del globo sigue siendo el del botón */ }
-      const hit = symbolHover(paper.blocks, tex, { block: parts[1], index: Number(parts[2]) });
-      if (!hit || hit.here || hit.text === UNDEFINED) return;
+      if (!symbolWorth(paper.blocks, tex, { block: parts[1], index: Number(parts[2]) })) return;
     }
     if (key.startsWith("e|") || key.startsWith("n|")) return;
     if (companion) signal(key);
@@ -426,7 +434,10 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const onOut = (e: { relatedTarget: EventTarget | null; target?: EventTarget | null }) => {
     const next = e.relatedTarget as HTMLElement | null;
     const left = e.target as HTMLElement | null;
-    const zone = left && typeof left.closest === "function" ? left.closest(".eq,[data-pop]") : null;
+    const leftKey = texKey(left);
+    const nextKey = next && typeof next.closest === "function" ? texKey(next) : "";
+    if (leftKey && nextKey && leftKey === nextKey) return;
+    const zone = left && typeof left.closest === "function" ? left.closest("[data-tex],[data-sym],[data-pop]") : null;
     if (next && zone && (zone === next || zone.contains(next))) return;
     if (sameHost(next)) return;
     if (Date.now() - touched.current < 800) return;

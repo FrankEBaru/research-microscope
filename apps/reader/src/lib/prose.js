@@ -17,6 +17,12 @@ const DROP = new Set([
   "toprule", "midrule", "bottomrule", "tabularnewline",
 ]);
 const STYLE = { it: "em", em: "em", bf: "strong", bfit: "strong", sc: "em", rm: "span", tt: "code", textbf: "strong", textit: "em" };
+const STRUCTURAL = new Set([
+  "footnote", "footnotetext", "footnotemark", "caption", "subcaption", "captionof",
+  "paragraph", "subparagraph", "section", "subsection", "subsubsection",
+  "chapter", "part", "item", "abstract", "thanks", "title", "author",
+  "cite", "ref", "eqref", "url", "href", "label", "captionsetup",
+]);
 const ACCENT = {
   '"': { a: "ä", e: "ë", i: "ï", o: "ö", u: "ü", y: "ÿ", A: "Ä", E: "Ë", I: "Ï", O: "Ö", U: "Ü" },
   "'": { a: "á", e: "é", i: "í", o: "ó", u: "ú", y: "ý", A: "Á", E: "É", I: "Í", O: "Ó", U: "Ú" },
@@ -409,16 +415,18 @@ function takeLooseMath(s, i) {
   }
   let body = s.slice(i, j).trim();
   if (!/\\(?:frac|dfrac|tfrac|sqrt|Big|boldsymbol|mathrm)/.test(body)) return null;
-  body = body.replace(/(\\Big\))(?:\s*\\Big\))+$/, "$1");
+  body = body.replace(/(\\(?:Bigg|bigg|Big|big)[r)])(?:\s*\1)+$/, "$1");
   return [body, j];
 }
 
 function isAnnotation(cmd) {
   if (!cmd || !cmd.args || !cmd.args.length) return false;
-  if (UNWRAP.has(cmd.name) || STYLE[cmd.name] || DROP.has(cmd.name)) return false;
+  if (UNWRAP.has(cmd.name) || STYLE[cmd.name] || DROP.has(cmd.name) || STRUCTURAL.has(cmd.name)) return false;
   const arg = String(cmd.args[cmd.args.length - 1] || "");
-  if (arg.length < 40) return false;
-  return /\b(?:I|we|this|that|the|if|you)\b/i.test(arg) && (arg.match(/ /g) || []).length > 4;
+  if (arg.length < 40 || (arg.match(/ /g) || []).length <= 4) return false;
+  const commentName = /todo|fixme|comment|xxx|remark/i.test(cmd.name);
+  const personal = /\b(?:I|we|I'd|I'm|TODO|FIXME)\b/.test(arg);
+  return commentName || personal;
 }
 
 function tidy(nodes) {
@@ -566,7 +574,7 @@ export function presentInlines(inls) {
   return liftLabels(collapseEcho(out));
 }
 
-const LABEL_RE = /\b((?:fig|tab|eq|app|sec|thm|lem):[A-Za-z0-9_-]+)\b/g;
+const LABEL_RE = /\b((?:fig|figure|tab|table|eq|eqn|app|appendix|sec|section|thm|lem|lemma|prop|cor|def|rem|alg|lst|assumption|claim|conj):[A-Za-z0-9_-]+)\b/g;
 
 function liftLabels(nodes) {
   const out = [];

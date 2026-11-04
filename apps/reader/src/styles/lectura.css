@@ -285,7 +285,7 @@
 }
 .folio .step-list li.on { background: var(--hl-soft); }
 .folio .case-cond { color: var(--ink-2); }
-.folio .sym-mark { background: var(--accent-soft); border-radius: 2px; box-shadow: 0 0 0 2px var(--accent-soft); }
+.folio .sym-mark { background: var(--accent-soft); border-radius: 2px; box-shadow: inset 0 0 0 1px var(--accent-line); }
 .folio .fig-board { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 12px; width: 100%; cursor: zoom-in; }
 .folio .fig-board.is-large { cursor: default; }
 .folio .fig-panel { flex: 1 1 0; min-width: min(160px, 100%); max-width: 100%; }

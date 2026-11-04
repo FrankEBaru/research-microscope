@@ -130,6 +130,10 @@ test("author asides, loose formulas, labels and echoed math are one class of bug
   assert.equal(text(aside).includes("strong opinion"), false);
   assert.match(text(aside), /kept\./);
   assert.match(text(aside), /Next/);
+  const paragraph = parseProse("\\paragraph{The results show that this method works on the benchmark and we report them.}");
+  assert.match(text(paragraph), /results show/);
+  const prop = presentInlines([{ t: "text", v: "See prop:main and cor:bound." }]);
+  assert.deepEqual(prop.filter((n) => n.t === "ref").map((n) => n.label), ["prop:main", "cor:bound"]);
   const gelu = parseProse("a unit \\Big(\\frac{x}{\\sqrt{2}}\\Big)\\Big) here");
   assert.equal(gelu.some((n) => n.t === "math" && n.v.includes("\\frac") && !/\\Big\)\\Big\)/.test(n.v)), true);
   assert.equal(text(parseProse("and σσ denotes")), "and σ denotes");
