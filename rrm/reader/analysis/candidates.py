@@ -429,7 +429,7 @@ def _code_definitions(ix, anchors, cfg, limit=3):
                 d = ix.sents[row["def"]]["text"]
                 out.append({"kind": "definition", "anchor": a, "why": f"{sym} was defined far before this equation",
                             "explain_idea": "author's definition by code", "paper_quotes": [row["def"]], "passages": [],
-                            "ai_text": f"${re.sub(r'_([A-Za-z0-9]{2,})', r'_{\\1}', sym)}$ — as defined earlier in the paper: «{d[:240]}»", "by_code": True})
+                            "ai_text": f"${re.sub(r'_([A-Za-z0-9]{2,})', r'_{\1}', sym)}$ — as defined earlier in the paper: «{d[:240]}»", "by_code": True})
             if len(out) >= limit:
                 return out
     return out
