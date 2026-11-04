@@ -1,8 +1,8 @@
 // RRM-97: the real phases of opening a paper, read from /status and /paper (stage, stages, source, timings).
 // Pure functions: Engine records when each phase starts; OpenPhases draws the rows.
 
-/** Rows in the order the backend runs them. `ocr` only shows when the backend took that route. */
-export const OPEN_ROWS = ["find", "download", "sections", "ocr"];
+/** Rows in the order the backend runs them. `ocr` (PDF route) only shows when the backend took it; its output is the sections. */
+export const OPEN_ROWS = ["find", "download", "ocr", "sections"];
 
 /**
  * Phase of a paper still opening, or the end state.

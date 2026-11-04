@@ -17,7 +17,7 @@
   padding: 28px 0 140px;
   box-sizing: border-box;
 }
-.folio .art { min-width: 0; }
+.folio .art { min-width: 0; grid-column: 2; } /* RRM-97: without index or minimap the paper stays in the reading column */
 .folio .toc { position: sticky; top: 84px; align-self: start; max-height: calc(100vh - 7rem); overflow: auto; display: block; font-size: 13.5px; padding-right: 8px; }
 .folio .toc .cap { margin-bottom: 10px; }
 .folio .toc ol { list-style: none; margin: 0; padding: 0; }

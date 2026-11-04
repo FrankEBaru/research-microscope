@@ -1080,12 +1080,12 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         {undrawn && !gated && <Notice kind="absence">{absenceText(remote?.reason, venue, Boolean(paper.abstract || quote))}</Notice>}
         {undrawn && !gated && pdfHref && <iframe className="source-pdf" title="Paper PDF" src={pdfHref} />}
         {undrawn && !gated && !pdfHref && honest && <p className="ah-links"><a href={honest} target="_blank" rel="noreferrer">No PDF in the reader, on arXiv, or as an open-access PDF. The record is here.</a></p>}
-        {undrawn && core && askBox("slot", abstractId, "Abstract")}
-        {!undrawn && pdfPagesOnly(paper.blocks) && <Notice kind="absence">This e-print has no text: the pages are inserted from a PDF.</Notice>}
-        {!undrawn && !abstractId && core && !reading && askBox("slot", "", sectionLabel)}
         {core && remote && !["done", "abstract_only", "failed"].includes(String(remote.status || "")) && (paper.blocks || []).length < 2 && (
           openTrack ? <><OpenPhases track={openTrack} compact /><Skeleton lines={7} /></> : <><Skeleton lines={7} /><Pulse mode="loading" /></>
         )}
+        {undrawn && core && askBox("slot", abstractId, "Abstract")}
+        {!undrawn && pdfPagesOnly(paper.blocks) && <Notice kind="absence">This e-print has no text: the pages are inserted from a PDF.</Notice>}
+        {!undrawn && !abstractId && core && !reading && askBox("slot", "", sectionLabel)}
         {!undrawn && rows}
         {!gated && (
           <footer className="paper-foot">

@@ -62,9 +62,9 @@ test("phaseRows: one row per phase with its own time; OCR only when it ran", () 
   assert.equal(rows[1].sec, 10);
   assert.equal(rows[1].label, "Downloading from arXiv");
   const ocr = phaseRows(notePhase(log, "ocr", 20000), 50000, "pdf");
-  assert.deepEqual(ocr.map((r) => r.id), ["find", "download", "sections", "ocr"]);
+  assert.deepEqual(ocr.map((r) => r.id), ["find", "download", "ocr", "sections"]);
   assert.equal(ocr.find((r) => r.id === "ocr").sec, 30);
-  assert.equal(ocr.find((r) => r.id === "sections").state, "done");
+  assert.equal(ocr.find((r) => r.id === "sections").state, "wait");
   assert.equal(clockText(9.6), "9 s");
   assert.equal(clockText(131), "2:11");
 });
