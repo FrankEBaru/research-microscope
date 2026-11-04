@@ -192,3 +192,8 @@ test("RRM-103: \\textellipsis, \\textgreater and booktabs row spacing are not le
 test("RRM-103: a braced umlaut keeps its letter", () => {
   assert.equal(text(presentInlines([{ t: "text", v: "the Nystr{\\\"o}mformer and Nystr\\\"omformer baselines" }])), "the Nyströmformer and Nyströmformer baselines");
 });
+
+test("RRM-103: \\hdots (FlashAttention §3.1) is a known macro", async () => {
+  const { TEX_MACROS } = await import("../src/lib/texcolor.js");
+  assert.equal(TEX_MACROS["\\hdots"], "\\ldots");
+});

@@ -70,6 +70,8 @@ function One({ x, ctx, prev = "" }: { x: Inline; ctx: Ctx; prev?: string }) {
   switch (x.t) {
     case "text": return <>{x.v.replaceAll("~", "\u00a0")}</>;
     case "math": {
+      // RRM-103: a display environment recovered from a raw paragraph (DPO §5) is a display formula, not inline.
+      if (x.display && ctx.core) return <span className="eq-inline"><Tex tex={x.v} display syms={ctx.syms} /></span>;
       if (!ctx.core) return <Tex tex={x.v} display={false} syms={ctx.syms} />;
       const token = encodeURIComponent(x.v).replace(/\|/g, "%7C");
       const marked = ctx.pin?.kind === "tex" && x.v.replace(/\s+/g, "") === ctx.pin.val;

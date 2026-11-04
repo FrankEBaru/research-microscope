@@ -144,6 +144,7 @@
 .folio .eq .katex { color: var(--ink); }
 .folio .eq .katex .tag { color: var(--ink-3); }
 .folio .eq.is-hover, .folio .eq:focus-within { background: var(--page-2); }
+@media (hover: hover) { .folio .eq:hover { background: var(--page-2); } } /* RRM-103: B.1 §10, shading on hover too (core never sets is-hover) */
 .folio .eq .copy {
   position: absolute;
   top: 8px;
@@ -398,10 +399,10 @@
   .folio .fig, .folio .fig img, .folio .table-fig, .folio .ins, .folio img { max-width: 100%; }
   .folio .cited, .folio .cited-row, .folio .cited-q { overflow-wrap: anywhere; }
   .folio .table-wrap { overflow-x: auto; max-width: 100%; }
-  /* RRM-103: a long inline formula (DPO, FlashAttention: 444–815 px) or an unbroken word made the whole page pan
-     sideways at 390 px. The formula scrolls inside its own box; long words break. */
+  /* RRM-103: a long inline formula (FlashAttention: 815 px) or an unbroken word made the whole page pan sideways
+     at 390 px. Long words break; the article clips (clip, not auto: no focusable scroller without a focus ring). */
   .folio .blk p { overflow-wrap: anywhere; }
-  .folio .blk .sent .katex { display: inline-block; max-width: 100%; overflow-x: auto; overflow-y: hidden; vertical-align: middle; }
+  .folio article.paper { overflow-x: clip; }
   .folio .popover {
     position: fixed; left: 12px; right: 12px; bottom: 12px; top: auto; width: auto;
     max-height: 46vh; overflow: auto;
