@@ -418,6 +418,16 @@ def build_handler(store: Store):
                     if recorded is not None:
                         self._json(200, gate_ask(recorded, store.licenses))
                         return
+                # Integration (RRM-95): computing sentences offline loads SPECTER2 on the laptop. Only with
+                # RRM_OFFLINE_ENCODE=1; otherwise unrecorded text gets a plain answer.
+                if os.environ.get("RRM_OFFLINE_ENCODE", "").strip() != "1":
+                    text = str((item or {}).get("text") or "").strip() if isinstance(item, dict) else ""
+                    if not text:
+                        self._json(200, {"store": {"ready": 1, "total": 1}, "offline": True, "parts": {}, "extracts": []})
+                    else:
+                        self._json(200, {"empty": True, "offline": True, "parts": {}, "extracts": [],
+                                         "note": "Offline demo: this explanation was not recorded. The recorded ones are in the demo guide; the online app reviews any text."})
+                    return
                 self._json(200, gate_ask(_ask(store, item), store.licenses))
                 return
             if path == "/notes":

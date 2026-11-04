@@ -7,6 +7,10 @@ import urllib.request
 
 from rrm.offline import MISS, make_server
 
+import os as _os
+# These tests exercise the local sentence path on purpose (off by default since the RRM-95 integration).
+_os.environ.setdefault("RRM_OFFLINE_ENCODE", "1")
+
 
 def _tree(tmp_path):
     root = tmp_path / "fx"
