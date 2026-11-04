@@ -22,6 +22,17 @@
   content: ""; position: absolute; width: 6px; height: 1.8px; right: -4px; bottom: 1px;
   background: currentColor; transform: rotate(45deg); border-radius: 1px;
 }
+/* RRM-102: logo (BrandMark, S18): soft R in ink, lens in accent; optional one-time "underline" animation. */
+.wm-logo { flex: none; display: block; }
+.wm-logo .wm-r, .wm-logo .wm-leg { fill: none; stroke: currentColor; stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; }
+.wm-logo .wm-lens { fill: var(--accent); }
+.wm-logo.is-anim .wm-r { animation: wm-fade .3s var(--ease-out) both; }
+.wm-logo.is-anim .wm-leg { stroke-dasharray: 1 1.1; stroke-dashoffset: 1.01; animation: wm-draw .75s cubic-bezier(.45,0,.2,1) .25s both; }
+.wm-logo.is-anim .wm-lens { transform-box: fill-box; transform-origin: 50% 50%; animation: wm-lit .4s cubic-bezier(.34,1.56,.64,1) 1s both; }
+@keyframes wm-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes wm-draw { to { stroke-dashoffset: 0; } }
+@keyframes wm-lit { from { fill: var(--page); transform: scale(.4); } to { fill: var(--accent); transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .wm-logo.is-anim .wm-r, .wm-logo.is-anim .wm-leg, .wm-logo.is-anim .wm-lens { animation: none; stroke-dashoffset: 0; } }
 .crumbs {
   display: flex; align-items: center; justify-content: center; gap: 10px; min-width: 0;
   font-size: 13.5px; color: var(--ink-2); white-space: nowrap;
