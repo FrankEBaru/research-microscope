@@ -16,7 +16,7 @@ from pathlib import Path
 
 from rrm.reader.analysis import llm
 from rrm.reader.analysis.brief import BriefIndex
-from rrm.reader.analysis.contract import ARTIFACT_SCHEMA, ITEM_SCHEMA, v0
+from rrm.reader.analysis.contract import ARTIFACT_SCHEMA, ITEM_SCHEMA, norm_ptr, v0
 
 DEFAULT_CFG = {
     "model": llm.CONTRIBUTOR,
@@ -295,6 +295,15 @@ def write_one(ix, spec, hits, cfg, extra=""):
     return item, rec
 
 
+def write_and_explore(ix, specs, hits_by_ptr, cfg, spots, extra_by_ptr=None):
+    """Escritores y explorador a la vez: el explorador no depende de las notas."""
+    with ThreadPoolExecutor(max_workers=1) as one:
+        fut = one.submit(explore_artifacts, ix, spots, hits_by_ptr, cfg)
+        items, recs = write_all(ix, specs, hits_by_ptr, cfg, extra_by_ptr)
+        arts, arec = fut.result()
+    return items, recs, arts, arec
+
+
 def write_all(ix, specs, hits_by_ptr, cfg, extra_by_ptr=None):
     extra_by_ptr = extra_by_ptr or {}
     with ThreadPoolExecutor(max_workers=cfg["workers"]) as pool:
@@ -328,11 +337,12 @@ def explore_artifacts(ix, spots, hits_by_ptr, cfg):
     rec = _ask(cfg, "explorer", EXPLORER_SYS, "\n".join(lines), EXPLORER_SCHEMA, name="widgets")
     arts = []
     for a in (rec.get("json") or {}).get("artifacts") or []:
-        if not ix.valid(str(a.get("anchor") or "")):
+        a = dict(a, anchor=norm_ptr(a.get("anchor")))
+        if not ix.valid(a["anchor"]):
             continue
         if not (a.get("knob") and a.get("consequence") and a.get("question")):
             continue
-        arts.append(dict(a, kind="artifact", paper_quotes=[p for p in a.get("paper_quotes") or [] if ix.valid(p)]))
+        arts.append(dict(a, kind="artifact", paper_quotes=[norm_ptr(p) for p in a.get("paper_quotes") or [] if ix.valid(norm_ptr(p))]))
     return arts[:3], rec
 
 
@@ -398,7 +408,12 @@ def c1_planner(paper, brief, retr, cfg=None):
         if cfg["passages"]:
             lines += _psg_lines(hits_by.get(c["ptr"]), n=3, chars=180)
     rec = _ask(cfg, "planner", PLANNER_SYS.replace("{n}", str(cfg["max_items"])), "\n".join(lines), PLAN_SCHEMA, name="plan")
-    plan = [p for p in (rec.get("json") or {}).get("items") or [] if ix.valid(str(p.get("anchor") or "")) or str(p.get("anchor") or "") + "#0" in ix.sents]
+    plan = []
+    for p in (rec.get("json") or {}).get("items") or []:
+        a = norm_ptr(p.get("anchor"))
+        a = a if ix.valid(a) else (a + "#0" if a + "#0" in ix.sents else "")
+        if a:
+            plan.append(dict(p, anchor=a))
     trace["planner"] = {"n_plan": len(plan), "cost": rec["cost"], "wall": rec["wall_s"], "error": rec.get("error")}
     # Búsqueda enriquecida con la consulta del planificador.
     if cfg["passages"] and plan:
@@ -406,11 +421,9 @@ def c1_planner(paper, brief, retr, cfg=None):
         for p, h in zip(plan, more):
             chosen = [retr.rows[x] for x in p.get("passages") or [] if x in retr.rows]
             hits_by[p["anchor"]] = _merge(chosen, h, hits_by.get(p["anchor"], []), k=6, min_cos=cfg["min_cos"])
-    items, recs = write_all(ix, plan[: cfg["max_items"]], hits_by, cfg)
+    items, recs, arts, arec = write_and_explore(ix, plan[: cfg["max_items"]], hits_by, cfg, [p["anchor"] for p in plan])
     # Definiciones por código: símbolos de las ecuaciones elegidas cuya definición quedó lejos.
-    defs = _code_definitions(ix, [p["anchor"] for p in plan], cfg)
-    items += defs
-    arts, arec = explore_artifacts(ix, [p["anchor"] for p in plan], hits_by, cfg)
+    items += _code_definitions(ix, [p["anchor"] for p in plan], cfg)
     return _finish(ix, items, arts, recs + [rec, arec], t0, trace, retr)
 
 
@@ -513,7 +526,7 @@ def c2_reader(paper, brief, retr, cfg=None):
     stuck = []
     for r in recs:
         for s in (r.get("json") or {}).get("stuck") or []:
-            a = str(s.get("anchor") or "")
+            a = norm_ptr(s.get("anchor"))
             if not ix.valid(a) and a + "#0" in ix.sents:
                 a += "#0"
             if ix.valid(a):
@@ -542,8 +555,7 @@ def c2_reader(paper, brief, retr, cfg=None):
         for i, s in enumerate(picked):
             hits_by[s["anchor"]] = _merge(*res[3 * i: 3 * i + 3], k=6, min_cos=cfg["min_cos"])
     specs = [{"anchor": s["anchor"], "kind": s.get("kind", "note"), "question": s["question"], "why": s["question"]} for s in picked]
-    items, wrecs = write_all(ix, specs, hits_by, cfg)
-    arts, arec = explore_artifacts(ix, [s["anchor"] for s in picked], hits_by, cfg)
+    items, wrecs, arts, arec = write_and_explore(ix, specs, hits_by, cfg, [s["anchor"] for s in picked])
     return _finish(ix, items, arts, recs + [hyde_rec] + wrecs + [arec], t0, {"stuck": len(stuck), "picked": len(picked)}, retr)
 
 
@@ -600,8 +612,7 @@ def c3_prereq(paper, brief, retr, cfg=None):
     for p in picked:
         extra[p["anchor"]] = (f"WHAT THE AUTHOR ASSUMES: {p['why']}\nSay what is taken for granted and where it comes from "
                               "(prefer a passage from a cited paper if one fits).")
-    items, wrecs = write_all(ix, picked, hits_by, cfg, extra)
-    arts, arec = explore_artifacts(ix, [p["anchor"] for p in picked] + [e["id"] for e in brief["equations"][:4]], hits_by, cfg)
+    items, wrecs, arts, arec = write_and_explore(ix, picked, hits_by, cfg, [p["anchor"] for p in picked] + [e["id"] for e in brief["equations"][:4]], extra)
     return _finish(ix, items, arts, [rec] + wrecs + [arec], t0, {"cands": len(cands), "picked": len(picked), "cited_in_base": len(cited)}, retr)
 
 
@@ -685,7 +696,7 @@ def c4_sections(paper, brief, retr, cfg=None):
         keep = [i for i in (crec.get("json") or {}).get("keep") or [] if 0 <= i < len(items)]
         if keep:
             items = [items[i] for i in dict.fromkeys(keep)][: cfg["max_items"]]
-    arts, arec = explore_artifacts(ix, [it["anchor"] for it in items if ix.valid(str(it.get("anchor")))], hits_by, cfg)
+    arts, arec = explore_artifacts(ix, [norm_ptr(it.get("anchor")) for it in items if ix.valid(norm_ptr(it.get("anchor")))], hits_by, cfg)
     return _finish(ix, items, arts, recs + [crec, arec], t0, {"sections": len(recs), "proposed": len(items)}, retr)
 
 
@@ -774,7 +785,7 @@ def c5_agent(paper, brief, retr, cfg=None, budget=10):
         if not cfg["passages"]:
             it["passages"] = []
     items = items[: cfg["max_items"]]
-    arts, arec = explore_artifacts(ix, [it["anchor"] for it in items if ix.valid(str(it.get("anchor")))], {}, cfg)
+    arts, arec = explore_artifacts(ix, [norm_ptr(it.get("anchor")) for it in items if ix.valid(norm_ptr(it.get("anchor")))], {}, cfg)
     return _finish(ix, items, arts, recs + [arec], t0, {"turns": len(recs)}, retr)
 
 

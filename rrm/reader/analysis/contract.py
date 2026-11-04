@@ -91,6 +91,16 @@ def _near(a, b):
     return bool(ma and mb and ma.group(1) == mb.group(1) and abs(int(ma.group(2)) - int(mb.group(2))) <= 1)
 
 
+_PTR = re.compile(r"b\d+(?:#\d+)?")
+
+
+def norm_ptr(raw):
+    """«[b28#1]», «b28 #1», «anchor: b26» → «b28#1» / «b26»."""
+    text = re.sub(r"\s+", "", str(raw or ""))
+    m = _PTR.search(text)
+    return m.group(0) if m else text
+
+
 def v0(items, ix, offered_pids=None, max_items=15):
     """Descarta sólo lo roto. Devuelve (ok, dropped) con motivo por ítem."""
     ok, dropped = [], []
@@ -100,7 +110,7 @@ def v0(items, ix, offered_pids=None, max_items=15):
         if not isinstance(item, dict):
             dropped.append({"item": item, "reason": "no_dict"})
             continue
-        anchor = str(item.get("anchor") or "").strip()
+        anchor = norm_ptr(item.get("anchor"))
         if not ix.valid(anchor):
             # Tolerancia: "b25" para un párrafo → primera oración.
             if anchor in {s["block"] for s in ix.brief["sents"]}:
@@ -120,7 +130,7 @@ def v0(items, ix, offered_pids=None, max_items=15):
                 dropped.append({"item": item, "reason": "repeats_anchor"})
                 continue
         item["ai_text"] = text
-        quotes = [p for p in (item.get("paper_quotes") or []) if ix.valid(str(p))]
+        quotes = [norm_ptr(p) for p in (item.get("paper_quotes") or []) if ix.valid(norm_ptr(p))]
         item["bad_quotes"] = len(item.get("paper_quotes") or []) - len(quotes)
         item["paper_quotes"] = list(dict.fromkeys(quotes))[:3]
         pids = [str(p) for p in (item.get("passages") or [])]
