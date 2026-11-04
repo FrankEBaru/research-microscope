@@ -79,8 +79,9 @@ def main():
         before = llm.LEDGER["usd"]
         try:
             res = CANDIDATES[cand](paper, brief, retr, cfg)
-        except llm.BudgetExceeded as exc:
-            return {"cand": cand, "cid": cid, "error": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - un candidato roto no tumba la ronda
+            print(f"{cand} {cid}: ERROR {type(exc).__name__}: {exc}", flush=True)
+            return {"cand": cand, "cid": cid, "error": f"{type(exc).__name__}: {exc}"}
         if args.v1 and cand != "C0":
             res["items"], vrec = v1(ix, res["items"], _cfg(cfg))
             res["v1_cost"] = (vrec or {}).get("cost", {}).get("usd", 0)

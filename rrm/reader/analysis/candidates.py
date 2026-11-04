@@ -159,6 +159,10 @@ def wide_pass(ix, limit=45):
     """Pasada programática amplia: puntos candidatos con tipo, motivo y puntaje."""
     b = ix.brief
     roles = {s["i"]: s["role"] for s in b["sections"]}
+    for s in b["sections"]:
+        # «Background» / «Preliminaries» define lo que el método da por sabido: pesa como método.
+        if s["role"] == "related" and re.search(r"background|preliminar|hardware|setup|notation", s["title"], re.I):
+            roles[s["i"]] = "other"
     cands = {}
 
     def add(ptr, kind, reason, score):
@@ -172,6 +176,8 @@ def wide_pass(ix, limit=45):
 
     for eq in b["equations"]:
         w = _ROLE_W.get(roles.get(eq["sec"]), 0.5)
+        if w == 0:
+            continue  # apéndice y referencias: sólo si el planificador los pide
         if eq.get("cited_at"):
             w += 0.3
         add(eq["id"], "equation", f"equation ({eq.get('number') or 'unnumbered'}), symbols {', '.join(eq['symbols'][:6])}", 1.5 * w + (0.7 if eq.get("number") else 0))
@@ -756,7 +762,14 @@ def c5_agent(paper, brief, retr, cfg=None, budget=10):
                 args = {}
             name = c.get("name")
             if name == "submit_items":
-                items = args.get("items") or []
+                raw_items = args.get("items") or []
+                if isinstance(raw_items, str):
+                    # A veces el modelo manda el arreglo como texto JSON dentro del argumento.
+                    try:
+                        raw_items = json.loads(raw_items)
+                    except json.JSONDecodeError:
+                        raw_items = []
+                items = [x for x in raw_items if isinstance(x, dict)]
                 done = True
                 result = "ok"
             elif name == "search_passages":
@@ -780,6 +793,7 @@ def c5_agent(paper, brief, retr, cfg=None, budget=10):
             extra.append({"type": "function_call_output", "call_id": c.get("call_id"), "output": result[:9000]})
         if done:
             break
+    items = [it for it in items if isinstance(it, dict)]
     for it in items:
         it["offered"] = sorted(offered)
         if not cfg["passages"]:
@@ -822,3 +836,73 @@ def c0_control(paper, brief, retr, cfg=None):
 
 
 CANDIDATES = {"C0": c0_control, "C1": c1_planner, "C2": c2_reader, "C3": c3_prereq, "C4": c4_sections, "C5": c5_agent}
+
+
+# C6 · Fusión: dudas del lector simulado + planificador global + HyDE ---------------------
+
+PLAN6_ITEM = {"type": "object", "additionalProperties": False, "properties": {
+    "anchor": {"type": "string"}, "kind": {"type": "string", "enum": ["note", "equation", "definition"]},
+    "why": {"type": "string"}, "question": {"type": "string"}, "explain_idea": {"type": "string"}, "draft": {"type": "string"}},
+    "required": ["anchor", "kind", "why", "question", "explain_idea", "draft"]}
+PLAN6_SCHEMA = {"type": "object", "additionalProperties": False, "properties": {"items": {"type": "array", "items": PLAN6_ITEM}}, "required": ["items"]}
+PLANNER6_SYS = (
+    "You plan the margin notes for one paper for master's students. You get (a) the questions a simulated student asked while reading, "
+    "and (b) programmatic candidate spots. Choose the {n} spots that matter most for understanding the core method: skipped steps, "
+    "equations whose reading is not obvious, assumptions, terms used as known, claims whose reason is missing. Merge duplicates. "
+    "Prefer the method over results tables and related work; cover the whole paper, not only its first section.\n"
+    "anchor: a pointer (b25#2 or b26). question: the reader's question the note must answer. explain_idea: how to explain it. "
+    "draft: a 2-sentence textbook answer (used only to search other papers).\n" + LANG
+)
+
+
+def c6_fusion(paper, brief, retr, cfg=None):
+    cfg = _cfg(cfg)
+    ix = BriefIndex(brief)
+    cid = brief["paper"]["corpusid"]
+    t0 = time.perf_counter()
+    abstract = brief["paper"].get("abstract", "")[:1200]
+    gl = glossary(ix, limit=20)
+
+    def read(chunk):
+        return _ask(cfg, "reader", READER_SYS, f"ABSTRACT: {abstract}\nGLOSSARY\n{gl}\n\nTEXT\n{chunk}", READER_SCHEMA, name="stuck")
+
+    with ThreadPoolExecutor(max_workers=cfg["workers"]) as pool:
+        recs = list(pool.map(read, _main_chunks(ix)))
+    stuck = []
+    for r in recs:
+        for st in (r.get("json") or {}).get("stuck") or []:
+            a = norm_ptr(st.get("anchor"))
+            if not ix.valid(a) and a + "#0" in ix.sents:
+                a += "#0"
+            if ix.valid(a):
+                stuck.append(dict(st, anchor=a))
+    wide = wide_pass(ix, limit=30)
+    lines = [essentials(ix, chars=240, limit=45), "", "SECTIONS", section_map(ix), "", "STUDENT QUESTIONS"]
+    for st in sorted(stuck, key=lambda x: x.get("priority", 3)):
+        lines.append(f"* {st['anchor']} (p{st.get('priority', 3)}) {st['question']} — «{ix.text(st['anchor'])[:200]}»")
+    lines.append("")
+    lines.append("PROGRAMMATIC CANDIDATES")
+    for c in wide:
+        lines.append(f"* {c['ptr']} [{c['kind']}; {c['reasons'][0]}] {ix.text(c['ptr'])[:200]}")
+    rec = _ask(cfg, "planner", PLANNER6_SYS.replace("{n}", str(cfg["max_items"])), "\n".join(lines), PLAN6_SCHEMA, name="plan")
+    plan = []
+    for p in (rec.get("json") or {}).get("items") or []:
+        a = norm_ptr(p.get("anchor"))
+        a = a if ix.valid(a) else (a + "#0" if a + "#0" in ix.sents else "")
+        if a and not any(_near_ptr(a, q["anchor"]) for q in plan):
+            plan.append(dict(p, anchor=a))
+    plan = plan[: cfg["max_items"]]
+    hits_by = {}
+    if cfg["passages"] and plan:
+        jobs = []
+        for p in plan:
+            jobs.append(_job(p.get("draft") or p["question"], cid, 5))
+            jobs.append(_job(_query(ix, p["anchor"], "ctx"), cid, 5))
+        res = retr.search(jobs)
+        for i, p in enumerate(plan):
+            hits_by[p["anchor"]] = _merge(res[2 * i], res[2 * i + 1], k=6, min_cos=cfg["min_cos"])
+    items, wrecs, arts, arec = write_and_explore(ix, plan, hits_by, cfg, [p["anchor"] for p in plan])
+    return _finish(ix, items, arts, recs + [rec] + wrecs + [arec], t0, {"stuck": len(stuck), "plan": len(plan)}, retr)
+
+
+CANDIDATES["C6"] = c6_fusion
