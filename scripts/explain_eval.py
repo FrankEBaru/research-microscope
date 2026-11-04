@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from rrm.reader.explain import llm  # noqa: E402
-from rrm.reader.explain.review import PARTS, VERDICTS, Context, review_e1, review_e2, review_e3, sentences  # noqa: E402
+from rrm.reader.explain.review import PARTS, VERDICTS, Context, review_e1, review_e2, sentences  # noqa: E402
 from rrm.reader.explain.sheet import build_sheet  # noqa: E402
 
 SEVERITY = {"contradice": 0, "diverge": 1, "sin_respaldo": 2, "coincide": 3}
@@ -219,6 +219,7 @@ def main():
             elif cand == "E2np":
                 parts, cost, info = review_e2(ctx, text, sheet, model=args.model, effort=args.effort, salt=salt, use_passages=False)
             elif cand == "E3":
+                from evals.rrm100.agent_e3 import review_e3
                 parts, cost, info = review_e3(ctx, text, model=args.model, effort=args.effort, salt=salt)
             else:
                 raise SystemExit(f"unknown candidate {cand}")

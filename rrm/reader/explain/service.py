@@ -209,7 +209,8 @@ def ask(folder, paper, section_id, text, *, stage="revisar", encode=None, store=
     sheet = load_sheet(folder, section_id)
     try:
         if sheet and sheet.get("points"):
-            parts, cost, info = review_e2(ctx, text, sheet, effort=_effort())
+            # E2m, el ganador de RRM-100: hoja precalculada y el modelo elige qué faltó.
+            parts, cost, info = review_e2(ctx, text, sheet, effort=_effort(), pick=True)
             engine = "sheet"
         else:
             parts, cost, info = review_e1(ctx, text, effort=_effort())
