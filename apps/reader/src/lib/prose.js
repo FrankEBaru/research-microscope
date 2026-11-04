@@ -435,6 +435,8 @@ function tidy(nodes) {
     if (n.t === "text") {
       const v = n.v
         .replace(/\[cite\]/gi, "")
+        .replace(/---/g, "—")
+        .replace(/--/g, "–")
         .replace(/([\u0391-\u03A9\u03B1-\u03C9])\1/g, "$1")
         .replace(/[ \t]{2,}/g, " ")
         .replace(/,{2,}/g, ",");

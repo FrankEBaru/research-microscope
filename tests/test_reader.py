@@ -232,6 +232,8 @@ See fig:both in the text.
     fig = next(b for b in paper["blocks"] if b["kind"] == "fig")
     assert fig["images"] == ["a.png", "b.png"]
     assert [p["src"] for p in fig["panels"]] == ["a.png", "b.png"]
+    assert fig["panels"][0]["w"] == 0.45
+    assert fig["panels"][1]["w"] == 0.45
     assert "(a)" in plain(fig["panels"][0]["caption"])
     assert "(b)" in plain(fig["panels"][1]["caption"])
     assert any(x.get("t") == "note" for x in fig["caption"])

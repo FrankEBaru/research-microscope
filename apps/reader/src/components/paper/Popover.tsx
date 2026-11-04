@@ -26,10 +26,10 @@ export default function Popover({ pop, paper, model, content, core, pack, titleO
           const brief = briefRef(paper.refs[k] || "");
           const n = paper.refLabels?.[k] ?? model.refIndex[k] ?? k;
           return (
-            <div key={k}>
-              <Cap>{brief.who || `Reference ${n}`}</Cap>
-              <p className="pop-ref">{brief.title || "reference not found in the paper"}</p>
-            </div>
+            <p key={k} className="pop-ref">
+              {brief.who ? <b className="pop-who">{brief.who}</b> : <b className="pop-who">{`Reference ${n}`}</b>}
+              {brief.title ? <span>{brief.title}</span> : <span>title not found in the reference</span>}
+            </p>
           );
         })}
         <div className="pop-f">

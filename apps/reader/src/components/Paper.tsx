@@ -29,6 +29,7 @@ import { Table } from "./paper/TableFig";
 import { Cited } from "./paper/Cited";
 import { citingIndex } from "@/lib/figrefs.js";
 import { CropStrip, FigImg, FigZoom, ZoneFig } from "./paper/Figures";
+import { figRows } from "@/lib/figures.js";
 import Margin, { MarginNote } from "./paper/Margin";
 import Rights from "./paper/Rights";
 import { arxivPdf, isGated } from "@/lib/rights.js";
@@ -275,6 +276,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const [prog, setProg] = useState(0);
   const timer = useRef<any>(null);
   const closeTimer = useRef<any>(null);
+  const citePin = useRef("");
   const symGroups = useRef<Map<string, HTMLElement[]>>(new Map());
   const symMarked = useRef<HTMLElement[]>([]);
   const [active, setActive] = useState<string>("");
@@ -390,24 +392,25 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     if (pop && (el.dataset.pop === pop.key || (el.dataset.sym && pop.key === `y|${el.dataset.sym}`))) clearTimeout(closeTimer.current);
     if (core) {
       const sym = texKey(e.target as HTMLElement);
-      if (sym) setSymHot(sym);
+      if (sym) setSymHot((cur) => (cur === sym ? cur : sym));
     }
+    if (key.startsWith("c|")) {
+      if (citePin.current && citePin.current !== key) return;
+      if (pop?.key === key) { clearTimeout(closeTimer.current); return; }
+      setPop({ key, rect: el.getBoundingClientRect() });
+      return;
+    }
+    if (core && key.startsWith("m|")) return;
     if (core && !SENTENCE_MOCK && key.startsWith("s|")) {
       const parts = key.split("|");
       const block = (paper.blocks || []).find((b) => b.id === parts[1]);
       const has = (pack?.notes || []).some((n: any) => n.block_id === parts[1] && n.sent_index === +parts[2] && !(block && repeatsBlock(n, block)));
       if (!has) return;
     }
-    if (core && key.startsWith("m|")) {
-      const parts = key.split("|");
-      let tex = parts[3] || "";
-      try { tex = decodeURIComponent(tex); } catch { /* el tex del globo sigue siendo el del botón */ }
-      if (!symbolWorth(paper.blocks, tex, { block: parts[1], index: Number(parts[2]) })) return;
-    }
     if (key.startsWith("e|") || key.startsWith("n|")) return;
     if (companion) signal(key);
-    const show = () => setPop({ key, rect: el.getBoundingClientRect() });
-    if (key.startsWith("s|")) timer.current = setTimeout(show, 380); else show();
+    const show = () => setPop((cur) => (cur?.key === key ? cur : { key, rect: el.getBoundingClientRect() }));
+    if (key.startsWith("s|")) timer.current = setTimeout(show, 120); else show();
   };
   const signal = (key: string) => {
     const [kind, a, b] = key.split("|");
@@ -433,6 +436,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   };
   const onOut = (e: { relatedTarget: EventTarget | null; target?: EventTarget | null }) => {
     const next = e.relatedTarget as HTMLElement | null;
+    if (!next) return;
     const left = e.target as HTMLElement | null;
     const leftKey = texKey(left);
     const nextKey = next && typeof next.closest === "function" ? texKey(next) : "";
@@ -443,7 +447,10 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     if (Date.now() - touched.current < 800) return;
     clearTimeout(timer.current);
     clearTimeout(closeTimer.current);
-    closeTimer.current = window.setTimeout(() => { setPop(null); setSymHot(""); }, 320);
+    closeTimer.current = window.setTimeout(() => {
+      setSymHot("");
+      setPop((cur) => (citePin.current && cur?.key === citePin.current ? cur : null));
+    }, 280);
   };
   useEffect(() => {
     const away = (e: TouchEvent) => { const t = e.target as HTMLElement; if (!t.closest?.("[data-pop],[data-sym],.popover")) setPop(null); };
@@ -458,6 +465,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       const host = t.closest?.("[data-pop],[data-sym]") as HTMLElement | null;
       if (host && (host.dataset.pop === pop.key || (host.dataset.sym && pop.key === `y|${host.dataset.sym}`))) return;
       clearTimeout(closeTimer.current);
+      citePin.current = "";
       setPop(null);
       setSymHot("");
     };
@@ -495,8 +503,10 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     }
     const cite = t.closest("[data-pop]") as HTMLElement | null;
     if (core && cite?.dataset.pop?.startsWith("c|")) {
-      if (pop?.key === cite.dataset.pop) { setPop(null); return; }
-      setPop({ key: cite.dataset.pop, rect: cite.getBoundingClientRect() });
+      const key = cite.dataset.pop;
+      if (citePin.current === key) { citePin.current = ""; setPop(null); return; }
+      citePin.current = key;
+      setPop({ key, rect: cite.getBoundingClientRect() });
       return;
     }
     const cp = t.closest("[data-copy]") as HTMLElement | null;
@@ -793,6 +803,10 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         const alt = plainOf(b.caption);
         const cap = stampNotes(b.caption || [], 0).inls;
         const notes = noteBodies(cap);
+        const firstSub = plainOf(panels[0]?.caption || []);
+        const mainText = plainOf(cap);
+        const showMain = Boolean(mainText) && mainText !== firstSub;
+        const rows = figRows(panels);
         const board = (large: boolean) => (
           <div
             className={`fig-board${many ? "" : " is-single"}${large ? " is-large" : ""}`}
@@ -802,13 +816,23 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               setZoomFig(b.id);
             }}
           >
-            {panels.map((p: { src: string; caption?: Inline[] }, i: number) => {
-              const zs = i === 0 && b.label ? (content.zones?.figures || []).find((f: any) => f.paper === paper.arxivId && f.fig === b.label)?.zones : null;
-              const sub = stampNotes(p.caption || [], 0).inls;
+            {rows.map((row, ri) => {
+              const base = rows.slice(0, ri).reduce((n, r) => n + r.length, 0);
               return (
-                <div className="fig-panel" key={`${i}-${p.src}`}>
-                  {zs && !large ? <ZoneFig paper={paper} name={p.src} alt={plainOf(p.caption) || alt} zones={zs} onGo={goTo} /> : <FigImg paper={paper} name={p.src} alt={plainOf(p.caption) || alt} eager={i === 0 || large} />}
-                  {visibleInlines(sub) && <p className="fig-sub"><Inlines inls={sub} ctx={ctx} /></p>}
+                <div className="fig-row" key={ri}>
+                  {row.map((p: { src: string; caption?: Inline[] }, j: number) => {
+                    const i = base + j;
+                    const letter = String.fromCharCode(97 + i);
+                    const zs = i === 0 && b.label ? (content.zones?.figures || []).find((f: any) => f.paper === paper.arxivId && f.fig === b.label)?.zones : null;
+                    const sub = stampNotes(p.caption || [], 0).inls;
+                    const named = /^\s*\([a-z]\)/i.test(plainOf(sub));
+                    return (
+                      <div className="fig-panel" key={`${i}-${p.src}`}>
+                        {zs && !large ? <ZoneFig paper={paper} name={p.src} alt={plainOf(p.caption) || alt} zones={zs} onGo={goTo} /> : <FigImg paper={paper} name={p.src} alt={plainOf(p.caption) || alt || letter} eager={i === 0 || large} />}
+                        {many && visibleInlines(sub) && <p className="fig-sub">{named ? null : <b>({letter}) </b>}<Inlines inls={sub} ctx={ctx} /></p>}
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
@@ -817,7 +841,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         el = (
           <figure id={b.label || `blk-${b.id}`} className="fig blk">
             {panels.length > 0 && board(false)}
-            <figcaption><b>Figure {model.figN[b.id]}.</b> <Inlines inls={cap} ctx={ctx} /> <Prov kind="paper" text="original figure" /></figcaption>
+            {showMain && <figcaption><b>Figure {model.figN[b.id]}.</b> <Inlines inls={cap} ctx={ctx} /> <Prov kind="paper" text="original figure" /></figcaption>}
+            {!showMain && <figcaption><b>Figure {model.figN[b.id]}.</b> <Prov kind="paper" text="original figure" /></figcaption>}
             {notes.length > 0 && <ol className="fig-notes">{notes.map((n) => <li key={n.n} value={n.n}><Inlines inls={n.inls} ctx={{ ...ctx, counter: { n: 999 } }} /></li>)}</ol>}
             {core && FIG_PASSAGES && model.passages[b.id] && <Cited rows={model.passages[b.id].top} rest={model.passages[b.id].rest} onJump={jumpPassage} />}
             {zoomFig === b.id && (

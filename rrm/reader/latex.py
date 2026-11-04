@@ -330,10 +330,27 @@ def _raw_block(tex: str):
     return {"kind": "p", "raw": True, "inlines": text_tokens(tex.strip())}
 
 
+def _width_frac(opt: str):
+    m = re.search(r"(?:width\s*=\s*)?([0-9.]+)\s*\\(?:linewidth|textwidth|columnwidth|hsize)", opt or "")
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
+def _graphic_specs(text: str) -> list:
+    specs = []
+    for m in re.finditer(r"\\includegraphics\s*(\[[^\]]*\])?\s*\{([^}]+)\}", text):
+        specs.append({"src": m.group(2), "w": _width_frac(m.group(1) or "")})
+    for m in re.finditer(r"\\epsfig\s*\{[^}]*file\s*=\s*([^,}\s]+)", text):
+        specs.append({"src": m.group(1), "w": None})
+    return specs
+
+
 def _graphic_paths(text: str) -> list:
-    found = re.findall(r"\\includegraphics(?:\s*\[[^\]]*\])?\s*\{([^}]+)\}", text)
-    found += re.findall(r"\\epsfig\s*\{[^}]*file\s*=\s*([^,}\s]+)", text)
-    return found
+    return [spec["src"] for spec in _graphic_specs(text)]
 
 
 def _caption_at(text: str) -> str:
@@ -389,6 +406,7 @@ def _fig_block(inner: str, macros: dict):
         m_sub = re.search(r"\\subfloat\b", rest)
         use_sub = bool(m_sub and (not m_env or m_sub.start() < m_env.start()))
         name = ""
+        env_w = None
         if use_sub:
             cap, sub, end = _read_subfloat(rest, m_sub.start())
             if end <= m_sub.start():
@@ -398,19 +416,21 @@ def _fig_block(inner: str, macros: dict):
             if not name:
                 break
             cap = _caption_at(sub)
+            env_w = _width_frac(rest[m_env.start():m_env.start() + 80])
         else:
             break
-        srcs = _graphic_paths(sub)
-        if name == "minipage" and not srcs:
+        specs = _graphic_specs(sub)
+        if name == "minipage" and not specs:
             rest = rest[:m_env.start()] + rest[m_env.start() + 1:]
             continue
         cap_inlines = parse_inlines(cap, macros) if cap else []
-        if srcs:
-            for src in srcs:
-                panels.append({"src": src, "caption": cap_inlines})
+        for spec in specs:
+            panels.append({"src": spec["src"], "caption": cap_inlines, "w": spec["w"] if spec["w"] is not None else env_w})
         rest = rest[: (m_sub.start() if use_sub else m_env.start())] + rest[end:]
-    loose = _graphic_paths(rest)
-    images = [p["src"] for p in panels] + loose
+    loose = _graphic_specs(rest)
+    images = [p["src"] for p in panels] + [spec["src"] for spec in loose]
+    for spec in loose:
+        panels.append({"src": spec["src"], "caption": [], "w": spec["w"]})
     cap = _caption_at(rest)
     labs = re.findall(r"\\label\{([^}]+)\}", inner)
     if not images and not cap.strip():

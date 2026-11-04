@@ -5,6 +5,7 @@ import { ProvChip } from "../Bits";
 import { crops, figureCandidates, figureUrl, paperKey } from "@/lib/backend.js";
 import { devBegin, devFinish } from "@/lib/devlog.js";
 import { reportFault } from "@/lib/faults.js";
+import { Icon } from "../ui";
 
 /** Figura con zonas: cajas sobre la figura ORIGINAL (marcadas a mano) que enlazan cada parte con la frase del paper que la explica. */
 export function ZoneFig({ paper, name, alt, zones, onGo }: { paper: Paper; name: string; alt: string; zones: any[]; onGo: (blockId: string) => void }) {
@@ -78,7 +79,7 @@ export function FigZoom({ open, onClose, children }: { open: boolean; onClose: (
   return (
     <div className="fig-zoom" role="dialog" aria-modal="true" aria-label="Figure" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="fig-zoom-sheet" onClick={(e) => e.stopPropagation()}>
-        <button type="button" className="fig-zoom-x press" onClick={(e) => { e.stopPropagation(); onClose(); }}>Close</button>
+        <button type="button" className="fig-zoom-x press" aria-label="Close" onClick={(e) => { e.stopPropagation(); onClose(); }}><Icon name="close" size={16} /></button>
         {children}
       </div>
     </div>

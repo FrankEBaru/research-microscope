@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 const SAY = {
   loading: "Loading the paper…",
   ai: "Working…",
-  ready: "Ready",
+  ready: "AI read",
   error: "Couldn’t finish",
 };
 

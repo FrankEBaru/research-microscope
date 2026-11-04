@@ -99,9 +99,8 @@
 .folio .katex, .folio .katex * { hyphens: manual; }
 .folio .eq .katex-display { overflow-x: auto; overflow-y: hidden; }
 
-.folio .sent { border-radius: 2px; background: none; box-shadow: none; }
-.folio .sent.as { -webkit-box-decoration-break: clone; box-decoration-break: clone; transition: background-color var(--dur-1), box-shadow var(--dur-1); }
-.folio .sent.as.is-hover { background: var(--hl-soft); box-shadow: 0 0 0 2px var(--hl-soft); }
+.folio .sent { border-radius: 2px; background: none; box-shadow: none; transition: background-color 60ms linear; }
+.folio .sent.as.is-hover { background: var(--hl-soft); }
 .folio sup.fn { font: 700 .62em/1 var(--font-ui); color: var(--accent); cursor: help; padding: 0; }
 .folio .xref { text-decoration: underline dotted; text-decoration-color: var(--accent-line); text-underline-offset: 4px; border-bottom: 0; }
 
@@ -286,18 +285,27 @@
 .folio .step-list li.on { background: var(--hl-soft); }
 .folio .case-cond { color: var(--ink-2); }
 .folio .sym-mark { background: var(--accent-soft); border-radius: 2px; box-shadow: inset 0 0 0 1px var(--accent-line); }
-.folio .fig-board { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 12px; width: 100%; cursor: zoom-in; }
+.folio .fig-board { display: flex; flex-direction: column; align-items: stretch; gap: 14px; width: 100%; cursor: zoom-in; }
 .folio .fig-board.is-large { cursor: default; }
-.folio .fig-panel { flex: 1 1 0; min-width: min(160px, 100%); max-width: 100%; }
+.folio .fig-row { display: flex; align-items: stretch; gap: 12px; width: 100%; }
+.folio .fig-panel { flex: 1 1 0; min-width: 0; max-width: 100%; }
 .folio .fig-board.is-single .fig-panel { flex-basis: 100%; }
-.folio .fig-panel .fig-slot { display: block; width: 100%; }
-.folio .fig-panel img { width: 100%; max-width: 100%; max-height: 240px; height: auto; object-fit: contain; }
-.folio .fig-board.is-large .fig-panel img { max-height: 72vh; }
+.folio .fig-panel .fig-slot { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; background: #fff; }
+.folio .fig-row .fig-panel img { width: 100%; height: 210px; max-height: 210px; object-fit: contain; background: #fff; }
+.folio .fig-board.is-single .fig-panel img { height: auto; max-height: 420px; }
+.folio .fig-board.is-large .fig-row .fig-panel img { height: min(42vh, 480px); max-height: min(42vh, 480px); }
 .folio .fig-sub, .folio .fig-notes { margin: 6px 0 0; font: 400 13.5px/1.45 var(--font-ui); color: var(--ink-2); text-align: center; }
 .folio .fig-notes { text-align: left; padding-left: 1.2rem; }
 .fig-zoom { position: fixed; inset: 0; z-index: 80; background: rgba(20, 16, 12, .55); display: flex; align-items: center; justify-content: center; padding: 24px; }
-.fig-zoom-sheet { background: var(--sheet, #fff); width: min(1100px, 100%); max-height: 92vh; overflow: auto; padding: 16px 16px 20px; border-radius: 12px; }
-.fig-zoom-x { float: right; }
+.fig-zoom-sheet { position: relative; background: var(--sheet, #fff); width: min(1100px, 100%); max-height: 92vh; overflow: auto; padding: 16px 16px 20px; border-radius: 12px; }
+.fig-zoom-x {
+  position: absolute; top: 10px; right: 10px; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0; border-radius: 8px;
+  border: 1px solid var(--rule-2); background: var(--sheet); color: var(--ink-2); cursor: pointer;
+}
+.pop-ref { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; }
+.pop-who { flex: none; font-weight: 650; }
 
 .folio .fig.blk,
 .folio .table-fig { max-width: 100%; }
@@ -313,7 +321,7 @@
   .folio .colo a:hover { color: var(--accent); }
   .folio .ah-links a:hover,
   .folio .ah-links button:hover { text-decoration-color: var(--accent); }
-  .folio .sent.as:hover { background: var(--hl-soft); box-shadow: 0 0 0 2px var(--hl-soft); }
+  .folio .sent:hover { background: var(--hl-soft); }
   .folio .cite:hover { background: var(--accent-line); }
   .folio .eq .copy:hover { color: var(--accent-h); border-color: var(--accent-line); }
   .folio .yw:hover { background: var(--accent-h); }
