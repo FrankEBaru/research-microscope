@@ -1085,7 +1085,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             </p>
             <div className="ah-prov">
               {!paper.arxivId && <Prov kind="paper" text={`corpus:${paper.corpusid ?? ""}`} />}
-              {!paper.full && !remote && <Prov kind="curado" text="abstract only in this burst" />}
+              {!paper.full && !remote && <Prov kind="curado" text="abstract only in this map" />}
               {remote?.stage === "stub" && <Prov kind="curado" text="reading sections…" />}
               {(remote?.status === "abstract_only" || remote?.stage === "abstract_only") && <Prov kind="curado" text="abstract only" />}
             </div>
