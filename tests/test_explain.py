@@ -103,3 +103,20 @@ def test_key_points_keep_only_real_pointers(monkeypatch):
 def test_price_wonder_is_dearer_than_contributor():
     usage = {"input_tokens": 1000, "output_tokens": 100}
     assert llm.price(llm.WONDER, usage)["cost_usd"] > 20 * llm.price(llm.CONTRIBUTOR, usage)["cost_usd"]
+
+
+def test_salvage_keeps_complete_claims_of_a_looping_reply():
+    from rrm.reader.explain.review import salvage
+
+    raw = '{"claims": [{"n": 1, "text": "a", "verdict": "coincide", "why": "w", "paper": ["b3#0"]}, {"n": 2, "text": "b", "why": "jjjj jjjj jjjj'
+    assert salvage(raw) == {"claims": [{"n": 1, "text": "a", "verdict": "coincide", "why": "w", "paper": ["b3#0"]}]}
+    assert salvage("nothing") is None
+
+
+def test_clean_why_drops_model_garbage_but_keeps_latex():
+    from rrm.reader.explain.review import clean_why
+
+    assert clean_why("Paper divides by $\\sqrt{d_k}$ to keep gradients usable.") == "Paper divides by $\\sqrt{d_k}$ to keep gradients usable."
+    assert clean_why("Paper states the same dimensions for queries, keys and values here. A1BC21A2CE0B2D31-D780-4F3C-86D5-75C9BFD1720E") == \
+        "Paper states the same dimensions for queries, keys and values here."
+    assert clean_why("x " + "jjjjjjjjjj " * 30) == ""

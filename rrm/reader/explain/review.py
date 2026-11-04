@@ -76,6 +76,22 @@ def _said(sents):
     return "\n".join(f"{i}. {s}" for i, s in enumerate(sents, 1))
 
 
+def clean_why(text, n=45):
+    """Sin basura del modelo (cadenas largas sin espacio que no son LaTeX, una palabra repetida 4+ veces)
+    y a lo más n palabras. Si la limpieza se lleva más de la mitad, no hay «why»: mejor nada que ruido."""
+    words = str(text or "").split()
+    kept = []
+    for word in words:
+        if len(word) >= 28 and "$" not in word and "\\" not in word:
+            continue
+        if len(kept) >= 3 and all(k.casefold() == word.casefold() for k in kept[-3:]):
+            continue
+        kept.append(word)
+    if words and len(" ".join(kept)) < len(" ".join(words)) / 2:
+        return ""
+    return _clip(" ".join(kept), n)
+
+
 def _clip(text, n):
     return " ".join(" ".join(str(text or "").split()).split(" ")[:n]).strip()
 
@@ -183,7 +199,7 @@ def assemble(ctx, sents, data, passages=None, points=None):
             # Sin frase del autor no hay coincide/contradice que mostrar.
             verdict = "sin_respaldo"
         out = {
-            "n": n, "text": _own_words(item.get("text"), sents[n - 1]), "why": _clip(item.get("why"), 45),
+            "n": n, "text": _own_words(item.get("text"), sents[n - 1]), "why": clean_why(item.get("why")),
             "cites": cites if verdict != "sin_respaldo" else [],
             "others": _others(passages, item.get("others")),
             "verified": True,
@@ -257,9 +273,53 @@ def _missed_from_points(ctx, points, covered, passages, limit=2, picked=None):
     return out
 
 
+_TOKENS = 2200  # p99 de una revisión sana: 1864 tokens. Más arriba solo hay bucles.
+
+
+def salvage(text):
+    """Afirmaciones completas de un JSON cortado (el modelo a veces entra en bucle: «jjjj…»)."""
+    raw = str(text or "")
+    start = raw.find('"claims"')
+    if start < 0:
+        return None
+    start = raw.find("[", start)
+    if start < 0:
+        return None
+    dec, pos, out = json.JSONDecoder(), start + 1, []
+    while True:
+        while pos < len(raw) and raw[pos] in " \n\r\t,":
+            pos += 1
+        if pos >= len(raw) or raw[pos] != "{":
+            break
+        try:
+            obj, pos = dec.raw_decode(raw, pos)
+        except ValueError:
+            break
+        if isinstance(obj, dict):
+            out.append(obj)
+    return {"claims": out} if out else None
+
+
 def _run(payload, salt):
+    """Una llamada; si sale cortada o ilegible, rescata lo completo y, si falta algo, una segunda con esfuerzo low."""
+    from rrm.reader.metacall import response_text
+
     response, cost, seconds, hit = llm.call(payload, salt=salt)
-    return llm.json_of(response), cost, seconds, hit
+    data = llm.json_of(response)
+    cut = bool(((response or {}).get("incomplete_details") or {}).get("reason"))
+    if data is not None and not cut:
+        return data, cost, seconds, hit
+    partial = salvage(response_text(response))
+    retry = dict(payload, reasoning={"effort": "low"})
+    try:
+        response2, cost2, seconds2, _hit2 = llm.call(retry, salt=salt + "|retry")
+    except Exception:
+        return partial, cost, seconds, hit
+    cost, seconds = llm.add(cost, cost2), seconds + seconds2
+    data2 = llm.json_of(response2)
+    if data2 is not None and not ((response2 or {}).get("incomplete_details") or {}).get("reason"):
+        return data2, cost, seconds, hit
+    return partial or salvage(response_text(response2)), cost, seconds, hit
 
 
 def review_e1(ctx, text, *, model=None, effort="minimal", salt=""):
@@ -267,7 +327,7 @@ def review_e1(ctx, text, *, model=None, effort="minimal", salt=""):
     if not sents:
         return {part: [] for part in PARTS}, llm.add(None, None), {}
     user = f"{_evidence_paper(ctx, sents)}\n\nReader's explanation:\n{_said(sents)}"
-    payload = llm.body(_RULES + _MISSED_FREE, user, _claim_schema(), "review", model=model, effort=effort, tokens=3000)
+    payload = llm.body(_RULES + _MISSED_FREE, user, _claim_schema(), "review", model=model, effort=effort, tokens=_TOKENS)
     data, cost, seconds, hit = _run(payload, salt)
     return assemble(ctx, sents, data), cost, {"llm_s": seconds, "cached": hit, "parsed": data is not None}
 
@@ -295,7 +355,7 @@ def review_e2(ctx, text, sheet, *, model=None, effort="minimal", salt="", use_pa
         pick_item = {"type": "object", "additionalProperties": False, "properties": {"point": {"type": "string"}}, "required": ["point"]}
         schema["properties"]["missed"] = {"type": "array", "items": pick_item}
         schema["required"] = list(schema["properties"])
-    payload = llm.body(rules, user, schema, "review", model=model, effort=effort, tokens=3000)
+    payload = llm.body(rules, user, schema, "review", model=model, effort=effort, tokens=_TOKENS)
     data, cost, seconds, hit = _run(payload, salt)
     return assemble(ctx, sents, data, passages=passages, points=points), cost, {"llm_s": seconds, "cached": hit, "parsed": data is not None}
 
@@ -335,7 +395,7 @@ def review_e3(ctx, text, *, model=None, effort="minimal", salt="", max_turns=5):
     cost, seconds, found, calls = llm.add(None, None), 0.0, [], 0
     data = None
     for turn in range(max_turns):
-        payload = {"model": model or llm.CONTRIBUTOR, "store": False, "max_output_tokens": 3000, "input": convo, "tools": tools}
+        payload = {"model": model or llm.CONTRIBUTOR, "store": False, "max_output_tokens": _TOKENS, "input": convo, "tools": tools}
         if effort:
             payload["reasoning"] = {"effort": effort}
         if turn == max_turns - 1:
