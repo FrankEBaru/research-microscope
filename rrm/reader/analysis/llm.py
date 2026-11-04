@@ -78,6 +78,18 @@ def _key(body):
     return hashlib.sha256((salt + json.dumps(body, sort_keys=True, ensure_ascii=False)).encode()).hexdigest()
 
 
+def _parse(text):
+    if not text:
+        return None
+    got = parse_json(text)
+    if got is None:
+        from rrm.reader.analysis.candidates import parse_lenient
+
+        got = parse_lenient(text)
+        got = got if isinstance(got, dict) else None
+    return got
+
+
 class BudgetExceeded(RuntimeError):
     pass
 
@@ -110,7 +122,7 @@ def call(body, role="", timeout=120, post=None):
     c = cost((payload or {}).get("usage"), body.get("model"))
     rec = {
         "key": key, "model": body.get("model"), "role": role, "wall_s": wall, "error": err,
-        "status": (payload or {}).get("status", ""), "text": text, "json": parse_json(text) if text else None,
+        "status": (payload or {}).get("status", ""), "text": text, "json": _parse(text),
         "cost": c, "usage": (payload or {}).get("usage") if payload else None, "payload_output": (payload or {}).get("output") if payload else None, "cached": False,
     }
     with _LOCK:

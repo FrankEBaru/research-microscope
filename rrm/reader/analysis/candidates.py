@@ -22,7 +22,7 @@ DEFAULT_CFG = {
     "model": llm.CONTRIBUTOR,
     "effort": {"planner": "medium", "writer": "low", "reader": "low", "explorer": "medium", "consolidator": "low",
                "selector": "low", "hyde": "minimal", "confirm": "minimal", "v1": "minimal", "agent": "medium", "section": "low"},
-    "max_out": {"planner": 6000, "writer": 2000, "reader": 4000, "explorer": 5000, "consolidator": 2500, "selector": 3000,
+    "max_out": {"planner": 12000, "writer": 2000, "reader": 4000, "explorer": 5000, "consolidator": 2500, "selector": 3000,
                 "hyde": 3000, "confirm": 1500, "v1": 3000, "agent": 4000, "section": 5000},
     "max_items": 12,
     "passages": True,       # H1: con / sin pasajes
@@ -50,6 +50,47 @@ def _ask(cfg, role, system, user, schema, name="out"):
     rec = llm.call(llm.body_for(cfg.get("models", {}).get(role, cfg["model"]), system, user, schema=schema, name=name,
                                 effort=cfg["effort"].get(role, "low"), max_out=cfg["max_out"].get(role, 2000)), role=role)
     return rec
+
+
+def _fix_escapes(s):
+    """JSON con LaTeX sin escapar (\\frac, \\beta): dobla las barras que no forman un escape válido."""
+    out, i, n = [], 0, len(s)
+    while i < n:
+        c = s[i]
+        if c == "\\":
+            nxt = s[i + 1] if i + 1 < n else ""
+            if nxt in '"\\/bfnrt':
+                if nxt in "bfnrt" and i + 2 < n and s[i + 2].isalpha():
+                    out.append("\\\\")
+                    i += 1
+                    continue
+                out.append(s[i:i + 2])
+                i += 2
+                continue
+            if nxt == "u" and len(s[i + 2:i + 6]) == 4 and all(ch in "0123456789abcdefABCDEF" for ch in s[i + 2:i + 6]):
+                out.append(s[i:i + 6])
+                i += 6
+                continue
+            out.append("\\\\")
+            i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def parse_lenient(text):
+    """json.loads; si falla, arregla escapes y lee el primer valor (ignora basura al final)."""
+    for cand in (text, _fix_escapes(text)):
+        try:
+            return json.loads(cand)
+        except json.JSONDecodeError:
+            pass
+        try:
+            return json.JSONDecoder().raw_decode(cand.lstrip())[0]
+        except json.JSONDecodeError:
+            pass
+    return None
 
 
 # ---------------------------------------------------------------- recuperación
@@ -772,11 +813,10 @@ def c5_agent(paper, brief, retr, cfg=None, budget=10):
             if name == "submit_items":
                 raw_items = args.get("items") or []
                 if isinstance(raw_items, str):
-                    # A veces el modelo manda el arreglo como texto JSON dentro del argumento.
-                    try:
-                        raw_items = json.loads(raw_items)
-                    except json.JSONDecodeError:
-                        raw_items = []
+                    # A veces el modelo manda el arreglo como texto JSON (con LaTeX sin escapar) dentro del argumento.
+                    raw_items = parse_lenient(raw_items) or []
+                    if isinstance(raw_items, dict):
+                        raw_items = raw_items.get("items") or []
                 items = [x for x in raw_items if isinstance(x, dict)]
                 done = True
                 result = "ok"
