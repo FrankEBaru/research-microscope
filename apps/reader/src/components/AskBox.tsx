@@ -16,6 +16,8 @@ const PARTS = [
   ["sin_respaldo", "No support"],
   ["te_falto", "You missed"],
 ] as const;
+// RRM-95: one glyph per verdict, so the strip reads without color too.
+const GLYPH: Record<string, string> = { coincide: "≈", contradice: "≠", sin_respaldo: "∅", te_falto: "+" };
 
 const NO_SUPPORT = "I didn't find this in the selected extracts from the paper.";
 const EMPTY_PHRASES = "No saved sentences for these papers.";
@@ -115,6 +117,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
   variant?: "section" | "slot";
 }) {
   const [text, setText] = useState("");
+  const [only, setOnly] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [store, setStore] = useState<any>(null);
@@ -350,17 +353,30 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
       {(err || slow) && <Pulse mode="error" compact detail={err ? ASK_FAULT : ASK_SLOW} />}
       {slow && <Notice kind="fault" code="F-ASK-SLOW">{ASK_SLOW}</Notice>}
       {err && <Notice kind="fault" code="F-ASK">{ASK_FAULT}</Notice>}
-      {result && !busy && !err && !slow && <Pulse mode="ready" compact />}
       {result?.empty && <Notice kind="absence">{result.note || EMPTY_PHRASES}</Notice>}
       {missing && <Notice kind="absence">{missing}</Notice>}
       <div className="ask-result feedback" ref={answer}>
-        {hasParts && <p className="box-prov"><Prov kind="simulado" text="Generated review" /></p>}
-        {!result?.empty && PARTS.map(([id, label]) => (parts[id] || []).length ? (
-          <section key={id}>
-            <Cap>{label}</Cap>
+        {hasParts && (
+          <div className="verdicts" role="group" aria-label="Review">
+            {PARTS.map(([id, label]) => {
+              const n = (parts[id] || []).length;
+              if (!n) return null;
+              const on = only === id;
+              return (
+                <button key={id} type="button" className={`vd press${on ? " is-on" : ""}`} data-v={id} aria-pressed={on} onClick={() => setOnly(on ? "" : id)}>
+                  <b aria-hidden="true">{GLYPH[id]}</b>{label}<span className="tnum">{n}</span>
+                </button>
+              );
+            })}
+            <span className="box-prov"><Prov kind="simulado" text="Generated review" /></span>
+          </div>
+        )}
+        {!result?.empty && PARTS.map(([id, label]) => (parts[id] || []).length && (!only || only === id) ? (
+          <section key={id} className="vd-sec" data-v={id}>
             {(parts[id] || []).map((item: any, index: number) => (
               <div className="claim" key={index}>
-                <p>{item.text}</p>
+                <p className="claim-h"><span className="vd-tag" data-v={id}><b aria-hidden="true">{GLYPH[id]}</b>{label}</span></p>
+                <p className="claim-you"><Rich text={item.text} /></p>
                 {item.cite && (
                   <blockquote className={linked(item.paper_id) ? "ex is-linked" : "ex"}>
                     <p><Rich text={markMidStart(item.cite)} /></p>
@@ -379,10 +395,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
         ) : null)}
         {result && !result.empty && (
           <>
-            <Cap gap>{result.papers === 1 ? "The paper says" : `These papers say (${result.papers})`}</Cap>
-            {result.matched > listed && (
-              <p className="box-note tnum">Found {result.matched} nearby sentences. Here are the {listed} closest to what you wrote.</p>
-            )}
+            <Cap gap>{result.papers === 1 ? "The paper says" : `These papers say (${result.papers})`}{result.matched > listed ? <span className="cap-n tnum"> · {listed} of {result.matched} nearby</span> : null}</Cap>
             {groups.map(([id, rows]) => rows.map((row: any, index: number) => {
               const shownText = markMidStart(cleanExtract(row.text));
               const canJump = jumps.includes(`${id}:${index}`);

@@ -15,6 +15,7 @@ import { UNDEFINED, symbolHover } from "@/lib/hover.js";
 import { autoSyms, symKey } from "@/lib/symcolor.js";
 import AskBox from "./AskBox";
 import DkInstrument, { dkAnchor } from "./paper/DkInstrument";
+import { marginExtras } from "@/lib/marginExtras";
 import "@/styles/lectura.css";
 
 // Pop de oración con la maqueta «ejemplo simulado… no está conectado». Apagado en core; NEXT_PUBLIC_RRM_SENTENCE_MOCK=1 lo vuelve a mostrar.
@@ -737,6 +738,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   );
 
   const side: MarginNote[] = [];
+  // RRM-95: extra margin items (lib/marginExtras.ts). Wide: in the margin column; narrow: under their block when inline.
+  const extras = marginExtras({ paper, reading, core });
   const rows: ReactNode[] = [];
   if (!undrawn) {
     const stack: { id: string; level: number; title: string }[] = [];
@@ -908,6 +911,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             )}
             {showInstrument && !undrawn && att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
             {core && !undrawn && dkAt && b.id === dkAt && <Boundary name="instrument"><DkInstrument syms={model.syms} /></Boundary>}
+            {!wide && extras.filter((x) => x.inline && x.block === b.id).map((x) => <div key={x.id} className={`margin-inline sn sn--${x.kind || "extra"}`}>{x.body}</div>)}
             {symbolHere && pinUseful && (
               <div className="margin-inline sn sn--sym">
                 <SymbolMargin tex={pinTex(pin!, att)} name={pinName(pin!, att)} blocks={paper.blocks} at={pinAt} />
@@ -965,6 +969,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     if (hit >= 0) openTop.add(topOf[hit]);
   }
   if (model.toc.length <= 12) model.toc.forEach((_, i) => openTop.add(topOf[i]));
+  if (wide) side.push(...extras);
   const layoutKey = `${reading ? 1 : 0}|${symPin}|${pack ? 1 : 0}|${side.map((n) => n.id).join(",")}`;
 
   return (
