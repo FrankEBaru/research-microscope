@@ -19,9 +19,30 @@ function stripCmd(s, name, keep) {
   return out + s.slice(last);
 }
 
+// RRM-103: a raw paragraph can carry a whole display environment (DPO §5: \begin{equation} f(r; \piref, …) \end{equation}).
+// It becomes \[…\] (parseProse renders it as display math) instead of being stripped down to bare TeX.
+const MATH_ENV = /\\begin\{(equation|align|gather|multline|eqnarray|displaymath)(\*?)\}([\s\S]*?)\\end\{\1\2\}/g;
+function mathEnv(env, body) {
+  let t = body.replace(/\\label\{[^}]*\}/g, "").replace(/\\(?:nonumber|notag)\b/g, "").trim();
+  if (env !== "equation" && env !== "displaymath" && /\\\\/.test(t)) t = `\\begin{aligned}${t.replace(/&=&/g, "&=")}\\end{aligned}`;
+  return t;
+}
+
 export function cleanTexText(raw) {
   let s = String(raw ?? "");
   if (!/[\\{]/.test(s)) return s;
+  if (s.includes("\\begin{")) {
+    const hits = [...s.matchAll(MATH_ENV)];
+    if (hits.length) {
+      let out = "", last = 0;
+      for (const m of hits) {
+        const body = mathEnv(m[1], m[3]);
+        out += cleanTexText(s.slice(last, m.index)) + (body ? ` \\[${body}\\] ` : " ");
+        last = m.index + m[0].length;
+      }
+      return out + cleanTexText(s.slice(last));
+    }
+  }
   s = s.replace(/\\makeatletter[\s\S]*?\\makeatother/g, "");
   for (const n of DROP_ARG) s = stripCmd(s, n, false);
   for (const n of KEEP_ARG) s = stripCmd(s, n, true);
@@ -43,6 +64,10 @@ export function cleanTexText(raw) {
     .replace(/\\textasciicircum(?![A-Za-z])\s*/g, "^")
     .replace(/\\textendash(?![A-Za-z])\s*/g, "–")
     .replace(/\\textemdash(?![A-Za-z])\s*/g, "—")
+    .replace(/\\textellipsis(?![A-Za-z])\s*/g, "…")
+    .replace(/\\textgreater(?![A-Za-z])\s*/g, ">")
+    .replace(/\\textless(?![A-Za-z])\s*/g, "<")
+    .replace(/(?:\\\\)?\[\\(?:heavy|light|cmid)rulewidth\]/g, " ")
     .replace(/\\textcolor\s*\{[^{}]*\}\s*/g, "")
     .replace(/\\ding\s*\{\s*55\s*\}/g, "✗")
     .replace(/\\ding\s*\{\s*51\s*\}/g, "✓")

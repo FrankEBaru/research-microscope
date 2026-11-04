@@ -671,3 +671,37 @@ export function pdfPagesOnly(blocks) {
     return !visibleInlines(b.inlines);
   });
 }
+
+// RRM-103: a \cite whose command the parser lost leaves its bare BibTeX key in the prose ("RoPE, su2022roformer",
+// "yu-etal:2018:_qanet"). A token that is exactly a key of this paper's references becomes a citation again.
+// Only keys that cannot be ordinary words (a digit or a colon in them) are lifted.
+const keyCache = new WeakMap();
+function keyRegex(refIndex) {
+  if (keyCache.has(refIndex)) return keyCache.get(refIndex);
+  const esc = (k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const keys = Object.keys(refIndex || {}).filter((k) => k.length >= 5 && /[0-9:]/.test(k) && /^[A-Za-z][\w:.+-]*$/.test(k)).sort((a, b) => b.length - a.length);
+  const re = keys.length ? new RegExp(`(^|[\\s(\\[,;])(${keys.map(esc).join("|")})(?=$|[\\s)\\],;.])`, "g") : null;
+  keyCache.set(refIndex, re);
+  return re;
+}
+export function liftCiteKeys(nodes, refIndex) {
+  if (!refIndex || typeof refIndex !== "object") return nodes;
+  const re = keyRegex(refIndex);
+  if (!re) return nodes;
+  const out = [];
+  for (const n of nodes) {
+    if (!n || n.t !== "text" || !n.v) { out.push(n); continue; }
+    re.lastIndex = 0;
+    let last = 0, m, hit = false;
+    while ((m = re.exec(n.v))) {
+      hit = true;
+      const at = m.index + m[1].length;
+      if (at > last) out.push({ t: "text", v: n.v.slice(last, at) });
+      out.push({ t: "cite", keys: [m[2]] });
+      last = at + m[2].length;
+    }
+    if (!hit) { out.push(n); continue; }
+    if (last < n.v.length) out.push({ t: "text", v: n.v.slice(last) });
+  }
+  return out;
+}

@@ -85,6 +85,11 @@
   font: 500 22px/1 var(--font-ui); color: var(--ink);
 }
 .ask-field input:focus-visible, .ask-field input:focus { outline: none; box-shadow: none; }
+/* RRM-103: el anillo de foco global (base.css, !important) dibujaba una caja dentro del campo; el campo ya lo marca con :focus-within.
+   Y el indicador ▼ del <datalist> de Chromium sobra: las preguntas grabadas están debajo y salen al escribir. */
+.ask-field input:focus-visible, .b1-search input:focus-visible { box-shadow: none !important; }
+.ask-field input::-webkit-calendar-picker-indicator, .b1-search input::-webkit-calendar-picker-indicator { display: none !important; }
+.b1-search:focus-within { border-color: var(--accent); }
 .b1-go {
   display: grid; place-items: center; width: 48px; height: 48px; border: 0; border-radius: 10px;
   background: var(--accent); color: var(--accent-ink); cursor: pointer;

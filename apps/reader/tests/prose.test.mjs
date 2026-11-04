@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseProse, polishText, presentInlines, splitIntertext, visibleInlines, pdfPagesOnly } from "../src/lib/prose.js";
+import { liftCiteKeys, parseProse, polishText, presentInlines, splitIntertext, visibleInlines, pdfPagesOnly } from "../src/lib/prose.js";
 
 const text = (nodes) => nodes.map((n) => n.t === "text" ? n.v : n.t === "em" ? `*${text(n.c)}*` : n.t === "strong" ? `**${text(n.c)}**` : n.t === "math" ? `$${n.v}$` : n.t === "cite" ? `[@${n.keys.join(",")}]` : n.t === "ref" ? `#${n.label}` : "").join("");
 
@@ -157,4 +157,34 @@ test("presentInlines merges split tokens and is idempotent", () => {
   assert.equal(text(once), "**Parser**");
   const twice = presentInlines(once);
   assert.equal(text(twice), text(once));
+});
+
+test("RRM-103: a display environment inside a raw paragraph renders as display math", () => {
+  const toks = "We define the projection $f$ as \\begin{equation} f(r; \\piref, \\beta)(x, y) = r(x, y) - \\beta\\log\\sum_{y}\\piref(y\\mid x) \\label{eq:proj} \\end{equation} The operator $f$ normalizes."
+    .split(/( )/).filter(Boolean).map((v) => ({ t: "text", v }));
+  const out = presentInlines(toks);
+  const disp = out.filter((n) => n.t === "math" && n.display);
+  assert.equal(disp.length, 1);
+  assert.match(disp[0].v, /^f\(r; \\piref, \\beta\)\(x, y\) = r\(x, y\)/);
+  assert.doesNotMatch(disp[0].v, /label/);
+  const words = out.filter((n) => n.t === "text").map((n) => n.v).join("");
+  assert.doesNotMatch(words, /\\piref|\\beta|equation/);
+  const al = presentInlines([{ t: "text", v: "so \\begin{align*} a &= b \\\\ c &= d \\end{align*} done" }]).find((n) => n.t === "math");
+  assert.equal(al.display, true);
+  assert.match(al.v, /^\\begin\{aligned\}a &= b \\\\ c &= d\\end\{aligned\}$/);
+});
+
+test("RRM-103: bare BibTeX keys of the paper become citations; ordinary words do not", () => {
+  const refs = { su2022roformer: 1, "yu-etal:2018:_qanet": 2, bidaf: 3, shazeer2019mq: 4 };
+  const out = liftCiteKeys([{ t: "text", v: "embeddings (RoPE, su2022roformer). As in yu-etal:2018:_qanet, the bidaf model and shazeer2019mq or shazeer2019mqx." }], refs);
+  assert.deepEqual(out.filter((n) => n.t === "cite").map((n) => n.keys[0]), ["su2022roformer", "yu-etal:2018:_qanet", "shazeer2019mq"]);
+  assert.equal(text(out.filter((n) => n.t === "text")).includes("bidaf"), true);
+  assert.equal(text(out.filter((n) => n.t === "text")).includes("shazeer2019mqx"), true);
+  assert.deepEqual(liftCiteKeys([{ t: "text", v: "no keys" }], {}), [{ t: "text", v: "no keys" }]);
+});
+
+test("RRM-103: \\textellipsis, \\textgreater and booktabs row spacing are not left raw", () => {
+  const out = text(presentInlines([{ t: "text", v: "RLHF-V1, \\textellipsis, RLHF-V5 with \\textgreater= 0.005% here.\\\\[\\heavyrulewidth] Prompt:" }]));
+  assert.doesNotMatch(out, /\\text|heavyrulewidth/);
+  assert.match(out, /RLHF-V1, …, RLHF-V5 with >= 0.005% here\./);
 });

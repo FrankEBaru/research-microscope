@@ -7,7 +7,7 @@ import Instrument from "./Instrument";
 import { bibtex } from "@/lib/bibtex.js";
 import { eqTex, fetchNotes, paperKey, refText, sourcePdfUrl } from "@/lib/backend.js";
 import { collectV2 } from "@/lib/artifacts.js";
-import { pdfPagesOnly, presentInlines, splitIntertext, visibleInlines } from "@/lib/prose.js";
+import { liftCiteKeys, pdfPagesOnly, presentInlines, splitIntertext, visibleInlines } from "@/lib/prose.js";
 import { absenceText } from "@/lib/falta.js";
 import { hasConclusion, scanIds } from "@/lib/scan.js";
 import { citeName } from "@/lib/layout.js";
@@ -62,7 +62,7 @@ function stampNotes(inls: Inline[], start: number): { inls: Inline[]; last: numb
 const noteCache = new Map<string, any>();
 
 export function Inlines({ inls, ctx }: { inls: Inline[]; ctx: Ctx }) {
-  const shown = presentInlines(inls);
+  const shown = liftCiteKeys(presentInlines(inls), ctx.refIndex);
   return <>{shown.map((x, i) => <One key={i} x={x} ctx={ctx} prev={i ? plainOf([shown[i - 1]]) : ""} />)}</>;
 }
 
@@ -535,7 +535,10 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     if (xr) {
       e.preventDefault();
       const tid = xr.dataset.target || "";
-      const el = (tid && document.getElementById(tid)) || document.getElementById(model.target[xr.dataset.xref!] || xr.dataset.xref!);
+      const lab = xr.dataset.xref || "";
+      // RRM-103: a table renders as <figure id={label} data-tab={id}>, not as blk-<id>; without these fallbacks «Table 3» did not jump.
+      const tab = (s: string) => (s.startsWith("blk-") ? document.querySelector(`[data-tab="${CSS.escape(s.slice(4))}"]`) as HTMLElement | null : null);
+      const el = (tid && document.getElementById(tid)) || document.getElementById(model.target[lab] || lab) || (lab && document.getElementById(lab)) || tab(tid) || tab(model.target[lab] || "");
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -826,7 +829,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               const key = `s|${b.id}|${i}`;
               return <span key={i} className={`sent${noted(i) ? " as" : ""}${pop?.key === key ? " is-hover" : ""}`} data-pop={key}>{i > 0 ? " " : null}<Inlines inls={s} ctx={{ ...ctx, sent: i }} /></span>;
             })}</p>
-            {b.abs && remote && paper.tldr && <p className="tldr"><Prov kind="simulado" text="AI note" /> {paper.tldr}</p>}
+            {b.abs && remote && paper.tldr && <p className="tldr"><Prov kind="simulado" text="AI note" /> <Rich text={paper.tldr} /></p>}
             {fnNums.length > 0 && !wide && <ol className="notes">{fnNums.map((num) => { const n = model.notes[num - 1]; return n ? <li key={num} value={num}><Inlines inls={(n.blocks || []).flatMap((x: Block) => x.inlines || [])} ctx={{ ...ctx, counter: { n: 999 } }} /></li> : null; })}</ol>}
           </div>
         );

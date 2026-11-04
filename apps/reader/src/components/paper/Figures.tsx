@@ -46,10 +46,10 @@ export function FigImg({ paper, name, alt, eager }: { paper: Paper; name: string
     if (spent) reportFault({ code: "F-FIG", where: "FigImg", detail: String(name) });
   }, [spent, name]);
   // RRM-47: si ningún nombre cargó (404), la figura se oculta sin hueco ni ícono roto.
-  if (missing) return idx > 0 ? null : <div className="fig-missing">figura no disponible</div>;
+  if (missing) return idx > 0 ? null : <div className="fig-missing">Figure not available</div>;
   return (
     <span className={`fig-slot ${loaded ? "in" : ""}`}>
-      {!loaded && <span className="fig-ph">figura</span>}
+      {!loaded && <span className="fig-ph">Figure</span>}
       <img
         src={src}
         alt={alt}
