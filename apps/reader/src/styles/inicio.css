@@ -22,6 +22,14 @@
   content: ""; position: absolute; width: 6px; height: 1.8px; right: -4px; bottom: 1px;
   background: currentColor; transform: rotate(45deg); border-radius: 1px;
 }
+/* RRM-102: logo (BrandMark). Ring in ink, line in accent; optional one-time draw. */
+.wm-logo { flex: none; display: block; overflow: visible; }
+.wm-logo .wm-ring { stroke: currentColor; }
+.wm-logo .wm-line { stroke: var(--accent); }
+.wm-logo.is-anim .wm-ring, .wm-logo.is-anim .wm-line { stroke-dasharray: 1 1.1; stroke-dashoffset: 1.01; animation: wm-draw .6s var(--ease-out) forwards; }
+.wm-logo.is-anim .wm-line { animation-duration: .9s; animation-delay: .35s; animation-timing-function: cubic-bezier(.45,0,.2,1); }
+@keyframes wm-draw { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) { .wm-logo.is-anim .wm-ring, .wm-logo.is-anim .wm-line { animation: none; stroke-dashoffset: 0; } }
 .crumbs {
   display: flex; align-items: center; justify-content: center; gap: 10px; min-width: 0;
   font-size: 13.5px; color: var(--ink-2); white-space: nowrap;

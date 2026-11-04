@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import "@/styles/inicio.css";
 import { Cap, Icon } from "../ui";
 import { Rich } from "@/lib/math";
+import BrandMark from "../BrandMark";
 
 type Step = { n: number; label: string; sub?: string; on?: () => void };
 
@@ -77,7 +78,7 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
   if (!core) {
     return (
       <header className="topbar">
-        <a className="brand" href="#/" onClick={() => window.scrollTo({ top: 0 })}><span className="lens" aria-hidden="true" />Reading Microscope</a>
+        <a className="brand" href="#/" onClick={() => window.scrollTo({ top: 0 })}><BrandMark size={20} />Reading Microscope</a>
         {!(core && (liveOn || liveId)) && (
           <nav className="scope" aria-label="Nivel de zoom">
             {steps.map((s) => (
@@ -115,7 +116,7 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
       <div className="top-brand">
         {back}
         <a className="wm" href="#/" aria-label="Reading Microscope, home" onClick={(e) => { e.preventDefault(); onHome ? onHome() : window.scrollTo({ top: 0 }); }}>
-          <span className="wm-mark" aria-hidden="true"><i /></span>
+          <BrandMark />
           <span className="wm-name">Reading Microscope</span>
         </a>
       </div>
