@@ -1,0 +1,130 @@
+{
+ "id": "pe-sincos",
+ "claim": {
+  "text": "Sinusoidal positional encoding uses sin(pos / 10000^{2i/d}), so nearby positions have a similar encoding.",
+  "latex": "",
+  "context": "",
+  "arxiv": "1706.03762"
+ },
+ "spec": {
+  "archetype": "curve",
+  "controls": [
+   {
+    "id": "pos",
+    "label": "position pos",
+    "max": 50,
+    "min": 0,
+    "step": 1,
+    "value": 10
+   },
+   {
+    "id": "dimi",
+    "label": "dimension index i",
+    "max": 15,
+    "min": 0,
+    "step": 1,
+    "value": 2
+   },
+   {
+    "id": "dimd",
+    "label": "model dimension d",
+    "max": 64,
+    "min": 16,
+    "step": 8,
+    "value": 32
+   }
+  ],
+  "derived": [
+   {
+    "formula": "10000^(2*dimi/dimd)",
+    "name": "divisor"
+   },
+   {
+    "formula": "pos/divisor",
+    "name": "angle"
+   },
+   {
+    "formula": "sin(angle)",
+    "name": "encoding"
+   }
+  ],
+  "direction": [
+   {
+    "control": "dimi",
+    "effect": "up",
+    "readout": "divisor"
+   }
+  ],
+  "explain": "Illustrative toy for arXiv 1706.03762 showing the sin curve over pos. The limit of nearby pos values staying close on the curve keeps a similar encoding.",
+  "questions": [
+   {
+    "q": "Predict encoding when pos is 12 with dimi 2 and dimd 32?",
+    "why": "Tests reading the curve at a nearby position."
+   },
+   {
+    "q": "What is encoding when pos is 13 with dimi 2 and dimd 32?",
+    "why": "Checks similarity for nearby positions."
+   },
+   {
+    "q": "What is divisor when dimi is 6 with dimd 32 and pos 10?",
+    "why": "Checks frequency dependence on dimension index."
+   },
+   {
+    "q": "What is angle when dimd is 64 with pos 20 and dimi 2?",
+    "why": "Checks model-dimension effect on phase."
+   }
+  ],
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "pos",
+    "label": "position pos",
+    "max": 50,
+    "min": 0,
+    "step": 1,
+    "value": 10
+   },
+   {
+    "id": "dimi",
+    "label": "dimension index i",
+    "max": 15,
+    "min": 0,
+    "step": 1,
+    "value": 2
+   },
+   {
+    "id": "dimd",
+    "label": "model dimension d",
+    "max": 64,
+    "min": 16,
+    "step": 8,
+    "value": 32
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var pos = state.pos; var dimi = state.dimi; var dimd = state.dimd; function fmt(v) { return Math.round(v * 100) / 100; } function valAt(p) { var e = 2 * dimi / dimd; var dv = Math.pow(10000, e); return Math.sin(p / dv); } var expo = 2 * dimi / dimd; var divisor = Math.pow(10000, expo); var angle = pos / divisor; var enc = Math.sin(angle); var x0 = 48; var y0 = 28; var pw = w - 48 - 158; var ph = h - 28 - 62; function X(p) { return x0 + p / 50 * pw; } function Y(v) { return y0 + ph / 2 - v * ph * 0.44; } var k = 0; var p = 0; var v = 0; ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); ctx.strokeStyle = \"#d8cfbe\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(50), Y(0)); ctx.stroke(); ctx.beginPath(); ctx.moveTo(X(0), Y(1)); ctx.lineTo(X(50), Y(1)); ctx.stroke(); ctx.beginPath(); ctx.moveTo(X(0), Y(-1)); ctx.lineTo(X(50), Y(-1)); ctx.stroke(); ctx.strokeStyle = \"#1f4b99\"; ctx.lineWidth = 2; ctx.beginPath(); for (k = 0; k <= 140; k++) { p = k / 140 * 50; v = valAt(p); if (k === 0) { ctx.moveTo(X(p), Y(v)); } else { ctx.lineTo(X(p), Y(v)); } } ctx.stroke(); var pos2 = pos + 1; if (pos2 > 50) { pos2 = pos - 1; } var v2 = 0; if (pos2 !== pos) { v2 = valAt(pos2); } ctx.strokeStyle = \"#8a8175\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(X(pos), y0); ctx.lineTo(X(pos), y0 + ph); ctx.stroke(); ctx.beginPath(); ctx.moveTo(X(pos2), y0); ctx.lineTo(X(pos2), y0 + ph); ctx.stroke(); ctx.fillStyle = \"#c4512c\"; ctx.beginPath(); ctx.arc(X(pos), Y(enc), 6, 0, 6.2832); ctx.fill(); ctx.fillStyle = \"#1f4b99\"; ctx.beginPath(); ctx.arc(X(pos2), Y(v2), 5, 0, 6.2832); ctx.fill(); ctx.strokeStyle = \"#c4512c\"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(X(pos), Y(enc)); ctx.lineTo(X(pos2), Y(v2)); ctx.stroke(); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"pos \" + pos + \" enc \" + fmt(enc), x0, y0 + ph + 20); ctx.fillText(\"near \" + pos2 + \" enc \" + fmt(v2), x0, y0 + ph + 36); ctx.fillText(\"pos\", X(50) - 10, y0 + ph + 20); var lx = x0 + pw + 12; ctx.font = \"13px sans-serif\"; ctx.fillText(\"divisor\", lx, 52); ctx.font = \"12px sans-serif\"; ctx.fillText(\"\" + fmt(divisor), lx, 68); ctx.font = \"13px sans-serif\"; ctx.fillText(\"angle\", lx, 94); ctx.font = \"12px sans-serif\"; ctx.fillText(\"\" + fmt(angle), lx, 110); ctx.font = \"13px sans-serif\"; ctx.fillText(\"encoding\", lx, 136); ctx.font = \"12px sans-serif\"; ctx.fillText(\"\" + fmt(enc), lx, 152); ctx.fillStyle = \"#8a8175\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"sin(pos/divisor)\", lx, 184); ctx.fillText(\"divisor 10000 pow\", lx, 200); ctx.fillText(\"gap \" + fmt(enc - v2), lx, 222); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"i \" + dimi + \" d \" + dimd, x0, 16); }",
+  "explain": "Illustrative toy for arXiv 1706.03762 showing the sin curve over pos. The limit of nearby pos values staying close on the curve keeps a similar encoding.",
+  "id": "positional-encoding-curve",
+  "questions": [
+   {
+    "q": "Predict encoding when pos is 12 with dimi 2 and dimd 32?",
+    "why": "Tests reading the curve at a nearby position."
+   },
+   {
+    "q": "What is encoding when pos is 13 with dimi 2 and dimd 32?",
+    "why": "Checks similarity for nearby positions."
+   },
+   {
+    "q": "What is divisor when dimi is 6 with dimd 32 and pos 10?",
+    "why": "Checks frequency dependence on dimension index."
+   },
+   {
+    "q": "What is angle when dimd is 64 with pos 20 and dimi 2?",
+    "why": "Checks model-dimension effect on phase."
+   }
+  ],
+  "title": "Sinusoidal encoding keeps nearby positions close",
+  "topic": "positional_encoding"
+ }
+}

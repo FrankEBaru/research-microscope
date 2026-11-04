@@ -1,0 +1,121 @@
+{
+ "id": "adam-valley",
+ "claim_text": "Adam steps by the bias-corrected first moment over the square root of the second moment, so a narrow valley does not mak",
+ "spec": {
+  "archetype": "curve",
+  "constraints": [
+   "abs(m) <= sqrt(v)"
+  ],
+  "controls": [
+   {
+    "id": "m",
+    "label": "first moment m",
+    "max": 1.0,
+    "min": 0.0,
+    "step": 0.25,
+    "value": 0.5
+   },
+   {
+    "id": "v",
+    "label": "second moment v",
+    "max": 4.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 1.0
+   }
+  ],
+  "derived": [
+   {
+    "formula": "m / sqrt(v)",
+    "name": "step"
+   }
+  ],
+  "direction": [
+   {
+    "control": "m",
+    "effect": "up",
+    "readout": "step"
+   }
+  ],
+  "explain": "From arXiv 1412.6980, this toy valley plot is illustrative: watch the step number m / sqrt(v), the bias-corrected Adam update size that stays bounded in a narrow valley.",
+  "questions": [
+   {
+    "q": "Set v to 1: what happens to the step? Do you expect a gradient ten times larger to make the step ten times larger?",
+    "why": "Tests scale invariance, the core Adam claim."
+   },
+   {
+    "q": "Set m to 1: what happens to the step?",
+    "why": "Uses the regime value where |m| equals sqrt(v)."
+   },
+   {
+    "q": "Set v to 4: what happens to the step?",
+    "why": "Reads how larger second moment shrinks the update."
+   },
+   {
+    "q": "Set m to 0.25: what happens to the step?",
+    "why": "Reads a small first moment value."
+   }
+  ],
+  "regime": [
+   {
+    "control": "m",
+    "formula": "sqrt(v)",
+    "label": "unit step"
+   }
+  ],
+  "scale": true,
+  "threshold_formula": "sqrt(v)"
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "m",
+    "label": "first moment m",
+    "max": 1.0,
+    "min": 0.0,
+    "step": 0.25,
+    "value": 0.5
+   },
+   {
+    "id": "v",
+    "label": "second moment v",
+    "max": 4.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 1.0
+   }
+  ],
+  "draw": "function draw(ctx, state, t) {\nfunction fmt(v) { return Math.round(v * 100) / 100; }\nfunction X(x) { return left + (x / 2) * plotW; }\nfunction Y(s) { return baseY - (s / 2) * plotH; }\n\n\nvar w = state.w;\nvar h = state.h;\nvar m = state.m;\nvar v = state.v;\nvar sq = Math.sqrt(v);\nvar step = m / sq;\nvar xR = sq;\nvar left = 52;\nvar right = w - 24;\nvar top = 26;\nvar baseY = h - 78;\nvar plotW = right - left;\nvar plotH = baseY - top;\nvar N = 60;\nvar i = 0;\nvar x = 0;\nvar s = 0;\nvar px = 0;\nvar py = 0;\n\n\nctx.clearRect(0, 0, w, h);\nctx.fillStyle = \"#f6f3ec\";\nctx.fillRect(0, 0, w, h);\nctx.strokeStyle = \"#1d1a16\";\nctx.lineWidth = 1.5;\nctx.beginPath();\nctx.moveTo(left, baseY);\nctx.lineTo(right, baseY);\nctx.stroke();\nctx.beginPath();\nctx.moveTo(left, baseY);\nctx.lineTo(left, top);\nctx.stroke();\nctx.strokeStyle = \"#1f4b99\";\nctx.lineWidth = 2;\nctx.beginPath();\nfor (i = 0; i <= N; i++) {\nx = (i / N) * 2;\ns = x / sq;\npx = X(x);\npy = Y(s);\nif (i === 0) { ctx.moveTo(px, py); } else { ctx.lineTo(px, py); }\n}\nctx.stroke();\nctx.strokeStyle = \"#c4512c\";\nctx.lineWidth = 1.5;\nctx.beginPath();\nfor (i = 0; i <= 24; i++) {\npx = X(xR);\npy = baseY - ((i / 24) * (baseY - Y(1)));\nif (i === 0) { ctx.moveTo(px, baseY); } else { ctx.lineTo(px, py); }\nif (i === 0) { ctx.moveTo(px, py); } else { ctx.moveTo(px, py); }\n}\nctx.stroke();\nctx.beginPath();\nctx.moveTo(left, Y(1));\nctx.lineTo(right, Y(1));\nctx.stroke();\npx = X(m);\npy = Y(step);\nctx.fillStyle = \"#1f4b99\";\nctx.beginPath();\nctx.arc(px, py, 6, 0, 6.2832);\nctx.fill();\nctx.fillStyle = \"#1d1a16\";\nctx.font = \"12px sans-serif\";\nctx.fillText(\"m = \" + fmt(m), 52, h - 56);\nctx.fillText(\"v = \" + fmt(v), 160, h - 56);\nctx.fillText(\"step = \" + fmt(step), 268, h - 56);\nctx.fillText(\"unit step \" + fmt(xR), X(xR) - 88, Y(1) - 10);\nctx.fillText(\"threshold \" + fmt(xR), X(xR) + 8, baseY - 6);\nctx.fillText(\"m axis 0 to 2\", left, baseY + 16);\nctx.fillText(\"step axis 0 to 2\", left, top - 8);\n}",
+  "explain": "From arXiv 1412.6980, this toy valley plot is illustrative: watch the step number m / sqrt(v), the bias-corrected Adam update size that stays bounded in a narrow valley.",
+  "id": "adam-valley-step",
+  "questions": [
+   {
+    "q": "Set v to 1: what happens to the step? Do you expect a gradient ten times larger to make the step ten times larger?",
+    "why": "Tests scale invariance, the core Adam claim."
+   },
+   {
+    "q": "Set m to 1: what happens to the step?",
+    "why": "Uses the regime value where |m| equals sqrt(v)."
+   },
+   {
+    "q": "Set v to 4: what happens to the step?",
+    "why": "Reads how larger second moment shrinks the update."
+   },
+   {
+    "q": "Set m to 0.25: what happens to the step?",
+    "why": "Reads a small first moment value."
+   }
+  ],
+  "title": "Adam step stays bounded in a narrow valley",
+  "topic": "adam"
+ },
+ "row": {
+  "id": "adam-valley",
+  "verify": "pass",
+  "gate": [
+   "generic_questions",
+   "regime"
+  ],
+  "outcome": "fallback"
+ }
+}

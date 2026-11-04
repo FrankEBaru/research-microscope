@@ -1,0 +1,130 @@
+{
+ "id": "pe-sincos",
+ "claim": {
+  "text": "Sinusoidal positional encoding uses sin(pos / 10000^{2i/d}), so nearby positions have a similar encoding.",
+  "latex": "",
+  "context": "",
+  "arxiv": "1706.03762"
+ },
+ "spec": {
+  "archetype": "curve",
+  "constraints": [
+   "2*i <= d"
+  ],
+  "controls": [
+   {
+    "id": "pos",
+    "label": "position pos",
+    "max": 20.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 5.0
+   },
+   {
+    "id": "i",
+    "label": "dimension index i",
+    "max": 8.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 2.0
+   },
+   {
+    "id": "d",
+    "label": "model dimension d",
+    "max": 64.0,
+    "min": 32.0,
+    "step": 1.0,
+    "value": 32.0
+   }
+  ],
+  "derived": [
+   {
+    "formula": "pos / 10000^(2*i/d)",
+    "name": "angle"
+   },
+   {
+    "formula": "sin(pos / 10000^(2*i/d))",
+    "name": "enc"
+   }
+  ],
+  "direction": [
+   {
+    "control": "pos",
+    "effect": "up",
+    "readout": "angle"
+   }
+  ],
+  "explain": "Toy illustration for arXiv 1706.03762 sinusoidal positional encoding. Watch the curve value enc at pos to see nearby positions stay similar.",
+  "questions": [
+   {
+    "q": "Predict what happens when pos = 10?",
+    "why": "Tests position dependence of similarity."
+   },
+   {
+    "q": "What happens when i = 5?",
+    "why": "Tests frequency change across dimensions."
+   },
+   {
+    "q": "What happens when d = 64?",
+    "why": "Tests model dimension scaling."
+   },
+   {
+    "q": "What happens when pos = 15?",
+    "why": "Tests distant position encoding."
+   }
+  ],
+  "scale": true,
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "pos",
+    "label": "position pos",
+    "max": 20.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 5.0
+   },
+   {
+    "id": "i",
+    "label": "dimension index i",
+    "max": 8.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 2.0
+   },
+   {
+    "id": "d",
+    "label": "model dimension d",
+    "max": 64.0,
+    "min": 32.0,
+    "step": 1.0,
+    "value": 32.0
+   }
+  ],
+  "draw": "function draw(ctx, state, t) {\n  var w = state.w;\n  var h = state.h;\n  var pos = state.pos;\n  var ii = state.i;\n  var d = state.d;\n  function fmt(v) { return Math.round(v * 100) / 100; }\n  function denom() { return Math.pow(10000, (2 * ii) / d); }\n  function encf(p) { return Math.sin(p / denom()); }\n  function X(p) { return 50 + p / 20 * 480; }\n  function Y(v) { return 150 - v * 90; }\n  var angle = pos / denom();\n  var enc = Math.sin(angle);\n  var k = 0;\n  var p = 0;\n  var y = 0;\n  ctx.clearRect(0, 0, w, h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, w, h);\n  ctx.strokeStyle = \"#d8cfbf\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(50, Y(0));\n  ctx.lineTo(530, Y(0));\n  ctx.stroke();\n  ctx.strokeStyle = \"#1d1a16\";\n  ctx.lineWidth = 1;\n  ctx.strokeRect(50, 50, 480, 200);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  for (k = 0; k <= 120; k++) {\n    p = k / 120 * 20;\n    y = encf(p);\n    if (k === 0) { ctx.moveTo(X(p), Y(y)); } else { ctx.lineTo(X(p), Y(y)); }\n  }\n  ctx.stroke();\n  ctx.strokeStyle = \"#8a8175\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  y = 50;\n  while (y < 250) {\n    ctx.moveTo(X(pos), y);\n    ctx.lineTo(X(pos), y + 5);\n    y = y + 10;\n  }\n  ctx.stroke();\n  var q = 0;\n  var qy = 0;\n  for (k = -1; k <= 1; k++) {\n    q = pos + k;\n    if (q >= 0) {\n      if (q <= 20) {\n        qy = encf(q);\n        ctx.fillStyle = \"#c4512c\";\n        if (k === 0) { ctx.fillStyle = \"#1f4b99\"; } else { ctx.fillStyle = \"#c4512c\"; }\n        ctx.beginPath();\n        ctx.arc(X(q), Y(qy), 6, 0, 6.2832);\n        ctx.fill();\n      }\n    }\n  }\n  ctx.fillStyle = \"#1d1a16\";\n  ctx.font = \"13px sans-serif\";\n  ctx.fillText(\"angle = \" + fmt(angle), 50, 292);\n  ctx.fillText(\"enc = \" + fmt(enc), 260, 292);\n  ctx.fillText(\"pos = \" + fmt(pos), 50, 314);\n  ctx.fillText(\"enc(pos-1) to enc(pos+1) stay close\", 260, 314);\n  ctx.font = \"12px sans-serif\";\n  ctx.fillStyle = \"#8a8175\";\n  ctx.fillText(\"sin(pos / 10000 to power 2i over d)\", 50, 30);\n  ctx.fillText(\"pos 0 to 20\", 50, 268);\n}",
+  "explain": "Toy illustration for arXiv 1706.03762 sinusoidal positional encoding. Watch the curve value enc at pos to see nearby positions stay similar.",
+  "id": "positional-encoding-curve",
+  "questions": [
+   {
+    "q": "Predict what happens when pos = 10?",
+    "why": "Tests position dependence of similarity."
+   },
+   {
+    "q": "What happens when i = 5?",
+    "why": "Tests frequency change across dimensions."
+   },
+   {
+    "q": "What happens when d = 64?",
+    "why": "Tests model dimension scaling."
+   },
+   {
+    "q": "What happens when pos = 15?",
+    "why": "Tests distant position encoding."
+   }
+  ],
+  "title": "Nearby positions share similar sinusoidal encoding",
+  "topic": "positional_encoding"
+ }
+}

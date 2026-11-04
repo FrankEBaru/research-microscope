@@ -1,0 +1,35 @@
+{
+ "controls": [
+  {
+   "id": "x",
+   "label": "input x",
+   "max": 3,
+   "min": -4,
+   "step": 0.05,
+   "value": -0.5
+  }
+ ],
+ "draw": "function draw(ctx, state, t) {\n  var top = 36;\n  var bot = 286;\n  var thr = 0;\n  var x = state.x;\n  var xmin = -4;\n  var xmax = 3;\n  var ymin = -0.6;\n  var ymax = 3.2;\n  function fmt(v) { return Math.round(v * 100) / 100; }\n  function erf(v) {\n    var neg = false;\n    var ax = v;\n    if (ax < 0) { neg = true; ax = 0 - ax; }\n    var tt = 1 / (1 + 0.33 * ax);\n    var t2 = tt * tt;\n    var t3 = t2 * tt;\n    var t4 = t3 * tt;\n    var t5 = t4 * tt;\n    var y = 1 - (0.25 * tt - 0.28 * t2 + 1.42 * t3 - 1.45 * t4 + 1.06 * t5) * Math.exp(0 - ax * ax);\n    if (neg) { y = 0 - y; }\n    return y;\n  }\n  function Phi(v) { return 0.5 * (1 + erf(v / Math.sqrt(2))); }\n  function gelu(v) { return v * Phi(v); }\n  function XtoPx(v) { return 48 + (v - xmin) / (xmax - xmin) * (560 - 48); }\n  function YtoPy(v) { return bot - (v - ymin) / (ymax - ymin) * (bot - top); }\n  var ythr = YtoPy(thr);\n  var i = 0;\n  var n = 120;\n  var xv = 0;\n  var yv = 0;\n  var px = 0;\n  var py = 0;\n  var clip = false;\n  ctx.clearRect(0, 0, state.w, state.h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, state.w, state.h);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 2;\n  ctx.beginPath();\n  for (i = 0; i <= n; i++) {\n    xv = xmin + (xmax - xmin) * i / n;\n    yv = gelu(xv);\n    px = XtoPx(xv);\n    py = YtoPy(yv);\n    if (py < 36 || py > 286) { clip = true; }\n    if (i === 0) { ctx.moveTo(px, py); } else { ctx.lineTo(px, py); }\n  }\n  ctx.stroke();\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(48, ythr);\n  ctx.lineTo(560, ythr);\n  ctx.stroke();\n  yv = gelu(x);\n  px = XtoPx(x);\n  py = YtoPy(yv);\n  ctx.beginPath();\n  ctx.moveTo(px, ythr);\n  ctx.lineTo(px, py);\n  ctx.stroke();\n  ctx.fillStyle = \"#c4512c\";\n  ctx.beginPath();\n  ctx.arc(px, py, 5, 0, Math.PI * 2);\n  ctx.fill();\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"threshold \" + fmt(thr), 48, ythr - 8);\n  ctx.fillText(\"x = \" + fmt(x), 48, 318);\n  ctx.fillText(\"y = \" + fmt(yv), 300, 318);\n  if (clip) { ctx.fillText(\"clipped\", 460, 318); }\n  ctx.fillText(\"toy arXiv 1606.08415 only holds if smooth\", 48, 344);\n}",
+ "explain": "The toy draws the GELU curve y = x·Φ(x) from arXiv 1606.08415 crossing the zero threshold line with reading name = value, where negative input still leaks through unlike a hard cutoff. The threshold stays still while x moves, which only holds if the curve stays smooth.",
+ "id": "gelu-leak",
+ "questions": [
+  {
+   "q": "Predict which negative just below 0 still leaks instead of cutting at 0?",
+   "why": "Reader expects hard cutoff at zero."
+  },
+  {
+   "q": "Why does the curve near 0 stay smooth instead of kinking at 0?",
+   "why": "Reader sees no corner at the threshold."
+  },
+  {
+   "q": "Which input far below 0 stays near 0 without ever cutting at 0?",
+   "why": "Reader wonders about tail saturation."
+  },
+  {
+   "q": "Where is the dip below 0 deepest before rising back toward 0?",
+   "why": "Reader notices nonmonotonic valley."
+  }
+ ],
+ "title": "GELU leaks below zero instead of cutting",
+ "topic": "gelu"
+}
