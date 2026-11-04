@@ -364,7 +364,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
               const on = only === id;
               return (
                 <button key={id} type="button" className={`vd press${on ? " is-on" : ""}`} data-v={id} aria-pressed={on} onClick={() => setOnly(on ? "" : id)}>
-                  <b aria-hidden="true">{GLYPH[id]}</b>{label}<span className="tnum">{n}</span>
+                  <b aria-hidden="true">{GLYPH[id]}</b><span className="vd-l">{label}</span><span className="vd-n tnum">{n}</span>
                 </button>
               );
             })}
@@ -375,7 +375,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
           <section key={id} className="vd-sec" data-v={id}>
             {(parts[id] || []).map((item: any, index: number) => (
               <div className="claim" key={index}>
-                <p className="claim-h"><span className="vd-tag" data-v={id}><b aria-hidden="true">{GLYPH[id]}</b>{label}</span></p>
+                <p className="claim-h"><span className="vd-tag" data-v={id}><b aria-hidden="true">{GLYPH[id]}</b><span>{label}</span></span></p>
                 <p className="claim-you"><Rich text={item.text} /></p>
                 {item.cite && (
                   <blockquote className={linked(item.paper_id) ? "ex is-linked" : "ex"}>

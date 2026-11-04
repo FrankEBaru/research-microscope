@@ -64,7 +64,7 @@ form.ask-card.box {
 .vd { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 13px 0 11px; border-radius: 999px; border: 1.5px solid var(--rule-2);
   background: var(--sheet); font: 600 13.5px/1 var(--font-ui); color: var(--ink); cursor: pointer; transition: border-color var(--dur-1), background-color var(--dur-1); }
 .vd b, .vd-tag b { font: 600 15px/1 var(--font-read); color: var(--v); }
-.vd span { font-weight: 500; color: var(--ink-3); }
+.vd .vd-n { font-weight: 500; color: var(--ink-3); }
 .vd.is-on { border-color: var(--v); background: color-mix(in oklab, var(--v) 10%, var(--sheet)); }
 @media (hover: hover) { .vd:hover { border-color: var(--v); } }
 [data-v="coincide"] { --v: var(--verdict-match); }
