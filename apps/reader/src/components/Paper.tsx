@@ -23,12 +23,12 @@ import { createTracker } from "@/lib/companion.js";
 import { analyze } from "@/lib/tablechart.js";
 import Companion, { Offer } from "./Companion";
 import { Ctx, plainOf } from "./paper/inline";
-import { GapView, ShapePill, artsAt, notesAt, repeatsBlock } from "./paper/GapNotes";
+import { GapView, ShapePill, artsAt, notesAt, normPhrase, repeatsBlock, samePhrase } from "./paper/GapNotes";
 import Popover, { PopState } from "./paper/Popover";
 import { Table } from "./paper/TableFig";
 import { Cited } from "./paper/Cited";
 import { citingIndex } from "@/lib/figrefs.js";
-import { CropStrip, FigImg, ZoneFig } from "./paper/Figures";
+import { CropStrip, FigImg, FigZoom, ZoneFig } from "./paper/Figures";
 import Margin, { MarginNote } from "./paper/Margin";
 import Rights from "./paper/Rights";
 import { arxivPdf, isGated } from "@/lib/rights.js";
@@ -100,15 +100,33 @@ function One({ x, ctx, prev = "" }: { x: Inline; ctx: Ctx; prev?: string }) {
     }
     case "ref": {
       const label = x.label || "";
-      let text = refText(x, ctx.xref);
+      let text = niceRef(label, refText(x, ctx.xref));
       if (/(?:figure|fig\.|table|tab\.|section|sec\.|equation|eq\.|appendix|figura|tabla|sección|ecuación|apéndice)\s*~?\s*$/i.test(prev) && /^(Figure|Table|Section|Appendix|equation|Figura|Tabla|Sección|Apéndice|ecuación)\s+/.test(text)) {
         text = text.replace(/^\S+\s+/, "");
       }
-      const href = x.target ? `#blk-${x.target}` : `#${label}`;
-      return <a href={href} className="xref" data-xref={label} {...(x.target ? { "data-target": x.target } : {})}>{text}</a>;
+      const dest = x.target ? `blk-${x.target}` : (ctx.target?.[label] || "");
+      if (!dest) return <span>{text}</span>;
+      return <a href={`#${dest}`} className="xref" data-xref={label} data-target={dest}>{text}</a>;
     }
     default: return null;
   }
+}
+
+function niceRef(label: string, mapped: string) {
+  if (mapped && mapped !== label) return mapped;
+  if (/^fig:/i.test(label)) return "Figure";
+  if (/^tab:/i.test(label)) return "Table";
+  if (/thm|lem/i.test(label)) return "Theorem";
+  if (/^app:/i.test(label)) return "Appendix";
+  if (/^eq:/i.test(label)) return "equation";
+  if (/^sec:/i.test(label)) return "Section";
+  return mapped || label;
+}
+
+function symbolWorth(blocks: Block[], tex: string, at?: { block: string; index: number } | null) {
+  const hit = symbolHover(blocks, tex, at || undefined);
+  if (!hit || hit.here || hit.text === UNDEFINED) return false;
+  return normPhrase(hit.text).length > 12 && !samePhrase(hit.text, tex);
 }
 
 function citeFace(k: string, labels?: Record<string, string>, index?: Record<string, string | number>) {
@@ -200,23 +218,28 @@ function pinName(pin: { kind: string; val: string }, att: any) {
 
 function SymbolMargin({ tex, name, blocks, at }: { tex: string; name: string; blocks: Block[]; at?: { block: string; index: number } | null }) {
   const hit = symbolHover(blocks, tex, at || undefined);
-  const missing = !hit || hit.text === UNDEFINED;
+  if (!hit || hit.here || hit.text === UNDEFINED) return null;
+  if (normPhrase(hit.text).length <= 12 || samePhrase(hit.text, tex)) return null;
   return (
     <>
       <p className="sn-sym">
         <span className="sn-s"><Tex tex={tex} /></span>
         {name && <span className="sn-d">{name}</span>}
       </p>
-      {missing
-        ? <Notice kind="absence">the paper does not define it</Notice>
-        : hit.here
-          ? null
-          : <>
-            <p className="sn-q">“<Rich text={hit.shown || hit.text} />”</p>
-            <p><Prov kind="paper" text={hit.section || "paper"} /></p>
-          </>}
+      <p className="sn-q">“<Rich text={hit.shown || hit.text} />”</p>
+      <p><Prov kind="paper" text={hit.section || "paper"} /></p>
     </>
   );
+}
+
+function noteBodies(inls: Inline[]) {
+  const out: { n: number; inls: Inline[] }[] = [];
+  const walk = (list: Inline[]) => (list || []).forEach((x) => {
+    if (x?.t === "note") out.push({ n: x.n || out.length + 1, inls: (x.blocks || []).flatMap((b: Block) => b.inlines || []) });
+    else if (Array.isArray(x?.c)) walk(x.c);
+  });
+  walk(inls);
+  return out;
 }
 
 export function mountKey(paper: Paper) {
@@ -248,6 +271,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   useEffect(() => { if (!point) return; const el = document.getElementById(point); el?.classList.remove("flash"); void el?.offsetWidth; el?.classList.add("flash"); const t = setTimeout(() => setPoint(null), 12000); return () => clearTimeout(t); }, [point]);
   useEffect(() => { if (companion && focus) setPoint(`blk-${focus}`); }, [focus, companion, paper.arxivId]);
   const [breakdown, setBreakdown] = useState<string | null>(null);
+  const [zoomFig, setZoomFig] = useState<string | null>(null);
   useEffect(() => { tracker.current.reset(); setOffer(null); }, [paper.arxivId, paper.stage, paper.upgraded_from, companion]);
 
   const paperId = paper.corpusid != null ? String(paper.corpusid) : (paper.arxivId || "");
@@ -268,6 +292,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     setSymPin("");
     setPinAt(null);
     setPop(null);
+    setZoomFig(null);
     setCopied("");
     return () => window.clearTimeout(timer);
   }, [paperId, core]);
@@ -316,10 +341,12 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         if (b.level <= 2) toc.push({ id: b.id, label: plainOf(b.inlines), num: cur, level: b.level });
       }
       secOf[b.id] = cur;
-      if (b.kind === "fig") { figN[b.id] = ++fig; if (b.label) { xref[b.label] = `Figure ${fig}`; byLabel[b.label] = b; figs.add(b.label); } }
+      if (b.kind === "fig") { figN[b.id] = ++fig; if (b.label) { xref[b.label] = `Figure ${fig}`; target[b.label] = b.label; byLabel[b.label] = b; figs.add(b.label); } }
       if (b.kind === "eq") {
         const tg = /\\tag\{([^}]*)\}/.exec(b.tex);
-        (b.labels || []).forEach((l: string) => {
+        const labs = new Set<string>(b.labels || []);
+      for (const m of String(b.tex || "").matchAll(/\\label\{([^{}]+)\}/g)) labs.add(m[1]);
+      labs.forEach((l: string) => {
           if (b.number != null) xref[l] = String(l).startsWith("eq") ? `(${b.number})` : String(b.number);
           else xref[l] = tg ? `(${tg[1]})` : "equation";
           target[l] = `blk-${b.id}`;
@@ -327,7 +354,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       }
       if (b.kind === "table") {
         b.an = analyze(b as any);
-        tabN[b.id] = ++tab; if (b.label) xref[b.label] = `Table ${tab}`;
+        tabN[b.id] = ++tab; if (b.label) { xref[b.label] = `Table ${tab}`; target[b.label] = `blk-${b.id}`; }
       }
       walk(b.inlines);
     }
@@ -343,7 +370,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     const target = e.target as HTMLElement;
     const inPop = Boolean(target.closest?.(".popover"));
     const el = target.closest?.("[data-pop],[data-sym]") as HTMLElement | null;
-    if (inPop) clearTimeout(closeTimer.current);
+    if (inPop || target.closest?.("[data-tex],[data-sym],.eq,.popover")) clearTimeout(closeTimer.current);
     clearTimeout(timer.current);
     if (!el) return;
     const key = el.dataset.pop || `y|${el.dataset.sym}`;
@@ -351,7 +378,10 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     if (core) {
       const host = (e.target as HTMLElement).closest("[data-sym],[data-tex]") as HTMLElement | null;
       const sym = host?.dataset.sym ? `id:${host.dataset.sym}` : host?.dataset.tex ? `tex:${host.dataset.tex.replace(/\s+/g, "")}` : "";
-      if (sym) setSymHot(sym);
+      const where = host?.closest("[data-pop]") as HTMLElement | null;
+      const bits = where?.dataset.pop?.split("|") || [];
+      const at = bits[0] === "m" ? { block: bits[1], index: Number(bits[2]) } : null;
+      if (sym && symbolWorth(paper.blocks, host?.dataset.tex || "", at)) setSymHot(sym);
     }
     if (core && !SENTENCE_MOCK && key.startsWith("s|")) {
       const parts = key.split("|");
@@ -393,8 +423,11 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     const host = node.closest("[data-pop],[data-sym]") as HTMLElement | null;
     return Boolean(host && (host.dataset.pop === pop.key || (host.dataset.sym && pop.key === `y|${host.dataset.sym}`)));
   };
-  const onOut = (e: { relatedTarget: EventTarget | null }) => {
+  const onOut = (e: { relatedTarget: EventTarget | null; target?: EventTarget | null }) => {
     const next = e.relatedTarget as HTMLElement | null;
+    const left = e.target as HTMLElement | null;
+    const zone = left && typeof left.closest === "function" ? left.closest(".eq,[data-pop]") : null;
+    if (next && zone && (zone === next || zone.contains(next))) return;
     if (sameHost(next)) return;
     if (Date.now() - touched.current < 800) return;
     clearTimeout(timer.current);
@@ -430,6 +463,8 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         const host = sym.closest("[data-pop]") as HTMLElement | null;
         const parts = host?.dataset.pop?.split("|") || [];
         const off = symPin === mark;
+        const at = parts[0] === "m" ? { block: parts[1], index: Number(parts[2]) } : parts[0] === "e" ? { block: parts[1], index: 0 } : null;
+        if (!off && !symbolWorth(paper.blocks, sym.dataset.tex || "", at)) return;
         setSymPin(off ? "" : mark);
         if (off) setPinAt(null);
         else if (parts[0] === "m") setPinAt({ block: parts[1], index: Number(parts[2]) });
@@ -443,8 +478,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     if (xr) {
       e.preventDefault();
       const tid = xr.dataset.target || "";
-      const byTarget = tid ? (document.getElementById(`blk-${tid}`) || document.querySelector(`[data-tab="${CSS.escape(tid)}"]`)) : null;
-      const el = byTarget || document.getElementById(model.target[xr.dataset.xref!] || xr.dataset.xref!);
+      const el = (tid && document.getElementById(tid)) || document.getElementById(model.target[xr.dataset.xref!] || xr.dataset.xref!);
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -506,7 +540,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     if (flashSent(row.block, row.sent)) return;
     if (core && !reading && paper.full) { pendingJump.current = row; setReading(true); }
   };
-  useEffect(() => {
+  useLayoutEffect(() => {
     const row = pendingJump.current;
     if (!reading || !row) return;
     pendingJump.current = null;
@@ -634,6 +668,15 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   }
   const quote = undrawn ? (paper.abstract || "") : (remote ? autoSentence(paper.abstract) : "");
   const pin = symPin ? pinOf(symPin) : null;
+  const pinUseful = Boolean(pin && symbolWorth(paper.blocks, pinTex(pin, att), pinAt));
+  const titleOf = (id: string) => {
+    if (!id || id === String(paper.corpusid ?? "")) return "";
+    const pools = [...(map?.papers || []), ...(atlasCtx?.papers || [])];
+    const hit = pools.find((item) => paperKey(item) === id || String(item?.corpusid ?? "") === id || item?.arxivId === id);
+    const title = String(hit?.title || "").replace(/\s+/g, " ").trim();
+    if (!title || /^\d+$/.test(title)) return "";
+    return title.length > 90 ? `${title.slice(0, 90).replace(/\s+\S*$/, "").trim()}…` : title;
+  };
   const showMini = Boolean(core && (map || (explore?.nodes || []).length > 0));
   const showNav = model.toc.length > 0 || showMini;
   const pct = Math.round(prog * 100);
@@ -668,7 +711,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
         closeUntil(b.level);
         stack.push({ id: b.id, level: b.level, title: plainOf(b.inlines) });
       }
-      const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, refLabels: paper.refLabels, xref: model.xref, figs: model.figs, counter: { n: model.noteBase[b.id] }, core, block: b.id, popKey: pop?.key, pin };
+      const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, refLabels: paper.refLabels, xref: model.xref, target: model.target, figs: model.figs, counter: { n: model.noteBase[b.id] }, core, block: b.id, popKey: pop?.key, pin };
       let el: ReactNode = null;
       if (b.kind === "h") {
         const Tag: any = b.level === 1 ? "h2" : b.level === 2 ? "h3" : "h4";
@@ -734,13 +777,45 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       } else if (b.kind === "list") {
         el = <ul id={`blk-${b.id}`} className="blk list">{b.items.map((it: Inline[], i: number) => <li key={i}><Inlines inls={it} ctx={ctx} /></li>)}</ul>;
       } else if (b.kind === "fig") {
-        const imgs = b.images || [];
+        const panels = Array.isArray(b.panels) && b.panels.length ? b.panels : (b.images || []).map((src: string) => ({ src, caption: [] as Inline[] }));
+        const many = panels.length > 1;
+        const alt = plainOf(b.caption);
+        const cap = stampNotes(b.caption || [], 0).inls;
+        const notes = noteBodies(cap);
+        const board = (large: boolean) => (
+          <div
+            className={`fig-board${many ? "" : " is-single"}${large ? " is-large" : ""}`}
+            onClick={large ? undefined : (e) => {
+              if ((e.target as HTMLElement).closest("button,a,.zone")) return;
+              e.stopPropagation();
+              setZoomFig(b.id);
+            }}
+          >
+            {panels.map((p: { src: string; caption?: Inline[] }, i: number) => {
+              const zs = i === 0 && b.label ? (content.zones?.figures || []).find((f: any) => f.paper === paper.arxivId && f.fig === b.label)?.zones : null;
+              const sub = stampNotes(p.caption || [], 0).inls;
+              return (
+                <div className="fig-panel" key={`${i}-${p.src}`}>
+                  {zs && !large ? <ZoneFig paper={paper} name={p.src} alt={plainOf(p.caption) || alt} zones={zs} onGo={goTo} /> : <FigImg paper={paper} name={p.src} alt={plainOf(p.caption) || alt} eager={i === 0 || large} />}
+                  {visibleInlines(sub) && <p className="fig-sub"><Inlines inls={sub} ctx={ctx} /></p>}
+                </div>
+              );
+            })}
+          </div>
+        );
         el = (
           <figure id={b.label || `blk-${b.id}`} className="fig blk">
-            {imgs.length > 0 && <div className="fig-imgs">{imgs.map((src: string, i: number) => { const zs = i === 0 && b.label ? (content.zones?.figures || []).find((f: any) => f.paper === paper.arxivId && f.fig === b.label)?.zones : null;
-              return zs ? <ZoneFig key={`${i}-${src}`} paper={paper} name={src} alt={plainOf(b.caption)} zones={zs} onGo={goTo} /> : <FigImg key={`${i}-${src}`} paper={paper} name={src} alt={plainOf(b.caption)} eager={i === 0} />; })}</div>}
-            <figcaption><b>Figure {model.figN[b.id]}.</b> <Inlines inls={b.caption} ctx={ctx} /> <Prov kind="paper" text="original figure" /></figcaption>
+            {panels.length > 0 && board(false)}
+            <figcaption><b>Figure {model.figN[b.id]}.</b> <Inlines inls={cap} ctx={ctx} /> <Prov kind="paper" text="original figure" /></figcaption>
+            {notes.length > 0 && <ol className="fig-notes">{notes.map((n) => <li key={n.n} value={n.n}><Inlines inls={n.inls} ctx={{ ...ctx, counter: { n: 999 } }} /></li>)}</ol>}
             {core && FIG_PASSAGES && model.passages[b.id] && <Cited rows={model.passages[b.id].top} rest={model.passages[b.id].rest} onJump={jumpPassage} />}
+            {zoomFig === b.id && (
+              <FigZoom open onClose={() => setZoomFig(null)}>
+                {board(true)}
+                <figcaption><b>Figure {model.figN[b.id]}.</b> <Inlines inls={cap} ctx={ctx} /></figcaption>
+                {notes.length > 0 && <ol className="fig-notes">{notes.map((n) => <li key={n.n} value={n.n}><Inlines inls={n.inls} ctx={{ ...ctx, counter: { n: 999 } }} /></li>)}</ol>}
+              </FigZoom>
+            )}
           </figure>
         );
       } else if (b.kind === "table") {
@@ -766,7 +841,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               </aside>
             )}
             {showInstrument && !undrawn && att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
-            {symbolHere && (
+            {symbolHere && pinUseful && (
               <div className="margin-inline sn sn--sym">
                 <SymbolMargin tex={pinTex(pin!, att)} name={pinName(pin!, att)} blocks={paper.blocks} at={pinAt} />
               </div>
@@ -779,7 +854,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       if (core && !reading && b.id === abstractId) rows.push(<div key="ask-slot">{askBox("slot", abstractId, sectionLabel)}</div>);
     });
     if (core && reading) closeUntil(0);
-    if (wide && pin && (!pinAt || !scan || scan.has(pinAt.block))) {
+    if (wide && pin && pinUseful && (!pinAt || !scan || scan.has(pinAt.block))) {
       side.push({
         id: `sym-${symPin}`,
         anchor: pin.kind === "tex" ? "[data-pin='1']" : ".sym-mark",
@@ -793,16 +868,17 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   function gapPieces(b: Block) {
     if (!core) return null;
     const arts = artsAt(b.id, pack, local);
+    const host = plainOf(b.inlines || []);
     const notes = (b.kind === "p" || b.kind === "eq") ? notesAt(b.id, pack, local).filter((n: any) => !repeatsBlock(n, b, arts)) : [];
     const artsDrawn = (b.kind === "p" || b.kind === "eq") ? arts.filter((a) => a.type !== "forma") : [];
     const shape = arts.some((a) => a.type === "forma" && a.label);
     const nodes: ReactNode[] = [];
     if (shape) nodes.push(<ShapePill key="shape" arts={arts} />);
     notes.forEach((n: any, i: number) => nodes.push(
-      <Boundary key={`n-${n.block_id}-${n.sent_index}-${n.kind || "n"}-${i}`} name="gap"><GapView note={n} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} /></Boundary>,
+      <Boundary key={`n-${n.block_id}-${n.sent_index}-${n.kind || "n"}-${i}`} name="gap"><GapView note={n} host={host} self={String(paper.corpusid ?? "")} titleOf={titleOf} onOpen={onOpenPaper} /></Boundary>,
     ));
     artsDrawn.forEach((a, i) => nodes.push(
-      <Boundary key={`a-${b.id}-${i}`} name="gap"><GapView art={a} self={String(paper.corpusid ?? "")} onOpen={onOpenPaper} /></Boundary>,
+      <Boundary key={`a-${b.id}-${i}`} name="gap"><GapView art={a} host={host} self={String(paper.corpusid ?? "")} titleOf={titleOf} onOpen={onOpenPaper} /></Boundary>,
     ));
     if (wide) {
       nodes.forEach((node, i) => side.push({ id: `g-${b.id}-${i}`, anchor: `[data-blk="${b.id}"]`, body: node }));
@@ -932,7 +1008,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             )}
           </footer>
         )}
-        {pop && <Boundary name="popover" resetKeys={[pop.key]}><Popover pop={pop} paper={paper} model={model} content={content} core={core} pack={pack} onOpen={onOpenPaper} /></Boundary>}
+        {pop && <Boundary name="popover" resetKeys={[pop.key]}><Popover pop={pop} paper={paper} model={model} content={content} core={core} pack={pack} titleOf={titleOf} onOpen={onOpenPaper} /></Boundary>}
       </article>
       {wide && <Margin notes={side} layoutKey={layoutKey} />}
       {companion && <Companion offer={offer} target={point} onAnswer={() => setOffer(null)} onHide={() => onHideCompanion?.()} />}

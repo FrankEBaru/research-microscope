@@ -61,6 +61,10 @@ export function sentences(blocks) {
 function hasSymbol(sentence, tex) {
   const needle = String(tex || "").replace(/\s+/g, "");
   if (!needle) return false;
+  // Una letra suelta (H) aparece en cualquier palabra. Solo cuenta si es un nodo de math igual.
+  if (needle.length <= 2 && /^[A-Za-z]+$/.test(needle)) {
+    return (sentence.math || []).some((blob) => String(blob).replace(/\s+/g, "") === needle);
+  }
   const blobs = [sentence.text, ...(sentence.math || [])];
   return blobs.some((blob) => String(blob).replace(/\s+/g, "").includes(needle));
 }

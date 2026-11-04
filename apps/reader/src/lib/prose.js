@@ -49,7 +49,11 @@ function readCommand(s, i) {
   const name = m[1];
   if (s[j] === "*") j += 1;
   const args = [];
-  while (s[j] === "[" || s[j] === "{") {
+  while (true) {
+    let k = j;
+    while (s[k] === " " || s[k] === "\n" || s[k] === "\t") k += 1;
+    if (s[k] !== "[" && s[k] !== "{") break;
+    j = k;
     if (s[j] === "[") {
       let d = 0;
       let closed = false;
@@ -202,6 +206,13 @@ export function parseProse(input) {
     }
     if (s[i] === "\\") {
       if (s[i + 1] === "\\") { buf += " "; i += 2; continue; }
+      const loose = takeLooseMath(s, i);
+      if (loose) {
+        flush();
+        out.push({ t: "math", v: loose[0], display: false });
+        i = loose[1];
+        continue;
+      }
       const cmd = readCommand(s, i);
       if (!cmd) { buf += s[i]; i += 1; continue; }
       const accent = accentChar(cmd.name, s, cmd.j);
@@ -258,6 +269,7 @@ export function parseProse(input) {
         continue;
       }
       if (DROP.has(cmd.name)) { i = cmd.j; continue; }
+      if (isAnnotation(cmd)) { i = cmd.j; continue; }
       if (cmd.args.length && !/\\/.test(cmd.args[cmd.args.length - 1])) {
         pushParsed(parseProse(cmd.args[cmd.args.length - 1]));
         i = cmd.j;
@@ -297,12 +309,17 @@ const GREEK = {
   Theta: "Θ", Sigma: "Σ", Omega: "Ω",
 };
 
+function flatMath(tex) {
+  return String(tex || "")
+    .replace(/\s+/g, "")
+    .replace(/\\([A-Za-z]+)/g, (_, name) => GREEK[name] || "")
+    .replace(/[{}\\^_]/g, "");
+}
+
 function echoOf(tex) {
-  const v = String(tex || "").replace(/\s+/g, "");
-  const g = /^\\([A-Za-z]+)$/.exec(v);
-  if (g && GREEK[g[1]]) return GREEK[g[1]];
-  if (v && v.length <= 24 && !/\\/.test(v)) return v;
-  return "";
+  const flat = flatMath(tex);
+  if (!flat || flat.length > 48) return "";
+  return flat;
 }
 
 /** $d$ seguido de otra d, o θθ: el parser dejó el símbolo y además su texto. */
@@ -354,11 +371,65 @@ export function splitIntertext(tex) {
   return parts;
 }
 
+const LOOSE_MATH = new Set([
+  "frac", "dfrac", "tfrac", "sqrt", "binom", "sum", "prod", "int",
+  "Big", "Bigg", "bigg", "bigl", "bigr", "Bigl", "Bigr", "Biggl", "Biggr",
+  "left", "right", "mathrm", "mathbf", "boldsymbol", "operatorname", "mathbb",
+  "overline", "bar", "hat", "tilde", "vec",
+]);
+
+/** Fórmulas que perdieron los dólares: \\Big(\\frac{x}{\\sqrt{2}}\\Big). */
+function takeLooseMath(s, i) {
+  const name = /^\\([A-Za-z]+)/.exec(s.slice(i));
+  if (!name || !LOOSE_MATH.has(name[1])) return null;
+  let j = i;
+  let depth = 0;
+  let started = false;
+  while (j < s.length) {
+    const c = s[j];
+    if (c === "\\") {
+      const nxt = /^\\([A-Za-z]+)/.exec(s.slice(j));
+      if (depth === 0 && started && nxt && !LOOSE_MATH.has(nxt[1]) && !GREEK[nxt[1]]) break;
+      if (!nxt) break;
+      started = true;
+      j += nxt[0].length;
+      continue;
+    }
+    if (c === "{") { depth += 1; started = true; j += 1; continue; }
+    if (c === "}") {
+      if (!depth) break;
+      depth -= 1;
+      j += 1;
+      continue;
+    }
+    if (depth === 0 && started && /[A-Za-z]/.test(c)) break;
+    if (depth === 0 && started && c === " " && s[j + 1] !== "\\" && s[j + 1] !== "^" && s[j + 1] !== "_") break;
+    if ("^_(),.[]|+-=<>*/ ".includes(c) || /[0-9]/.test(c)) { started = true; j += 1; continue; }
+    break;
+  }
+  let body = s.slice(i, j).trim();
+  if (!/\\(?:frac|dfrac|tfrac|sqrt|Big|boldsymbol|mathrm)/.test(body)) return null;
+  body = body.replace(/(\\Big\))(?:\s*\\Big\))+$/, "$1");
+  return [body, j];
+}
+
+function isAnnotation(cmd) {
+  if (!cmd || !cmd.args || !cmd.args.length) return false;
+  if (UNWRAP.has(cmd.name) || STYLE[cmd.name] || DROP.has(cmd.name)) return false;
+  const arg = String(cmd.args[cmd.args.length - 1] || "");
+  if (arg.length < 40) return false;
+  return /\b(?:I|we|this|that|the|if|you)\b/i.test(arg) && (arg.match(/ /g) || []).length > 4;
+}
+
 function tidy(nodes) {
   const out = [];
   for (const n of nodes) {
     if (n.t === "text") {
-      const v = n.v.replace(/[ \t]{2,}/g, " ");
+      const v = n.v
+        .replace(/\[cite\]/gi, "")
+        .replace(/([\u0391-\u03A9\u03B1-\u03C9])\1/g, "$1")
+        .replace(/[ \t]{2,}/g, " ")
+        .replace(/,{2,}/g, ",");
       if (!v) continue;
       const prev = out[out.length - 1];
       if (prev && prev.t === "text") prev.v += v;
@@ -484,13 +555,34 @@ export function presentInlines(inls) {
         blocks: (x.blocks || []).map((b) => ({ ...b, inlines: presentInlines(b.inlines) })),
       });
     } else if (x.t === "math") {
-      const ref = /^\\(?:eqref|ref|autoref|cref|Cref)\{([^{}]+)\}$/.exec(String(x.v || "").trim());
+      const v = String(x.v || "");
+      const ref = /^\\(?:eqref|ref|autoref|cref|Cref)\{([^{}]+)\}$/.exec(v.trim());
       if (ref) out.push({ t: "ref", label: ref[1].trim() });
+      else if (/\\texttt\b/.test(v) && /\([A-Za-z]+;/.test(v)) out.push(...parseProse(v));
       else out.push(x);
     } else out.push(x);
   }
   flush();
-  return collapseEcho(out);
+  return liftLabels(collapseEcho(out));
+}
+
+const LABEL_RE = /\b((?:fig|tab|eq|app|sec|thm|lem):[A-Za-z0-9_-]+)\b/g;
+
+function liftLabels(nodes) {
+  const out = [];
+  for (const n of nodes) {
+    if (n.t !== "text" || !LABEL_RE.test(n.v)) { LABEL_RE.lastIndex = 0; out.push(n); continue; }
+    LABEL_RE.lastIndex = 0;
+    let last = 0;
+    let m;
+    while ((m = LABEL_RE.exec(n.v))) {
+      if (m.index > last) out.push({ t: "text", v: n.v.slice(last, m.index) });
+      out.push({ t: "ref", label: m[1] });
+      last = m.index + m[0].length;
+    }
+    if (last < n.v.length) out.push({ t: "text", v: n.v.slice(last) });
+  }
+  return out;
 }
 
 /** A paragraph whose only payload was preamble or \\includegraphics. */

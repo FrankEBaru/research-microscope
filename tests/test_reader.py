@@ -209,6 +209,35 @@ def test_figure_star_section_star_and_raw(tmp_path: Path):
     assert list((tmp_path / "figures").glob("*.png"))
 
 
+def test_subfigure_panels_keep_author_order_and_footnote():
+    tex = r"""
+\documentclass{article}
+\begin{document}
+\begin{figure}
+\begin{subfigure}{0.45\linewidth}
+\includegraphics{a.png}
+\caption{(a) left side}
+\end{subfigure}
+\begin{subfigure}{0.45\linewidth}
+\includegraphics{b.png}
+\caption{(b) right side $x$}
+\end{subfigure}
+\caption{Both panels.\footnote{Measured on the same split.}}
+\label{fig:both}
+\end{figure}
+See fig:both in the text.
+\end{document}
+"""
+    paper = parse_tex(tex, arxiv_id="0")
+    fig = next(b for b in paper["blocks"] if b["kind"] == "fig")
+    assert fig["images"] == ["a.png", "b.png"]
+    assert [p["src"] for p in fig["panels"]] == ["a.png", "b.png"]
+    assert "(a)" in plain(fig["panels"][0]["caption"])
+    assert "(b)" in plain(fig["panels"][1]["caption"])
+    assert any(x.get("t") == "note" for x in fig["caption"])
+    assert fig["label"] == "fig:both"
+
+
 def test_theorem_and_list_keep_display_math():
     tex = r"""
 \documentclass{article}

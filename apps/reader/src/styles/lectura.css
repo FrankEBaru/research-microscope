@@ -18,7 +18,7 @@
   box-sizing: border-box;
 }
 .folio .art { min-width: 0; }
-.folio .toc { position: sticky; top: 84px; align-self: start; max-height: none; overflow: visible; display: block; font-size: 13.5px; padding-right: 0; }
+.folio .toc { position: sticky; top: 84px; align-self: start; max-height: calc(100vh - 7rem); overflow: auto; display: block; font-size: 13.5px; padding-right: 8px; }
 .folio .toc .cap { margin-bottom: 10px; }
 .folio .toc ol { list-style: none; margin: 0; padding: 0; }
 .folio .toc li { margin: 0; padding: 0; }
@@ -140,7 +140,7 @@
 }
 .folio .eq .katex { color: var(--ink); }
 .folio .eq .katex .tag { color: var(--ink-3); }
-.folio .eq:hover, .folio .eq.is-hover, .folio .eq:focus-within { background: var(--page-2); }
+.folio .eq.is-hover, .folio .eq:focus-within { background: var(--page-2); }
 .folio .eq .copy {
   position: absolute;
   top: 8px;
@@ -286,6 +286,18 @@
 .folio .step-list li.on { background: var(--hl-soft); }
 .folio .case-cond { color: var(--ink-2); }
 .folio .sym-mark { background: var(--accent-soft); border-radius: 2px; box-shadow: 0 0 0 2px var(--accent-soft); }
+.folio .fig-board { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 12px; width: 100%; cursor: zoom-in; }
+.folio .fig-board.is-large { cursor: default; }
+.folio .fig-panel { flex: 1 1 0; min-width: min(160px, 100%); max-width: 100%; }
+.folio .fig-board.is-single .fig-panel { flex-basis: 100%; }
+.folio .fig-panel .fig-slot { display: block; width: 100%; }
+.folio .fig-panel img { width: 100%; max-width: 100%; max-height: 240px; height: auto; object-fit: contain; }
+.folio .fig-board.is-large .fig-panel img { max-height: 72vh; }
+.folio .fig-sub, .folio .fig-notes { margin: 6px 0 0; font: 400 13.5px/1.45 var(--font-ui); color: var(--ink-2); text-align: center; }
+.folio .fig-notes { text-align: left; padding-left: 1.2rem; }
+.fig-zoom { position: fixed; inset: 0; z-index: 80; background: rgba(20, 16, 12, .55); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.fig-zoom-sheet { background: var(--sheet, #fff); width: min(1100px, 100%); max-height: 92vh; overflow: auto; padding: 16px 16px 20px; border-radius: 12px; }
+.fig-zoom-x { float: right; }
 
 .folio .fig.blk,
 .folio .table-fig { max-width: 100%; }

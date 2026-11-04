@@ -125,6 +125,29 @@ test("split font commands and stray braces leave the words", () => {
   assert.equal(text(parseProse("a {\\it global} approach")), "a *global* approach");
 });
 
+test("author asides, loose formulas, labels and echoed math are one class of bug", () => {
+  const aside = parseProse("kept. \\ekin{I don't have strong opinion, but this was where they start looking Figure 1, so this was ok to me.} Next.");
+  assert.equal(text(aside).includes("strong opinion"), false);
+  assert.match(text(aside), /kept\./);
+  assert.match(text(aside), /Next/);
+  const gelu = parseProse("a unit \\Big(\\frac{x}{\\sqrt{2}}\\Big)\\Big) here");
+  assert.equal(gelu.some((n) => n.t === "math" && n.v.includes("\\frac") && !/\\Big\)\\Big\)/.test(n.v)), true);
+  assert.equal(text(parseProse("and σσ denotes")), "and σ denotes");
+  const sig = presentInlines([{ t: "math", v: "\\sigma" }, { t: "text", v: "σ denotes" }]);
+  assert.equal(text(sig), "$\\sigma$ denotes");
+  const mov = presentInlines([{ t: "math", v: "\\textbf{\\texttt{div}}(H; (i, j), i')" }]);
+  assert.equal(JSON.stringify(mov).includes("textbf"), false);
+  assert.equal(JSON.stringify(mov).includes("texttt"), false);
+  assert.match(JSON.stringify(mov), /"v":"div"/);
+  const echo = presentInlines([{ t: "math", v: "f(x_n)" }, { t: "text", v: "f(xn) to predictions" }]);
+  assert.equal(text(echo), "$f(x_n)$ to predictions");
+  const labels = presentInlines([{ t: "text", v: "Proofs are given in app:Thm1,,app:Thm2." }]);
+  assert.deepEqual(labels.filter((n) => n.t === "ref").map((n) => n.label), ["app:Thm1", "app:Thm2"]);
+  const fig = presentInlines([{ t: "text", v: "In fig:implicitw, the curve" }]);
+  assert.equal(fig.some((n) => n.t === "ref" && n.label === "fig:implicitw"), true);
+  assert.equal(text(parseProse("ends [cite].")), "ends .");
+});
+
 test("presentInlines merges split tokens and is idempotent", () => {
   const once = presentInlines([{ t: "text", v: "{\\bf" }, { t: "text", v: " " }, { t: "text", v: "Parser}" }]);
   assert.equal(text(once), "**Parser**");

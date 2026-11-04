@@ -330,17 +330,95 @@ def _raw_block(tex: str):
     return {"kind": "p", "raw": True, "inlines": text_tokens(tex.strip())}
 
 
-def _fig_block(inner: str, macros: dict):
-    images = re.findall(r"\\includegraphics(?:\s*\[[^\]]*\])?\s*\{([^}]+)\}", inner)
-    images += re.findall(r"\\epsfig\s*\{[^}]*file\s*=\s*([^,}\s]+)", inner)
+def _graphic_paths(text: str) -> list:
+    found = re.findall(r"\\includegraphics(?:\s*\[[^\]]*\])?\s*\{([^}]+)\}", text)
+    found += re.findall(r"\\epsfig\s*\{[^}]*file\s*=\s*([^,}\s]+)", text)
+    return found
+
+
+def _caption_at(text: str) -> str:
+    m = re.search(r"\\(?:caption|subcaption)\s*\*?\s*(\[[^\]]*\])?\s*\{", text)
+    if not m:
+        return ""
+    cap, _ = read_braced(text, m.end() - 1)
+    return cap
+
+
+def _without_caption(text: str) -> str:
+    m = re.search(r"\\(?:caption|subcaption)\s*\*?\s*(\[[^\]]*\])?\s*\{", text)
+    if not m:
+        return text
+    _, end = read_braced(text, m.end() - 1)
+    return text[:m.start()] + text[end:]
+
+
+def _loose_notes(text: str, macros: dict) -> list:
+    notes = []
+    i = 0
+    while True:
+        j = text.find("\\footnote", i)
+        if j < 0:
+            break
+        k = _skip_ws(text, j + len("\\footnote"))
+        if k < len(text) and text[k] == "{":
+            inner, k = read_braced(text, k)
+            notes.append({"t": "note", "blocks": [{"kind": "p", "inlines": parse_inlines(inner, macros)}]})
+        i = max(k, j + 1)
+    return notes
+
+
+def _read_subfloat(text: str, i: int):
+    j = _skip_ws(text, i + len("\\subfloat"))
     cap = ""
-    m = re.search(r"\\caption\s*(\[[^\]]*\])?\s*\{", inner)
-    if m:
-        cap, _ = read_braced(inner, m.end() - 1)
+    if j < len(text) and text[j] == "[":
+        cap, j = read_bracket(text, j)
+        j = _skip_ws(text, j)
+    body = ""
+    if j < len(text) and text[j] == "{":
+        body, j = read_braced(text, j)
+    return cap, body, j
+
+
+def _fig_block(inner: str, macros: dict):
+    panels = []
+    rest = inner
+    guard = 0
+    while guard < 40:
+        guard += 1
+        m_env = re.search(r"\\begin\{(?:subfigure\*?|minipage)\}", rest)
+        m_sub = re.search(r"\\subfloat\b", rest)
+        use_sub = bool(m_sub and (not m_env or m_sub.start() < m_env.start()))
+        name = ""
+        if use_sub:
+            cap, sub, end = _read_subfloat(rest, m_sub.start())
+            if end <= m_sub.start():
+                break
+        elif m_env:
+            name, sub, end = read_env(rest, m_env.start())
+            if not name:
+                break
+            cap = _caption_at(sub)
+        else:
+            break
+        srcs = _graphic_paths(sub)
+        if name == "minipage" and not srcs:
+            rest = rest[:m_env.start()] + rest[m_env.start() + 1:]
+            continue
+        cap_inlines = parse_inlines(cap, macros) if cap else []
+        if srcs:
+            for src in srcs:
+                panels.append({"src": src, "caption": cap_inlines})
+        rest = rest[: (m_sub.start() if use_sub else m_env.start())] + rest[end:]
+    loose = _graphic_paths(rest)
+    images = [p["src"] for p in panels] + loose
+    cap = _caption_at(rest)
     labs = re.findall(r"\\label\{([^}]+)\}", inner)
     if not images and not cap.strip():
         return _raw_block("\\begin{figure}" + inner + "\\end{figure}")
-    block = {"kind": "fig", "images": images, "caption": parse_inlines(cap, macros), "raw_paths": images}
+    caption = parse_inlines(cap, macros) + _loose_notes(_without_caption(rest), macros)
+    block = {"kind": "fig", "images": images, "caption": caption, "raw_paths": images}
+    if panels:
+        block["panels"] = panels
     if labs:
         block["label"] = labs[0]
     return block

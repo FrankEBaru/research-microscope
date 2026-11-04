@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Paper } from "@/lib/types";
 import { ProvChip } from "../Bits";
 import { crops, figureCandidates, figureUrl, paperKey } from "@/lib/backend.js";
@@ -63,6 +63,25 @@ export function FigImg({ paper, name, alt, eager }: { paper: Paper; name: string
         }}
       />
     </span>
+  );
+}
+
+/** La figura grande, en el mismo orden. Clic afuera o Escape la cierra. */
+export function FigZoom({ open, onClose, children }: { open: boolean; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div className="fig-zoom" role="dialog" aria-modal="true" aria-label="Figure" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="fig-zoom-sheet" onClick={(e) => e.stopPropagation()}>
+        <button type="button" className="fig-zoom-x press" onClick={(e) => { e.stopPropagation(); onClose(); }}>Close</button>
+        {children}
+      </div>
+    </div>
   );
 }
 

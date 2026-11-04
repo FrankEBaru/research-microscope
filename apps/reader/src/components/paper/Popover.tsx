@@ -4,6 +4,7 @@ import { Tex, Rich, Sym } from "@/lib/math";
 import { ProvChip } from "../Bits";
 import { Cap, Prov } from "@/components/ui";
 import { UNDEFINED, equationHover, symbolHover, tableHover } from "@/lib/hover.js";
+import { briefRef } from "@/lib/cite.js";
 import { resolveCite } from "@/lib/path.js";
 import { Inlines } from "../Paper";
 import { Ctx, plainOf } from "./inline";
@@ -12,7 +13,7 @@ import { FigImg } from "./Figures";
 
 export type PopState = { key: string; rect: DOMRect } | null;
 
-export default function Popover({ pop, paper, model, content, core, pack, onOpen }: { pop: NonNullable<PopState>; paper: Paper; model: any; content: any; core?: boolean; pack?: any; onOpen?: (id: string, why: string) => void }) {
+export default function Popover({ pop, paper, model, content, core, pack, titleOf, onOpen }: { pop: NonNullable<PopState>; paper: Paper; model: any; content: any; core?: boolean; pack?: any; titleOf?: (id: string) => string; onOpen?: (id: string, why: string) => void }) {
   const [kind, ...r] = pop.key.split("|");
   const ctx: Ctx = { syms: model.syms, refIndex: model.refIndex, counter: { n: 0 } };
   let body: any = null;
@@ -22,12 +23,12 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
     body = (
       <>
         {keys.map((k) => {
-          const raw = paper.refLabels?.[k] ?? model.refIndex[k];
-          const n = raw != null && String(raw).length <= 48 ? raw : k;
+          const brief = briefRef(paper.refs[k] || "");
+          const n = paper.refLabels?.[k] ?? model.refIndex[k] ?? k;
           return (
             <div key={k}>
-              <Cap>{`Reference ${n}`}</Cap>
-              <p className="pop-ref">{paper.refs[k] || "reference not found in the paper"}</p>
+              <Cap>{brief.who || `Reference ${n}`}</Cap>
+              <p className="pop-ref">{brief.title || "reference not found in the paper"}</p>
             </div>
           );
         })}
@@ -48,7 +49,7 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
     const card = (pack?.notes || []).find((n: any) => n.block_id === r[0]);
     const art = (pack?.artifacts || []).find((n: any) => n.block_id === r[0]);
     if (card || art) {
-      body = <GapView note={card} art={art} self={String(paper.corpusid ?? "")} onOpen={onOpen} />;
+      body = <GapView note={card} art={art} host={plainOf((paper.blocks || []).find((b) => b.id === r[0])?.inlines || [])} self={String(paper.corpusid ?? "")} titleOf={titleOf} onOpen={onOpen} />;
     } else {
     const hit = equationHover(paper.blocks, r[0]);
     const lines = hit.shown?.length ? hit.shown : hit.texts;
@@ -57,7 +58,7 @@ export default function Popover({ pop, paper, model, content, core, pack, onOpen
   } else if (kind === "s" && core && pack) {
     const host = (paper.blocks || []).find((b) => b.id === r[0]);
     const card = (pack.notes || []).find((n: any) => n.block_id === r[0] && n.sent_index === +r[1] && !(host && repeatsBlock(n, host)));
-    if (card) body = <GapView note={card} self={String(paper.corpusid ?? "")} onOpen={onOpen} />;
+    if (card) body = <GapView note={card} host={plainOf((paper.blocks || []).find((b) => b.id === r[0])?.inlines || [])} self={String(paper.corpusid ?? "")} titleOf={titleOf} onOpen={onOpen} />;
   } else if (kind === "y") {
     const s = content.attention.symbols.find((s: any) => s.id === r[0]);
     body = (
