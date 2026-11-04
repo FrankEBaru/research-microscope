@@ -13,11 +13,14 @@ mkdir -p "$OUT"
 
 src="${RRM_LIVEART_BUNDLE:-}"
 if [[ -z "$src" ]]; then
-  for dir in "$ROOT/../research-microscope-compass" "$ROOT/../wt-compass-98" "${HOME:-}/projects/hackaton/research-microscope-compass"; do
-    if [[ -f "$dir/datos/offline/rrm96-widgets/bundle.json" ]]; then
-      src="$dir/datos/offline/rrm96-widgets/bundle.json"
-      break
-    fi
+  # Canonical bundle (RRM-96 + RRM-99) first, then the RRM-96 one.
+  for rel in datos/offline/widgets/bundle.json datos/offline/rrm96-widgets/bundle.json; do
+    for dir in "$ROOT/../research-microscope-compass" "${HOME:-}/projects/hackaton/research-microscope-compass" "${HOME:-}/projects/hackaton/wt-compass-95"; do
+      if [[ -f "$dir/$rel" ]]; then
+        src="$dir/$rel"
+        break 2
+      fi
+    done
   done
 fi
 

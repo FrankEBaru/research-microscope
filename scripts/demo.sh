@@ -35,6 +35,8 @@ if ss -ltn 2>/dev/null | grep -q ":${PORT} "; then
 fi
 
 export RRM_FEATURES=core RRM_GROUP_NAMES=1 RRM_LICENSE_GATE=off RRM_OCR_MAX=0 RRM_PANORAMA_MODE=sim RRM_SAM=off
+# Integración RRM-97..101: análisis de paper v2 (RRM-99, precalculado en rrm-data:/analysis/v2) y top 3 (RRM-97).
+export RRM_ANALYSIS=v2 RRM_PREPARE_TOP=3 NEXT_PUBLIC_RRM_PREPARE_TOP=3
 unset RRM_DEMO_KEEP_WARM
 
 UI_PID=""
