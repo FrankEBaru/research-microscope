@@ -93,6 +93,10 @@ def answer(rows, text, *, ids=None, root=None, encode=None, stage="todo", vector
     from rrm.reader.phrases import store_progress
     from rrm.reader.similar import rank_similar
 
+    from rrm.reader.metacall import raw_dump_on, take_raw
+
+    if raw_dump_on():
+        take_raw()
     hits, matched = rank_similar(rows, text, encode, vectors=vectors) if (text or "").strip() else ([], 0)
     skip = stage == "frases"
     parts, note, meta = review(text, hits) if hits and not skip else ({part: [] for part in PARTS}, "", None)
@@ -104,7 +108,7 @@ def answer(rows, text, *, ids=None, root=None, encode=None, stage="todo", vector
         key = row.get("paper")
         if key not in seen:
             seen.append(key)
-    return {
+    out = {
         "extracts": hits,
         "papers": len(seen),
         "line": "",
@@ -115,3 +119,6 @@ def answer(rows, text, *, ids=None, root=None, encode=None, stage="todo", vector
         "meta": meta,
         "store": store_progress(root, ids if ids is not None else []),
     }
+    if raw_dump_on():
+        out["raw"] = take_raw()
+    return out

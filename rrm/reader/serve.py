@@ -121,6 +121,8 @@ if modal.is_local():
         "RRM_PASSAGES": os.environ.get("RRM_PASSAGES", ""),
         # Demo personal: off muestra el texto completo. on/1 vuelve a la compuerta.
         "RRM_LICENSE_GATE": os.environ.get("RRM_LICENSE_GATE", "off"),
+        # Vacío: /ask y /notes no adjuntan el prompt. Una ruta guarda el crudo en la respuesta.
+        "RRM_RAW_DUMP": os.environ.get("RRM_RAW_DUMP", ""),
     })
 else:
     secret = modal.Secret.from_dict({})
@@ -1083,10 +1085,17 @@ def api():
             if paper.get("corpusid") is None:
                 paper = dict(paper)
                 paper["corpusid"] = cid
+            from rrm.reader.metacall import raw_dump_on, take_raw
             from rrm.reader.notes import answer_notes
             from rrm.reader.phrases import read_phrases
 
-            return answer_notes(paper, read_phrases(folder))
+            if raw_dump_on():
+                take_raw()
+            body = answer_notes(paper, read_phrases(folder))
+            if raw_dump_on() and isinstance(body, dict):
+                body = dict(body)
+                body["raw"] = take_raw()
+            return body
         except Exception:
             return empty
 
