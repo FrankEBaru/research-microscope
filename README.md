@@ -37,12 +37,12 @@ Summaries make reading faster, but they don't build understanding. Research Micr
 
 | | |
 |---|---|
-| <img src="docs/img/paper-margin.jpg" alt="Paper view with margin notes and a live figure" width="420"> | <img src="docs/img/live-figure.jpg" alt="Live figure for positional encoding" width="420"> |
+| <img src="docs/img/paper-margin.jpg" alt="Paper view: the symbol d_k lit up, with margin notes" width="420"> | <img src="docs/img/live-figure.jpg" alt="Live figure: why attention divides by the square root of d_k" width="420"> |
 | **The paper.** Symbols light up wherever they appear. Margin notes have three clearly labelled layers: *From this paper*, *From other papers*, and *AI-generated*. | **Live figures.** An equation becomes a small interactive instrument, written by Muse Wonder under a strict contract and checked before it is shown. |
 | <img src="docs/img/explain.jpg" alt="Explain: review of the reader's explanation" width="420"> | <img src="docs/img/engine.jpg" alt="The widget engine: equation to code to live figure" width="420"> |
 | **Explain.** Write what you understood. Each claim comes back as *Matches*, *Contradicts*, *No support*, or *You missed*, with a quote from the paper that was checked against its text. | **The engine.** Equation → `draw()` code → a verified, sandboxed widget. |
 
-<sub>Screenshots show *Attention Is All You Need* (Vaswani et al., 2017, [arXiv:1706.03762](https://arxiv.org/abs/1706.03762)). Google grants permission to reproduce the paper's tables and figures for scholarly use with attribution. Paper data: [Semantic Scholar](https://www.semanticscholar.org/).</sub>
+<sub>Images are frames from the demo video and show *Attention Is All You Need* (Vaswani et al., 2017, [arXiv:1706.03762](https://arxiv.org/abs/1706.03762)). Google grants permission to reproduce the paper's tables and figures for scholarly use with attribution. Paper data: [Semantic Scholar](https://www.semanticscholar.org/).</sub>
 
 ## How it works
 
