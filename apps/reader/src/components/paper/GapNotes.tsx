@@ -158,7 +158,13 @@ export function notesAt(id: string, pack: any, local: any) {
 }
 
 function cleanNote(s: string) {
-  return String(s || "").replace(/\[cite\]/gi, "").replace(/\s+/g, " ").trim();
+  // Raw BibTeX keys left by the parser ("[graves2013generating]", "[a, b]") are not for readers.
+  return String(s || "")
+    .replace(/\[cite\]/gi, "")
+    .replace(/\s*\[(?:[A-Za-z][\w:-]*\d{2,4}[\w:-]*)(?:\s*[,;]\s*[A-Za-z][\w:-]*\d{2,4}[\w:-]*)*\]/g, "")
+    .replace(/\s+([,.;:])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function GapView({ note, art, self, host = "", titleOf, onOpen }: { note?: any; art?: any; self: string; host?: string; titleOf?: (id: string) => string; onOpen?: (id: string, why: string) => void }) {
@@ -172,6 +178,41 @@ export function GapView({ note, art, self, host = "", titleOf, onOpen }: { note?
   const otherTitle = otherId ? (titleOf?.(otherId) || "") : "";
   const supuesto = note?.kind === "supuesto";
   const generated = note ? note.generated !== false && !supuesto : Boolean(drawn);
+  // RRM-99 analysis v2: three labeled layers. AI text, quotes from this paper, passages from other papers.
+  const v2 = note?.v2;
+  if (v2 && (v2.ai?.text || v2.paper?.quotes?.length || v2.others?.passages?.length)) {
+    const ai = cleanNote(v2.ai?.text || "");
+    const quotes = (v2.paper?.quotes || []).filter((q: any) => q?.text && !samePhrase(cleanNote(q.text), host)).slice(0, 2);
+    const others = (v2.others?.passages || []).filter((x: any) => x?.text).slice(0, 2);
+    return (
+      <aside className="gap-card is-ai is-v2">
+        {ai && (
+          <div className="gl gl--ai">
+            <Prov kind="simulado" text={v2.ai?.label || "AI-generated"} />
+            <p><Rich text={ai} /></p>
+          </div>
+        )}
+        {quotes.length > 0 && (
+          <div className="gl gl--paper">
+            <Prov kind="paper" text={v2.paper?.label || "From this paper"} />
+            {quotes.map((q: any, i: number) => <blockquote key={i}><Rich text={cleanNote(q.text)} /></blockquote>)}
+          </div>
+        )}
+        {others.length > 0 && (
+          <div className="gl gl--others">
+            <Prov kind="paper" text={v2.others?.label || "From other papers"} />
+            {others.map((x: any, i: number) => (
+              <blockquote key={i}>
+                <Rich text={cleanNote(x.text)} />
+                {x.title && <footer>{x.url ? <a href={x.url} target="_blank" rel="noreferrer">{x.title}</a> : x.title}</footer>}
+              </blockquote>
+            ))}
+          </div>
+        )}
+        {drawn && <ArtifactView drawn={drawn} />}
+      </aside>
+    );
+  }
   return (
     <aside className={`gap-card${supuesto ? " is-paper" : generated ? " is-ai" : ""}`}>
       {supuesto && showBody && <Prov kind="paper" text="paper phrase" />}

@@ -407,3 +407,11 @@
 @media (prefers-reduced-motion: reduce) {
   .folio .sn, .folio .popover, .folio .blk.flash, .folio .sent.flash { animation: none; }
 }
+/* RRM-99 v2 notes: three labeled layers (AI, this paper, other papers). */
+.folio .gap-card.is-v2 { display: grid; gap: 10px; border-left-color: var(--prov-generated); }
+.folio .gap-card .gl { display: grid; gap: 4px; }
+.folio .gap-card .gl p { margin: 0; font: 400 14.5px/1.5 var(--font-read); color: var(--ink); text-align: left; hyphens: manual; }
+.folio .gap-card .gl blockquote { margin: 0; padding-left: 10px; border-left: 2px solid var(--rule); font: italic 400 13.5px/1.5 var(--font-read); color: var(--ink-2); text-align: left; hyphens: manual; }
+.folio .gap-card .gl blockquote footer { margin-top: 3px; font: 500 12px/1.35 var(--font-ui); font-style: normal; color: var(--ink-3); }
+.folio .gap-card .gl blockquote footer a { color: var(--ink-3); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--rule-2); }
+.folio .gap-card .gl--others blockquote { border-left-color: var(--accent-line); }
