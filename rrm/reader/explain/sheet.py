@@ -16,7 +16,7 @@ from rrm.reader.explain import llm
 from rrm.reader.explain.retrieve import passage_text
 from rrm.reader.explain.section import numbered, ptr_of, section_title, section_units
 
-VERSION = "s4"
+VERSION = "s3"
 MAX_UNITS = 70
 
 _POINTS = (
@@ -36,8 +36,6 @@ _FILTER = (
     "Keep a passage only if it helps a reader understand a key point beyond what the section already says: "
     "it gives intuition, a derivation, an example, a consequence, or a clear restatement from another angle. "
     "Drop passages that only repeat the point, that are about something else, that are boilerplate, or that would confuse. "
-    "Also drop passages from a different setting (graphs, images, code data, another task) unless they explain this exact idea, "
-    "and passages that need the rest of their own paper to make sense. When in doubt, drop it: zero passages is a fine answer. "
     "For each kept passage give its id, the id of the key point it helps, what it adds (one of intuition, derivation, example, consequence, restatement), "
     "and `why`: at most 20 simple words on how it helps. Keep at most 2 passages per key point and at most 8 in total. "
     "Copy ids exactly."
