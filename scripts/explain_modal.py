@@ -61,6 +61,7 @@ def traces(sections: str = "") -> str:
     import time
 
     os.environ["RRM_EXPLAIN_DIR"] = "/exp/traces/store"
+    os.environ["RRM_EXPLAIN_CACHE"] = "/exp/cache"  # mismas llamadas que la ronda 3: no se pagan dos veces
     from rrm.reader.explain import service
     from rrm.reader.explain.retrieve import passage_base
     from rrm.reader.pipeline import load_paper
