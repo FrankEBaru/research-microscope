@@ -441,6 +441,7 @@ PLANNER_SYS = (
     "You plan the margin notes for one paper. Readers are master's students. Pick the spots where the author takes something for granted "
     "and the reader gets stuck: a derivation step skipped ('it is easy to see'), an equation whose reading is not obvious, an assumption, "
     "a term used as known, a surprising claim that needs the why. Prefer the core method over results tables and related work.\n"
+    "Anchor each note where the paper develops or uses the idea (method, background, analysis), not where the abstract or introduction only previews it; if a question arises in the introduction but is explained later, anchor it at the later spot. "
     "Return at most {n} items, most important first. anchor must be a pointer from the text (sentence like b25#2 or equation like b26). "
     "explain_idea: one line on HOW to explain it. passages: ids (from the candidates' passages) that would help, or []. "
     "query: a search query (English, specific) to find more supporting passages in other papers.\n" + LANG
@@ -898,6 +899,7 @@ PLANNER6_SYS = (
     "and (b) programmatic candidate spots. Choose the {n} spots that matter most for understanding the core method: skipped steps, "
     "equations whose reading is not obvious, assumptions, terms used as known, claims whose reason is missing. Merge duplicates. "
     "Prefer the method over results tables and related work; cover the whole paper, not only its first section.\n"
+    "Anchor each note where the paper develops or uses the idea (method, background, analysis), not where the abstract or introduction only previews it; if a question arises in the introduction but is explained later, anchor it at the later spot. "
     "anchor: a pointer (b25#2 or b26). question: the reader's question the note must answer. explain_idea: how to explain it. "
     "draft: a 2-sentence textbook answer (used only to search other papers).\n" + LANG
 )
