@@ -64,8 +64,10 @@
 
 .atl-svg .p--f { fill: var(--c); stroke: var(--c); stroke-width: 1.2; }
 .atl-svg .p--h { fill: var(--page); stroke: var(--c); stroke-width: 1.5; }
-.atl-svg .p.is-top { fill: var(--c); stroke: var(--page); stroke-width: 1.6; }
-.atl-svg .p.is-top.p--h { fill: color-mix(in oklab, var(--c) 78%, var(--ink)); }
+/* Top 5: filled only with full text (B.1: fill = full text, ring = abstract only). */
+.atl-svg .p.is-top.p--f { fill: var(--c); stroke: var(--page); stroke-width: 1.6; }
+.atl-svg .p.is-top.p--h { fill: var(--page); stroke: var(--c); stroke-width: 2.2; }
+.p-ord.is-h { fill: color-mix(in oklab, var(--c) 82%, var(--ink)); }
 .atl-svg .p.is-vis { fill: var(--c); stroke: var(--ink); stroke-width: 1.8; }
 .atl-svg .p.is-cur { fill: var(--ink); stroke: var(--page); stroke-width: 2; }
 .atl-svg .p.is-far, .atl-svg .p.is-retracted { opacity: .5; }

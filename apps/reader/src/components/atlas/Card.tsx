@@ -43,8 +43,9 @@ export function phaseLabel(status: string | undefined) {
 }
 
 export default function Card({
-  point, status, phase, linked, path, license, gated, readN, onScan, onRead, onPick, onOpen,
+  point, status, phase, linked, path, license, gated, readN, absOnly, onScan, onRead, onPick, onOpen,
 }: {
+  absOnly?: boolean;
   point: any;
   status?: string;
   phase?: string;
@@ -105,7 +106,7 @@ export default function Card({
       {point.retracted ? <p className="card-flag">Retracted</p> : null}
       <div className="card-act">
         <Button variant="line" onClick={() => onScan?.(point.id)}>Scan</Button>
-        <Button variant="primary" onClick={() => onRead?.(point.id)}>{gated ? "Open" : "Read in full"}</Button>
+        <Button variant="primary" onClick={() => onRead?.(point.id)}>{gated ? "Open" : absOnly ? "Open abstract" : "Read in full"}</Button>
       </div>
       {rows.length ? (
         <>
@@ -188,11 +189,14 @@ export function AtlasCard({
     return <Card point={null} path={path} onPick={onPick} onOpen={onOpen} />;
   }
   const state = states?.[point.id];
+  // RRM-95: say it before the click. abstract_only/missing used to read "Ready".
+  const absOnly = state?.status === "abstract_only" || state?.status === "missing";
   return (
     <Card
       point={point}
       status={statusOf(point.id, here, suggest, visited)}
-      phase={phaseLabel(state?.status)}
+      phase={absOnly ? "Abstract only" : phaseLabel(state?.status)}
+      absOnly={absOnly}
       license={state?.license || ""}
       gated={Boolean(state?.gated)}
       linked={linkedOf(point, by)}

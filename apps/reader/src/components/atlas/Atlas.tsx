@@ -125,7 +125,7 @@ const Badges = memo(function Badges({ points }: { points: Pt[] }) {
   return (
     <g className="ords">
       {points.filter((p) => p.order && p.order <= 5).map((point) => (
-        <text key={point.id} className="p-ord" x={point.x} y={point.y + 3.6} textAnchor="middle" style={{ animationDelay: `${Math.round((point.x / ATLAS_W) * 620) + 260}ms` }}>{point.order}</text>
+        <text key={point.id} className={`p-ord${point.full ? "" : " is-h"}`} x={point.x} y={point.y + 3.6} textAnchor="middle" style={{ ["--c" as string]: point.color, animationDelay: `${Math.round((point.x / ATLAS_W) * 620) + 260}ms` } as CSSProperties}>{point.order}</text>
       ))}
     </g>
   );
