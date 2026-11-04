@@ -399,6 +399,13 @@ export function status(ids, q) {
 }
 
 /** front=true moves those ids ahead of the background top-10. The UI does not wait on the parse. */
+/** RRM-97: how many burst papers the reader prepares on its own (default 3, 1..10). Same rule as RRM_PREPARE_TOP on the server. */
+export function prepareTop(raw = process.env.NEXT_PUBLIC_RRM_PREPARE_TOP) {
+  const n = Number.parseInt(String(raw ?? "").trim(), 10);
+  if (!Number.isFinite(n)) return 3;
+  return Math.max(1, Math.min(10, n));
+}
+
 export function prepare(ids, front = false) {
   return request("prepare", `${READER}/prepare`, {
     method: "POST",

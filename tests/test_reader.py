@@ -1387,7 +1387,7 @@ def test_queue_top_writes_queued_before_spawn_and_survives_failure(tmp_path: Pat
         assert [load_meta(tmp_path / str(i))["status"] for i in ids] == ["queued"] * len(ids)
 
     got = queue_top(list(range(1, 12)) + ["nope"], tmp_path, spawn=spawn, commit=commit)
-    assert got == list(range(1, 11))
+    assert got == [1, 2, 3]  # RRM-97: only the top 3 are prepared by default
     assert log == ["commit", "spawn"]
 
     done = tmp_path / "3"
@@ -1438,12 +1438,29 @@ def test_detach_queue_notes_top_ids_and_defers_the_volume_write(tmp_path: Path):
         held.append(work)
 
     got = detach_queue(list(range(1, 12)), tmp_path / "papers", spawn=spawn, commit=commit, note=note, start=start)
-    assert got == list(range(1, 11))
-    assert log == [("note", list(range(1, 11))), "start"]
+    assert got == [1, 2, 3]
+    assert log == [("note", [1, 2, 3]), "start"]
     assert held
     held[0]()
-    assert log == [("note", list(range(1, 11))), "start", "commit", ("spawn", list(range(1, 11)))]
+    assert log == [("note", [1, 2, 3]), "start", "commit", ("spawn", [1, 2, 3])]
+    assert load_meta(tmp_path / "papers" / "4") is None
     assert load_meta(tmp_path / "papers" / "1")["status"] == "queued"
+
+
+def test_prepare_top_defaults_to_three_and_reads_the_env(monkeypatch):
+    """RRM-97: the reader prepares the top 3 of a burst unless RRM_PREPARE_TOP says otherwise (1..10)."""
+    from rrm.search.prefetch import prepare_top, top_ids
+
+    assert prepare_top({}) == 3
+    assert prepare_top({"RRM_PREPARE_TOP": "5"}) == 5
+    assert prepare_top({"RRM_PREPARE_TOP": "0"}) == 1
+    assert prepare_top({"RRM_PREPARE_TOP": "50"}) == 10
+    assert prepare_top({"RRM_PREPARE_TOP": "many"}) == 3
+    monkeypatch.delenv("RRM_PREPARE_TOP", raising=False)
+    assert top_ids(list(range(1, 12))) == [1, 2, 3]
+    monkeypatch.setenv("RRM_PREPARE_TOP", "10")
+    assert top_ids(list(range(1, 12))) == list(range(1, 11))
+    assert top_ids(list(range(1, 12)), limit=2) == [1, 2]
 
 
 def test_parser_unwraps_font_switches_rules_and_multirow():
