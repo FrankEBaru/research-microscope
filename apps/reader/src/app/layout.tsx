@@ -5,7 +5,7 @@ import "katex/dist/katex.min.css";
 import "./globals.css";
 import "@/styles/atlas.css";
 
-export const metadata = { title: "Reading Microscope", description: "A paper reader that zooms from a question to the source.", icons: { icon: "/brand/favicon.svg" } };
+export const metadata = { title: "Reading Microscope", description: "A paper reader that zooms from a question to the source.", icons: { icon: "/brand/favicon.svg", apple: "/brand/rm-book-app-512.png" } };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

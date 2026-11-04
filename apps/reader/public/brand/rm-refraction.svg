@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Reading Microscope">
+  <rect x="2" y="13" width="17" height="7" rx="3.5" fill="var(--rm-ink, #1d1a16)"/>
+  <rect x="29" y="28" width="17" height="7" rx="3.5" fill="var(--rm-ink, #1d1a16)"/>
+  <path fill-rule="evenodd" d="M24 3 C34.5 12 34.5 36 24 45 C13.5 36 13.5 12 24 3 Z M17.5 13 L21.5 13 L30.5 28 L30.5 35 L26.5 35 L17.5 20 Z" fill="var(--rm-acc, #0b6782)"/>
+</svg>

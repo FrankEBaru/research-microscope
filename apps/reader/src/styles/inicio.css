@@ -22,14 +22,17 @@
   content: ""; position: absolute; width: 6px; height: 1.8px; right: -4px; bottom: 1px;
   background: currentColor; transform: rotate(45deg); border-radius: 1px;
 }
-/* RRM-102: logo (BrandMark). Ring in ink, line in accent; optional one-time draw. */
-.wm-logo { flex: none; display: block; overflow: visible; }
-.wm-logo .wm-ring { stroke: currentColor; }
-.wm-logo .wm-line { stroke: var(--accent); }
-.wm-logo.is-anim .wm-ring, .wm-logo.is-anim .wm-line { stroke-dasharray: 1 1.1; stroke-dashoffset: 1.01; animation: wm-draw .6s var(--ease-out) forwards; }
-.wm-logo.is-anim .wm-line { animation-duration: .9s; animation-delay: .35s; animation-timing-function: cubic-bezier(.45,0,.2,1); }
-@keyframes wm-draw { to { stroke-dashoffset: 0; } }
-@media (prefers-reduced-motion: reduce) { .wm-logo.is-anim .wm-ring, .wm-logo.is-anim .wm-line { animation: none; stroke-dashoffset: 0; } }
+/* RRM-102: logo (BrandMark): book pages in ink, spine lens in accent; optional one-time opening. */
+.wm-logo { flex: none; display: block; }
+.wm-logo .wm-pl, .wm-logo .wm-pr { fill: currentColor; }
+.wm-logo .wm-lens { fill: var(--accent); }
+.wm-logo.is-anim path { transform-box: fill-box; }
+.wm-logo.is-anim .wm-lens { transform-origin: 50% 50%; animation: wm-tall .5s var(--ease-emph) both; }
+.wm-logo.is-anim .wm-pl { transform-origin: 100% 50%; animation: wm-open .75s var(--ease-emph) .3s both; }
+.wm-logo.is-anim .wm-pr { transform-origin: 0% 50%; animation: wm-open .75s var(--ease-emph) .3s both; }
+@keyframes wm-tall { from { transform: scaleY(0); opacity: 0; } 30% { opacity: 1; } to { transform: scaleY(1); } }
+@keyframes wm-open { from { transform: scaleX(0); opacity: 0; } 25% { opacity: 1; } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .wm-logo.is-anim path { animation: none; } }
 .crumbs {
   display: flex; align-items: center; justify-content: center; gap: 10px; min-width: 0;
   font-size: 13.5px; color: var(--ink-2); white-space: nowrap;
