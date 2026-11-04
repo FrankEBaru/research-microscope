@@ -74,4 +74,6 @@ cd "$ROOT/apps/reader"
 if [[ ! -d node_modules ]]; then
   npm ci
 fi
+# Misma razón que live.sh: no reutilizar un bundle armado con otro token.
+rm -rf .next
 exec npm run dev

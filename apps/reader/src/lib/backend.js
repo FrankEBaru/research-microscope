@@ -252,7 +252,12 @@ export function explain(err) {
   const msg = String(err?.message || "");
   if (msg.includes("consulta no grabada")) return "This question is not in the local data.";
   const k = err?.kind;
-  if (k === "auth") return "The server rejected the demo token (401). Check NEXT_PUBLIC_RRM_DEMO_TOKEN.";
+  if (k === "auth") {
+    const why = String(err?.message || "");
+    if (why === "missing") return "The server has no demo token (401). Start the app again with bash scripts/run.sh.";
+    if (why === "empty" || why === "mismatch") return "This page and the server do not share a demo token (401). Stop the app and start it again with bash scripts/run.sh.";
+    return "The server rejected the demo token (401). Stop the app and start it again with bash scripts/run.sh.";
+  }
   if (k === "origin") return "The server does not accept this origin (403). Add it to the allowed origins.";
   if (k === "rate") return "The server is getting too many requests (429). Wait a few seconds and try again.";
   if (k === "server") {

@@ -222,6 +222,9 @@ ensure_node() {
 
 start_ui() {
   cd "$ROOT/apps/reader"
+  # La caché de Next conserva el token de la sesión anterior y el servidor
+  # responde 401. Se borra aquí, después de exportar NEXT_PUBLIC_*.
+  rm -rf .next
   echo ""
   echo "Ábrelo en el navegador de Windows: http://localhost:3000"
   echo "Ctrl+C apaga la UI y corre modal app stop."

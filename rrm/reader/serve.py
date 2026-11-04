@@ -22,7 +22,7 @@ from pathlib import Path
 
 import modal
 
-from rrm.demo_guard import add_error_json, check, cors_kwargs
+from rrm.demo_guard import add_error_json, check, cors_kwargs, failure
 from rrm.demo_warm import scaledown_window
 from rrm.features import core_mode, features_mode
 from rrm.panorama import docs_for, parse_request, run as run_panorama
@@ -989,11 +989,12 @@ def api():
     web.add_middleware(CORSMiddleware, **cors_kwargs())
 
     def gate(request: Request, allow_query: bool):
-        code = check(
-            request.headers.get("x-rrm-demo"),
-            request.query_params.get("k") if allow_query else None,
-            request.headers.get("origin"),
-        )
+        header = request.headers.get("x-rrm-demo")
+        query = request.query_params.get("k") if allow_query else None
+        origin = request.headers.get("origin")
+        code = check(header, query, origin)
+        if code == 401:
+            return JSONResponse({"error": failure(header, query) or "mismatch"}, status_code=401)
         if code:
             return Response(status_code=code)
         return None

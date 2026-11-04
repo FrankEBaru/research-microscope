@@ -23,6 +23,10 @@ test("401 no se reintenta y el mensaje no trae token ni URL", async () => {
   const err = await m.status([1]).catch((e) => e);
   assert.equal(err.kind, "auth"); assert.equal(calls.length, 1);
   const msg = m.explain(err); assert.match(msg, /demo token/); assert.ok(!msg.includes("tok-secreto") && !msg.includes("reader.example"));
+  script(reply(401, { error: "mismatch" }));
+  const mismatch = m.explain(await m.status([1]).catch((e) => e));
+  assert.match(mismatch, /do not share a demo token/);
+  assert.ok(!mismatch.includes("tok-secreto"));
 });
 
 test("503 en /status se reintenta y luego responde", async () => {
