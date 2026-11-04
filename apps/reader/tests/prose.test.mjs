@@ -197,3 +197,14 @@ test("RRM-103: \\hdots (FlashAttention §3.1) is a known macro", async () => {
   const { TEX_MACROS } = await import("../src/lib/texcolor.js");
   assert.equal(TEX_MACROS["\\hdots"], "\\ldots");
 });
+
+test("RRM-103: algorithm captions, nested \\IF arguments and layout leftovers", () => {
+  const cap = text(presentInlines([{ t: "text", v: "\\caption{\\small\\label{alg:x}Standard Attention Implementation} \\REQUIRE Matrices" }]));
+  assert.match(cap, /^\s*Standard Attention Implementation Require: Matrices/);
+  const step = presentInlines([{ t: "text", v: "\\IF{$M_{ij} \\neq 0$} Load the block." }]);
+  assert.equal(step.some((n) => n.t === "math" && n.v === "M_{ij} \\neq 0"), true);
+  assert.doesNotMatch(text(step), /\\IF/);
+  const junk = text(presentInlines([{ t: "text", v: "details. \\@startsection{paragraph}{4}{\\z@} {1.5ex \\@plus 0.5ex} {-1em} Next [\\dots] TL;DR *{\\baselineskip} We" }]));
+  assert.doesNotMatch(junk, /paragraph|1\.5ex|baselineskip|\\dots/);
+  assert.match(junk, /\[…\] TL;DR/);
+});
