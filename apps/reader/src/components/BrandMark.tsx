@@ -1,12 +1,13 @@
-/** RRM-102: Reading Microscope mark. An open book whose spine is a biconvex lens.
- * Colors come from tokens (.wm-logo in inicio.css). `animate` opens it once (≈1.05 s); reduced motion shows it still.
- * Standalone files: public/brand/rm-book*.svg. */
+/** RRM-102: Reading Microscope mark (S18, "the R that underlines"). A soft R whose leg runs on as an underline,
+ * with a lens in its eye. Colors come from tokens (.wm-logo in inicio.css). `animate` plays it once: the R appears,
+ * the leg underlines left to right (≈0.75 s) and the lens lights up; reduced motion shows it still.
+ * Standalone files: public/brand/rm-s18*.svg, s18-anim.svg. */
 export default function BrandMark({ size = 22, animate = false }: { size?: number; animate?: boolean }) {
   return (
     <svg className={animate ? "wm-logo is-anim" : "wm-logo"} width={size} height={size} viewBox="0 0 48 48" aria-hidden="true" focusable="false">
-      <path className="wm-pl" d="M20.02 10.60 C15 8.6 9 8.3 2.5 10 V38.5 C9 36.8 15 37.4 21.35 40.60 C17.38 32.68 16.94 19.66 20.02 10.60 Z" />
-      <path className="wm-pr" d="M27.98 10.60 C33 8.6 39 8.3 45.5 10 V38.5 C39 36.8 33 37.4 26.65 40.60 C30.62 32.68 31.06 19.66 27.98 10.60 Z" />
-      <path className="wm-lens" d="M24 7 C30 14.5 30 33.5 24 41 C18 33.5 18 14.5 24 7 Z" />
+      <path className="wm-r" pathLength={1} d="M10 40.5 V8.5 H20.5 A9.25 9.25 0 0 1 20.5 27 H10" />
+      <path className="wm-leg" pathLength={1} d="M20 27.5 C24 33.5 27 40.5 33.5 40.5 H40.5" />
+      <circle className="wm-lens" cx="19.6" cy="17.75" r="3.3" />
     </svg>
   );
 }
