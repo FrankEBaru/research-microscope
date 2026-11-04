@@ -956,3 +956,51 @@ def c6_fusion(paper, brief, retr, cfg=None):
 
 
 CANDIDATES["C6"] = c6_fusion
+
+
+# C7 · C1 + preguntas del lector y HyDE (sin etapa de lector) --------------------------------
+
+PLANNER7_SYS = PLANNER_SYS.replace(
+    "explain_idea: one line on HOW to explain it. passages: ids (from the candidates' passages) that would help, or []. "
+    "query: a search query (English, specific) to find more supporting passages in other papers.\n",
+    "question: the question a master's student would ask at that spot (the note must answer it). explain_idea: one line on HOW to "
+    "explain it. draft: a 2-sentence textbook answer (used only to search other papers).\n",
+)
+
+
+def c7_planner_q(paper, brief, retr, cfg=None):
+    cfg = _cfg(cfg)
+    ix = BriefIndex(brief)
+    cid = brief["paper"]["corpusid"]
+    t0 = time.perf_counter()
+    wide = wide_pass(ix)
+    hits_by = {}
+    if cfg["passages"]:
+        res = retr.search([_job(_query(ix, c["ptr"], "ctx"), cid, cfg["k"]) for c in wide])
+        hits_by = {c["ptr"]: _merge(h, k=cfg["k"], min_cos=cfg["min_cos"]) for c, h in zip(wide, res)}
+    lines = [essentials(ix), "", "SECTIONS", section_map(ix), "", "CANDIDATE SPOTS (programmatic)"]
+    for c in wide:
+        lines.append(f"* {c['ptr']} [{c['kind']}; {'; '.join(c['reasons'][:2])}] {ix.text(c['ptr'])[:260]}")
+        if cfg["passages"]:
+            lines += _psg_lines(hits_by.get(c["ptr"]), n=2, chars=160)
+    rec = _ask(cfg, "planner", PLANNER7_SYS.replace("{n}", str(cfg["max_items"])), "\n".join(lines), PLAN6_SCHEMA, name="plan")
+    plan = []
+    for p in (rec.get("json") or {}).get("items") or []:
+        a = norm_ptr(p.get("anchor"))
+        a = a if ix.valid(a) else (a + "#0" if a + "#0" in ix.sents else "")
+        if a and not any(_near_ptr(a, q["anchor"]) for q in plan):
+            plan.append(dict(p, anchor=a))
+    plan = plan[: cfg["max_items"]]
+    if cfg["passages"] and plan:
+        jobs = []
+        for p in plan:
+            jobs.append(_job(p.get("draft") or p.get("question") or ix.text(p["anchor"]), cid, 5))
+            jobs.append(_job(_query(ix, p["anchor"], "ctx"), cid, 5))
+        res = retr.search(jobs)
+        for i, p in enumerate(plan):
+            hits_by[p["anchor"]] = _merge(res[2 * i], res[2 * i + 1], k=6, min_cos=cfg["min_cos"])
+    items, wrecs, arts, arec = write_and_explore(ix, plan, hits_by, cfg, [p["anchor"] for p in plan])
+    return _finish(ix, items, arts, [rec] + wrecs + [arec], t0, {"plan": len(plan), "planner_s": rec.get("wall_s")}, retr)
+
+
+CANDIDATES["C7"] = c7_planner_q
