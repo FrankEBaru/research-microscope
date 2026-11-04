@@ -281,6 +281,7 @@ def build_brief(paper, base_cids=None):
                     "cites": [k for n in _walk(sent) if n.get("t") == "cite" for k in (n.get("keys") or [])],
                     "refs": [str(n.get("target")) for n in _walk(sent) if n.get("t") == "ref" and n.get("target")],
                     "note": _notes_text(sent),
+                    "em": [t for t in (_text(n.get("c"), math=False) for n in sent if isinstance(n, dict) and n.get("t") in ("em", "strong")) if 2 < len(t) < 60],
                 }
                 sents.append(row)
         elif kind == "eq":
@@ -421,6 +422,8 @@ def build_brief(paper, base_cids=None):
             out["note"] = s["note"]
         if s.get("list"):
             out["list"] = True
+        if s.get("em"):
+            out["em"] = s["em"]
         return out
 
     brief = {

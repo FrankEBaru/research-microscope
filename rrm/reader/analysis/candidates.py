@@ -159,9 +159,12 @@ def wide_pass(ix, limit=45):
     """Pasada programática amplia: puntos candidatos con tipo, motivo y puntaje."""
     b = ix.brief
     roles = {s["i"]: s["role"] for s in b["sections"]}
+    bg = False
     for s in b["sections"]:
-        # «Background» / «Preliminaries» define lo que el método da por sabido: pesa como método.
-        if s["role"] == "related" and re.search(r"background|preliminar|hardware|setup|notation", s["title"], re.I):
+        # «Background» / «Preliminaries» (y sus subsecciones) definen lo que el método da por sabido: pesa como método.
+        if s["level"] == 1:
+            bg = bool(re.search(r"background|preliminar|notation", s["title"], re.I))
+        if s["role"] == "related" and (bg or re.search(r"background|preliminar|notation", s["title"], re.I)):
             roles[s["i"]] = "other"
     cands = {}
 
@@ -185,6 +188,11 @@ def wide_pass(ix, limit=45):
         s = ix.sents[c["sid"]]
         add(c["sid"], "note", f"cue:{c['kind']} «{c['match']}»", _CUE_W.get(c["kind"], 0.5) * _ROLE_W.get(roles.get(s["sec"]), 0.5))
     for s in b["sents"]:
+        for term in s.get("em") or []:
+            # Término en cursiva/negrita: el autor lo introduce (o titula el párrafo con él).
+            header = term.endswith(".")
+            w = (0.5 if header else 1.3) * _ROLE_W.get(roles.get(s["sec"]), 0.5)
+            add(s["id"], "note" if header else "definition", f"{'paragraph topic' if header else 'introduces'} «{term[:40]}»", w)
         if s.get("note"):
             add(s["id"], "note", "has footnote", 1.2 * _ROLE_W.get(roles.get(s["sec"]), 0.5))
     for sym in b["symbols"]:
