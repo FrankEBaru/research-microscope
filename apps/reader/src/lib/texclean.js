@@ -2,7 +2,7 @@
 // the stored paper is untouched. `isTexJunk` flags paragraphs that are only layout machinery (ICML/NeurIPS
 // style macros, \iftoggle wrappers) so the reader can skip them.
 
-const DROP_ARG = ["label", "eat", "vspace", "hspace", "vskip", "noalign", "resizebox", "includegraphics", "icmlsetsymbol", "footnotemark"];
+const DROP_ARG = ["footnotetext", "label", "eat", "vspace", "hspace", "vskip", "noalign", "resizebox", "includegraphics", "icmlsetsymbol", "footnotemark"];
 const KEEP_ARG = ["textbf", "textit", "emph", "texttt", "textrm", "textsc", "textsf", "underline", "mbox", "caption", "shortstack"];
 const NAMES = { sysname: "FlashAttention", model: "LLaMA", method: "the method", ours: "ours" };
 
@@ -39,7 +39,17 @@ export function cleanTexText(raw) {
     .replace(/\\ENSURE\b/g, "Ensure:")
     .replace(/\\item\b/g, "•")
     .replace(/\\and\b/g, ",")
-    .replace(/\\textasciitilde\b\s*/g, "~")
+    .replace(/\\textasciitilde(?![A-Za-z])\s*/g, "~")
+    .replace(/\\textasciicircum(?![A-Za-z])\s*/g, "^")
+    .replace(/\\textendash(?![A-Za-z])\s*/g, "–")
+    .replace(/\\textemdash(?![A-Za-z])\s*/g, "—")
+    .replace(/\\textcolor\s*\{[^{}]*\}\s*/g, "")
+    .replace(/\\ding\s*\{\s*55\s*\}/g, "✗")
+    .replace(/\\ding\s*\{\s*51\s*\}/g, "✓")
+    .replace(/\\(?:cmark|checkmark)\b/g, "✓")
+    .replace(/\\xmark\b/g, "✗")
+    .replace(/\{[lcr|]*@\{\\extracolsep\{\\fill\}\}[lcr|\s]*\}/g, "")
+    .replace(/^\s*\\if\b\s*/g, "")
     .replace(/\\(?:newline|cr|linebreak)\b/g, " ")
     .replace(/\\\\(?=\s)/g, " ")
     .replace(/\d*\.?\d+\\(?:textwidth|linewidth|columnwidth)\b/g, "")
@@ -47,6 +57,7 @@ export function cleanTexText(raw) {
     .replace(/\\(sysname|model|method|ours)\b/g, (m, k) => NAMES[k] || k)
     .replace(/\\"([a-z])/g, "$1")
     .replace(/\{\s*\}/g, "")
+    .replace(/\{([✓✗])\}/g, "$1")
     .replace(/[ \t]{2,}/g, " ");
   return s;
 }

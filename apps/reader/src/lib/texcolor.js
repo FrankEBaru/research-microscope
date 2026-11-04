@@ -12,6 +12,11 @@ export const TEX_MACROS = {
   "\\cite": "\\vphantom{#1}",
   "\\bm": "\\boldsymbol{#1}",
   "\\mathbbm": "\\mathbb{#1}",
+  "\\diag": "\\operatorname{diag}",
+  "\\rowsum": "\\operatorname{rowsum}",
+  "\\dropout": "\\operatorname{dropout}",
+  "\\mask": "\\operatorname{mask}",
+  ...Object.fromEntries("ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((c) => [`\\vd${c}`, `\\mathbf{d${c}}`])),
   ...Object.fromEntries("ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((c) => [`\\v${c}`, `\\mathbf{${c}}`])),
 };
 
