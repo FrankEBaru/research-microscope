@@ -65,13 +65,17 @@ const r1 = (x) => Math.round(x * 10) / 10;
   stage("panel");
   const opens = [];
   for (let i = 0; i < 4; i++) {
-    await page.evaluate(() => { window.__o0 = performance.now(); });
+    // Start the clock at the click the page receives (capture phase), not when Playwright sends it.
+    await page.evaluate(() => document.addEventListener("click", (e) => { window.__o0 = e.timeStamp; }, { capture: true, once: true }));
     await page.click(".lv96-hook");
     await page.waitForSelector(".lv96-panel", { timeout: 10000 });
     opens.push(await page.evaluate(() => new Promise((r) => {
       const p = document.querySelector(".lv96-panel");
       const done = () => requestAnimationFrame(() => r(performance.now() - window.__o0));
-      if (p.classList.contains("is-anim")) p.addEventListener("transitionend", done, { once: true }); else done();
+      // The grow animation ends with transitionend; without one (no transform change) fall back after 400 ms.
+      let fired = false;
+      const once = () => { if (!fired) { fired = true; done(); } };
+      if (p.classList.contains("is-anim")) { p.addEventListener("transitionend", once, { once: true }); setTimeout(once, 400); } else once();
     })));
     await page.waitForTimeout(1500);
     if (i === 0) {
