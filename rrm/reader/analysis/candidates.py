@@ -931,6 +931,14 @@ def c6_fusion(paper, brief, retr, cfg=None):
     for st in sorted(stuck, key=lambda x: x.get("priority", 3)):
         lines.append(f"* {st['anchor']} (p{st.get('priority', 3)}) {st['question']} — «{ix.text(st['anchor'])[:200]}»")
     lines.append("")
+    must = int(cfg.get("must") or 0)
+    if must:
+        # C8: los puntos centrales de la pasada amplia (ecuaciones del método primero) entran salvo que no importen.
+        core = sorted(wide, key=lambda c: (c["kind"] != "equation", -c["score"]))[:must]
+        lines.append("MUST-CONSIDER (central spots of the method: include each one unless it is clearly unimportant)")
+        for c in core:
+            lines.append(f"* {c['ptr']} [{c['kind']}] {ix.text(c['ptr'])[:300]}")
+        lines.append("")
     lines.append("PROGRAMMATIC CANDIDATES")
     for c in wide:
         lines.append(f"* {c['ptr']} [{c['kind']}; {c['reasons'][0]}] {ix.text(c['ptr'])[:200]}")
@@ -1004,3 +1012,13 @@ def c7_planner_q(paper, brief, retr, cfg=None):
 
 
 CANDIDATES["C7"] = c7_planner_q
+
+
+def c8_fusion_core(paper, brief, retr, cfg=None):
+    """C6 + lista de puntos centrales obligatorios (cobertura de imprescindibles de C1, estilo de C6)."""
+    cfg = dict(cfg or {})
+    cfg.setdefault("must", 6)
+    return c6_fusion(paper, brief, retr, cfg)
+
+
+CANDIDATES["C8"] = c8_fusion_core
