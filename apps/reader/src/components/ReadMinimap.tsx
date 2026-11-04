@@ -39,7 +39,20 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [narrow, setNarrow] = useState(false);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
+  const [focusId, setFocusId] = useState("");
   useEffect(() => { setHost(document.body); }, []);
+  // RRM-97: «See in the atlas» from a citation opens the atlas with that paper selected.
+  useEffect(() => {
+    const onAtlas = (e: Event) => {
+      const id = String((e as CustomEvent).detail?.id || "");
+      if (!id) return;
+      setFocusId(id);
+      setFrom(btn.current);
+      setOpen(true);
+    };
+    window.addEventListener("rrm-atlas", onAtlas);
+    return () => window.removeEventListener("rrm-atlas", onAtlas);
+  }, []);
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 760px)");
     const apply = () => {
@@ -53,22 +66,40 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
   }, []);
   const close = () => {
     setOpen(false);
+    setFocusId("");
     btn.current?.focus();
   };
-  const scan = (id: string) => { onOpen(id); setOpen(false); };
+  const scan = (id: string) => { onOpen(id); setOpen(false); setFocusId(""); };
   const read = (id: string) => {
     source?.onWant?.(id);
     markRead(id);
     onOpen(id);
     setOpen(false);
   };
-  const target = narrow ? slot : host;
-  if (!target) return null;
-  // Portal: main.zoom-in uses transform, which would trap position:fixed for 420ms.
-  // On a narrow screen the button sits in the paper header so it does not cover the page.
-  return createPortal(
-    <>
-      {narrow ? (
+  if (!host) return null;
+  if (narrow && !slot) return null;
+  const overlay = (
+    <Overlay
+      open={open}
+      onClose={close}
+      from={from}
+      query={query}
+      model={model}
+      explore={source?.explore || explore}
+      states={source?.states}
+      hereId={hereId}
+      suggestId={suggested}
+      focusId={focusId}
+      onScan={scan}
+      onRead={read}
+    />
+  );
+  // The overlay is portaled to body: main.zoom-in uses transform, which would trap position:fixed for 420ms.
+  // RRM-95 integration: the desktop minimap button stays in its place under the contents (B.1), not floating
+  // over the margin notes. On a narrow screen the button sits in the paper header.
+  if (narrow) {
+    return createPortal(
+      <>
         <button
           ref={btn}
           type="button"
@@ -76,9 +107,15 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-label="Open the atlas"
-          onClick={() => { setFrom(btn.current); setOpen(true); }}
+          onClick={() => { setFocusId(""); setFrom(btn.current); setOpen(true); }}
         >Atlas</button>
-      ) : (
+        {overlay}
+      </>,
+      slot as HTMLElement,
+    );
+  }
+  return (
+    <>
       <button
         ref={btn}
         type="button"
@@ -86,27 +123,13 @@ export default function ReadMinimap({ papers, edges, layout, onOpen, explore, op
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label="Open the atlas"
-        onClick={() => { setFrom(btn.current); setOpen(true); }}
+        onClick={() => { setFocusId(""); setFrom(btn.current); setOpen(true); }}
       >
         <Atlas model={model} mode="mini" hereId={hereId} suggestId={suggested} />
         <span className="mini-foot">Atlas · {n} explored</span>
         <span className="mini-x" aria-hidden="true"><Icon name="expand" size={13} /></span>
       </button>
-      )}
-      <Overlay
-        open={open}
-        onClose={close}
-        from={from}
-        query={query}
-        model={model}
-        explore={source?.explore || explore}
-        states={source?.states}
-        hereId={hereId}
-        suggestId={suggested}
-        onScan={scan}
-        onRead={read}
-      />
-    </>,
-    host,
+      {createPortal(overlay, host)}
+    </>
   );
 }

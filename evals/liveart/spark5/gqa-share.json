@@ -1,0 +1,130 @@
+{
+ "id": "gqa-share",
+ "claim": {
+  "text": "Grouped-query attention lets several queries share one key and value, so the KV cache grows with the number of KV heads ",
+  "latex": "",
+  "context": "",
+  "arxiv": "2305.13245"
+ },
+ "spec": {
+  "archetype": "blocks",
+  "constraints": [
+   "kv_heads <= q_heads"
+  ],
+  "controls": [
+   {
+    "id": "q_heads",
+    "label": "Query heads",
+    "max": 32.0,
+    "min": 16.0,
+    "step": 16.0,
+    "value": 32.0
+   },
+   {
+    "id": "kv_heads",
+    "label": "KV heads",
+    "max": 2.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 2.0
+   },
+   {
+    "id": "seq_len",
+    "label": "Sequence length",
+    "max": 128.0,
+    "min": 32.0,
+    "step": 32.0,
+    "value": 64.0
+   }
+  ],
+  "derived": [
+   {
+    "formula": "q_heads/kv_heads",
+    "name": "group_size"
+   },
+   {
+    "formula": "kv_heads*seq_len",
+    "name": "kv_cache"
+   }
+  ],
+  "direction": [
+   {
+    "control": "kv_heads",
+    "effect": "up",
+    "readout": "kv_cache"
+   }
+  ],
+  "explain": "Toy illustration for arXiv 2305.13245 grouped-query attention: watch the group_size number to see how many queries share each KV block while kv_cache only follows KV heads.",
+  "questions": [
+   {
+    "q": "Predict what happens to kv_cache if kv_heads is 1?",
+    "why": "Tests cache dependence on KV heads."
+   },
+   {
+    "q": "What is group_size when q_heads is 32 and kv_heads is 1?",
+    "why": "Tests sharing ratio."
+   },
+   {
+    "q": "How does kv_cache change if seq_len is 128?",
+    "why": "Tests sequence scaling."
+   },
+   {
+    "q": "Why does q_heads 16 still share blocks when kv_heads is 2?",
+    "why": "Tests grouping logic."
+   }
+  ],
+  "scale": false,
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "q_heads",
+    "label": "Query heads",
+    "max": 32.0,
+    "min": 16.0,
+    "step": 16.0,
+    "value": 32.0
+   },
+   {
+    "id": "kv_heads",
+    "label": "KV heads",
+    "max": 2.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 2.0
+   },
+   {
+    "id": "seq_len",
+    "label": "Sequence length",
+    "max": 128.0,
+    "min": 32.0,
+    "step": 32.0,
+    "value": 64.0
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var q = state.q_heads; var kv = state.kv_heads; var seq = state.seq_len; function fmt(v) { return Math.round(v * 100) / 100; } ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); ctx.fillStyle = \"#1f2933\"; ctx.font = \"13px sans-serif\"; ctx.textAlign = \"left\"; ctx.textBaseline = \"alphabetic\"; ctx.fillText(\"queries on top share KV blocks below\", 40, 28); var group_size = q / kv; var kv_cache = kv * seq; var i = 0; var j = 0; var cols = 16; var bw = 28; var bh = 20; var gx = 40; var gy = 48; var g = 0; var c0 = \"#1f4b99\"; var c1 = \"#c4512c\"; for (i = 0; i < q; i++) { g = Math.floor(i / group_size); if (g === 0) { ctx.fillStyle = c0; } else { ctx.fillStyle = c1; } var cx = gx + (i % cols) * bw; var cy = gy + Math.floor(i / cols) * (bh + 6); ctx.fillRect(cx, cy, 22, bh); } var kx = 40; var ky = 170; var maxW = 520; var kw = seq * 4; if (kw > maxW) { kw = maxW; } for (j = 0; j < kv; j++) { if (j === 0) { ctx.fillStyle = c0; } else { ctx.fillStyle = c1; } var ky2 = ky + j * 52; ctx.fillRect(kx, ky2, kw, 34); ctx.fillStyle = \"#1f2933\"; ctx.strokeStyle = \"#1f2933\"; ctx.lineWidth = 1; ctx.strokeRect(kx, ky2, kw, 34); ctx.beginPath(); ctx.moveTo(gx + 40, gy + 50); ctx.lineTo(kx + 20, ky2 + 17); ctx.stroke(); ctx.beginPath(); ctx.moveTo(gx + 440, gy + 50); ctx.lineTo(kx + kw - 20, ky2 + 17); ctx.stroke(); } ctx.fillStyle = \"#1f2933\"; ctx.fillText(\"group_size = \" + fmt(group_size), 40, 310); ctx.fillText(\"kv_cache = \" + fmt(kv_cache), 240, 310); ctx.fillText(\"not to scale\", 440, 310); }",
+  "explain": "Toy illustration for arXiv 2305.13245 grouped-query attention: watch the group_size number to see how many queries share each KV block while kv_cache only follows KV heads.",
+  "id": "gqa-share",
+  "questions": [
+   {
+    "q": "Predict what happens to kv_cache if kv_heads is 1?",
+    "why": "Tests cache dependence on KV heads."
+   },
+   {
+    "q": "What is group_size when q_heads is 32 and kv_heads is 1?",
+    "why": "Tests sharing ratio."
+   },
+   {
+    "q": "How does kv_cache change if seq_len is 128?",
+    "why": "Tests sequence scaling."
+   },
+   {
+    "q": "Why does q_heads 16 still share blocks when kv_heads is 2?",
+    "why": "Tests grouping logic."
+   }
+  ],
+  "title": "Queries comparten bloques KV",
+  "topic": "gqa"
+ }
+}

@@ -7,7 +7,7 @@ import PaperView, { plainOf } from "./Paper";
 import MapView from "./MapView";
 import Panorama from "./Panorama";
 import { modelGrowth, tokenGrowth } from "@/lib/scaling.js";
-import { burst, curatedContent, curatedPaper, explain, groupNames, keepOpened, labels as fetchLabels, liveEnabled, paperKey, paper as fetchPaper, prepare, recordedQueries, settled, status as fetchStatus, subtopics as fetchSubtopics, warm } from "@/lib/backend.js";
+import { burst, curatedContent, prepareTop, curatedPaper, explain, groupNames, keepOpened, labels as fetchLabels, liveEnabled, paperKey, paper as fetchPaper, prepare, recordedQueries, settled, status as fetchStatus, subtopics as fetchSubtopics, warm } from "@/lib/backend.js";
 import { classify, storageFault } from "@/lib/faults.js";
 import { coreMode } from "@/lib/features.js";
 import { applyGroupNames, groupPacks, mapPapers, pinPoint } from "@/lib/layout.js";
@@ -18,6 +18,8 @@ import { normalizeQuestion, phaseOf, readOverflow, readQuestions, recallQuestion
 import { bindDevLog, createDevLog } from "@/lib/devlog.js";
 import { Boundary, DiagPanel, useDebug } from "./faults";
 import TopBar from "./screens/TopBar";
+import type { OpenTrack } from "./paper/OpenPhases";
+import { notePhase, openPhase, openRoute } from "@/lib/opening.js";
 import StartScreen from "./screens/StartScreen";
 import MapScreen from "./screens/MapScreen";
 import ReaderFrame from "./screens/ReaderFrame";
@@ -46,7 +48,9 @@ function openGroup(result: any, id: string) {
   if (!found) return null;
   const n = ((Number(point.cluster) % 6) + 6) % 6 + 1;
   const name = String(found.name || "").trim();
-  return { id: String(found.id), n, name: name || "Group" };
+  // A single-group map has no lane name (B.1); the crumb then skips the group instead of saying "Group".
+  if (!name) return null;
+  return { id: String(found.id), n, name };
 }
 
 export default function Engine() {
@@ -82,6 +86,7 @@ export default function Engine() {
   const [phase, setPhase] = useState("");
   const [since, setSince] = useState(0);
   const [openLine, setOpenLine] = useState("");
+  const [openTrack, setOpenTrack] = useState<OpenTrack | null>(null);
   const searchGen = useRef(0);
   const lastOk = useRef(0);
   const burstReady = useRef(0); // RRM-47: la búsqueda respondió /warm (antes «listo» venía del lector)
@@ -191,9 +196,10 @@ export default function Engine() {
   const liveName = (id: string) => { const p = (liveResult?.papers || []).find((x: any) => paperKey(x) === id); return p ? `${String(p.title || id).slice(0, 28)}${p.year ? ` ${p.year}` : ""}` : id; };
   const liveId = live && route.p && /^\d+$/.test(route.p) ? route.p : "";
   const promoteBurst = useCallback((first?: string) => {
-    const ids = (liveResult?.papers || []).slice(0, 10).map((p: any) => p.corpusid).filter((id: any) => typeof id === "number");
+    // RRM-97: only the top N (3) are prepared. Opening a paper fronts that one only; the top N are already queued by /burst.
+    const ids = (liveResult?.papers || []).slice(0, prepareTop()).map((p: any) => p.corpusid).filter((id: any) => typeof id === "number");
     const head = Number(first);
-    const ordered = Number.isInteger(head) ? [head, ...ids.filter((id: number) => id !== head)] : ids;
+    const ordered = Number.isInteger(head) ? [head] : ids;
     if (ordered.length) prepare(ordered, true).catch(() => {});
   }, [liveResult]);
   const titleFor = useCallback((id: string) => {
@@ -270,7 +276,7 @@ export default function Engine() {
 
   useEffect(() => {
     if (!liveOn || !liveResult) return;
-    const ids = (liveResult.papers || []).slice(0, 10).map((p: any) => p.corpusid).filter((id: any) => typeof id === "number");
+    const ids = (liveResult.papers || []).slice(0, prepareTop()).map((p: any) => p.corpusid).filter((id: any) => typeof id === "number");
     if (!ids.length) return;
     let stop = false;
     const tick = async () => {
@@ -279,7 +285,7 @@ export default function Engine() {
         if (stop) return;
         const map: Record<string, any> = {};
         for (const row of body.papers || []) map[String(row.id)] = row;
-        setRowState(map); setLiveErr("");
+        setRowState((prev) => ({ ...prev, ...map })); setLiveErr("");
         if (ids.every((id: number) => settled(map[String(id)]?.status))) return;
       } catch (e: any) {
         if (!stop) fail(e);
@@ -312,10 +318,19 @@ export default function Engine() {
   }, [liveOn, liveQ]);
 
   useEffect(() => {
-    if (!liveId) { setOpened(null); setOpenLine(""); return; }
+    if (!liveId) { setOpened(null); setOpenLine(""); setOpenTrack(null); return; }
     let stop = false;
     const t0 = Date.now();
     setOpenLine("Opening the paper… 0 s");
+    // RRM-97: real phases (find → download → sections → OCR) with the time each one took.
+    let lastMeta: any = {};
+    setOpenTrack({ t0, log: [{ phase: "find", at: t0 }], route: "unknown" });
+    const track = (row: any, meta: any, doc?: any) => {
+      if (stop) return;
+      const phase = openPhase(row, meta);
+      const at = Date.now();
+      setOpenTrack((cur) => (cur && cur.t0 === t0 ? { ...cur, log: notePhase(cur.log, phase, at), route: doc || meta ? openRoute(meta, doc) : cur.route } : cur));
+    };
     const clock = window.setInterval(() => {
       const sec = Math.round((Date.now() - t0) / 1000);
       setOpenLine((cur) => (cur.startsWith("Reading sections") ? `Reading sections… ${sec} s` : `Opening the paper… ${sec} s`));
@@ -327,6 +342,8 @@ export default function Engine() {
     const apply = (body: any) => {
       const doc = body.paper || {};
       const meta = body.meta || {};
+      lastMeta = meta;
+      track({ status: body.status, stage: doc.stage || meta.stage, source: doc.source || meta.source }, meta, doc);
       const paper = {
         ...doc,
         authors: doc.authors || [],
@@ -387,6 +404,7 @@ export default function Engine() {
         const st = await fetchStatus([liveId], liveQ);
         if (stop) return;
         const row = (st.papers || [])[0] || {};
+        track(row, lastMeta);
         const next = `${row.stage || ""}|${row.status || ""}|${row.upgraded_from || ""}`;
         if (next !== sig) {
           sig = next;
@@ -585,10 +603,12 @@ export default function Engine() {
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // B.1 (core): Esc closes what is open inside the paper; leaving the paper is the Back button's job.
+      if (core) return;
       if (level === 3) go({ q: q?.id, c: route.c }); else if (level === 2) go({ q: q?.id });
     };
     window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
-  }, [level, q, route.c, go]);
+  }, [level, q, route.c, go, core]);
 
   const curatedReady = Boolean(content) && Object.keys(papers).length > 0;
   if (err && !(live && core)) return <main className="center-msg"><p>{err}</p></main>;
@@ -637,7 +657,7 @@ export default function Engine() {
     onStep: irPaso,
   } : null;
   const frame = {
-    back, openLine, liveErr, liveCode, debug,
+    back, openLine, openTrack, liveErr, liveCode, debug,
     content, focus: route.b, companion, onHideCompanion: () => setCompanion(false), core,
     burstIds: (liveResult?.papers || []).slice(0, 10).map((p: any) => paperKey(p)),
     map: liveResult ? { papers: mapPapers(liveResult), edges: liveResult.edges || [], layout: liveResult.layout } : null,

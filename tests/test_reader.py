@@ -1035,6 +1035,7 @@ def test_latex_upgrades_ocr_and_never_downgrades(tmp_path, monkeypatch):
         published = []
 
         def publish(paper, stage):
+            paper = paper or {}  # RRM-97: publish(None, stage) notes a stage in meta only
             published.append((stage, paper.get("source"), paper.get("upgraded_from")))
 
         info = {
@@ -1387,7 +1388,7 @@ def test_queue_top_writes_queued_before_spawn_and_survives_failure(tmp_path: Pat
         assert [load_meta(tmp_path / str(i))["status"] for i in ids] == ["queued"] * len(ids)
 
     got = queue_top(list(range(1, 12)) + ["nope"], tmp_path, spawn=spawn, commit=commit)
-    assert got == list(range(1, 11))
+    assert got == [1, 2, 3]  # RRM-97: only the top 3 are prepared by default
     assert log == ["commit", "spawn"]
 
     done = tmp_path / "3"
@@ -1438,12 +1439,104 @@ def test_detach_queue_notes_top_ids_and_defers_the_volume_write(tmp_path: Path):
         held.append(work)
 
     got = detach_queue(list(range(1, 12)), tmp_path / "papers", spawn=spawn, commit=commit, note=note, start=start)
-    assert got == list(range(1, 11))
-    assert log == [("note", list(range(1, 11))), "start"]
+    assert got == [1, 2, 3]
+    assert log == [("note", [1, 2, 3]), "start"]
     assert held
     held[0]()
-    assert log == [("note", list(range(1, 11))), "start", "commit", ("spawn", list(range(1, 11)))]
+    assert log == [("note", [1, 2, 3]), "start", "commit", ("spawn", [1, 2, 3])]
+    assert load_meta(tmp_path / "papers" / "4") is None
     assert load_meta(tmp_path / "papers" / "1")["status"] == "queued"
+
+
+def test_prepare_top_defaults_to_three_and_reads_the_env(monkeypatch):
+    """RRM-97: the reader prepares the top 3 of a burst unless RRM_PREPARE_TOP says otherwise (1..10)."""
+    from rrm.search.prefetch import prepare_top, top_ids
+
+    assert prepare_top({}) == 3
+    assert prepare_top({"RRM_PREPARE_TOP": "5"}) == 5
+    assert prepare_top({"RRM_PREPARE_TOP": "0"}) == 1
+    assert prepare_top({"RRM_PREPARE_TOP": "50"}) == 10
+    assert prepare_top({"RRM_PREPARE_TOP": "many"}) == 3
+    monkeypatch.delenv("RRM_PREPARE_TOP", raising=False)
+    assert top_ids(list(range(1, 12))) == [1, 2, 3]
+    monkeypatch.setenv("RRM_PREPARE_TOP", "10")
+    assert top_ids(list(range(1, 12))) == list(range(1, 11))
+    assert top_ids(list(range(1, 12)), limit=2) == [1, 2]
+
+
+def test_truncated_download_is_retried_once_then_raised():
+    """RRM-97: a body shorter than Content-Length is not a good download."""
+    from rrm.reader.fetch import DownloadError, download_url
+
+    class Resp:
+        def __init__(self, body, length):
+            self._body = body
+            self._sent = False
+            self.headers = {"Content-Length": str(length)}
+
+        def read(self, n=65536):
+            if self._sent:
+                return b""
+            self._sent = True
+            return self._body
+
+        def close(self):
+            pass
+
+    calls = []
+
+    def flaky(req, timeout):
+        calls.append(1)
+        return Resp(b"x" * (5 if len(calls) == 1 else 10), 10)
+
+    assert download_url("http://example.test/e", opener=flaky, total_timeout=5) == b"x" * 10
+    assert len(calls) == 2
+
+    calls.clear()
+    try:
+        download_url("http://example.test/e", opener=lambda req, timeout: (calls.append(1), Resp(b"x" * 3, 10))[1], total_timeout=5)
+        raise AssertionError("expected truncated download")
+    except DownloadError as err:
+        assert "truncated download: 3 of 10 bytes" in str(err)
+    assert len(calls) == 2
+
+    # No Content-Length (chunked): the body is taken as is.
+    class Bare(Resp):
+        def __init__(self):
+            super().__init__(b"abc", 0)
+            self.headers = {}
+
+    assert download_url("http://example.test/e", opener=lambda req, timeout: Bare(), total_timeout=5) == b"abc"
+
+
+def test_fetch_and_parse_notes_download_and_ocr_stages(tmp_path, monkeypatch):
+    """RRM-97: /status moves past stub while the downloads and a silent OCR run."""
+    from rrm.reader import pipeline
+
+    pdf = b"%PDF-1.4\n" + b"0" * 16
+
+    def bad_eprint(_arxiv, **_kw):
+        raise pipeline.DownloadError("truncated download: 5 of 10 bytes")
+
+    monkeypatch.setattr(pipeline, "arxiv_eprint", bad_eprint)
+    monkeypatch.setattr(pipeline, "arxiv_pdf", lambda *args, **kwargs: pdf)
+    stages = []
+
+    def publish(paper, stage):
+        stages.append((stage, paper is None))
+
+    def ocr(_path, _work):
+        assert ("ocr", True) in stages, "ocr stage noted before the GPU call"
+        return {"blocks": [{"kind": "p", "inlines": [{"t": "text", "v": "ocr"}]}], "seconds": 0.01, "gpu_s": 0.01}
+
+    info = {"corpusid": 2, "arxiv": "1601.06733", "title": "T", "authors": ["Ada"], "abstract": "A", "tldr": ""}
+    folder = tmp_path / "2"
+    folder.mkdir()
+    meta = {"timings": pipeline._blank_timings(), "reason": None, "corpusid": 2, "ocr_gpu_s": 0.0}
+    route, paper, _path = pipeline._fetch_and_parse(folder, info, meta, folder / "source.pdf", ocr, publish)
+    assert route == "ocr"
+    assert stages[0] == ("download", True)
+    assert stages.index(("ocr", True)) < stages.index(("ocr", False))
 
 
 def test_parser_unwraps_font_switches_rules_and_multirow():

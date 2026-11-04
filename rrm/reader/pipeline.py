@@ -709,6 +709,9 @@ def _fetch_and_parse(folder, info, meta, pdf_path, ocr, publish=None):
         workers.append(threading.Thread(target=pdf_worker, name="rrm-pdf", daemon=True))
     else:
         pdf_dl.set()
+    # RRM-97: /status says the downloads started (meta only; paper.json keeps the stub).
+    if publish and workers:
+        publish(None, "download")
     for worker in workers:
         worker.start()
     eprint_dl.wait()
@@ -750,6 +753,9 @@ def _ocr_route(folder, info, meta, pdf_path, ocr, why: str, publish=None, announ
     # Set only when this process calls the GPU. A cache hit never reaches here,
     # so a later run can ignore OCR papers from an earlier deploy.
     meta["ocr_invoked_at"] = time.time()
+    # RRM-97: a silent OCR still shows in /status (stage ocr, ocr_invoked_at), never over a LaTeX paper.
+    if publish and not announce and meta.get("source") != "latex":
+        publish(None, "ocr")
     t = time.time()
     try:
         result = ocr(pdf_path, folder / "ocr")

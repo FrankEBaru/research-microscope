@@ -17,7 +17,7 @@
   padding: 28px 0 140px;
   box-sizing: border-box;
 }
-.folio .art { min-width: 0; }
+.folio .art { min-width: 0; grid-column: 2; } /* RRM-97: without index or minimap the paper stays in the reading column */
 .folio .toc { position: sticky; top: 84px; align-self: start; max-height: calc(100vh - 7rem); overflow: auto; display: block; font-size: 13.5px; padding-right: 8px; }
 .folio .toc .cap { margin-bottom: 10px; }
 .folio .toc ol { list-style: none; margin: 0; padding: 0; }
@@ -224,6 +224,13 @@
   cursor: pointer;
 }
 
+/* RRM-97: una acción por referencia del globo. */
+.folio .popover .pop-cite + .pop-cite { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.folio .popover .pop-cite .pop-ref { margin: 0; }
+.folio .popover .pop-acts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 6px 0 0; }
+.folio .popover .pop-acts .pop-go { min-height: 28px; }
+.folio .popover .pop-go:focus-visible { outline: none; border-radius: var(--r-xs); box-shadow: 0 0 0 2px var(--focus-gap), 0 0 0 4px var(--focus); }
+
 .folio .sec-end { margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--rule); }
 .folio .yw {
   display: inline-flex;
@@ -400,3 +407,12 @@
 @media (prefers-reduced-motion: reduce) {
   .folio .sn, .folio .popover, .folio .blk.flash, .folio .sent.flash { animation: none; }
 }
+/* RRM-99 v2 notes: three labeled layers (AI, this paper, other papers). */
+.folio .gap-card.is-v2 { display: grid; gap: 10px; border-left-color: var(--prov-generated); }
+.folio .gap-card .gl { display: grid; gap: 4px; }
+.folio .gap-card .gl p { margin: 0; font: 400 14.5px/1.5 var(--font-read); color: var(--ink); text-align: left; hyphens: manual; }
+.folio .gap-card .gl blockquote { margin: 0; padding-left: 10px; border-left: 2px solid var(--rule); font: italic 400 13.5px/1.5 var(--font-read); color: var(--ink-2); text-align: left; hyphens: manual; }
+.folio .gap-card .gl blockquote footer { margin-top: 3px; font: 500 12px/1.35 var(--font-ui); font-style: normal; color: var(--ink-3); }
+.folio .gap-card .gl blockquote footer a { color: var(--ink-3); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--rule-2); }
+.folio .gap-card .gl--others blockquote { border-left-color: var(--accent-line); }
+.folio .h-recovered { margin: 28px 0 10px; font: 600 22px/1.25 var(--font-read); color: var(--ink); }

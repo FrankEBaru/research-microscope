@@ -1,0 +1,118 @@
+{
+ "id": "kl-policy",
+ "claim_text": "In RLHF the optimal policy is the reference policy times exp(reward / beta), so a small beta lets one token take the rew",
+ "spec": {
+  "archetype": "curve",
+  "constraints": [],
+  "controls": [
+   {
+    "id": "gap",
+    "label": "reward gap",
+    "max": 5.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 2.0
+   },
+   {
+    "id": "beta",
+    "label": "KL strength beta",
+    "max": 4.91,
+    "min": 0.91,
+    "step": 0.5,
+    "value": 1.91
+   }
+  ],
+  "derived": [
+   {
+    "formula": "1 / (1 + exp(-gap / beta))",
+    "name": "p_top"
+   }
+  ],
+  "direction": [
+   {
+    "control": "beta",
+    "effect": "down",
+    "readout": "p_top"
+   }
+  ],
+  "explain": "Illustrative toy of arXiv 2203.02155: optimal RLHF policy is reference times exp(reward/beta). Watch the p_top curve value: near 1 means one token takes the reward.",
+  "questions": [
+   {
+    "q": "Set beta to 0.91: what happens to p_top?",
+    "why": "Reads the regime mark where the top token hits 90%."
+   },
+   {
+    "q": "Set beta to 1.91: what happens to the top token? Do you expect the policy to follow the reward more?",
+    "why": "Tests the misunderstanding that larger beta follows reward more."
+   },
+   {
+    "q": "Set gap to 5: what happens to p_top?",
+    "why": "Reads how a larger reward gap raises concentration."
+   },
+   {
+    "q": "Set beta to 4.91: what happens to p_top?",
+    "why": "Reads the uniform limit at large beta."
+   }
+  ],
+  "regime": [
+   {
+    "control": "beta",
+    "formula": "gap / ln(9)",
+    "label": "top token 90%"
+   }
+  ],
+  "scale": true,
+  "threshold_formula": "gap / ln(9)"
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "gap",
+    "label": "reward gap",
+    "max": 5.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 2.0
+   },
+   {
+    "id": "beta",
+    "label": "KL strength beta",
+    "max": 4.91,
+    "min": 0.91,
+    "step": 0.5,
+    "value": 1.91
+   }
+  ],
+  "draw": "function draw(ctx, state, t) {\nfunction fmt(v) { return Math.round(v * 100) / 100; }\nfunction X(v) { return x0 + (v - bmin) / (bmax - bmin) * pw; }\nfunction Y(v) { return y0 + ph - v * ph; }\n  var w = state.w; var h = state.h; var gap = state.gap; var beta = state.beta; var bmin = 0.91; var bmax = 4.91; var x0 = 54; var y0 = 24; var pw = 530; var ph = 230; var ln9 = Math.log(9); var bstar = gap / ln9; var ptop = 1 / (1 + Math.exp(0 - gap / beta)); var i = 0; var b = 0; var p = 0;   ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); ctx.strokeStyle = \"#1d1a16\"; ctx.lineWidth = 1.5; ctx.strokeRect(x0, y0, pw, ph); ctx.strokeStyle = \"#1f4b99\"; ctx.lineWidth = 2; ctx.beginPath(); for (i = 0; i <= 60; i++) { b = bmin + (bmax - bmin) * i / 60; p = 1 / (1 + Math.exp(0 - gap / b)); if (i === 0) { ctx.moveTo(X(b), Y(p)); } else { ctx.lineTo(X(b), Y(p)); } } ctx.stroke(); ctx.strokeStyle = \"#8a8175\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, Y(0.9)); ctx.lineTo(x0 + pw, Y(0.9)); ctx.stroke(); ctx.fillStyle = \"#8a8175\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"0.9 line\", x0 + pw - 52, Y(0.9) - 5); var bx = bstar; var wasClip = 0; if (bx < bmin) { bx = bmin; wasClip = 1; } if (bx > bmax) { bx = bmax; wasClip = 1; } ctx.strokeStyle = \"#c4512c\"; ctx.lineWidth = 1.5; ctx.beginPath(); var yy = 0; for (yy = y0; yy < y0 + ph; yy = yy + 8) { ctx.moveTo(X(bx), yy); ctx.lineTo(X(bx), yy + 4); } ctx.stroke(); ctx.fillStyle = \"#c4512c\"; ctx.font = \"12px sans-serif\"; if (wasClip === 1) { ctx.fillText(\"top token 90% = \" + fmt(bstar) + \" clipped\", X(bx) - 150, y0 + ph + 34); } else { ctx.fillText(\"top token 90% = \" + fmt(bstar), X(bx) - 150, y0 + ph + 34); } ctx.fillStyle = \"#1f4b99\"; ctx.beginPath(); ctx.arc(X(beta), Y(ptop), 6, 0, 6.2832); ctx.fill(); ctx.strokeStyle = \"#1d1a16\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(X(beta), Y(ptop), 6, 0, 6.2832); ctx.stroke(); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"13px sans-serif\"; ctx.fillText(\"p_top = \" + fmt(ptop), 54, 296); ctx.fillText(\"gap = \" + fmt(gap), 200, 296); ctx.fillText(\"beta = \" + fmt(beta), 330, 296); ctx.fillText(\"beta axis\", 300, 348); ctx.fillStyle = \"#5c564c\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"small beta: one token takes reward\", 54, 318); }",
+  "explain": "Illustrative toy of arXiv 2203.02155: optimal RLHF policy is reference times exp(reward/beta). Watch the p_top curve value: near 1 means one token takes the reward.",
+  "id": "kl-rlhf-beta-toy",
+  "questions": [
+   {
+    "q": "Set beta to 0.91: what happens to p_top?",
+    "why": "Reads the regime mark where the top token hits 90%."
+   },
+   {
+    "q": "Set beta to 1.91: what happens to the top token? Do you expect the policy to follow the reward more?",
+    "why": "Tests the misunderstanding that larger beta follows reward more."
+   },
+   {
+    "q": "Set gap to 5: what happens to p_top?",
+    "why": "Reads how a larger reward gap raises concentration."
+   },
+   {
+    "q": "Set beta to 4.91: what happens to p_top?",
+    "why": "Reads the uniform limit at large beta."
+   }
+  ],
+  "title": "Small beta lets one token take the reward",
+  "topic": "kl_rlhf"
+ },
+ "row": {
+  "id": "kl-policy",
+  "verify": "pass",
+  "gate": [
+   "regime"
+  ],
+  "outcome": "fallback"
+ }
+}

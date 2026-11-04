@@ -8,14 +8,16 @@ import { bibtex } from "@/lib/bibtex.js";
 import { eqTex, fetchNotes, paperKey, refText, sourcePdfUrl } from "@/lib/backend.js";
 import { collectV2 } from "@/lib/artifacts.js";
 import { pdfPagesOnly, presentInlines, splitIntertext, visibleInlines } from "@/lib/prose.js";
-import { faltaText } from "@/lib/falta.js";
+import { absenceText } from "@/lib/falta.js";
 import { hasConclusion, scanIds } from "@/lib/scan.js";
 import { citeName } from "@/lib/layout.js";
 import { UNDEFINED, symbolHover } from "@/lib/hover.js";
 import { autoSyms, symKey } from "@/lib/symcolor.js";
+import { isTexJunk, junkTitle } from "@/lib/texclean.js";
 import AskBox from "./AskBox";
 import DkInstrument, { dkAnchor } from "./paper/DkInstrument";
-import { marginExtras } from "@/lib/marginExtras";
+import { marginExtras, marginTakes, useMarginExtrasVersion } from "@/lib/marginExtras";
+import "@/lib/liveart-margin";
 import "@/styles/lectura.css";
 
 // Pop de oración con la maqueta «ejemplo simulado… no está conectado». Apagado en core; NEXT_PUBLIC_RRM_SENTENCE_MOCK=1 lo vuelve a mostrar.
@@ -28,6 +30,7 @@ import Companion, { Offer } from "./Companion";
 import { Ctx, plainOf } from "./paper/inline";
 import { GapView, ShapePill, artsAt, notesAt, normPhrase, repeatsBlock, samePhrase } from "./paper/GapNotes";
 import Popover, { PopState } from "./paper/Popover";
+import OpenPhases, { type OpenTrack } from "./paper/OpenPhases";
 import { Table } from "./paper/TableFig";
 import { Cited } from "./paper/Cited";
 import { citingIndex } from "@/lib/figrefs.js";
@@ -264,7 +267,7 @@ export function mountKey(paper: Paper) {
   return paper.upgraded_from ? "body-up" : "body";
 }
 
-export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote, showInstrument = true, showCrops = true, core = false, burstIds, map, explore, openId, onOpenPaper, onPromote, atlasCtx }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string; pdf?: boolean; oa_pdf?: string; arxiv?: string } | null; showInstrument?: boolean; showCrops?: boolean; core?: boolean; burstIds?: string[]; map?: { papers: any[]; edges: any[]; layout: any } | null; explore?: { nodes?: any[]; edges?: any[] } | null; openId?: string; onOpenPaper?: (id: string, why: string) => void; onPromote?: () => void; atlasCtx?: AtlasCtx }) {
+export default function PaperView({ paper, content, focus, companion, onHideCompanion, remote, showInstrument = true, showCrops = true, core = false, burstIds, map, explore, openId, onOpenPaper, onPromote, atlasCtx, openTrack }: { paper: Paper; content: any; focus?: string; companion?: boolean; onHideCompanion?: () => void; remote?: { status?: string; stage?: string; reason?: string; source?: string; pdf?: boolean; oa_pdf?: string; arxiv?: string } | null; showInstrument?: boolean; showCrops?: boolean; core?: boolean; burstIds?: string[]; map?: { papers: any[]; edges: any[]; layout: any } | null; explore?: { nodes?: any[]; edges?: any[] } | null; openId?: string; onOpenPaper?: (id: string, why: string) => void; onPromote?: () => void; atlasCtx?: AtlasCtx; openTrack?: OpenTrack | null }) {
   const art = useRef<HTMLElement>(null);
   const [pop, setPop] = useState<PopState>(null);
   const [pack, setPack] = useState<any>(null);
@@ -280,6 +283,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   };
   const paintSymRef = useRef<(key: string) => void>(() => {});
   const [symPin, setSymPin] = useState("");
+  useMarginExtrasVersion(); // RRM-98: async extras (live figures) re-render the paper when they arrive
   const [pinAt, setPinAt] = useState<{ block: string; index: number } | null>(null);
   const [reading, setReading] = useState(false);
   const [openAsk, setOpenAsk] = useState("");
@@ -466,6 +470,26 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       setPop((cur) => (citePin.current && cur?.key === citePin.current ? cur : null));
     }, 280);
   };
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      citePin.current = "";
+      setPop(null);
+      setSymPin("");
+      setSymHot("");
+    };
+    // A popover is placed from a rect taken once; on scroll it would float over the text. Close it.
+    let y0 = window.scrollY;
+    const scrolled = () => {
+      if (Math.abs(window.scrollY - y0) < 40) return;
+      y0 = window.scrollY;
+      citePin.current = "";
+      setPop(null);
+    };
+    window.addEventListener("keydown", esc);
+    window.addEventListener("scroll", scrolled, { passive: true });
+    return () => { window.removeEventListener("keydown", esc); window.removeEventListener("scroll", scrolled); };
+  }, []);
   useEffect(() => {
     const away = (e: TouchEvent) => { const t = e.target as HTMLElement; if (!t.closest?.("[data-pop],[data-sym],.popover")) setPop(null); };
     document.addEventListener("touchstart", away, { passive: true });
@@ -727,6 +751,9 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     return title.length > 90 ? `${title.slice(0, 90).replace(/\s+\S*$/, "").trim()}…` : title;
   };
   const showMini = Boolean(core && (map || (explore?.nodes || []).length > 0));
+  const inMap = (id: string) => [...(map?.papers || []), ...(atlasCtx?.papers || [])].some((item) => paperKey(item) === id || String(item?.corpusid ?? "") === id);
+  // RRM-97: the minimap owns the atlas overlay; it opens it with this paper selected.
+  const seeInAtlas = (id: string) => { citePin.current = ""; setPop(null); window.dispatchEvent(new CustomEvent("rrm-atlas", { detail: { id } })); };
   const showNav = model.toc.length > 0 || showMini;
 
   const askBox = (variant: "slot" | "section", sectionId: string, label: string) => (
@@ -740,6 +767,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
   const side: MarginNote[] = [];
   // RRM-95: extra margin items (lib/marginExtras.ts). Wide: in the margin column; narrow: under their block when inline.
   const extras = marginExtras({ paper, reading, core });
+  const takes = marginTakes(extras);
   const rows: ReactNode[] = [];
   if (!undrawn) {
     const stack: { id: string; level: number; title: string }[] = [];
@@ -757,6 +785,15 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
     };
     paper.blocks.forEach((b, bi) => {
       if (scan && !scan.has(b.id)) return;
+      // Integration: paragraphs that are only LaTeX layout machinery (\@setfontsize, \iftoggle…) are not shown.
+      if (b.kind === "p") {
+        const raw = (b.inlines || []).map((x: any) => (x && x.t === "text" ? x.v : "")).join("");
+        if (isTexJunk(raw)) {
+          const title = junkTitle(raw);
+          if (title) rows.push(<h3 key={`jt-${b.id}`} className="h-recovered">{title}</h3>);
+          return;
+        }
+      }
       if (core && reading && b.kind === "h" && b.level <= 2) {
         closeUntil(b.level);
         stack.push({ id: b.id, level: b.level, title: plainOf(b.inlines) });
@@ -910,7 +947,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
               </aside>
             )}
             {showInstrument && !undrawn && att && b.id === instAfter && <Instrument content={att} goTo={goTo} />}
-            {core && !undrawn && dkAt && b.id === dkAt && <Boundary name="instrument"><DkInstrument syms={model.syms} /></Boundary>}
+            {core && !undrawn && dkAt && b.id === dkAt && !takes.has("dk-instrument") && <Boundary name="instrument"><DkInstrument syms={model.syms} /></Boundary>}
             {!wide && extras.filter((x) => x.inline && x.block === b.id).map((x) => <div key={x.id} className={`margin-inline sn sn--${x.kind || "extra"}`}>{x.body}</div>)}
             {symbolHere && pinUseful && (
               <div className="margin-inline sn sn--sym">
@@ -938,7 +975,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
 
   function gapPieces(b: Block) {
     if (!core) return null;
-    const arts = artsAt(b.id, pack, local);
+    const arts = artsAt(b.id, pack, local).filter((a) => !takes.has(`art:${b.id}:${a.type}`));
     const host = plainOf(b.inlines || []);
     const notes = (b.kind === "p" || b.kind === "eq") ? notesAt(b.id, pack, local).filter((n: any) => !repeatsBlock(n, b, arts)) : [];
     const artsDrawn = (b.kind === "p" || b.kind === "eq") ? arts.filter((a) => a.type !== "forma") : [];
@@ -1073,15 +1110,15 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             {absHref ? <> · <a href={absHref} target="_blank" rel="noreferrer">{rights?.arxiv ? `arXiv:${rights.arxiv}${rights.version || ""}` : "arXiv"}</a></> : null}
           </Notice>
         )}
-        {undrawn && !gated && <Notice kind="absence">{`Missing: ${faltaText(remote?.reason)}`}</Notice>}
+        {undrawn && !gated && <Notice kind="absence">{absenceText(remote?.reason, venue, Boolean(paper.abstract || quote))}</Notice>}
         {undrawn && !gated && pdfHref && <iframe className="source-pdf" title="Paper PDF" src={pdfHref} />}
         {undrawn && !gated && !pdfHref && honest && <p className="ah-links"><a href={honest} target="_blank" rel="noreferrer">No PDF in the reader, on arXiv, or as an open-access PDF. The record is here.</a></p>}
+        {core && remote && !["done", "abstract_only", "failed"].includes(String(remote.status || "")) && (paper.blocks || []).length < 2 && (
+          openTrack ? <><OpenPhases track={openTrack} compact /><Skeleton lines={7} /></> : <><Skeleton lines={7} /><Pulse mode="loading" /></>
+        )}
         {undrawn && core && askBox("slot", abstractId, "Abstract")}
         {!undrawn && pdfPagesOnly(paper.blocks) && <Notice kind="absence">This e-print has no text: the pages are inserted from a PDF.</Notice>}
         {!undrawn && !abstractId && core && !reading && askBox("slot", "", sectionLabel)}
-        {core && remote && !["done", "abstract_only", "failed"].includes(String(remote.status || "")) && (paper.blocks || []).length < 2 && (
-          <><Skeleton lines={7} /><Pulse mode="loading" /></>
-        )}
         {!undrawn && rows}
         {!gated && (
           <footer className="paper-foot">
@@ -1092,7 +1129,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
             )}
           </footer>
         )}
-        {pop && <Boundary name="popover" resetKeys={[pop.key]}><Popover pop={pop} paper={paper} model={model} content={content} core={core} pack={pack} titleOf={titleOf} onOpen={onOpenPaper} /></Boundary>}
+        {pop && <Boundary name="popover" resetKeys={[pop.key]}><Popover pop={pop} paper={paper} model={model} content={content} core={core} pack={pack} titleOf={titleOf} onOpen={onOpenPaper} inMap={inMap} onAtlas={showMini ? seeInAtlas : undefined} /></Boundary>}
       </article>
       {wide && <Margin notes={side} layoutKey={layoutKey} />}
       {companion && <Companion offer={offer} target={point} onAnswer={() => setOffer(null)} onHide={() => onHideCompanion?.()} />}

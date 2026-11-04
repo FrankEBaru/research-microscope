@@ -15,7 +15,28 @@ _BURST_TOP = "burst_top"
 _burst_top = None
 
 
-def top_ids(corpusids, limit=10) -> list[int]:
+PREPARE_TOP_DEFAULT = 3
+PREPARE_TOP_MAX = 10
+
+
+def prepare_top(env=None) -> int:
+    """How many burst papers the reader prepares on its own (RRM-97: 3, agreed with Franklin).
+
+    `RRM_PREPARE_TOP` overrides it (1..10). A paper outside the top is still
+    prepared when the reader opens it (`/prepare` with that one id).
+    """
+    import os
+
+    raw = (os.environ if env is None else env).get("RRM_PREPARE_TOP", "")
+    try:
+        n = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return PREPARE_TOP_DEFAULT
+    return max(1, min(PREPARE_TOP_MAX, n))
+
+
+def top_ids(corpusids, limit=None) -> list[int]:
+    limit = prepare_top() if limit is None else limit
     ids = []
     for raw in list(corpusids or [])[: int(limit)]:
         try:

@@ -36,10 +36,14 @@ export default function TopBar({ core, live, liveOn, liveId, steps, level, draft
 }) {
   const [open, setOpen] = useState(false);
   const [shortcut, setShortcut] = useState("Ctrl+K");
-  const barSearch = Boolean(core && live && (liveOn || liveId));
-  const offline = process.env.NEXT_PUBLIC_RRM_OFFLINE === "1";
+  // RRM-97: the server and the first client render draw the same top-tools (plain search button).
+  // Route, live state and the offline tag only show after mount, so hydration never depends on them.
+  const [mounted, setMounted] = useState(false);
+  const barSearch = mounted && Boolean(core && live && (liveOn || liveId));
+  const offline = mounted && process.env.NEXT_PUBLIC_RRM_OFFLINE === "1";
 
   useEffect(() => {
+    setMounted(true);
     const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
     const platform = nav.userAgentData?.platform || navigator.platform || "";
     setShortcut(/mac/i.test(platform) ? "⌘K" : "Ctrl+K");

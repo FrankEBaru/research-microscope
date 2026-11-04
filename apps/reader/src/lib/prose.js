@@ -1,3 +1,4 @@
+import { cleanLeftover, cleanTexText } from "./texclean.js";
 // Render-time cleanup of LaTeX that the parser left inside text nodes.
 // The stored paper is not rewritten. Idempotent: running twice changes nothing.
 
@@ -384,19 +385,53 @@ const LOOSE_MATH = new Set([
   "overline", "bar", "hat", "tilde", "vec",
 ]);
 
-/** Fórmulas que perdieron los dólares: \\Big(\\frac{x}{\\sqrt{2}}\\Big). */
-function takeLooseMath(s, i) {
-  const name = /^\\([A-Za-z]+)/.exec(s.slice(i));
+/** Operadores que siguen dentro de una fórmula sin dólares: \\mathrm{FFN}(x)=\\max(0, …). */
+const LOOSE_OPS = new Set([
+  "max", "min", "log", "exp", "sin", "cos", "tanh", "arg", "argmax", "argmin", "cdot", "times",
+  "top", "in", "le", "ge", "leq", "geq", "neq", "approx", "sim", "infty", "partial", "nabla",
+  "ldots", "cdots", "dots", "mathcal", "mathit", "mathsf", "text", "odot", "oplus", "otimes",
+]);
+
+/** `\\mathrm{FFN(x)=…` sin la `}`: la cierra tras la palabra («\\mathrm{FFN}(x)»). */
+const BRACED_WORD = /^\\(?:mathrm|mathbf|mathit|mathsf|text|textrm|textbf|operatorname)\{/;
+export function closeLooseBrace(s, i) {
+  const head = BRACED_WORD.exec(s.slice(i));
+  if (!head) return null;
+  const open = i + head[0].length - 1;
+  if (readGroup(s, open)) return null;
+  const word = /^[A-Za-z][A-Za-z0-9-]*/.exec(s.slice(open + 1));
+  if (!word) return null;
+  const at = open + 1 + word[0].length;
+  return { text: `${s.slice(0, at)}}${s.slice(at)}`, at };
+}
+
+/** Fórmulas que perdieron los dólares: \\Big(\\frac{x}{\\sqrt{2}}\\Big), \\mathrm{FFN}(x)=\\max(0, xW_1 + b_1) W_2 + b_2. */
+function takeLooseMath(s0, i) {
+  const name = /^\\([A-Za-z]+)/.exec(s0.slice(i));
   if (!name || !LOOSE_MATH.has(name[1])) return null;
+  const fixed = closeLooseBrace(s0, i);
+  const s = fixed ? fixed.text : s0;
+  const isCmd = (n) => LOOSE_MATH.has(n) || LOOSE_OPS.has(n) || Boolean(GREEK[n]);
+  // Una palabra corta (x, xW, b) o pegada a _ ^ sigue en la fórmula; una palabra de prosa la cierra.
+  const mathWord = (at) => {
+    const w = /^[A-Za-z]+/.exec(s.slice(at));
+    if (!w) return false;
+    const after = s[at + w[0].length] || "";
+    return w[0].length < 2 || after === "_" || after === "^";
+  };
   let j = i;
   let depth = 0;
+  let paren = 0;
   let started = false;
   while (j < s.length) {
     const c = s[j];
     if (c === "\\") {
       const nxt = /^\\([A-Za-z]+)/.exec(s.slice(j));
-      if (depth === 0 && started && nxt && !LOOSE_MATH.has(nxt[1]) && !GREEK[nxt[1]]) break;
-      if (!nxt) break;
+      if (!nxt) {
+        if (/^\\[,;:! ]/.test(s.slice(j))) { j += 2; continue; }
+        break;
+      }
+      if (depth === 0 && started && !isCmd(nxt[1])) break;
       started = true;
       j += nxt[0].length;
       continue;
@@ -408,15 +443,37 @@ function takeLooseMath(s, i) {
       j += 1;
       continue;
     }
-    if (depth === 0 && started && /[A-Za-z]/.test(c)) break;
-    if (depth === 0 && started && c === " " && s[j + 1] !== "\\" && s[j + 1] !== "^" && s[j + 1] !== "_") break;
-    if ("^_(),.[]|+-=<>*/ ".includes(c) || /[0-9]/.test(c)) { started = true; j += 1; continue; }
+    if (depth > 0) { j += 1; continue; }
+    if (c === "(") { paren += 1; started = true; j += 1; continue; }
+    if (c === ")") {
+      if (!paren && !/\\(?:Bigg|bigg|Big|big)[r]?$/.test(s.slice(i, j))) break;
+      paren = Math.max(0, paren - 1);
+      j += 1;
+      continue;
+    }
+    if (/[A-Za-z]/.test(c)) {
+      if (!started || !mathWord(j)) break;
+      j += /^[A-Za-z]+/.exec(s.slice(j))[0].length;
+      continue;
+    }
+    if (c === " ") {
+      const rest = s.slice(j + 1);
+      if (/^(\\[A-Za-z]|[\^_=+\-*/<>(0-9])/.test(rest) || (/^[A-Za-z]/.test(rest) && mathWord(j + 1))) { j += 1; continue; }
+      break;
+    }
+    if ("^_,.[]|+-=<>*/".includes(c) || /[0-9]/.test(c)) {
+      // Un punto o coma seguido de espacio y prosa es puntuación de la frase.
+      if ((c === "." || c === ",") && !paren && /^\s/.test(s.slice(j + 1))) break;
+      started = true;
+      j += 1;
+      continue;
+    }
     break;
   }
   let body = s.slice(i, j).trim();
   if (!/\\(?:frac|dfrac|tfrac|sqrt|Big|boldsymbol|mathrm)/.test(body)) return null;
   body = body.replace(/(\\(?:Bigg|bigg|Big|big)[r)])(?:\s*\1)+$/, "$1");
-  return [body, j];
+  return [body, fixed && j > fixed.at ? j - 1 : j];
 }
 
 function isAnnotation(cmd) {
@@ -550,7 +607,7 @@ export function presentInlines(inls) {
   let buf = [];
   const flush = () => {
     if (!buf.length) return;
-    out.push(...parseProse(buf.map((x) => x.v).join("")));
+    out.push(...parseProse(cleanTexText(buf.map((x) => x.v).join(""))).map((n) => (n && n.t === "text" ? { ...n, v: cleanLeftover(n.v) } : n)));
     buf = [];
   };
   for (const x of stripSplitDefs(inls)) {

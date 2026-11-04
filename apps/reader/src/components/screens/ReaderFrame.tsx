@@ -4,17 +4,19 @@ import "@/styles/inicio.css";
 import PaperView from "../Paper";
 import { Notice } from "../faults";
 import { Pulse, Skeleton } from "../ui/Pulse";
+import OpenPhases, { type OpenTrack } from "../paper/OpenPhases";
 import type { AtlasCtx } from "./types";
 
 /** El paper en vivo: abierto, o la espera mientras llega. */
 export default function ReaderFrame({
-  opened, back, openLine, liveErr, liveCode,
+  opened, back, openLine, openTrack = null, liveErr, liveCode,
   content, focus, companion, onHideCompanion, core, burstIds, map, explore, openId, onOpenPaper, onPromote, atlasCtx,
 }: {
   opened: { paper: any; remote: any } | null;
   back: ReactNode;
   jump?: ReactNode;
   openLine: string;
+  openTrack?: OpenTrack | null;
   liveErr: string;
   liveCode: string;
   debug: boolean;
@@ -33,12 +35,14 @@ export default function ReaderFrame({
 }) {
   const wait = liveErr
     ? <><Pulse mode="error" detail={liveErr} /><Notice kind="fault" code={liveCode} /></>
-    : <><Skeleton lines={6} /><Pulse mode="loading" detail={openLine || "Cargando el paper…"} /></>;
+    : openTrack
+      ? <><OpenPhases track={openTrack} /><Skeleton lines={6} /></>
+      : <><Skeleton lines={6} /><Pulse mode="loading" detail={openLine || "Loading the paper…"} /></>;
   if (opened) {
     return (
       <div className="lvl" data-screen="paper">
         {!core && back}
-        <PaperView paper={opened.paper} content={content || {}} focus={focus} companion={core ? false : companion} onHideCompanion={onHideCompanion} remote={opened.remote} showInstrument={!core} showCrops={!core} core={core} burstIds={burstIds} map={map} explore={explore} openId={openId} onOpenPaper={onOpenPaper} onPromote={onPromote} atlasCtx={atlasCtx} />
+        <PaperView paper={opened.paper} content={content || {}} focus={focus} companion={core ? false : companion} onHideCompanion={onHideCompanion} remote={opened.remote} showInstrument={!core} showCrops={!core} core={core} burstIds={burstIds} map={map} explore={explore} openId={openId} onOpenPaper={onOpenPaper} onPromote={onPromote} atlasCtx={atlasCtx} openTrack={openTrack} />
       </div>
     );
   }

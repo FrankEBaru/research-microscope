@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { messyQuote } from "@/lib/texclean.js";
 import { Rich } from "@/lib/math";
 import { ask, explain, preparePhrases } from "@/lib/backend.js";
 import { cleanExtract, markMidStart, storeLine } from "@/lib/extract.js";
@@ -12,12 +13,23 @@ import "@/styles/box.css";
 
 const PARTS = [
   ["coincide", "Matches"],
+  ["diverge", "Partly right"],
   ["contradice", "Contradicts"],
   ["sin_respaldo", "No support"],
   ["te_falto", "You missed"],
 ] as const;
 // RRM-95: one glyph per verdict, so the strip reads without color too.
-const GLYPH: Record<string, string> = { coincide: "≈", contradice: "≠", sin_respaldo: "∅", te_falto: "+" };
+/** A "why" is one or two short sentences. The model rarely loops into word salad after that, so keep the
+ * first sentence, cap it at a word boundary and drop stray trailing punctuation. */
+export function shortWhy(raw: string, max = 190) {
+  let t = String(raw || "").replace(/\s+/g, " ").trim().replace(/['’"]*[,;]\s*$/, "").trim();
+  const first = /^(.{40,}?[.!?])(\s|$)/.exec(t);
+  if (first) t = first[1];
+  if (t.length > max) t = t.slice(0, max).replace(/\s+\S*$/, "").replace(/[,;:]$/, "") + "…";
+  return t;
+}
+
+const GLYPH: Record<string, string> = { coincide: "≈", diverge: "≃", contradice: "≠", sin_respaldo: "∅", te_falto: "+" };
 
 const NO_SUPPORT = "I didn't find this in the selected extracts from the paper.";
 const EMPTY_PHRASES = "No saved sentences for these papers.";
@@ -68,6 +80,25 @@ function sentEl(text: string) {
     if (visibleSent(node) === want) return node as HTMLElement;
   }
   return null;
+}
+
+/** RRM-100: puntero del brief (`b24#2` oración, `b26` bloque) → nodo en el paper. */
+function ptrEl(ptr: string) {
+  if (typeof document === "undefined" || !ptr) return null;
+  const [blk, idx] = String(ptr).split("#");
+  const row = document.querySelector(`[data-blk="${CSS.escape(blk)}"]`);
+  if (!row) return null;
+  if (idx === undefined) return row as HTMLElement;
+  const sents = row.querySelectorAll(".sent");
+  return (sents[Number(idx)] as HTMLElement) || (row as HTMLElement);
+}
+
+function flash(el: HTMLElement | null) {
+  if (!el) return;
+  el.scrollIntoView({ block: "center" });
+  el.classList.remove("flash");
+  void el.offsetWidth;
+  el.classList.add("flash");
 }
 
 function group(rows: any[]) {
@@ -254,7 +285,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
       setProgress("Looking for sentences in the papers…");
       let ranked: any = null;
       for (let attempt = 0; attempt < 60; attempt++) {
-        ranked = await ask(ids || [], text, "frases", focusId);
+        ranked = await ask(ids || [], text, "frases", focusId, sectionId);
         setResult(ranked);
         keepStore(ranked);
         if (!/Preparando los vectores/.test(ranked?.note || "")) break;
@@ -263,7 +294,11 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
       }
       if (ranked?.empty) return;
       setProgress("Checking each quote…");
-      const body = await ask(ids || [], text, "revisar", focusId);
+      // The first review of a section can wait for its answer key (~30 s cold). Say so instead of giving up.
+      const later = window.setTimeout(() => setProgress("Building the answer key for this section (first time only)…"), 12000);
+      let body: any;
+      try { body = await ask(ids || [], text, "revisar", focusId, sectionId); }
+      finally { window.clearTimeout(later); }
       if (body?.empty) setResult(body);
       else { setResult(body); keepStore(body); setShown((n) => n + 1); }
     } catch (caught: any) {
@@ -311,14 +346,7 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
     return () => { stop = true; obs.disconnect(); window.clearTimeout(timer); };
   }, [result, focusId]);
 
-  const jumpTo = (shownText: string) => {
-    const el = sentEl(shownText);
-    if (!el) return;
-    el.scrollIntoView({ block: "center" });
-    el.classList.remove("flash");
-    void el.offsetWidth;
-    el.classList.add("flash");
-  };
+  const jumpTo = (shownText: string, ptr?: string) => flash((ptr ? ptrEl(ptr) : null) || sentEl(shownText));
 
   const parts = result?.parts || {};
   const hasParts = PARTS.some(([id]) => (parts[id] || []).length);
@@ -373,27 +401,49 @@ export default function AskBox({ sectionLabel, ids, focusId, onOpen, closed, onS
         )}
         {!result?.empty && PARTS.map(([id, label]) => (parts[id] || []).length && (!only || only === id) ? (
           <section key={id} className="vd-sec" data-v={id}>
-            {(parts[id] || []).map((item: any, index: number) => (
+            {(parts[id] || []).map((item: any, index: number) => {
+              const cites: any[] = (item.cites?.length ? item.cites : (item.cite ? [{ text: item.cite, paper_id: item.paper_id, section: item.section }] : []))
+                .filter((c: any) => !messyQuote(c?.text));
+              const missed = id === "te_falto";
+              return (
               <div className="claim" key={index}>
                 <p className="claim-h"><span className="vd-tag" data-v={id}><b aria-hidden="true">{GLYPH[id]}</b><span>{label}</span></span></p>
-                <p className="claim-you"><Rich text={item.text} /></p>
-                {item.cite && (
-                  <blockquote className={linked(item.paper_id) ? "ex is-linked" : "ex"}>
-                    <p><Rich text={markMidStart(item.cite)} /></p>
+                <p className={missed ? "claim-you claim-point" : "claim-you"}><Rich text={item.text} /></p>
+                {item.why && item.why !== item.text && (
+                  <p className="claim-why"><Prov kind="simulado" text="Why" title="Muse's explanation, checked against the quotes below" /><span><Rich text={shortWhy(item.why)} /></span></p>
+                )}
+                {cites.map((cite: any, ci: number) => (
+                  <blockquote key={ci} className={linked(cite.paper_id || item.paper_id) ? "ex is-linked" : "ex"}>
+                    <p><Rich text={markMidStart(cite.text)} /></p>
                     <footer>
-                      {item.verified && <Prov kind="calculo" text="quotes checked" />}
-                      {item.paper_id && (
-                        <button type="button" className="box-jump" onClick={() => onOpen?.(String(item.paper_id), "cita en la caja")}>{citeOf(String(item.paper_id), item.section)}</button>
-                      )}
+                      {item.verified && ci === 0 && <Prov kind="calculo" text="quote checked" />}
+                      {cite.section && <Prov kind="paper" text={cite.section} />}
+                      {linked(cite.paper_id || item.paper_id) && cite.ptr ? (
+                        <button type="button" className="box-jump" onClick={() => jumpTo(cite.text, cite.ptr)}>Go to sentence →</button>
+                      ) : (cite.paper_id || item.paper_id) ? (
+                        <button type="button" className="box-jump" onClick={() => onOpen?.(String(cite.paper_id || item.paper_id), "cita en la caja")}>{citeOf(String(cite.paper_id || item.paper_id), cite.section)}</button>
+                      ) : null}
                     </footer>
                   </blockquote>
-                )}
-                {id === "sin_respaldo" && <p className="claim-miss">{NO_SUPPORT}</p>}
+                ))}
+                {(item.others || []).filter((o: any) => !messyQuote(o?.text)).map((o: any, oi: number) => (
+                  <blockquote key={`o${oi}`} className="ex ex-other">
+                    <p className="ex-other-h">Another paper{o.title ? <>: <em>{o.title}</em></> : null}{o.why ? <> — <Rich text={shortWhy(o.why, 140)} /></> : null}</p>
+                    <p><Rich text={o.text} /></p>
+                    <footer>
+                      <Prov kind="paper" text={o.section || "paper"} />
+                      {o.paper_id && <button type="button" className="box-jump" onClick={() => onOpen?.(String(o.paper_id), "pasaje en la caja")}>Open paper</button>}
+                    </footer>
+                  </blockquote>
+                ))}
+                {id === "sin_respaldo" && !item.why && <p className="claim-miss">{NO_SUPPORT}</p>}
               </div>
-            ))}
+              );
+            })}
           </section>
         ) : null)}
-        {result && !result.empty && (
+        {/* RRM-100: con el motor por sección cada cita ya va junto a su afirmación; la lista suelta solo repetía. */}
+        {result && !result.empty && !(hasParts && (result.engine === "sheet" || result.engine === "window")) && (
           <>
             <Cap gap>{result.papers === 1 ? "The paper says" : `These papers say (${result.papers})`}{result.matched > listed ? <span className="cap-n tnum"> · {listed} of {result.matched} nearby</span> : null}</Cap>
             {groups.map(([id, rows]) => rows.map((row: any, index: number) => {

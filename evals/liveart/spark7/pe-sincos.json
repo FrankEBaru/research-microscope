@@ -1,0 +1,140 @@
+{
+ "id": "pe-sincos",
+ "claim_text": "Sinusoidal positional encoding uses sin(pos / 10000^{2i/d}), so nearby positions have a similar encoding.",
+ "spec": {
+  "archetype": "curve",
+  "constraints": [
+   "2*i <= d"
+  ],
+  "controls": [
+   {
+    "id": "i",
+    "label": "dimension index i",
+    "max": 32.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 4.0
+   },
+   {
+    "id": "d",
+    "label": "model dimension d",
+    "max": 512.0,
+    "min": 64.0,
+    "step": 64.0,
+    "value": 64.0
+   },
+   {
+    "id": "seq",
+    "label": "sequence length seq",
+    "max": 500.0,
+    "min": 10.0,
+    "step": 10.0,
+    "value": 20.0
+   }
+  ],
+  "derived": [
+   {
+    "formula": "2*pi*pow(10000,2*i/d)",
+    "name": "wavelength"
+   },
+   {
+    "formula": "wavelength/seq",
+    "name": "ratio"
+   }
+  ],
+  "direction": [
+   {
+    "control": "i",
+    "effect": "up",
+    "readout": "wavelength"
+   }
+  ],
+  "explain": "Toy illustration of sinusoidal positional encoding from 1706.03762. Watch the ratio number: below 1 nearby positions share encoding, above 1 they separate along the similarity curve.",
+  "questions": [
+   {
+    "q": "Set i to 0: what happens to the neighbors? Do you expect positions one apart to look alike?",
+    "why": "misunderstood high-frequency dimension"
+   },
+   {
+    "q": "Set i to 4: what happens to the wavelength?",
+    "why": "regime where wavelength passes sequence"
+   },
+   {
+    "q": "Set seq to 100: what happens to the ratio?",
+    "why": "reads second number"
+   },
+   {
+    "q": "Set d to 512: what happens to the wavelength?",
+    "why": "reads wavelength change"
+   }
+  ],
+  "regime": [
+   {
+    "control": "i",
+    "formula": "d/2*ln(seq/(2*pi))/ln(10000)",
+    "label": "wavelength equals seq"
+   }
+  ],
+  "scale": true,
+  "threshold_formula": "d/2*ln(seq/(2*pi))/ln(10000)"
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "i",
+    "label": "dimension index i",
+    "max": 32.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 4.0
+   },
+   {
+    "id": "d",
+    "label": "model dimension d",
+    "max": 512.0,
+    "min": 64.0,
+    "step": 64.0,
+    "value": 64.0
+   },
+   {
+    "id": "seq",
+    "label": "sequence length seq",
+    "max": 500.0,
+    "min": 10.0,
+    "step": 10.0,
+    "value": 20.0
+   }
+  ],
+  "draw": "function draw(ctx, state, t) {\nfunction fmt(v) { return Math.round(v * 100) / 100; }\n ; var w = state.w; var h = state.h; var ii = state.i; var dd = state.d; var sq = state.seq; var wavelength = 2 * Math.PI * Math.pow(10000, 2 * ii / dd); var ratio = wavelength / sq; var thr = dd / 2 * Math.log(sq / (2 * Math.PI)) / Math.log(10000); ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); var x0 = 50; var y0 = 60; var pw = 430; var ph = 150; var xMax = 500; var N = 160; var k = 0; var pos = 0; var v = 0; var X = 0; var Y = 0; ctx.strokeStyle = \"#1d1a16\"; ctx.lineWidth = 1; ctx.strokeRect(x0, y0, pw, ph); ctx.beginPath(); ctx.moveTo(x0, y0 + ph / 2); ctx.lineTo(x0 + pw, y0 + ph / 2); ctx.stroke(); ctx.strokeStyle = \"#1f4b99\"; ctx.lineWidth = 2; ctx.beginPath(); for (k = 0; k <= N; k++) { pos = k / N * sq; v = Math.sin(2 * Math.PI * pos / wavelength); X = x0 + pos / xMax * pw; Y = y0 + ph / 2 - v * ph * 0.44; if (k === 0) { ctx.moveTo(X, Y); } else { ctx.lineTo(X, Y); } } ctx.stroke(); var seqX = x0 + sq / xMax * pw; ctx.strokeStyle = \"#c4512c\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(seqX, y0); ctx.lineTo(seqX, y0 + ph); ctx.stroke(); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"13px sans-serif\"; ctx.fillText(\"pos 0 to seq sine\", x0, 50); ctx.font = \"12px sans-serif\"; ctx.fillText(\"seq = \" + fmt(sq), seqX - 70, y0 + ph + 16); ctx.fillText(\"wavelength = \" + fmt(wavelength), 50, 252); ctx.fillText(\"ratio = \" + fmt(ratio), 50, 270); ctx.fillText(\"i = \" + fmt(ii), 50, 288); ctx.fillText(\"d = \" + fmt(dd), 220, 288); var bx0 = 50; var bw = 430; var by = 310; ctx.strokeStyle = \"#1d1a16\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(bx0, by); ctx.lineTo(bx0 + bw, by); ctx.stroke(); var iX = bx0 + ii / 32 * bw; ctx.fillStyle = \"#1f4b99\"; ctx.beginPath(); ctx.arc(iX, by, 5, 0, 6.2832); ctx.fill(); ctx.fillStyle = \"#1d1a16\"; ctx.fillText(\"i track\", bx0 + bw + 8, by + 4); var tx = bx0 + thr / 32 * bw; var clip = 0; if (thr < 0) { tx = bx0; clip = 1; } if (thr > 32) { tx = bx0 + bw; clip = 1; } ctx.strokeStyle = \"#c4512c\"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(tx, by - 10); ctx.lineTo(tx, by + 10); ctx.stroke(); ctx.fillStyle = \"#c4512c\"; if (clip === 1) { ctx.fillText(\"wavelength equals seq \" + fmt(thr) + \" clipped\", tx - 220, by - 14); } else { ctx.fillText(\"wavelength equals seq \" + fmt(thr), tx - 220, by - 14); } }",
+  "explain": "Toy illustration of sinusoidal positional encoding from 1706.03762. Watch the ratio number: below 1 nearby positions share encoding, above 1 they separate along the similarity curve.",
+  "id": "positional-encoding-curve",
+  "questions": [
+   {
+    "q": "Set i to 0: what happens to the neighbors? Do you expect positions one apart to look alike?",
+    "why": "misunderstood high-frequency dimension"
+   },
+   {
+    "q": "Set i to 4: what happens to the wavelength?",
+    "why": "regime where wavelength passes sequence"
+   },
+   {
+    "q": "Set seq to 100: what happens to the ratio?",
+    "why": "reads second number"
+   },
+   {
+    "q": "Set d to 512: what happens to the wavelength?",
+    "why": "reads wavelength change"
+   }
+  ],
+  "title": "Sinusoid wavelength grows with dimension index i",
+  "topic": "positional_encoding"
+ },
+ "row": {
+  "id": "pe-sincos",
+  "verify": "pass",
+  "gate": [
+   "regime"
+  ],
+  "outcome": "fallback"
+ }
+}

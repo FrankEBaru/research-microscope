@@ -28,7 +28,7 @@ from rrm.search.layout import map_rows, place_papers
 from rrm.search.twins import STUB_OF, has_stub, remap_result
 from rrm.search.qcache import CACHE_DIR, cached_burst, load_entry, normalize_question, save_entry
 from rrm.search.vecfill import fill_encoded, read_cache
-from rrm.search.prefetch import detach_queue, note_burst_top
+from rrm.search.prefetch import detach_queue, note_burst_top, prepare_top
 from rrm.search.display import IdTable, PaperLookup, is_identifier, title_hijack
 from rrm.search.encode import QueryEncoder
 from rrm.search.faissutil import ensure_direct_map, search_vectors, vector_at
@@ -244,14 +244,14 @@ class BurstSearch:
             except Exception:
                 saved = {}
             settled = True
-            for row in papers[:10]:
+            for row in papers[: prepare_top()]:
                 cid = row.get("corpusid") if isinstance(row, dict) else None
                 status = (saved.get(str(cid)) or {}).get("status")
                 if status not in ("done", "abstract_only", "failed"):
                     settled = False
                     break
             if papers and not settled:
-                _prefetch_reader([row.get("corpusid") for row in papers[:10]])
+                _prefetch_reader([row.get("corpusid") for row in papers[: prepare_top()]])
             hit.pop("qvec", None)
             return self._with_layout(hit)
         ready = getattr(self, "_lookup_ready", None)
@@ -438,7 +438,7 @@ class BurstSearch:
         # After the payload exists: a spawn failure must not drop the papers.
         # The top-10 ids are noted for /status here. The volume commit that
         # used to run inside queue_top stays off this return.
-        _prefetch_reader(papers["corpusids"][:10])
+        _prefetch_reader(papers["corpusids"][: prepare_top()])
         return out
 
     def _labels(self, query: str):

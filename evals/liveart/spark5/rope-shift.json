@@ -1,0 +1,128 @@
+{
+ "id": "rope-shift",
+ "claim": {
+  "text": "RoPE rotates each absolute position, and the attention score depends only on the relative distance between the tokens.",
+  "latex": "",
+  "context": "",
+  "arxiv": "2104.09864"
+ },
+ "spec": {
+  "archetype": "dial",
+  "constraints": [],
+  "controls": [
+   {
+    "id": "m",
+    "label": "query position m",
+    "max": 16.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 6.0
+   },
+   {
+    "id": "n",
+    "label": "key position n",
+    "max": 16.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 2.0
+   },
+   {
+    "id": "theta",
+    "label": "base angle per dim",
+    "max": 1.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 0.5
+   }
+  ],
+  "derived": [
+   {
+    "formula": "m-n",
+    "name": "rel_dist"
+   },
+   {
+    "formula": "(m-n)*theta",
+    "name": "rel_angle"
+   }
+  ],
+  "direction": [
+   {
+    "control": "m",
+    "effect": "up",
+    "readout": "rel_angle"
+   }
+  ],
+  "explain": "Toy dial illustration of arXiv 2104.09864: two rotating pointers for absolute positions m and n. Watch the relative-angle readout, which depends only on the distance m-n, not on absolute position.",
+  "questions": [
+   {
+    "q": "Predict what happens to rel_angle if m = 10 while n stays fixed?",
+    "why": "Tests that raising query position increases relative rotation."
+   },
+   {
+    "q": "What is rel_dist when m = 8 and n = 3?",
+    "why": "Checks relative distance computation."
+   },
+   {
+    "q": "How does rel_angle change if theta = 0.9 with m and n fixed?",
+    "why": "Tests frequency scaling of the rotation."
+   },
+   {
+    "q": "What happens to rel_dist if n = 12 while m stays at 6?",
+    "why": "Tests sign flip when key passes query."
+   }
+  ],
+  "scale": false,
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "m",
+    "label": "query position m",
+    "max": 16.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 6.0
+   },
+   {
+    "id": "n",
+    "label": "key position n",
+    "max": 16.0,
+    "min": 0.0,
+    "step": 1.0,
+    "value": 2.0
+   },
+   {
+    "id": "theta",
+    "label": "base angle per dim",
+    "max": 1.0,
+    "min": 0.1,
+    "step": 0.1,
+    "value": 0.5
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var m = state.m; var n = state.n; var th = state.theta; function fmt(v) { return Math.round(v * 100) / 100; } ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); var cx1 = w * 0.27; var cx2 = w * 0.73; var cy = h * 0.46; var r = 80; var k = 0; var a = 0; var tx = 0; var ty = 0; var am = m * th; var an = n * th; var rel = m - n; var rela = rel * th; ctx.strokeStyle = \"#333333\"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx1, cy, r, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(cx2, cy, r, 0, Math.PI * 2); ctx.stroke(); ctx.lineWidth = 1; ctx.strokeStyle = \"#999999\"; for (k = 0; k < 12; k = k + 1) { a = k * Math.PI / 6; tx = Math.cos(a) * r; ty = Math.sin(a) * r; ctx.beginPath(); ctx.moveTo(cx1 + tx * 0.9, cy + ty * 0.9); ctx.lineTo(cx1 + tx, cy + ty); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx2 + tx * 0.9, cy + ty * 0.9); ctx.lineTo(cx2 + tx, cy + ty); ctx.stroke(); } ctx.strokeStyle = \"#bbbbbb\"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx1, cy); ctx.lineTo(cx1 + r, cy); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx2, cy); ctx.lineTo(cx2 + r, cy); ctx.stroke(); ctx.lineWidth = 4; ctx.lineCap = \"round\"; ctx.strokeStyle = \"#1f4b99\"; ctx.beginPath(); ctx.moveTo(cx1, cy); ctx.lineTo(cx1 + Math.cos(am) * r, cy - Math.sin(am) * r); ctx.stroke(); ctx.strokeStyle = \"#b03a2e\"; ctx.beginPath(); ctx.moveTo(cx2, cy); ctx.lineTo(cx2 + Math.cos(an) * r, cy - Math.sin(an) * r); ctx.stroke(); ctx.fillStyle = \"#1f4b99\"; ctx.beginPath(); ctx.arc(cx1 + Math.cos(am) * r, cy - Math.sin(am) * r, 7, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = \"#b03a2e\"; ctx.beginPath(); ctx.arc(cx2 + Math.cos(an) * r, cy - Math.sin(an) * r, 7, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = \"#222222\"; ctx.font = \"14px sans-serif\"; ctx.textAlign = \"center\"; ctx.fillText(\"m = \" + fmt(m), cx1, cy + r + 24); ctx.fillText(\"n = \" + fmt(n), cx2, cy + r + 24); ctx.fillText(\"query dial m\", cx1, cy - r - 14); ctx.fillText(\"key dial n\", cx2, cy - r - 14); ctx.font = \"15px sans-serif\"; ctx.fillText(\"rel_dist = \" + fmt(rel), w * 0.5, h * 0.86); ctx.fillText(\"rel_angle = \" + fmt(rela), w * 0.5, h * 0.93); ctx.font = \"12px sans-serif\"; ctx.textAlign = \"left\"; ctx.fillText(\"not to scale\", 12, 20); ctx.fillText(\"theta = \" + fmt(th), 12, 38); }",
+  "explain": "Toy dial illustration of arXiv 2104.09864: two rotating pointers for absolute positions m and n. Watch the relative-angle readout, which depends only on the distance m-n, not on absolute position.",
+  "id": "rope-dial",
+  "questions": [
+   {
+    "q": "Predict what happens to rel_angle if m = 10 while n stays fixed?",
+    "why": "Tests that raising query position increases relative rotation."
+   },
+   {
+    "q": "What is rel_dist when m = 8 and n = 3?",
+    "why": "Checks relative distance computation."
+   },
+   {
+    "q": "How does rel_angle change if theta = 0.9 with m and n fixed?",
+    "why": "Tests frequency scaling of the rotation."
+   },
+   {
+    "q": "What happens to rel_dist if n = 12 while m stays at 6?",
+    "why": "Tests sign flip when key passes query."
+   }
+  ],
+  "title": "RoPE dials: only relative distance rotates score",
+  "topic": "rope"
+ }
+}

@@ -232,3 +232,7 @@
 .forming-atlas .ar circle { animation-duration: 3.6s; }
 .wait-side { position: sticky; top: 84px; }
 .wait-side .boot--compact { padding: 18px 20px 16px; }
+
+/* RRM-97: opening phases inside the paper: interface voice, not a paper heading. */
+.open-phases { margin: 18px 0 22px; }
+.folio .open-phases .boot-h h2, .open-phases .boot-h h2 { margin: 0; font: 600 15px/1 var(--font-ui); letter-spacing: 0; color: var(--ink); }

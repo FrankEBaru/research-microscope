@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Block } from "@/lib/types";
 import { Rich } from "@/lib/math";
 import { axisMarks, bars } from "@/lib/tablechart.js";
+import { sortedRows } from "@/lib/tablesort.js";
 import { Prov, Switch, Tabs } from "@/components/ui";
 import { Inlines } from "../Paper";
 import { Ctx, plainOf } from "./inline";
@@ -10,6 +11,7 @@ import "@/styles/table.css";
 
 const rowLabel = (cell: any) => plainOf(cell?.c).replace(/\[cite\]/g, "").trim();
 const ping = (id: string, label: string) => window.dispatchEvent(new CustomEvent("rrm-row", { detail: { id, label } }));
+type Sort = { col: number; dir: "asc" | "desc" } | null;
 
 export function TableChart({ model, n, predict = true, tableId }: { model: any; n: number; predict?: boolean; tableId: string }) {
   const cols = model.numericCols as number[];
@@ -114,7 +116,12 @@ export function Table({ b, ctx, n, predict = true, cited = null }: { b: Block; c
   const [hl, setHl] = useState("");
   const [filter, setFilter] = useState("");
   const [forceChart, setForceChart] = useState(false);
+  const [sort, setSort] = useState<Sort>(null);
   const model = b.an;
+  const order = useMemo(() => sortedRows(model, sort), [model, sort]);
+  const lastHead = model.headRows.length - 1;
+  // asc → desc → as in the paper
+  const flip = (col: number) => setSort((cur) => (!cur || cur.col !== col ? { col, dir: "asc" } : cur.dir === "asc" ? { col, dir: "desc" } : null));
   const chartable = model.numericCols.length > 0 && bars(model, model.numericCols[0]).length >= 3;
   const offline = process.env.NEXT_PUBLIC_RRM_OFFLINE === "1";
   const withChart = chartable && (!ctx.core || forceChart);
@@ -135,13 +142,26 @@ export function Table({ b, ctx, n, predict = true, cited = null }: { b: Block; c
       <div className="table-wrap" onMouseLeave={() => setHc(null)}>
         <table data-hc={hc ?? undefined}>
           <thead>{model.headRows.map((hr: any[], ri: number) => (
-            <tr key={ri}>{hr.map((c: any, ci: number) => <th key={ci} colSpan={c.span} data-c={c.col} className={hc !== null && hc >= c.col && hc < c.col + c.span ? "col-on" : ""} onMouseEnter={() => setHc(c.col)}><Inlines inls={c.c} ctx={ctx} /></th>)}</tr>
+            <tr key={ri}>{hr.map((c: any, ci: number) => {
+              const on = hc !== null && hc >= c.col && hc < c.col + c.span;
+              const sortable = ri === lastHead && c.span === 1 && model.bodyRows.length > 1;
+              const dir = sort && sort.col === c.col ? sort.dir : null;
+              const label = <Inlines inls={c.c} ctx={ctx} />;
+              return (
+                <th key={ci} colSpan={c.span} data-c={c.col} className={on ? "col-on" : ""} onMouseEnter={() => setHc(c.col)} aria-sort={sortable ? (dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none") : undefined}>
+                  {sortable
+                    ? <button type="button" className={`th-sort${dir ? " is-on" : ""}`} onClick={() => flip(c.col)} aria-label={`Sort by ${plainOf(c.c) || `column ${c.col + 1}`}${dir === "asc" ? ", descending next" : dir === "desc" ? ", original order next" : ""}`}>{label}<span className="th-arrow" aria-hidden="true">{dir === "asc" ? "↑" : dir === "desc" ? "↓" : "↕"}</span></button>
+                    : label}
+                </th>
+              );
+            })}</tr>
           ))}</thead>
           <tbody>
-            {model.bodyRows.filter((r: any[]) => {
+            {order.filter((ri: number) => {
               const needle = filter.trim().toLowerCase();
-              return !needle || r.some((c: any) => plainOf(c.c).toLowerCase().includes(needle));
-            }).map((r: any[], ri: number) => {
+              return !needle || model.bodyRows[ri].some((c: any) => plainOf(c.c).toLowerCase().includes(needle));
+            }).map((ri: number) => {
+              const r = model.bodyRows[ri];
               const label = rowLabel(r[0]);
               return (
                 <tr key={ri} className={hl && label === hl ? "row-on" : ""} onMouseEnter={() => ping(b.id, label)} onMouseLeave={() => ping(b.id, "")}>

@@ -1,0 +1,114 @@
+{
+ "id": "lora-rank",
+ "claim": {
+  "text": "LoRA writes a weight update as the product of two low-rank matrices, so the number of trained parameters grows with the ",
+  "latex": "",
+  "context": "",
+  "arxiv": "2106.09685"
+ },
+ "spec": {
+  "archetype": "bars",
+  "constraints": [
+   "r <= d"
+  ],
+  "controls": [
+   {
+    "id": "r",
+    "label": "LoRA rank",
+    "max": 16.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 4.0
+   },
+   {
+    "id": "d",
+    "label": "layer width",
+    "max": 1024.0,
+    "min": 128.0,
+    "step": 128.0,
+    "value": 512.0
+   }
+  ],
+  "derived": [
+   {
+    "formula": "r*2*d",
+    "name": "lora_params"
+   },
+   {
+    "formula": "d*d",
+    "name": "full_params"
+   }
+  ],
+  "direction": [
+   {
+    "control": "r",
+    "effect": "up",
+    "readout": "lora_params"
+   }
+  ],
+  "explain": "Toy illustration of arXiv 2106.09685: two bars compare LoRA parameters against full fine-tuning. Watch the lora_params number to see it grows with rank, not with the square of width.",
+  "questions": [
+   {
+    "q": "Predict what happens to lora_params if r=8?",
+    "why": "Tests rank dependence."
+   },
+   {
+    "q": "What is lora_params when r=2?",
+    "why": "Checks low rank saving."
+   },
+   {
+    "q": "What is full_params when d=1024?",
+    "why": "Checks quadratic growth."
+   },
+   {
+    "q": "What is lora_params when d=256 and r=1?",
+    "why": "Checks small width case."
+   }
+  ],
+  "scale": true,
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "r",
+    "label": "LoRA rank",
+    "max": 16.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 4.0
+   },
+   {
+    "id": "d",
+    "label": "layer width",
+    "max": 1024.0,
+    "min": 128.0,
+    "step": 128.0,
+    "value": 512.0
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var r = state.r; var d = state.d; function fmt(v) { return Math.round(v * 100) / 100; } var lora_params = r * 2 * d; var full_params = d * d; var maxFull = 1024 * 1024; var maxW = 440; var wf = full_params / maxFull * maxW; var wl = lora_params / maxFull * maxW; if (wl < 2) { wl = 2; } ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"15px sans-serif\"; ctx.fillText(\"LoRA vs full fine-tuning\", 24, 28); ctx.font = \"12px sans-serif\"; ctx.fillStyle = \"#5c564c\"; ctx.fillText(\"bars to same scale\", 24, 46); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"13px sans-serif\"; ctx.fillText(\"LoRA A plus B\", 24, 110); ctx.fillText(\"full d by d\", 24, 190); ctx.fillStyle = \"#e4d6c4\"; ctx.fillRect(180, 88, maxW, 30); ctx.fillRect(180, 168, maxW, 30); ctx.fillStyle = \"#1f4b99\"; ctx.fillRect(180, 88, wl, 30); ctx.fillStyle = \"#c4512c\"; ctx.fillRect(180, 168, wf, 30); ctx.fillStyle = \"#1d1a16\"; ctx.font = \"13px sans-serif\"; ctx.fillText(\"lora_params = \" + fmt(lora_params), 180, 138); ctx.fillText(\"full_params = \" + fmt(full_params), 180, 218); ctx.font = \"12px sans-serif\"; ctx.fillStyle = \"#5c564c\"; ctx.fillText(\"r = \" + fmt(r), 24, 260); ctx.fillText(\"d = \" + fmt(d), 24, 280); ctx.fillText(\"r x 2 x d vs d x d\", 180, 260); var y2 = 280; var x2 = 180; var n = Math.round(r); var i = 0; for (i = 0; i < n; i++) { ctx.fillStyle = \"#1f4b99\"; ctx.fillRect(x2 + i * 22, y2, 16, 16); } ctx.strokeStyle = \"#1d1a16\"; ctx.lineWidth = 1; ctx.strokeRect(180, 88, maxW, 30); ctx.strokeRect(180, 168, maxW, 30); }",
+  "explain": "Toy illustration of arXiv 2106.09685: two bars compare LoRA parameters against full fine-tuning. Watch the lora_params number to see it grows with rank, not with the square of width.",
+  "id": "lora-bars",
+  "questions": [
+   {
+    "q": "Predict what happens to lora_params if r=8?",
+    "why": "Tests rank dependence."
+   },
+   {
+    "q": "What is lora_params when r=2?",
+    "why": "Checks low rank saving."
+   },
+   {
+    "q": "What is full_params when d=1024?",
+    "why": "Checks quadratic growth."
+   },
+   {
+    "q": "What is lora_params when d=256 and r=1?",
+    "why": "Checks small width case."
+   }
+  ],
+  "title": "LoRA rank adds params linearly, width squares them",
+  "topic": "lora"
+ }
+}

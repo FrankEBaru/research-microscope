@@ -1,0 +1,113 @@
+{
+ "id": "lora-rank",
+ "claim": {
+  "text": "LoRA writes a weight update as the product of two low-rank matrices, so the number of trained parameters grows with the ",
+  "latex": "",
+  "context": "",
+  "arxiv": "2106.09685"
+ },
+ "spec": {
+  "archetype": "matrix",
+  "constraints": [
+   "r <= d"
+  ],
+  "controls": [
+   {
+    "id": "r",
+    "label": "LoRA rank",
+    "max": 8.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 4.0
+   },
+   {
+    "id": "d",
+    "label": "Model width",
+    "max": 512.0,
+    "min": 64.0,
+    "step": 64.0,
+    "value": 256.0
+   }
+  ],
+  "derived": [
+   {
+    "formula": "2*d*r",
+    "name": "lora_params"
+   },
+   {
+    "formula": "d*d",
+    "name": "full_params"
+   }
+  ],
+  "direction": [
+   {
+    "control": "r",
+    "effect": "up",
+    "readout": "lora_params"
+   }
+  ],
+  "explain": "Illustrative toy of arXiv 2106.09685 showing LoRA update as two thin matrices versus full width-by-width update; the rank limit keeps trained parameters small.",
+  "questions": [
+   {
+    "q": "Predict what r = 4 means for the shape of the two LoRA factors with d = 256?",
+    "why": "Checks rank mental model."
+   },
+   {
+    "q": "Many think full fine-tuning with d = 256 needs similar parameters to r = 4; what is wrong before you move r?",
+    "why": "Targets square-vs-linear misconception."
+   },
+   {
+    "q": "How would you describe the savings if d = 512 while holding r = 2?",
+    "why": "Tests width scaling intuition."
+   },
+   {
+    "q": "Why keep r = 8 small when d = 512 instead of raising rank toward width?",
+    "why": "Probes low-rank motivation."
+   }
+  ],
+  "threshold_formula": ""
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "r",
+    "label": "LoRA rank",
+    "max": 8.0,
+    "min": 1.0,
+    "step": 1.0,
+    "value": 4.0
+   },
+   {
+    "id": "d",
+    "label": "Model width",
+    "max": 512.0,
+    "min": 64.0,
+    "step": 64.0,
+    "value": 256.0
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var r = state.r; var d = state.d; function fmt(v) { return Math.round(v * 100) / 100; } ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); var S = 40 + d * 0.22; var thin = 8 + r * 9; var y0 = 96; var xF = 36; var xB = 250; var xA = 250 + thin + 18; ctx.fillStyle = \"#1c1915\"; ctx.font = \"13px sans-serif\"; ctx.fillText(\"full d by d vs LoRA pair\", 36, 30); ctx.font = \"12px sans-serif\"; ctx.fillStyle = \"#c4512c\"; ctx.fillRect(xF, y0, S, S); ctx.strokeStyle = \"#1c1915\"; ctx.lineWidth = 2; ctx.strokeRect(xF, y0, S, S); ctx.fillStyle = \"#1f4b99\"; ctx.fillRect(xB, y0, thin, S); ctx.strokeStyle = \"#1c1915\"; ctx.strokeRect(xB, y0, thin, S); ctx.fillStyle = \"#2e7d5b\"; ctx.fillRect(xA, y0, S, thin); ctx.strokeStyle = \"#1c1915\"; ctx.strokeRect(xA, y0, S, thin); ctx.strokeStyle = \"#5c564c\"; ctx.lineWidth = 1; var i = 0; for (i = 1; i < r; i = i + 1) { var lx = xB + i * thin / r; ctx.beginPath(); ctx.moveTo(lx, y0); ctx.lineTo(lx, y0 + S); ctx.stroke(); } var j = 0; for (j = 1; j < r; j = j + 1) { var ly = y0 + j * thin / r; ctx.beginPath(); ctx.moveTo(xA, ly); ctx.lineTo(xA + S, ly); ctx.stroke(); } ctx.fillStyle = \"#1c1915\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"full d by d\", xF, y0 + S + 20); ctx.fillText(\"B d by r\", xB, y0 + S + 20); ctx.fillText(\"A r by d\", xA, y0 + S + 20); ctx.fillText(\"d = \" + fmt(d), xF, y0 + S + 38); ctx.fillText(\"r = \" + fmt(r), xB, y0 + S + 38); var lora = 2 * d * r; var full = d * d; ctx.fillStyle = \"#1f4b99\"; ctx.fillText(\"lora_params = \" + fmt(lora), 36, 318); ctx.fillStyle = \"#c4512c\"; ctx.fillText(\"full_params = \" + fmt(full), 250, 318); ctx.fillStyle = \"#1c1915\"; ctx.fillText(\"B times A makes d by d update\", 250, 52); }",
+  "explain": "Illustrative toy of arXiv 2106.09685 showing LoRA update as two thin matrices versus full width-by-width update; the rank limit keeps trained parameters small.",
+  "id": "lora-rank",
+  "questions": [
+   {
+    "q": "Predict what r = 4 means for the shape of the two LoRA factors with d = 256?",
+    "why": "Checks rank mental model."
+   },
+   {
+    "q": "Many think full fine-tuning with d = 256 needs similar parameters to r = 4; what is wrong before you move r?",
+    "why": "Targets square-vs-linear misconception."
+   },
+   {
+    "q": "How would you describe the savings if d = 512 while holding r = 2?",
+    "why": "Tests width scaling intuition."
+   },
+   {
+    "q": "Why keep r = 8 small when d = 512 instead of raising rank toward width?",
+    "why": "Probes low-rank motivation."
+   }
+  ],
+  "title": "LoRA thin pair versus full square update",
+  "topic": "lora"
+ }
+}

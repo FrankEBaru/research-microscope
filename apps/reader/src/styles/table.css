@@ -130,3 +130,20 @@
   .table-fig .tbar-row, .table-fig .b-ax { gap: 8px; }
   .table-fig .tchart { padding: 14px 12px 12px; }
 }
+
+/* RRM-97: ordenar por columna. El encabezado es el botón; la flecha dice el orden. */
+.table-fig thead tr th[aria-sort] { padding: 0; }
+.table-fig thead tr:first-child th[aria-sort] .th-sort { padding-top: 10px; }
+.table-fig .th-sort {
+  display: inline-flex; align-items: baseline; gap: 6px; width: 100%; min-height: 32px; padding: 7px 12px;
+  border: 0; background: transparent; color: inherit; font: inherit; text-align: inherit; cursor: pointer; border-radius: var(--r-xs);
+}
+.table-fig .th-sort:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--focus-gap), 0 0 0 4px var(--focus); }
+.table-fig .th-arrow { color: var(--ink-3); font-size: 11px; opacity: 0; transition: opacity var(--dur-1) var(--ease-out); }
+.table-fig .th-sort.is-on .th-arrow { color: var(--accent); opacity: 1; }
+.table-fig .th-sort:focus-visible .th-arrow { opacity: 1; }
+@media (hover: hover) {
+  .table-fig .th-sort:hover { color: var(--accent-h); }
+  .table-fig .th-sort:hover .th-arrow { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .table-fig .th-arrow { transition: none; } }

@@ -1,0 +1,43 @@
+{
+ "controls": [
+  {
+   "id": "rank",
+   "label": "rank r",
+   "max": 16,
+   "min": 1,
+   "step": 1,
+   "value": 8
+  },
+  {
+   "id": "width",
+   "label": "width d",
+   "max": 512,
+   "min": 32,
+   "step": 32,
+   "value": 128
+  }
+ ],
+ "draw": "function draw(ctx, state, t) { var top = 36; var bot = 286; var rank = state.rank; var width = state.width; function fmt(v) { return Math.round(v * 100) / 100; } var maxP = 16384; var scale = (bot - top) / maxP; var thr = 4000; var ythr = bot - thr * scale; var x = 48; var r = 0; var y = 0; var yp = 0; var clipped = false; ctx.clearRect(0, 0, state.w, state.h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, state.w, state.h); ctx.strokeStyle = \"#1f4b99\"; ctx.lineWidth = 2; ctx.beginPath(); for (x = 48; x <= 560; x = x + 10) { r = (x - 48) / (560 - 48) * 16; y = r * 2 * width; yp = bot - y * scale; if (yp < top) { yp = top; clipped = true; } if (x === 48) { ctx.moveTo(x, yp); } else { ctx.lineTo(x, yp); } } ctx.stroke(); if (clipped === true) { ctx.fillStyle = \"#1f4b99\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"clipped\", 500, top + 16); } ctx.strokeStyle = \"#c4512c\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(48, ythr); ctx.lineTo(560, ythr); ctx.stroke(); var xr = 48 + (rank / 16) * (560 - 48); var yr = bot - (rank * 2 * width) * scale; if (yr < top) { yr = top; } ctx.beginPath(); ctx.moveTo(xr, bot); ctx.lineTo(xr, yr); ctx.stroke(); ctx.fillStyle = \"#c4512c\"; ctx.beginPath(); ctx.arc(xr, yr, 5, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = \"#1f4b99\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"threshold \" + fmt(thr), 48, ythr - 8); ctx.fillText(\"rank = \" + fmt(rank), 48, 318); ctx.fillText(\"width = \" + fmt(width), 300, 318); ctx.fillText(\"toy\", 48, 344); }",
+ "explain": "LoRA writes the update as ΔW = B A, so the toy curve of trained params rises with rank r and crosses a flat threshold line with reading rank = value that stays still, which only holds if r << width arXiv 2106.09685.",
+ "id": "lora-rank-budget",
+ "questions": [
+  {
+   "q": "Predict which part stays frozen when rank is set to 8?",
+   "why": "Reader wonders what is trained versus fixed."
+  },
+  {
+   "q": "Why does raising rank to 16 grow trainable parameters slowly?",
+   "why": "Low-rank growth feels counterintuitive."
+  },
+  {
+   "q": "Why does width stay irrelevant when rank is 4?",
+   "why": "Square dependence is expected by newcomer."
+  },
+  {
+   "q": "How can rank 1 still change a large matrix?",
+   "why": "Tiny product shaping big update confuses."
+  }
+ ],
+ "title": "LoRA rank sets tiny trainable update",
+ "topic": "lora"
+}

@@ -1,4 +1,5 @@
 "use client";
+import { Rich } from "@/lib/math";
 import { useState } from "react";
 import { Prov } from "@/components/ui";
 
@@ -13,7 +14,7 @@ export function Cited({ rows, rest, onJump }: { rows: CitedRow[]; rest: CitedRow
       <Prov kind="paper" text="The paper explains it here" />
       {shown.map((row) => (
         <button type="button" key={row.block} className="cited-row press" onClick={() => onJump(row)}>
-          <span className="cited-q">“{row.text}”</span>
+          <span className="cited-q">“<Rich text={row.text} />”</span>
           {row.section ? <span className="cited-sec tnum">§{row.section}</span> : null}
         </button>
       ))}

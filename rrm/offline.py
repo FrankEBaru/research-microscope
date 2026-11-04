@@ -127,9 +127,40 @@ class Store:
                 if cid.isdigit() and (safe_name(name) or name == "source.pdf"):
                     self.files[(str(int(cid)), name)] = path.resolve()
         self.licenses = load_map(map_path(self.root))
+        # Integration (RRM-95): papers seen in a recorded map but without a recorded /paper are offered as
+        # abstract only (honest), with title/venue/year/abstract from the bursts and labels.
+        self.seen = {}
+        for row in self.queries.values():
+            burst = row.get("burst") or {}
+            for paper in list(burst.get("papers") or []) + list(burst.get("similar") or []):
+                if isinstance(paper, dict) and str(paper.get("corpusid", "")).isdigit():
+                    self.seen.setdefault(str(int(paper["corpusid"])), dict(paper))
+            labels = row.get("labels") or {}
+            by_id = labels.get("by_id") if isinstance(labels, dict) else None
+            for cid, lab in (by_id or {}).items():
+                if str(cid).isdigit() and isinstance(lab, dict) and str(int(cid)) in self.seen:
+                    for key in ("abstract", "authors"):
+                        if lab.get(key) and not self.seen[str(int(cid))].get(key):
+                            self.seen[str(int(cid))][key] = lab[key]
 
     def question(self, raw: str):
         return self.queries.get((raw or "").strip())
+
+
+def _abstract_row(cid):
+    return {"id": int(cid), "status": "abstract_only", "stage": "done", "source": "abstract", "text": False,
+            "stages": {"stub": "done", "sections": "skipped"}, "reason": "Offline demo: only the abstract was recorded for this paper."}
+
+
+def _abstract_paper(cid, seen):
+    abstract = str(seen.get("abstract") or seen.get("tldr") or "").strip()
+    if abstract in ("None", "null"):
+        abstract = ""
+    blocks = [{"id": "b0", "kind": "p", "abs": True, "inlines": [{"t": "text", "v": abstract}]}] if abstract else []
+    authors = seen.get("authors") if isinstance(seen.get("authors"), list) else []
+    paper = {"corpusid": int(cid), "title": seen.get("title") or "", "authors": authors, "abstract": abstract,
+             "venue": seen.get("venue") or "", "year": seen.get("year"), "blocks": blocks, "refs": {}, "full": False}
+    return {"status": "abstract_only", "meta": _abstract_row(cid), "paper": paper, "cached": True}
 
 
 def _miss():
@@ -334,20 +365,27 @@ def build_handler(store: Store):
                 if not ids:
                     self._json(*_miss())
                     return
-                known = [part for part in ids if part in store.status]
+                known = [part for part in ids if part in store.status or part in store.seen]
                 if not known:
                     self._json(*_miss())
                     return
                 rows = []
                 for part in ids:
-                    if part in store.status:
+                    if part in store.status and part not in store.papers and part in store.seen:
+                        rows.append(gate_status_row(_abstract_row(part), store.licenses))
+                    elif part in store.status:
                         rows.append(gate_status_row(store.status[part], store.licenses))
+                    elif part in store.seen:
+                        rows.append(gate_status_row(_abstract_row(part), store.licenses))
                     else:
                         rows.append(gate_status_row({"id": int(part), "status": "missing", "reason": MISS}, store.licenses))
                 self._json(200, {"papers": rows})
                 return
             if path == "/paper":
                 cid = cid_of()
+                if cid and cid not in store.papers and cid in store.seen:
+                    self._json(200, _abstract_paper(cid, store.seen[cid]))
+                    return
                 if not cid or cid not in store.papers:
                     self._json(*_miss())
                     return
@@ -418,6 +456,16 @@ def build_handler(store: Store):
                     if recorded is not None:
                         self._json(200, gate_ask(recorded, store.licenses))
                         return
+                # Integration (RRM-95): computing sentences offline loads SPECTER2 on the laptop. Only with
+                # RRM_OFFLINE_ENCODE=1; otherwise unrecorded text gets a plain answer.
+                if os.environ.get("RRM_OFFLINE_ENCODE", "").strip() != "1":
+                    text = str((item or {}).get("text") or "").strip() if isinstance(item, dict) else ""
+                    if not text:
+                        self._json(200, {"store": {"ready": 1, "total": 1}, "offline": True, "parts": {}, "extracts": []})
+                    else:
+                        self._json(200, {"empty": True, "offline": True, "parts": {}, "extracts": [],
+                                         "note": "Offline demo: this explanation was not recorded. The recorded ones are in the demo guide; the online app reviews any text."})
+                    return
                 self._json(200, gate_ask(_ask(store, item), store.licenses))
                 return
             if path == "/notes":

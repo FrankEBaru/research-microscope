@@ -1,0 +1,95 @@
+{
+ "id": "gelu-tail",
+ "claim": {
+  "text": "GELU does not cut at zero: a negative input still leaks through, unlike a hard cutoff.",
+  "latex": "",
+  "context": "",
+  "arxiv": "1606.08415"
+ },
+ "spec": {
+  "archetype": "curve",
+  "constraints": [],
+  "controls": [
+   {
+    "id": "x",
+    "label": "input value",
+    "max": 3,
+    "min": -3,
+    "step": 0.1,
+    "value": -1
+   }
+  ],
+  "derived": [
+   {
+    "formula": "x*0.5*(1+tanh(0.79788456*(x+0.044715*x*x*x)))",
+    "name": "gelu"
+   },
+   {
+    "formula": "max(x,0)",
+    "name": "cutoff"
+   }
+  ],
+  "direction": [
+   {
+    "control": "x",
+    "effect": "up",
+    "readout": "gelu"
+   }
+  ],
+  "explain": "Illustrative toy from arXiv 1606.08415 comparing smooth GELU leakage to a hard zero cutoff; the bound is the negative-side leak condition of the topic.",
+  "questions": [
+   {
+    "q": "Predict what happens to the leak when x is set to -1?",
+    "why": "elicits prior before interaction"
+   },
+   {
+    "q": "Many think negative x gives exactly zero like a cutoff, but what do you expect at x = -2 before moving it?",
+    "why": "surfaces hard-cutoff misconception"
+   },
+   {
+    "q": "How small is the leak compared to the cutoff when x is set to -0.5?",
+    "why": "focuses attention on negative region"
+   },
+   {
+    "q": "What shape do you see around x = 1 versus x = -1?",
+    "why": "contrasts regimes without asking for numbers"
+   }
+  ],
+  "threshold_formula": "x <= 0"
+ },
+ "widget": {
+  "controls": [
+   {
+    "id": "x",
+    "label": "input value",
+    "max": 3,
+    "min": -3,
+    "step": 0.1,
+    "value": -1
+   }
+  ],
+  "draw": "function draw(ctx, state, t) { var w = state.w; var h = state.h; var xv = state.x; function fmt(v) { return Math.round(v * 100) / 100; } function X(u) { return 48 + (u + 3) / 6 * 380; } function Y(v) { return 300 - (v + 1) / 4 * 260; } function geluF(u) { var inner = 0.79788456 * (u + 0.044715 * u * u * u); var e2 = Math.exp(2 * inner); var th = (e2 - 1) / (e2 + 1); return u * 0.5 * (1 + th); } function cutF(u) { if (u > 0) { return u; } else { return 0; } } ctx.clearRect(0, 0, w, h); ctx.fillStyle = \"#f6f3ec\"; ctx.fillRect(0, 0, w, h); ctx.fillStyle = \"#e9e2d3\"; ctx.fillRect(X(-3), Y(0), X(0) - X(-3), Y(-1) - Y(0)); ctx.strokeStyle = \"#8a8175\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(48, Y(0)); ctx.lineTo(428, Y(0)); ctx.stroke(); ctx.beginPath(); ctx.moveTo(X(0), 20); ctx.lineTo(X(0), 300); ctx.stroke(); ctx.strokeStyle = \"#9a938a\"; ctx.lineWidth = 2; ctx.beginPath(); var i = 0; var u = 0; for (i = 0; i <= 120; i++) { u = -3 + i / 120 * 6; if (i === 0) { ctx.moveTo(X(u), Y(cutF(u))); } else { ctx.lineTo(X(u), Y(cutF(u))); } } ctx.stroke(); ctx.strokeStyle = \"#1f4b99\"; ctx.lineWidth = 3; ctx.beginPath(); for (i = 0; i <= 120; i++) { u = -3 + i / 120 * 6; if (i === 0) { ctx.moveTo(X(u), Y(geluF(u))); } else { ctx.lineTo(X(u), Y(geluF(u))); } } ctx.stroke(); var gx = X(xv); var gy = Y(geluF(xv)); var cy = Y(cutF(xv)); ctx.strokeStyle = \"#c4512c\"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(gx, 20); ctx.lineTo(gx, 300); ctx.stroke(); ctx.fillStyle = \"#1f4b99\"; ctx.beginPath(); ctx.arc(gx, gy, 7, 0, 6.2832); ctx.fill(); ctx.fillStyle = \"#ffffff\"; ctx.beginPath(); ctx.arc(gx, gy, 3, 0, 6.2832); ctx.fill(); ctx.fillStyle = \"#55504a\"; ctx.beginPath(); ctx.arc(gx, cy, 6, 0, 6.2832); ctx.fill(); var gnow = geluF(xv); var cnow = cutF(xv); ctx.font = \"13px sans-serif\"; ctx.fillStyle = \"#1d1a16\"; ctx.textAlign = \"left\"; ctx.fillText(\"GELU smooth\", 450, 60); ctx.fillText(\"zero cutoff\", 450, 84); ctx.fillStyle = \"#1f4b99\"; ctx.fillRect(434, 52, 10, 10); ctx.fillStyle = \"#9a938a\"; ctx.fillRect(434, 76, 10, 10); ctx.fillStyle = \"#1d1a16\"; ctx.fillText(\"x = \" + fmt(xv), 450, 120); ctx.fillStyle = \"#1f4b99\"; ctx.fillText(\"gelu = \" + fmt(gnow), 450, 144); ctx.fillStyle = \"#55504a\"; ctx.fillText(\"cutoff = \" + fmt(cnow), 450, 168); if (xv <= 0) { ctx.fillStyle = \"#c4512c\"; ctx.fillText(\"leak below zero\", 450, 200); ctx.fillText(\"gelu gap = \" + fmt(gnow - cnow), 450, 224); } else { ctx.fillStyle = \"#1f4b99\"; ctx.fillText(\"above zero\", 450, 200); ctx.fillText(\"gelu gap = \" + fmt(gnow - cnow), 450, 224); } ctx.fillStyle = \"#8a8175\"; ctx.font = \"12px sans-serif\"; ctx.fillText(\"negatives leak\", 60, 290); }",
+  "explain": "Illustrative toy from arXiv 1606.08415 comparing smooth GELU leakage to a hard zero cutoff; the bound is the negative-side leak condition of the topic.",
+  "id": "gelu-leak",
+  "questions": [
+   {
+    "q": "Predict what happens to the leak when x is set to -1?",
+    "why": "elicits prior before interaction"
+   },
+   {
+    "q": "Many think negative x gives exactly zero like a cutoff, but what do you expect at x = -2 before moving it?",
+    "why": "surfaces hard-cutoff misconception"
+   },
+   {
+    "q": "How small is the leak compared to the cutoff when x is set to -0.5?",
+    "why": "focuses attention on negative region"
+   },
+   {
+    "q": "What shape do you see around x = 1 versus x = -1?",
+    "why": "contrasts regimes without asking for numbers"
+   }
+  ],
+  "title": "GELU leaks where cutoff stays zero",
+  "topic": "gelu"
+ }
+}

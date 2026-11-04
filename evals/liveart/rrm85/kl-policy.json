@@ -1,0 +1,35 @@
+{
+ "controls": [
+  {
+   "id": "beta",
+   "label": "beta",
+   "max": 2,
+   "min": 0.1,
+   "step": 0.05,
+   "value": 0.7
+  }
+ ],
+ "draw": "function draw(ctx, state, t) {\n  var top = 36;\n  var bot = 286;\n  var thr = 0.25;\n  var beta = state.beta;\n  function fmt(v) { return Math.round(v * 100) / 100; }\n  var r0 = 2;\n  var r1 = 1;\n  var r2 = 0;\n  var r3 = -1;\n  var b = beta;\n  var e0 = 0;\n  var e1 = 0;\n  var e2 = 0;\n  var e3 = 0;\n  var s = 0;\n  var p0 = 0;\n  var p1 = 0;\n  var p2 = 0;\n  var p3 = 0;\n  var H = bot - top;\n  var ythr = bot - thr * H;\n  var gap = 14;\n  var bw = (512 - gap * 5) / 4;\n  var i = 0;\n  var x = 0;\n  var hh = 0;\n  var pp = 0;\n  var win = 0;\n  var wmax = -1;\n  if (b < 0.1) { b = 0.1; }\n  e0 = Math.exp(r0 / b);\n  e1 = Math.exp(r1 / b);\n  e2 = Math.exp(r2 / b);\n  e3 = Math.exp(r3 / b);\n  s = e0 + e1 + e2 + e3;\n  p0 = e0 / s;\n  p1 = e1 / s;\n  p2 = e2 / s;\n  p3 = e3 / s;\n  ctx.clearRect(0, 0, state.w, state.h);\n  ctx.fillStyle = \"#f6f3ec\";\n  ctx.fillRect(0, 0, state.w, state.h);\n  ctx.strokeStyle = \"#1f4b99\";\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(48, ythr);\n  ctx.lineTo(560, ythr);\n  ctx.stroke();\n  for (i = 0; i < 4; i++) {\n    if (i === 0) { pp = p0; }\n    if (i === 1) { pp = p1; }\n    if (i === 2) { pp = p2; }\n    if (i === 3) { pp = p3; }\n    if (pp > wmax) { wmax = pp; win = i; }\n    x = 48 + gap + i * (bw + gap);\n    hh = pp * H;\n    ctx.fillStyle = \"#1f4b99\";\n    if (hh > H) {\n      ctx.fillRect(x, top, bw, H);\n      ctx.fillStyle = \"#c4512c\";\n      ctx.fillText(\"clipped\", x, top + 16);\n    } else {\n      ctx.fillRect(x, bot - hh, bw, hh);\n    }\n  }\n  ctx.fillStyle = \"#1f4b99\";\n  ctx.font = \"12px sans-serif\";\n  ctx.fillText(\"threshold \" + fmt(thr), 48, ythr - 8);\n  ctx.fillText(\"beta = \" + fmt(b), 48, 318);\n  ctx.fillText(\"winner tok \" + fmt(win) + \" mass \" + fmt(wmax), 300, 318);\n  ctx.fillText(\"toy arXiv 2203.02155\", 48, 344);\n}",
+ "explain": "Moving beta reshapes the toy curve pi* = pi_ref exp(r/beta) of arXiv 2203.02155 from flat to peaked while the threshold line stays still and the reading name = value follows the winner. The winner-takes-all crossing only holds if beta stays small.",
+ "id": "kl-rlhf-beta",
+ "questions": [
+  {
+   "q": "Predict which token takes all mass if beta drops to 0.1?",
+   "why": "small beta sharpens exp reward gap"
+  },
+  {
+   "q": "Why does raising beta to 2.0 pull the policy back to the reference?",
+   "why": "large beta flattens the reward tilt"
+  },
+  {
+   "q": "Which token stays almost frozen when beta moves from 0.5 to 1.5?",
+   "why": "mid rewards barely shift under smoothing"
+  },
+  {
+   "q": "Where is the best point near beta 0.7 with high reward and spread mass?",
+   "why": "tradeoff decides usable alignment"
+  }
+ ],
+ "title": "Small beta lets one token take the reward",
+ "topic": "kl_rlhf"
+}
