@@ -806,7 +806,7 @@ export default function PaperView({ paper, content, focus, companion, onHideComp
       if (b.kind === "h") {
         const Tag: any = b.level === 1 ? "h2" : b.level === 2 ? "h3" : "h4";
         const num = model.nums[b.id];
-        el = <Tag id={`sec-${b.id}`} data-toc>{num && <span className="no">{num}</span>}<Inlines inls={b.inlines} ctx={ctx} /></Tag>;
+        el = <Tag id={`sec-${b.id}`} data-toc>{num && <span className="no">{num}</span>}<span className="h-t"><Inlines inls={b.inlines} ctx={ctx} /></span></Tag>; // RRM-103: one flex item, so an <em> in the title wraps
       } else if (b.kind === "p") {
         if (!b.abs && !visibleInlines(b.inlines)) return;
         let noteCursor = model.noteBase[b.id];

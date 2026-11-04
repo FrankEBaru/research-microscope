@@ -188,3 +188,7 @@ test("RRM-103: \\textellipsis, \\textgreater and booktabs row spacing are not le
   assert.doesNotMatch(out, /\\text|heavyrulewidth/);
   assert.match(out, /RLHF-V1, …, RLHF-V5 with >= 0.005% here\./);
 });
+
+test("RRM-103: a braced umlaut keeps its letter", () => {
+  assert.equal(text(presentInlines([{ t: "text", v: "the Nystr{\\\"o}mformer and Nystr\\\"omformer baselines" }])), "the Nyströmformer and Nyströmformer baselines");
+});

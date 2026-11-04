@@ -80,6 +80,7 @@ export function cleanTexText(raw) {
     .replace(/\d*\.?\d+\\(?:textwidth|linewidth|columnwidth)\b/g, "")
     .replace(/\\[@a-z]*@[A-Za-z@]*/g, "")
     .replace(/\\(sysname|model|method|ours)\b/g, (m, k) => NAMES[k] || k)
+    .replace(/\{?\\"\{?([aeiouAEIOU])\}?\}?/g, (_m, v) => ({ a: "ä", e: "ë", i: "ï", o: "ö", u: "ü", A: "Ä", E: "Ë", I: "Ï", O: "Ö", U: "Ü" })[v] || v) // RRM-103: Nystr{\"o}m → Nyström
     .replace(/\\"([a-z])/g, "$1")
     .replace(/\{\s*\}/g, "")
     .replace(/\{([✓✗])\}/g, "$1")

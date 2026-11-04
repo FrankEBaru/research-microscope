@@ -129,7 +129,10 @@ async function tabFocus(page, name) {
       if (!el || el === document.body || el === document.documentElement) return null;
       const visible = !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
       if (!visible) return null;
-      const shadow = getComputedStyle(el).boxShadow;
+      let shadow = getComputedStyle(el).boxShadow;
+      // RRM-103: the question field draws its focus ring on the field (:focus-within), not inside it.
+      const field = el.tagName === "INPUT" ? el.closest(".ask-field, .b1-search") : null;
+      if ((!shadow || shadow === "none") && field) shadow = getComputedStyle(field).boxShadow;
       const label = (el.getAttribute("aria-label") || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 40);
       return { shadow, label, tag: el.tagName };
     });
