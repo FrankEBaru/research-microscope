@@ -384,6 +384,13 @@
   .folio .table-fig,
   .folio .instrument { margin-right: 0; }
 }
+/* RRM-103: tablet (761–1079 px). The 180 | 39rem grid did not fit below ~920 px and the index and the text were cut
+   on both sides. One centered reading column; the index goes away and the minimap becomes the «Atlas» button in the
+   paper header (ReadMinimap, same as phones); notes already sit under their block below 1280 px. */
+@media (min-width: 761px) and (max-width: 1079px) {
+  .folio { display: block; max-width: 42rem; margin: 0 auto; }
+  .folio .toc { display: none; }
+}
 @media (max-width: 760px) {
   [data-screen="paper"].lvl:has(> .folio) { padding-left: 20px; padding-right: 20px; }
   .folio { display: block; padding: 12px 0 48px; }

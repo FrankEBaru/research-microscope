@@ -26,9 +26,15 @@ export default function StartScreen({ draft, setDraft, onSearch, pending, engine
     }
   }, []);
   const needle = draft.trim().toLowerCase();
+  // RRM-103: compact list (mock 01-start): questions people ask first (they start in lowercase; paper titles are
+  // capitalized), four visible and «More» for the rest. Typing filters the whole list.
+  const [more, setMore] = useState(false);
+  const ordered = [...recorded].sort((a, b) => Number(/^[A-Z]/.test(a)) - Number(/^[A-Z]/.test(b)));
+  const LIMIT = 4;
   const recordedShown = needle
-    ? recorded.filter((q) => q.toLowerCase().includes(needle))
-    : recorded;
+    ? ordered.filter((q) => q.toLowerCase().includes(needle))
+    : more ? ordered : ordered.slice(0, LIMIT);
+  const hidden = needle || more ? 0 : Math.max(0, ordered.length - LIMIT);
   const recentShown = recent.filter((q) => !recorded.includes(q));
 
   return (
@@ -52,6 +58,7 @@ export default function StartScreen({ draft, setDraft, onSearch, pending, engine
                   {recordedShown.map((q) => (
                     <button key={q} type="button" className="press" data-recorded={q} onClick={() => onSearch({ preventDefault() {}, query: q })}>{q}</button>
                   ))}
+                  {hidden > 0 && <button type="button" className="press b1-more" aria-expanded={false} onClick={() => setMore(true)}>More ({hidden})</button>}
                 </p>
               )}
             </div>

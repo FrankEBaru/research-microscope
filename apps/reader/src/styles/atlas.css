@@ -160,7 +160,7 @@
   padding: 0 14px; border-radius: 8px; border: 1px solid var(--rule-2); background: var(--sheet);
   font: 600 14px/1 var(--font-ui); color: var(--ink); cursor: pointer;
 }
-@media (min-width: 761px) { .atlas-slot { display: none; } }
+@media (min-width: 1080px) { .atlas-slot { display: none; } } /* RRM-103: tablet uses the header button too */
 
 html.ovl-open body { overflow: hidden; }
 .ovl { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 32px; background: var(--scrim); animation: ovl-in 200ms var(--ease-out) both; }
