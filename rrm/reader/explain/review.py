@@ -206,6 +206,11 @@ def assemble(ctx, sents, data, passages=None, points=None):
         if n not in seen_n:
             parts["sin_respaldo"].append({"n": n, "text": sentence, "why": "", "cites": [], "others": [], "verified": False})
     if points is not None:
+        # Cubierto también si una afirmación que coincide o diverge cita una frase del punto.
+        cited = {c["ptr"] for v in ("coincide", "diverge") for item in parts[v] for c in item.get("cites") or []}
+        for point in points:
+            if cited & set(point.get("ptrs") or []):
+                covered.add(point["id"])
         parts["te_falto"] = _missed_from_points(ctx, points, covered, passages)
     else:
         for item in ((data or {}).get("missed") or [])[:2]:

@@ -81,20 +81,52 @@ def _e0(paper_dir, text, encode):
     return parts, body.get("meta") or {}
 
 
-def _missed_score(parts, gold_missed):
-    """Precisión: te_falto que apunta a una idea esperada. Recall: ideas esperadas cubiertas."""
+def _missed_score(parts, gold_missed, said=()):
+    """Precisión: te_falto que apunta a una idea esperada. Recall: ideas esperadas cubiertas.
+    Falso: te_falto que cita una frase que el lector ya explicó bien (`said`)."""
     items = parts.get("te_falto") or []
     groups = [set(g) for g in gold_missed]
-    hit_items, hit_groups = 0, set()
+    said = set(said)
+    hit_items, hit_groups, false = 0, set(), 0
     for item in items:
         mine = {c.get("ptr") for c in item.get("cites") or []} | ({item.get("ptr")} if item.get("ptr") else set())
+        false += bool(mine and mine <= said)
         ok = False
         for gi, g in enumerate(groups):
             if mine & g:
                 ok = True
                 hit_groups.add(gi)
         hit_items += ok
-    return len(items), hit_items, len(hit_groups), len(groups)
+    return len(items), hit_items, len(hit_groups), len(groups), false
+
+
+_JUDGE = (
+    "You grade short explanations shown to a student who explained a paper section in their own words. "
+    "Each item has the student's claim, a verdict, the explanation (`why`) and the paper sentences it relies on. "
+    "correct: true if the why agrees with the quoted paper sentences and fits the verdict; false if it states something the quotes do not support or contradicts them. "
+    "simple: true if a student understands it at first read: plain English, short, no stray words or garbage, no needless jargon. "
+    "Grade every item, in order, by its number."
+)
+
+
+def judge(parts, model, salt=""):
+    from rrm.reader.explain import llm as L
+
+    items = [(p, it) for p in PARTS for it in parts.get(p) or [] if it.get("why")]
+    if not items:
+        return [], L.add(None, None)
+    listed = "\n\n".join(
+        f"{i}. verdict={p}\nclaim: {it.get('text')}\nwhy: {it.get('why')}\nquotes: " + " | ".join(c.get("text", "") for c in it.get("cites") or []) or "none"
+        for i, (p, it) in enumerate(items, 1)
+    )
+    schema = {"type": "object", "additionalProperties": False, "required": ["grades"], "properties": {"grades": {"type": "array", "items": {
+        "type": "object", "additionalProperties": False, "required": ["n", "correct", "simple"],
+        "properties": {"n": {"type": "integer"}, "correct": {"type": "boolean"}, "simple": {"type": "boolean"}}}}}}
+    payload = L.body(_JUDGE, listed, schema, "grades", model=model, effort="low", tokens=1500)
+    resp, cost, _s, _h = L.call(payload, salt=salt)
+    data = L.json_of(resp) or {}
+    grades = {g.get("n"): g for g in data.get("grades") or [] if isinstance(g, dict)}
+    return [grades.get(i) for i in range(1, len(items) + 1)], cost
 
 
 def main():
@@ -112,6 +144,7 @@ def main():
     ap.add_argument("--kinds", default="", help="buena,parcial,mala")
     ap.add_argument("--out", required=True)
     ap.add_argument("--tag", default="")
+    ap.add_argument("--judge", action="store_true")
     args = ap.parse_args()
 
     from rrm.reader.similar import specter_encode
@@ -177,13 +210,18 @@ def main():
                         cite_hit = bool(set(gc["ptr"]) & ptrs.get(n, set())) if gc["ptr"] else None
                         claims.append({"n": n, "gold": gc["verdict"], "ok": gc["ok"], "pred": pred,
                                        "right": pred in gc["ok"], "strict": pred == gc["verdict"], "cite_hit": cite_hit})
-                    m = _missed_score(parts, ans.get("missed") or [])
+                    said = {p for gc in ans["claims"] if gc["verdict"] == "coincide" for p in gc["ptr"]}
+                    m = _missed_score(parts, ans.get("missed") or [], said)
+                    grades = []
+                    if args.judge:
+                        grades, jcost = judge(parts, llm.CONTRIBUTOR, salt=salt)
+                        total = llm.add(total, jcost)
                     others = sum(len(item.get("others") or []) for p in PARTS for item in parts.get(p) or [])
                     records.append({
                         "cand": cand, "run": run, "section": key, "kind": ans["kind"], "answer": ai,
                         "claims": claims, "missed": m, "others": others, "wall_s": round(wall, 3),
                         "llm_s": info.get("llm_s"), "cached": info.get("cached"), "cost": cost.get("cost_usd", 0.0),
-                        "tool_calls": info.get("tool_calls"), "parts": parts,
+                        "tool_calls": info.get("tool_calls"), "parts": parts, "grades": grades,
                     })
                     right = sum(c["right"] for c in claims)
                     print(f"{cand} r{run} {key} {ans['kind']:8s} {right}/{len(claims)} missed={m} others={others} "
@@ -192,6 +230,11 @@ def main():
     Path(args.out).write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(out["summary"], indent=1))
     print(f"TOTAL ${total['cost_usd']:.5f}")
+
+
+def _rate(rows, key):
+    got = [g.get(key) for r in rows for g in r.get("grades") or [] if isinstance(g, dict)]
+    return round(sum(1 for x in got if x) / len(got), 3) if got else None
 
 
 def summarize(records, sheets):
@@ -224,7 +267,10 @@ def summarize(records, sheets):
             "cite_hit": round(sum(hits) / max(1, len(hits)), 3) if hits else None,
             "missed_items": sum(m[0] for m in mi), "missed_prec": round(sum(m[1] for m in mi) / max(1, sum(m[0] for m in mi)), 3),
             "missed_recall_nonbuena": round(sum(m[2] for m in partial) / max(1, sum(m[3] for m in partial)), 3),
+            "missed_false": sum(m[4] for m in mi if len(m) > 4),
             "missed_empty_rate": round(sum(1 for m in mi if m[0] == 0) / max(1, len(mi)), 3),
+            "why_correct": _rate(rows, "correct"), "why_simple": _rate(rows, "simple"),
+            "why_words_avg": round(sum(len(str(it.get("why") or "").split()) for r in rows for p in PARTS for it in r["parts"].get(p) or [] if it.get("why")) / max(1, sum(1 for r in rows for p in PARTS for it in r["parts"].get(p) or [] if it.get("why"))), 1),
             "others_per_answer": round(sum(r["others"] for r in rows) / max(1, len(rows)), 2),
             "stability": stab,
             "lat_p50": walls[len(walls) // 2] if walls else None, "lat_p90": walls[int(len(walls) * 0.9)] if walls else None,

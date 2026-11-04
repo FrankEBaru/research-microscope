@@ -28,6 +28,14 @@ _guard = threading.Lock()
 _ctx = {}
 
 
+def store_dir(folder):
+    """Dónde viven hojas y vectores. `RRM_EXPLAIN_DIR` los saca del volumen (lector de solo lectura)."""
+    from pathlib import Path
+
+    raw = os.environ.get("RRM_EXPLAIN_DIR", "").strip()
+    return Path(raw) / Path(folder).name if raw else Path(folder)
+
+
 def explain_on():
     return os.environ.get("RRM_EXPLAIN", "1").strip().lower() not in ("0", "off", "false", "no")
 
@@ -81,6 +89,10 @@ def prepare(folder, paper, *, encode=None, lock=None, commit=None, base=None, se
     """Vectores del paper y hojas que falten. Devuelve un resumen con costo y tiempo."""
     started = time.perf_counter()
     lock = lock or threading.Lock()
+    folder = store_dir(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    if os.environ.get("RRM_EXPLAIN_DIR", "").strip():
+        commit = None
     todo = sections if sections is not None else sections_to_prepare(paper)
     done, built, cost = [], [], llm.add(None, None)
     if not todo:
@@ -88,27 +100,35 @@ def prepare(folder, paper, *, encode=None, lock=None, commit=None, base=None, se
     ctx = context(folder, paper, todo[0], encode)
     _ = ctx.vecs  # explain-units-*.npy: la revisión ya no encodea el paper
     base = base if base is not None else _base()
-    for sid in todo:
-        if load_sheet(folder, sid):
-            done.append(sid)
-            continue
-        if not os.environ.get("MODEL_API_KEY"):
-            break
+    pending = [sid for sid in todo if not load_sheet(folder, sid)]
+    done = [sid for sid in todo if sid not in pending]
+    if not os.environ.get("MODEL_API_KEY"):
+        pending = []
+
+    def one(sid):
         try:
-            sheet = build_sheet(paper, sid, base=base, encode=encode, effort=_sheet_effort(), passages=base is not None)
+            return sid, build_sheet(paper, sid, base=base, encode=encode, effort=_sheet_effort(), passages=base is not None)
         except Exception as err:
             if log:
                 log(f"explain sheet {sid}: {type(err).__name__}")
-            continue
-        cost = llm.add(cost, sheet.get("cost"))
-        with lock:
-            save_sheet(folder, sheet)
-            if commit:
-                try:
-                    commit()
-                except Exception:
-                    pass
-        built.append(sid)
+            return sid, None
+
+    # Meta espera red, no CPU: 4 secciones a la vez bajan ~9 min a ~2–3 min por paper.
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=int(os.environ.get("RRM_EXPLAIN_THREADS", "4") or 4)) as pool:
+        for sid, sheet in pool.map(one, pending):
+            if sheet is None:
+                continue
+            cost = llm.add(cost, sheet.get("cost"))
+            with lock:
+                save_sheet(folder, sheet)
+                if commit:
+                    try:
+                        commit()
+                    except Exception:
+                        pass
+            built.append(sid)
     return {"sections": len(todo), "ready": len(done) + len(built), "built": len(built),
             "seconds": round(time.perf_counter() - started, 3), "cost": cost}
 
@@ -143,6 +163,7 @@ def kick(cid, folder, load_paper, *, encode=None, lock=None, commit=None, log=No
 
 
 def status(folder, paper):
+    folder = store_dir(folder)
     todo = sections_to_prepare(paper)
     ready = [sid for sid in todo if load_sheet(folder, sid)]
     return {"sections": len(todo), "ready": len(ready), "ids": ready}
@@ -166,6 +187,7 @@ def ask(folder, paper, section_id, text, *, stage="revisar", encode=None, store=
     from rrm.reader.metacall import meta_status, note_for
 
     started = time.perf_counter()
+    folder = store_dir(folder)
     empty = {part: [] for part in PARTS}
     base_body = {"papers": 1, "line": "", "matched": 0, "store": store or {"ready": 1, "total": 1}, "engine": ""}
     ctx = context(folder, paper, section_id, encode)

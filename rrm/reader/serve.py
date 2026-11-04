@@ -103,6 +103,9 @@ gpu_image = (
 # RRM-100: experiments deploy under another name; the demo app stays rrm-reader.
 app = modal.App(os.environ.get("RRM_READER_APP", "rrm-reader"))
 vol = modal.Volume.from_name("rrm-data", create_if_missing=True)
+if os.environ.get("RRM_READER_RO") == "1":
+    # RRM-100: an experiment reader reads the shared volume and never writes to it.
+    vol = modal.Volume.from_name("rrm-data").read_only()
 if modal.is_local():
     secret = modal.Secret.from_dict({
         "MODEL_API_KEY": os.environ.get("MODEL_API_KEY", ""),
@@ -128,6 +131,10 @@ if modal.is_local():
         "RRM_EXPLAIN": os.environ.get("RRM_EXPLAIN", ""),
         "RRM_EXPLAIN_PASSAGES": os.environ.get("RRM_EXPLAIN_PASSAGES", ""),
         "RRM_EXPLAIN_EFFORT": os.environ.get("RRM_EXPLAIN_EFFORT", ""),
+        "RRM_EXPLAIN_DIR": os.environ.get("RRM_EXPLAIN_DIR", ""),
+        "RRM_READER_RO": os.environ.get("RRM_READER_RO", ""),
+        "RRM_READER_APP": os.environ.get("RRM_READER_APP", ""),
+        "RRM_EXTRA_ORIGINS": os.environ.get("RRM_EXTRA_ORIGINS", ""),
     })
 else:
     secret = modal.Secret.from_dict({})

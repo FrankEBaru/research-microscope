@@ -12,7 +12,8 @@ ALLOWED_ORIGINS = (
     "http://127.0.0.1:3000",
     "http://localhost:3100",
     "http://127.0.0.1:3100",
-)
+) + tuple(o.strip() for o in os.environ.get("RRM_EXTRA_ORIGINS", "").split(",") if o.strip())
+# RRM-100: an experiment reader adds its own UI port (e.g. http://localhost:3300) by env, never by default.
 
 
 def cors_kwargs():
