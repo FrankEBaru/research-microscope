@@ -58,3 +58,5 @@
 .ins .det p { margin: 8px 0 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
 @media (max-width: 760px) { .ins { padding: 18px 16px 14px; } .ins .hists { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .ins .hist rect, .ins .bet-r { transition: none; animation: none; } }
+/* KaTeX draws √ with its own svg; older .hist svg rules must not resize it. */
+.ins .hist figcaption .katex svg { display: block; position: absolute; width: 100%; height: inherit; max-width: none; }

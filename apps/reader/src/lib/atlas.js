@@ -218,14 +218,34 @@ function separate(items, top, h) {
         const need = Math.max(SEP, (A.r || 0) + (B.r || 0) + 3);
         if (d < need) {
           const push = (need - d) / 2 || 0.5;
+          // Mostly vertical (y means nothing); a little sideways stays inside the year column.
+          const ux = d > 0.01 ? dx / d : 0;
           const s = dy >= 0 ? 1 : -1;
-          A.y += s * push;
-          B.y -= s * push;
+          A.y += s * push * 0.9;
+          B.y -= s * push * 0.9;
+          A.x += ux * push * 0.35;
+          B.x -= ux * push * 0.35;
         }
       }
     }
   }
   for (const p of items) p.y = Math.max(lo, Math.min(hi, p.y));
+  // One more pass after clamping, so the lane edge does not pile dots back together.
+  for (let it = 0; it < 12; it++) {
+    for (let a = 0; a < items.length; a++) {
+      for (let b = a + 1; b < items.length; b++) {
+        const A = items[a];
+        const B = items[b];
+        const d = Math.hypot(A.x - B.x, A.y - B.y);
+        const need = Math.max(SEP, (A.r || 0) + (B.r || 0) + 3);
+        if (d >= need) continue;
+        const push = (need - d) / 2 || 0.5;
+        const s = A.x >= B.x ? 1 : -1;
+        A.x += s * push;
+        B.x -= s * push;
+      }
+    }
+  }
 }
 
 function circleModel(explore) {

@@ -82,6 +82,37 @@ export function Forming({ still }: { still?: boolean }) {
   );
 }
 
+/** RRM-95: the map frame while the search runs — lanes and dots forming where the atlas will land. */
+const ATLAS_DOTS = (() => {
+  let seed = 11;
+  const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+  const lanes = [{ y: 0, h: 150 }, { y: 156, h: 190 }, { y: 352, h: 148 }];
+  const out: { cx: number; cy: number; r: number; f: boolean; lane: number; d: number }[] = [];
+  lanes.forEach((lane, li) => {
+    for (let i = 0; i < 26; i++) {
+      const x = 180 + Math.pow(rnd(), 0.6) * 690;
+      out.push({ cx: x, cy: lane.y + 14 + rnd() * (lane.h - 28), r: 3.5 + rnd() * 3, f: rnd() < 0.3, lane: li, d: Math.round((x / 900) * 1100 + rnd() * 500) });
+    }
+  });
+  return { lanes, dots: out };
+})();
+
+export function FormingAtlas() {
+  const C = ["var(--grp-1)", "var(--grp-2)", "var(--grp-3)"];
+  return (
+    <figure className="forming-atlas" aria-hidden="true">
+      <svg viewBox="0 0 900 540" width="100%">
+        {ATLAS_DOTS.lanes.map((lane, i) => <rect key={i} className="fa-lane" x={0} y={lane.y} width={900} height={lane.h} rx={6} style={{ ["--c" as string]: C[i], animationDelay: `${i * 90}ms` } as React.CSSProperties} />)}
+        {ATLAS_DOTS.lanes.map((lane, i) => <rect key={`t${i}`} className="fa-label" x={14} y={lane.y + 14} width={110 + i * 22} height={9} rx={4.5} />)}
+        <g className="ar is-still">
+          {ATLAS_DOTS.dots.map((d, i) => <circle key={i} cx={d.cx} cy={d.cy} r={d.r} className={d.f ? "f" : "h"} style={{ ["--c" as string]: C[d.lane], animationDelay: `${d.d}ms` } as React.CSSProperties} />)}
+        </g>
+        {[0, 1, 2, 3, 4, 5, 6].map((i) => <rect key={`y${i}`} className="fa-label" x={230 + i * 105} y={518} width={30} height={8} rx={4} />)}
+      </svg>
+    </figure>
+  );
+}
+
 export default function BootPanel({ engine, phase, pending, compact }: {
   engine: string;
   phase: string;

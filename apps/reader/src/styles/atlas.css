@@ -180,6 +180,9 @@ html.ovl-open body { overflow: hidden; }
 
 @media (max-width: 760px) {
   .atlas-grid { grid-template-columns: 1fr; }
+  /* RRM-95: on a phone the atlas keeps a readable size and scrolls sideways (starts at the recent end). */
+  .atlas-screen .plot { overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: thin; }
+  .atlas-screen .plot .atlas { min-width: 720px; }
   .atlas-screen .card { position: static; }
   .ovl { padding: 0; }
   .ovl-panel { max-height: 100vh; height: 100vh; border-radius: 0; }

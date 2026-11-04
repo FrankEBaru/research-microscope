@@ -149,10 +149,15 @@ const Labels = memo(function Labels({ points, ids, strongIds }: { points: Pt[]; 
     if (!p) continue;
     const text = shortLabel(p);
     const w = text.length * 6.6 + 6;
-    const right = p.x + w + 16 < ATLAS_W;
-    const x = right ? p.x + (p.r || 5) + 5 : p.x - (p.r || 5) - 5;
-    const box = { x0: right ? x : x - w, x1: right ? x + w : x, y0: p.y - 8, y1: p.y + 8 };
-    if (boxes.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1)) continue;
+    const hits = (bx: { x0: number; x1: number; y0: number; y1: number }) => boxes.some((b) => b.x0 < bx.x1 && bx.x0 < b.x1 && b.y0 < bx.y1 && bx.y0 < b.y1);
+    const place = (right: boolean) => {
+      const x = right ? p.x + (p.r || 5) + 5 : p.x - (p.r || 5) - 5;
+      return { right, x, box: { x0: right ? x : x - w, x1: right ? x + w : x, y0: p.y - 8, y1: p.y + 8 } };
+    };
+    const first = place(p.x + w + 16 < ATLAS_W);
+    const pick = !hits(first.box) ? first : !hits(place(!first.right).box) && (first.right ? p.x - w > 0 : true) ? place(!first.right) : null;
+    if (!pick) continue;
+    const { right, x, box } = pick;
     boxes.push(box);
     out.push(
       <text key={id} data-for={id} className={`p-lab${strong.has(id) ? " p-lab--sel" : ""}`} x={x} y={p.y + 4} textAnchor={right ? "start" : "end"}>{text}</text>,

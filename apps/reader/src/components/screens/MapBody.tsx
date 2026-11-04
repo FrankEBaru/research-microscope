@@ -33,6 +33,11 @@ export default function MapBody({ atlasCtx, onLayout }: { atlasCtx: AtlasCtx; on
     markRead(id);
     atlasCtx.onOpen(id, "from the map");
   };
+  const plotRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = plotRef.current;
+    if (el && el.scrollWidth > el.clientWidth) el.scrollLeft = el.scrollWidth;
+  }, [model.points.length]);
   const pendingKey = (atlasCtx.layout?.pending_vectors || []).join(",");
   const onLayoutRef = useRef(onLayout);
   onLayoutRef.current = onLayout;
@@ -60,7 +65,7 @@ export default function MapBody({ atlasCtx, onLayout }: { atlasCtx: AtlasCtx; on
   return (
     <div className="atlas-screen" data-live-map>
       <div className="atlas-grid">
-        <div className="plot">
+        <div className="plot" ref={plotRef}>
           <Atlas model={model} mode="full" hereId={hereId} suggestId={suggested} selected={selected} drawSelection={linked} laneId={atlasCtx.laneId || ""} onSelect={pick} onOpen={scan} />
         </div>
         <AtlasCard model={model} explore={atlasCtx.explore} states={atlasCtx.states} selected={selected} hereId={hereId} suggestId={suggested} onScan={scan} onRead={read} onPick={pick} onOpen={read} />

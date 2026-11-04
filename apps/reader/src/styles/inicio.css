@@ -222,3 +222,13 @@
   .s-map .core-list li { grid-template-columns: 1fr; }
   .b1-foot { padding: 16px; }
 }
+
+/* RRM-95 · waiting for the burst: the atlas frame forms in place. */
+.atlas-wait { margin-top: 14px; }
+.forming-atlas { margin: 0; }
+.forming-atlas svg { display: block; height: auto; }
+.fa-lane { fill: color-mix(in oklab, var(--c) 8%, transparent); transform-box: fill-box; transform-origin: left center; animation: lane-grow 900ms var(--ease-emph) backwards; }
+.fa-label { fill: var(--page-3); animation: rrm-blink 1.6s ease-in-out infinite; }
+.forming-atlas .ar circle { animation-duration: 3.6s; }
+.wait-side { position: sticky; top: 84px; }
+.wait-side .boot--compact { padding: 18px 20px 16px; }
