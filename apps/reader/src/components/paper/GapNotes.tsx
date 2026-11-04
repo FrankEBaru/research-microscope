@@ -19,7 +19,7 @@ export function drawnOf(art: any) {
 export function MathBit({ text }: { text: string }) {
   const raw = String(text || "").trim();
   if (!raw) return null;
-  if (/\\|_|\^/.test(raw)) return <Tex tex={raw} />;
+  if (/\\|_|\^/.test(raw)) return <Tex tex={raw} plain />;
   return <>{raw}</>;
 }
 
