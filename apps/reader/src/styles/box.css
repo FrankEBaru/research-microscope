@@ -113,3 +113,14 @@ form.ask-card.box {
 @media (max-width: 760px) {
   form.ask-card.box { padding: 16px 14px 14px; }
 }
+
+/* RRM-100 · Partly right, the why line and passages from other papers. */
+[data-v="diverge"] { --v: var(--verdict-diverge, color-mix(in oklab, var(--verdict-match) 45%, var(--verdict-contra))); }
+.vd-sec[data-v="diverge"] .claim-you { text-decoration: underline dotted; text-decoration-color: color-mix(in oklab, var(--v) 60%, transparent); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
+.box .claim > p.claim-why { display: flex; gap: 8px; align-items: baseline; margin: 6px 0 2px; font: 400 15px/1.5 var(--font-ui); color: var(--ink-2); }
+.box .claim > p.claim-why .pv { flex: none; }
+.box .claim > p.claim-point { font-style: normal; }
+.box .ex.ex-other { border-left-style: dashed; }
+.box .ex.ex-other p.ex-other-h { margin: 0 0 4px; font: 600 12.5px/1.35 var(--font-ui); color: var(--ink-3); }
+.box .ex.ex-other p.ex-other-h em { font-style: italic; font-weight: 500; }
+.box .ex.ex-other p:not(.ex-other-h) { font-size: 15px; color: var(--ink-2); }
