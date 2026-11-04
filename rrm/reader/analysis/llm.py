@@ -117,6 +117,13 @@ def call(body, role="", timeout=120, post=None):
         payload = (post or post_responses)(body, timeout=timeout)
     except Exception as exc:  # noqa: BLE001 - se reporta, no se reintenta
         err = str(exc)[:300]
+        if "http 429" in err:
+            # Límite de tasa: Meta no cobra tokens; un solo reintento de infraestructura, no del modelo.
+            time.sleep(3.0)
+            try:
+                payload, err = (post or post_responses)(body, timeout=timeout), ""
+            except Exception as exc2:  # noqa: BLE001
+                err = str(exc2)[:300]
     wall = round(time.perf_counter() - t0, 3)
     text = response_text(payload) if payload else ""
     c = cost((payload or {}).get("usage"), body.get("model"))
