@@ -1,67 +1,135 @@
-# Research Microscope
+<p align="center">
+  <a href="https://youtu.be/NpIZdZCemTY"><img src="docs/img/video-thumb.jpg" alt="Research Microscope — The joy of understanding, from a field to a single idea. Click to watch the 3-minute demo video on YouTube." width="760"></a>
+</p>
 
-En la máquina Frank (WSL), después de arrancar, con el venv y Node en el PATH:
+<h1 align="center">Research Microscope</h1>
 
-```bash
-source ~/projects/hackaton/activate.sh
-cd ~/projects/hackaton/research-microscope && git checkout main && git pull && ./scripts/offline.sh
+<p align="center">
+  <a href="https://youtu.be/NpIZdZCemTY"><b>▶ Watch the 3-minute demo</b></a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#meta-models">Meta models</a> ·
+  <a href="#run-it">Run it</a> ·
+  <a href="#honest-limits">Limits</a>
+</p>
+
+<p align="center">
+  <img src="docs/img/demo.gif" alt="A live figure written by Muse Wonder: drag d_k and see why attention divides by the square root of d_k" width="720">
+</p>
+
+Ask one research question. Research Microscope draws the field as a map of related papers, takes you into the right paper, and helps you understand it: every symbol is linked to where it's defined, margin notes cite their sources, equations become live figures you can play with, and **Explain** checks your own explanation against the paper.
+
+## The problem
+
+- **The volume keeps growing.** arXiv received a record **40,363** new submissions in September 2026. In September 2016 it received 9,869, so monthly volume has grown about 4× in ten years ([arXiv blog, Oct 2026](https://blog.arxiv.org/2026/10/01/updated-rate-limit-policy/)). Up to **1 in 5** Computer Science abstracts already show LLM-modified text ([Liang et al., *Nature Human Behaviour*, 2025](https://www.nature.com/articles/s41562-025-02273-8)).
+- **Reading is where people get stuck.** Most researchers say they can't keep up with the literature ([arXiv:1612.07863](https://arxiv.org/abs/1612.07863)). Readers get stuck on a paper's local terms and symbols: in an observational study, 8 of 9 did ([ScholarPhi, CHI '21](https://arxiv.org/abs/2009.14237)).
+
+Summaries make reading faster, but they don't build understanding. Research Microscope is built for understanding.
+
+## What it does
+
+| | |
+|---|---|
+<p align="center"><img src="docs/img/map.jpg" alt="Map of a field: papers grouped by topic over time, with a suggested start" width="860"></p>
+
+**One question, one map.** Type a question, a title, or a topic, in English or Spanish. You get about 100 related papers, grouped into topics, laid out by year, and numbered in a suggested reading order.
+
+| | |
+|---|---|
+| <img src="docs/img/paper-margin.jpg" alt="Paper view: the symbol d_k lit up, with margin notes" width="420"> | <img src="docs/img/live-figure.jpg" alt="Live figure: why attention divides by the square root of d_k" width="420"> |
+| **The paper.** Symbols light up wherever they appear. Margin notes have three clearly labelled layers: *From this paper*, *From other papers*, and *AI-generated*. | **Live figures.** An equation becomes a small interactive instrument, written by Muse Wonder under a strict contract and checked before it is shown. |
+| <img src="docs/img/explain.jpg" alt="Explain: review of the reader's explanation" width="420"> | <img src="docs/img/engine.jpg" alt="The widget engine: equation to code to live figure" width="420"> |
+| **Explain.** Write what you understood. Each claim comes back as *Matches*, *Contradicts*, *No support*, or *You missed*, with a quote from the paper that was checked against its text. | **The engine.** Equation → `draw()` code → a verified, sandboxed widget. |
+
+<sub>Images are frames from the demo video and show *Attention Is All You Need* (Vaswani et al., 2017, [arXiv:1706.03762](https://arxiv.org/abs/1706.03762)). Google grants permission to reproduce the paper's tables and figures for scholarly use with attribution. Paper data: [Semantic Scholar](https://www.semanticscholar.org/).</sub>
+
+## How it works
+
+```mermaid
+flowchart LR
+  U([Reader]) --> UI["Next.js static app<br/>apps/reader"]
+  UI -- "/burst" --> B["rrm-burst on Modal<br/>rrm/search"]
+  UI -- "/paper · /notes · /explain" --> R["rrm-reader on Modal<br/>rrm/reader"]
+  B --> F[("FAISS + SPECTER2<br/>~8M papers<br/>+ citation graph")]
+  F -. built from .-> S2[("Semantic Scholar<br/>Datasets (ODC-BY)")]
+  B -- "topic names" --> M1["Muse Spark<br/>(contributor)"]
+  R -- "fetch source" --> AX[("arXiv")]
+  R -- "margin notes · Explain" --> M1
+  R -- "live-figure code · hard reviews" --> M2["Muse Wonder"]
+  R --> V{"verifier +<br/>sandbox"}
+  V -- pass --> UI
+  V -- fail --> ST["static figure"]
 ```
 
-Eso baja los fixtures `v2` si faltan, los guarda en `offline-fixtures/`, instala la UI si falta, y arranca sin Modal ni Meta. Primero mira un checkout local de `research-microscope-compass` (al lado de este repo, en `~/projects/hackaton/research-microscope-compass`, o en `RRM_OFFLINE_COMPASS`) y lee `datos/offline/` de la rama `claude/rrm-50-plan-b1` sin cambiarte de rama. Si ese checkout no está, usa `gh` contra `FrankEBaru/research-microscope-compass` (no hay Release con ese nombre; v2 son dos partes y se comprueba el sha256 del archivo unido). `RRM_OFFLINE_VERSION=v3` baja v3. `RRM_OFFLINE_BRANCH` cambia la rama. Si no hay checkout ni `gh` autenticado, el script se detiene y dice que corras `gh auth login`. `RRM_OFFLINE_DIR=/ruta` usa esa carpeta (con `manifest.json`) y no llama a `gh`. `RRM_OFFLINE_SYNTH=1` usa datos sintéticos. Ábrelo en el navegador: `http://localhost:3000`. El inicio lista las preguntas grabadas; un clic manda el texto exacto. También aparecen al escribir en la búsqueda. Otra pregunta responde `consulta no grabada`. En `core` el resultado es el atlas y la lista. Ctrl+C apaga la UI y el servidor. Atribución: Semantic Scholar.
+1. **Map (`rrm-burst`).** The question is embedded with SPECTER2 and searched in a FAISS index over about 8M papers from Semantic Scholar's Computer Science corpus. The search is expanded through the citation graph, the results are split into topics, and they are laid out on a timeline. `pipelines/` builds the corpus and the index on Modal.
+2. **Read (`rrm-reader`).** The reader fetches the paper's arXiv source, parses it into sections, equations, symbols, and figures, and finds the gaps a newcomer would trip on. It then writes margin notes from the paper, from similar papers (a passage index of 1,842 papers and 298,623 passages), and from the model, and labels each note with where it came from.
+3. **License gate.** Only CC BY, CC BY-SA, CC0, and public-domain papers are shown in full. For every other paper, the reader shows the title, authors, abstract, short quotes with attribution, and a link to arXiv. See [`/licenses`](apps/reader/src/app/licenses/page.tsx).
 
-## Un switch: offline u online
+### The widget engine
 
-La UI es la de B1 en los dos modos. Hace falta el venv y Node en el PATH (`source ~/projects/hackaton/activate.sh`). El script no imprime ni guarda llaves.
+Muse Wonder writes a single JSON object that follows the `rrm-widget` contract: `id`, `topic`, `title`, `explain`, `questions`, `controls`, and a pure `draw(ctx, state, t)` function ([contract](rrm/liveart/CONTRACT.md)). Before anything runs, a verifier checks the code's AST, the control budgets, and its fidelity to the paper. The widget then runs in a sandboxed iframe with no network access. If the check fails, the reader falls back to the static figure and never shows a half-working widget. **Today, 9 of our 11 widgets pass the verifier and the sandbox.**
 
-```bash
-cd ~/projects/hackaton/research-microscope
-RRM_MODE=offline bash scripts/run.sh
-RRM_MODE=online  bash scripts/run.sh
-```
+### Explain
 
-`offline` es `scripts/offline.sh`: fixtures de compass, cero Modal y cero Meta (`RRM_META=off`). `online` despliega `rrm-burst` y `rrm-reader` y abre la misma UI en http://localhost:3000. Sirve cualquier pregunta. Las notas al margen y la caja Explain llaman a Meta. Panorama, el compañero, Muse, SAM y el instrumento no se prenden. No hace falta el Release de papers curados ni `npm run data`.
+You write your explanation and Muse reviews it, claim by claim, against passages from the paper. Every quote it returns is checked against the paper's text. **On our test set of 137 hand-written claims, each run 3 times, 99% of verdicts were correct and 98% were stable.**
 
-Antes de desplegar, `online` exige `modal`, `MODEL_API_KEY` y `S2_API_KEY`. Si falta `RRM_DEMO_TOKEN`, lo genera para esa sesión y no lo imprime. `RRM_MAX_MINUTES` (default 30, entero ≥ 1) corta la sesión. Al salir por Ctrl+C, por un error o por ese tope, corre `modal app stop rrm-burst`, `modal app stop rrm-reader` y `modal app list`. No se activa `RRM_DEMO_KEEP_WARM`. `min_containers` no se pone.
+## Meta models
 
-`RRM_LIVE=off|on` es lo mismo que `RRM_MODE=offline|online`. `RRM_FEATURES` default es `core` en todos los modos. `all` (la superficie anterior: Panorama, compañero, Muse, SAM, instrumento) solo si se exporta `RRM_FEATURES=all`.
-
-| Modo | Comando | Qué hace |
+| Model | Used for | Code |
 |---|---|---|
-| offline | `RRM_MODE=offline bash scripts/run.sh` | UI B1 con fixtures. Sin Modal ni Meta. |
-| online | `RRM_MODE=online bash scripts/run.sh` | UI B1 en vivo. Deploy de ráfaga y lector. Meta en notas y Explain. SAM apagado. |
-| modal | `RRM_LIVE=modal bash scripts/live.sh` | Deploy igual, exige `RRM_DEMO_TOKEN` y no revisa las otras llaves. |
-| meta | `RRM_LIVE=meta bash scripts/live.sh` | Sin deploy, datos grabados. Con `core` no llama a Muse. Con `RRM_FEATURES=all`, `POST /panorama` llama a Muse. |
-| full | `RRM_LIVE=full bash scripts/live.sh` | Los dos deploy. Con `core` es la UI B1 (SAM apagado). Con `RRM_FEATURES=all`, panorama Muse y SAM. |
+| **Muse Spark** (`muse-spark-1.3-contributor`) | Topic names on the map, margin notes, Explain reviews, the paper brief and gap candidates | `rrm/search/split.py`, `rrm/reader/notes.py`, `rrm/reader/explain/`, `rrm/reader/analysis/` |
+| **Muse Wonder** (`muse-wonder-1.0`) | Live-figure code (`draw()`) and the hardest reviews | `rrm/reader/analysis/llm.py`, `rrm/reader/explain/llm.py`, `rrm/liveart/` |
+| **Muse Image** (`muse-image-1.0`) | Concept art for the demo video | video pipeline |
 
-Pasajes del volumen: apagados si `RRM_PASSAGES` no es `1`. Con `RRM_PASSAGES=1`, al armar una explicación o un artefacto el lector embebe el hueco y toma el top-k del índice FAISS en `/data/passages` (filas de la etapa e3, app `rrm-passages`, volumen `rrm-data`). Esos pasajes completos, de licencia abierta o cerrada, entran al modelo como contexto y con `store: false` (no se usan para entrenar). Lo que ve la persona, si el paper es cerrado, vacío o trae la licencia default de arXiv, es una cita corta en palabras del modelo y un enlace: el pasaje no se reproduce. `RRM_PASSAGES_DIR` apunta a una copia local de esa carpeta. En el deploy, exporta `RRM_PASSAGES=1` antes de `scripts/live.sh` (`modal` o `full`); el lector ya monta el volumen.
+All calls go through the Meta Model API. The reader's calls set `store: false`. Paper notes cover **86%** of what a reader must know (88% on unseen papers), and analyzing a paper costs less than 1 cent.
 
-En `modal` y `full` hace falta `RRM_DEMO_TOKEN` en el entorno. En `online` se genera si falta. La UI toma `NEXT_PUBLIC_BURST_URL`, `NEXT_PUBLIC_READER_URL` y ese token del deploy. En `meta` y `offline` el token público queda en `local`. Al terminar imprime el modo, los segundos y qué servicio pudo haber cobrado. No calcula dólares.
+## Run it
 
-Límite de `meta`: no hay PDF en la grabación, así que los recortes no llaman a SAM. El panorama en vivo usa los `blocks` ya guardados en `papers/`. Una pregunta que no esté grabada sigue sin ráfaga (`consulta no grabada`).
+**Option 1: watch it.** The [3-minute video](https://youtu.be/NpIZdZCemTY) shows the full flow on real papers.
 
-A reading tool that turns a research question into a navigable burst of related papers, from field overview to single paper, with every sentence linked to its sources.
-
-## Demo
-
-The live demo is hybrid. The curated map, instrument, and papers stay static files (see [`apps/reader/README.md`](apps/reader/README.md)). A question typed in the demo calls the burst and the reader (see [`rrm/reader/README.md`](rrm/reader/README.md)). Empty `NEXT_PUBLIC_BURST_URL` and `NEXT_PUBLIC_READER_URL` keep today's curated mock.
-
-One-time local setup for `bash scripts/check.sh` (the check does not install these itself):
+**Option 2: local UI, no keys, $0.** This option runs the real UI and a local API on a small synthetic map, with no Modal, Meta, or Semantic Scholar calls. You need Python 3.12 and Node ≥ 22. The script runs `npm ci` itself the first time.
 
 ```bash
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements-dev.txt
+git clone https://github.com/FrankEBaru/research-microscope && cd research-microscope
+RRM_OFFLINE_SYNTH=1 bash scripts/offline.sh      # open http://localhost:3000, Ctrl+C stops it
 ```
 
-Node for the UI is Node ≥ 22 and `npm ci` in `apps/reader/`. The front is a static Next export (`output: "export"` in `apps/reader`). On Vercel Hobby, set the project root to `apps/reader`, Node 22, and build `npm ci && npm run build`. Put `NEXT_PUBLIC_BURST_URL`, `NEXT_PUBLIC_READER_URL`, and `NEXT_PUBLIC_RRM_DEMO_TOKEN` in the Vercel project, not in git. Restore `public/papers/` from Release `artifacts/RRM-11-reader-data-2026-10-29` before that build. This repo does not deploy.
+The synthetic data shows the flow (home → map → paper), not real papers.
 
-## Semantic Scholar bulk download
-
-`pipelines/s2_download/` streams a Semantic Scholar Datasets release into the Modal volume `rrm-data` as Zstandard Parquet. It keeps papers, abstracts, citations, and TLDRs, plus SPECTER v2 embeddings for Computer Science corpus ids. Computer Science ids (from `s2fieldsofstudy` / `fieldsOfStudy`) are stored beside the release. Raw `.gz` shards are not kept.
-
-Download commands are in [`pipelines/s2_download/RUN.md`](pipelines/s2_download/RUN.md). The FAISS index, citation graph, and burst search commands are in [`pipelines/index_build/RUN.md`](pipelines/index_build/RUN.md). From the repo root:
+**Option 3: live, with your own keys (advanced).** This needs a Modal account, `MODEL_API_KEY` (Meta Model API), and `S2_API_KEY` (Semantic Scholar), plus the corpus and index built on Modal with [`pipelines/s2_download/RUN.md`](pipelines/s2_download/RUN.md) and [`pipelines/index_build/RUN.md`](pipelines/index_build/RUN.md). Then:
 
 ```bash
-modal run --detach pipelines/s2_download/app.py::main --datasets papers --limit 1
+RRM_MODE=online bash scripts/run.sh   # deploys rrm-burst and rrm-reader, stops them on exit
 ```
 
-Semantic Scholar datasets are distributed under the ODC-BY license. Attribute the source as "Semantic Scholar".
+`RRM_MAX_MINUTES` (default 30) stops the session automatically, and the script never prints keys. The recorded real-paper data used in our demo is not published, because it contains paper text (see [Honest limits](#honest-limits)).
+
+**Checks:** `bash scripts/check.sh` (Python; no network calls to paid services) and `cd apps/reader && npm test`.
+
+## Repository map
+
+| Path | What |
+|---|---|
+| `apps/reader/` | Next.js static app (the UI) |
+| `rrm/search/` | Map service: search, citation graph, topics, layout (`rrm-burst`) |
+| `rrm/reader/` | Paper service: parsing, gaps, notes, Explain, license gate (`rrm-reader`) |
+| `rrm/liveart/` | Widget contract, prompts, verifier |
+| `pipelines/` | Semantic Scholar download and FAISS / citation-graph build on Modal |
+| `eval/`, `evals/` | Citation recall, prompt and widget evaluations |
+| `scripts/` | Run, offline, checks |
+
+## Honest limits
+
+- **It is a demo, not a hosted service.** The live backend only runs during demos. The online mode needs your own Modal, Meta, and Semantic Scholar keys and a prebuilt index.
+- **The map covers Computer Science only:** Semantic Scholar's CS subset.
+- **Full text only for open licenses.** Papers under the default arXiv license, or under NC or ND licenses, show only metadata, the abstract, short quotes, and a link.
+- **Widgets:** 9 of 11 pass verification. A widget that fails falls back to the static figure.
+- **The Explain numbers come from our own test set** of 137 claims, not from an external benchmark.
+- **Legacy features** (Panorama, the companion, the SAM figure tools, and the old instrument) are still in the code. They are off by default and only turn on with `RRM_FEATURES=all`.
+- Some internal notes and code comments are still in Spanish.
+
+## License and attribution
+
+- Code: [MIT](LICENSE).
+- Paper metadata, abstracts, citations, and SPECTER2 embeddings: **[Semantic Scholar](https://www.semanticscholar.org/)** Datasets (ODC-BY). arXiv metadata (CC0). Papers belong to their authors and keep their own licenses; this project is not endorsed by the authors or by arXiv.
+- Built with [Next.js](https://nextjs.org/), [KaTeX](https://katex.org/) (MIT), [FAISS](https://github.com/facebookresearch/faiss) (MIT), [SPECTER2](https://huggingface.co/allenai/specter2) (Apache-2.0), [opus-mt-es-en](https://huggingface.co/Helsinki-NLP/opus-mt-es-en) (translates Spanish questions), [Modal](https://modal.com/), and the fonts Literata and Instrument Sans (SIL OFL 1.1). The video was made with [Remotion](https://www.remotion.dev/).
+- Built for the Meta AI Developer Hackathon 2026 with Muse Spark, Muse Wonder, and Muse Image through the Meta Model API.
