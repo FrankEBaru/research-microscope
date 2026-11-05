@@ -46,38 +46,83 @@ Summaries make reading faster, but they don't build understanding. Research Micr
 
 ```mermaid
 flowchart LR
-  U([Reader]) --> UI["Next.js static app<br/>apps/reader"]
-  UI -- "/burst" --> B["rrm-burst on Modal<br/>rrm/search"]
-  UI -- "/paper · /notes · /explain" --> R["rrm-reader on Modal<br/>rrm/reader"]
-  B --> F[("FAISS + SPECTER2<br/>~8M papers<br/>+ citation graph")]
-  F -. built from .-> S2[("Semantic Scholar<br/>Datasets (ODC-BY)")]
-  B -- "topic names" --> M1["Muse Spark<br/>(contributor)"]
-  R -- "fetch source" --> AX[("arXiv")]
-  R -- "margin notes · Explain" --> M1
-  R -- "live-figure code · hard reviews" --> M2["Muse Wonder"]
-  R --> V{"verifier +<br/>sandbox"}
-  V -- pass --> UI
-  V -- fail --> ST["static figure"]
+  U([Reader]) --> UI["Next.js static app"]
+
+  subgraph MODAL["Modal"]
+    direction TB
+    B["rrm-burst<br/>map service"]
+    R["rrm-reader<br/>paper service"]
+  end
+
+  UI -- "question" --> B
+  UI -- "paper, notes, Explain" --> R
+
+  subgraph MAP["1 - The map"]
+    direction TB
+    F[("~8M Computer Science papers<br/>SPECTER2 + FAISS<br/>+ citation graph")]
+    G["Topic groups<br/>named by Muse Spark"]
+    F --> G
+  end
+  B --> F
+
+  subgraph NOTES["2 - Anchored notes"]
+    direction TB
+    P["Muse Spark planner"]
+    W["Muse Spark writers<br/>every line cites its source"]
+    PI[("Passage index<br/>298,623 passages<br/>from 1,842 papers")]
+    P --> W
+    PI --> W
+  end
+  R --> P
+
+  subgraph EXPLAIN["3 - Explain"]
+    direction TB
+    S["Answer sheet<br/>precomputed per section"]
+    E["Muse Spark review"]
+    Q["Quotes verified by code"]
+    S --> E --> Q
+  end
+  R --> S
+  PI --> S
+
+  subgraph ENGINE["4 - Widget engine"]
+    direction LR
+    EQ["Equation<br/>from the paper"] --> MW["Muse Wonder<br/>writes draw() code"]
+    MW --> CV["Contract<br/>+ verifier"]
+    CV --> SB["Sandboxed iframe"]
+    SB --> LI["Live instrument<br/>9 of 11 pass"]
+  end
+  UI -- "runs in the browser" --> SB
+
+  classDef meta fill:#0f5c6e,stroke:#0f5c6e,color:#ffffff
+  classDef ours fill:#f6f1e7,stroke:#2b2620,color:#2b2620
+  classDef data fill:#ffffff,stroke:#2b2620,color:#2b2620
+  class G,P,W,E,MW meta
+  class UI,B,R,S,Q,EQ,CV,SB,LI ours
+  class F,PI data
+  style MODAL fill:#fbf8f2,stroke:#2b2620
+  style MAP fill:#fbf8f2,stroke:#cfc6b8
+  style NOTES fill:#fbf8f2,stroke:#cfc6b8
+  style EXPLAIN fill:#fbf8f2,stroke:#cfc6b8
+  style ENGINE fill:#eef5f6,stroke:#0f5c6e,stroke-width:2px
 ```
 
-1. **Map (`rrm-burst`).** The question is embedded with SPECTER2 and searched in a FAISS index over about 8M papers from Semantic Scholar's Computer Science corpus. The search is expanded through the citation graph, the results are split into topics, and they are laid out on a timeline. `pipelines/` builds the corpus and the index on Modal.
-2. **Read (`rrm-reader`).** The reader fetches the paper's arXiv source, parses it into sections, equations, symbols, and figures, and finds the gaps a newcomer would trip on. It then writes margin notes from the paper, from similar papers (a passage index of 1,842 papers and 298,623 passages), and from the model, and labels each note with where it came from.
-3. **License gate.** Only CC BY, CC BY-SA, CC0, and public-domain papers are shown in full. For every other paper, the reader shows the title, authors, abstract, short quotes with attribution, and a link to arXiv. See [`/licenses`](apps/reader/src/app/licenses/page.tsx).
+<sub>Teal: Meta models. Ink: our code. Only verified widgets are shown.</sub>
+
+1. **The map (`rrm-burst`).** The question is embedded with SPECTER2 and searched in a FAISS index of about 8M Computer Science papers from Semantic Scholar. The results are expanded through the citation graph, split into topic groups named by Muse Spark, and laid out on a timeline with a suggested place to start. `pipelines/` builds the corpus and the index on Modal.
+2. **Anchored notes (`rrm-reader`).** The reader parses the paper's arXiv source into sections, equations, symbols, and figures, and finds the gaps a newcomer would trip on. A Muse Spark planner decides what each gap needs, and Muse Spark writers fill it with passages from the paper and from a passage index of 298,623 passages from 1,842 papers. Every line is anchored to the text and carries its source: *From this paper*, *From other papers*, or *AI-generated*.
+3. **Explain.** When you open a section, an answer sheet with its key points and supporting passages is precomputed. You write your explanation and Muse Spark reviews it claim by claim against that sheet. Every quote it returns is checked against the paper's text by code. **On our test set of 137 hand-written claims, each run 3 times, 99% of verdicts were correct and 98% were stable.**
 
 ### The widget engine
 
-Muse Wonder writes a single JSON object that follows the `rrm-widget` contract: `id`, `topic`, `title`, `explain`, `questions`, `controls`, and a pure `draw(ctx, state, t)` function ([contract](rrm/liveart/CONTRACT.md)). Before anything runs, a verifier checks the code's AST, the control budgets, and its fidelity to the paper. The widget then runs in a sandboxed iframe with no network access. If the check fails, the reader falls back to the static figure and never shows a half-working widget. **Today, 9 of our 11 widgets pass the verifier and the sandbox.**
-
-### Explain
-
-You write your explanation and Muse reviews it, claim by claim, against passages from the paper. Every quote it returns is checked against the paper's text. **On our test set of 137 hand-written claims, each run 3 times, 99% of verdicts were correct and 98% were stable.**
+An equation from the paper becomes a live instrument. Muse Wonder writes a single JSON object that follows the `rrm-widget` contract: `id`, `topic`, `title`, `explain`, `questions`, `controls`, and a pure `draw(ctx, state, t)` function ([contract](rrm/liveart/CONTRACT.md)). This happens at build time (`scripts/liveart_*`). A verifier checks the code's AST, the control budgets, and its fidelity to the paper. The browser then runs the widget in a sandboxed iframe with no network access. Only verified widgets are shown. **Today, 9 of our 11 widgets pass.**
 
 ## Meta models
 
 | Model | Used for | Code |
 |---|---|---|
-| **Muse Spark** (`muse-spark-1.3-contributor`) | Topic names on the map, margin notes, Explain reviews, the paper brief and gap candidates | `rrm/search/split.py`, `rrm/reader/notes.py`, `rrm/reader/explain/`, `rrm/reader/analysis/` |
-| **Muse Wonder** (`muse-wonder-1.0`) | Live-figure code (`draw()`) and the hardest reviews | `rrm/reader/analysis/llm.py`, `rrm/reader/explain/llm.py`, `rrm/liveart/` |
+| **Muse Spark** (`muse-spark-1.3-contributor`) | Topic names on the map, the note planner and writers, Explain reviews | `rrm/search/split.py`, `rrm/reader/notes.py`, `rrm/reader/analysis/`, `rrm/reader/explain/` |
+| **Muse Wonder** (`muse-wonder-1.0`) | Widget code (`draw()`), at build time | `scripts/liveart_*.py`, `scripts/scripts_live.py`, `rrm/liveart/` |
 | **Muse Image** (`muse-image-1.0`) | Concept art for the demo video | video pipeline |
 
 All calls go through the Meta Model API. The reader's calls set `store: false`. Paper notes cover **86%** of what a reader must know (88% on unseen papers), and analyzing a paper costs less than 1 cent.
@@ -101,7 +146,7 @@ The synthetic data shows the flow (home → map → paper), not real papers.
 RRM_MODE=online bash scripts/run.sh   # deploys rrm-burst and rrm-reader, stops them on exit
 ```
 
-`RRM_MAX_MINUTES` (default 30) stops the session automatically, and the script never prints keys. The recorded real-paper data used in our demo is not published, because it contains paper text (see [Honest limits](#honest-limits)).
+`RRM_MAX_MINUTES` (default 30) stops the session automatically, and the script never prints keys. The precomputed real-paper data used in our demo is not published, because it contains paper text.
 
 **Checks:** `bash scripts/check.sh` (Python; no network calls to paid services) and `cd apps/reader && npm test`.
 
@@ -111,7 +156,7 @@ RRM_MODE=online bash scripts/run.sh   # deploys rrm-burst and rrm-reader, stops 
 |---|---|
 | `apps/reader/` | Next.js static app (the UI) |
 | `rrm/search/` | Map service: search, citation graph, topics, layout (`rrm-burst`) |
-| `rrm/reader/` | Paper service: parsing, gaps, notes, Explain, license gate (`rrm-reader`) |
+| `rrm/reader/` | Paper service: parsing, gaps, notes, Explain (`rrm-reader`) |
 | `rrm/liveart/` | Widget contract, prompts, verifier |
 | `pipelines/` | Semantic Scholar download and FAISS / citation-graph build on Modal |
 | `eval/`, `evals/` | Citation recall, prompt and widget evaluations |
@@ -119,17 +164,13 @@ RRM_MODE=online bash scripts/run.sh   # deploys rrm-burst and rrm-reader, stops 
 
 ## Honest limits
 
-- **It is a demo, not a hosted service.** The live backend only runs during demos. The online mode needs your own Modal, Meta, and Semantic Scholar keys and a prebuilt index.
-- **The map covers Computer Science only:** Semantic Scholar's CS subset.
-- **Full text only for open licenses.** Papers under the default arXiv license, or under NC or ND licenses, show only metadata, the abstract, short quotes, and a link.
-- **Widgets:** 9 of 11 pass verification. A widget that fails falls back to the static figure.
-- **The Explain numbers come from our own test set** of 137 claims, not from an external benchmark.
-- **Legacy features** (Panorama, the companion, the SAM figure tools, and the old instrument) are still in the code. They are off by default and only turn on with `RRM_FEATURES=all`.
-- Some internal notes and code comments are still in Spanish.
+- **Today it covers Computer Science.** The map searches about 8M Computer Science papers from Semantic Scholar.
+- **9 of 11 widgets pass verification today.** That number grows as the engine improves.
+- **The demo runs on a precomputed set of papers.** Notes, answer sheets, and widgets for those papers are prepared ahead of time, so the demo is fast and costs nothing to show.
 
 ## License and attribution
 
 - Code: [MIT](LICENSE).
-- Paper metadata, abstracts, citations, and SPECTER2 embeddings: **[Semantic Scholar](https://www.semanticscholar.org/)** Datasets (ODC-BY). arXiv metadata (CC0). Papers belong to their authors and keep their own licenses; this project is not endorsed by the authors or by arXiv.
+- Metadata from **[Semantic Scholar](https://www.semanticscholar.org/)** (ODC-BY); papers from [arXiv](https://arxiv.org/), always linked to the source.
 - Built with [Next.js](https://nextjs.org/), [KaTeX](https://katex.org/) (MIT), [FAISS](https://github.com/facebookresearch/faiss) (MIT), [SPECTER2](https://huggingface.co/allenai/specter2) (Apache-2.0), [opus-mt-es-en](https://huggingface.co/Helsinki-NLP/opus-mt-es-en) (translates Spanish questions), [Modal](https://modal.com/), and the fonts Literata and Instrument Sans (SIL OFL 1.1). The video was made with [Remotion](https://www.remotion.dev/).
 - Built for the Meta AI Developer Hackathon 2026 with Muse Spark, Muse Wonder, and Muse Image through the Meta Model API.
