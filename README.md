@@ -1,13 +1,11 @@
 <p align="center">
-  <img src="apps/reader/public/brand/rm-s18.svg" alt="Research Microscope logo" width="96">
+  <a href="https://youtu.be/NpIZdZCemTY"><img src="docs/img/video-thumb.jpg" alt="Research Microscope — The joy of understanding, from a field to a single idea. Click to watch the 3-minute demo video on YouTube." width="760"></a>
 </p>
 
 <h1 align="center">Research Microscope</h1>
 
-<p align="center"><b>The joy of understanding — from a field to a single idea.</b></p>
-
 <p align="center">
-  <a href="VIDEO_URL"><b>▶ Watch the 3-minute demo</b></a> ·
+  <a href="https://youtu.be/NpIZdZCemTY"><b>▶ Watch the 3-minute demo</b></a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#meta-models">Meta models</a> ·
   <a href="#run-it">Run it</a> ·
@@ -86,7 +84,7 @@ All calls go through the Meta Model API. The reader's calls set `store: false`. 
 
 ## Run it
 
-**Option 1: watch it.** The [3-minute video](VIDEO_URL) shows the full flow on real papers.
+**Option 1: watch it.** The [3-minute video](https://youtu.be/NpIZdZCemTY) shows the full flow on real papers.
 
 **Option 2: local UI, no keys, $0.** This option runs the real UI and a local API on a small synthetic map, with no Modal, Meta, or Semantic Scholar calls. You need Python 3.12 and Node ≥ 22. The script runs `npm ci` itself the first time.
 
